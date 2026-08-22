@@ -275,12 +275,12 @@ struct ReaderChrome: View {
                             }
                             if let onCrop = onCropToggle {
                                 Button(action: onCrop) {
-                                    Label(isAutoCropEnabled ? "Disable Auto-Crop" : "Smart Auto-Crop", systemImage: isAutoCropEnabled ? "crop.slash" : "crop")
+                                    Label(isAutoCropEnabled ? "Disable Auto-Crop" : "Smart Auto-Crop", systemImage: isAutoCropEnabled ? "crop.slash" : "sparkles")
                                 }
                             }
                             if let onManual = onManualCropToggle {
                                 Button(action: onManual) {
-                                    Label("Manual Crop Sliders...", systemImage: "slider.horizontal.3")
+                                    Label("Manual Visual Crop Editor...", systemImage: "viewfinder")
                                 }
                             }
                         }
@@ -339,13 +339,13 @@ struct ReaderChrome: View {
                             Button(action: { onCropToggle?() }) {
                                 Label(
                                     isAutoCropEnabled ? "Disable Auto-Crop" : "Smart Auto-Crop",
-                                    systemImage: isAutoCropEnabled ? "crop.slash" : "wand.and.stars"
+                                    systemImage: isAutoCropEnabled ? "crop.slash" : "sparkles"
                                 )
                             }
                             
                             if let onManual = onManualCropToggle {
                                 Button(action: onManual) {
-                                    Label("Manual Crop Sliders...", systemImage: "slider.horizontal.3")
+                                    Label("Manual Visual Crop Editor...", systemImage: "viewfinder")
                                 }
                             }
                         } label: {

@@ -577,25 +577,136 @@ struct EBookSettingsPanel: View {
     private var layoutTab: some View {
         VStack(spacing: 20) {
             if isPDF {
-                // PDF Margins & Crop Sensitivity
-                ReaderSettingsSection(title: "PDF Page Margins & Crop", icon: "crop") {
-                    SliderRow(
-                        label: "Page Margins",
-                        icon: "arrow.left.and.right",
-                        value: $prefs.textMargin,
-                        range: 0...60,
-                        step: 4,
-                        displayFormat: { "\(Int($0))pt" }
-                    )
+                // PDF Margins & Crop Control
+                ReaderSettingsSection(title: "PDF Page Margins & Cropping", icon: "crop") {
+                    // Mode Selector (Smart Auto / Manual Custom / Full Page)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Crop Mode")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.inkTextSecondary)
+                        
+                        HStack(spacing: 8) {
+                            ForEach(["smartAuto", "custom", "none"], id: \.self) { mode in
+                                let isSelected = prefs.defaultCropModeRaw == mode
+                                Button {
+                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                        prefs.defaultCropModeRaw = mode
+                                        if mode == "smartAuto" {
+                                            prefs.isSmartCropEnabled = true
+                                        } else if mode == "none" {
+                                            prefs.isSmartCropEnabled = false
+                                        } else {
+                                            prefs.isSmartCropEnabled = true
+                                        }
+                                    }
+                                    HapticEngine.light()
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: mode == "smartAuto" ? "sparkles" : (mode == "custom" ? "slider.horizontal.3" : "arrow.up.left.and.down.right"))
+                                            .font(.system(size: 13, weight: .medium))
+                                        Text(mode == "smartAuto" ? "Smart Auto" : (mode == "custom" ? "Manual" : "Full Page"))
+                                            .font(.system(size: 12, weight: .semibold))
+                                    }
+                                    .foregroundStyle(isSelected ? Color.orange : Color.inkTextSecondary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 9)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(isSelected ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .stroke(isSelected ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+
                     Divider().padding(.leading, 44)
-                    SliderRow(
-                        label: "Auto-Crop Sensitivity",
-                        icon: "crop.square",
-                        value: $prefs.autoCropSensitivity,
-                        range: 0.05...0.25,
-                        step: 0.01,
-                        displayFormat: { String(format: "%.0f%%", $0 * 100) }
-                    )
+
+                    if prefs.defaultCropModeRaw == "custom" {
+                        // Precision Manual Trim Sliders
+                        SliderRow(
+                            label: "Top Trim",
+                            icon: "arrow.up",
+                            value: $prefs.defaultCropTop,
+                            range: 0.0...0.20,
+                            step: 0.005,
+                            displayFormat: { String(format: "%.1f%%", $0 * 100) }
+                        )
+                        Divider().padding(.leading, 44)
+                        SliderRow(
+                            label: "Bottom Trim",
+                            icon: "arrow.down",
+                            value: $prefs.defaultCropBottom,
+                            range: 0.0...0.20,
+                            step: 0.005,
+                            displayFormat: { String(format: "%.1f%%", $0 * 100) }
+                        )
+                        Divider().padding(.leading, 44)
+                        SliderRow(
+                            label: "Left Trim",
+                            icon: "arrow.left",
+                            value: $prefs.defaultCropLeft,
+                            range: 0.0...0.20,
+                            step: 0.005,
+                            displayFormat: { String(format: "%.1f%%", $0 * 100) }
+                        )
+                        Divider().padding(.leading, 44)
+                        SliderRow(
+                            label: "Right Trim",
+                            icon: "arrow.right",
+                            value: $prefs.defaultCropRight,
+                            range: 0.0...0.20,
+                            step: 0.005,
+                            displayFormat: { String(format: "%.1f%%", $0 * 100) }
+                        )
+                        Divider().padding(.leading, 44)
+                    } else if prefs.defaultCropModeRaw == "smartAuto" {
+                        SliderRow(
+                            label: "Auto-Crop Sensitivity",
+                            icon: "crop.square",
+                            value: $prefs.autoCropSensitivity,
+                            range: 0.05...0.25,
+                            step: 0.01,
+                            displayFormat: { String(format: "%.0f%%", $0 * 100) }
+                        )
+                        Divider().padding(.leading, 44)
+                    }
+
+                    // Interactive Visual Crop Editor Button
+                    Button {
+                        dismiss()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            NotificationCenter.default.post(name: .openManualCropEditor, object: nil)
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "viewfinder")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(Color.orange)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Visual Crop Editor...")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(Color.inkTextPrimary)
+                                Text("Interactive live boundary trimming with visual guides")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.inkTextSecondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.inkTextSecondary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 // PDF Reading & Reflow Mode

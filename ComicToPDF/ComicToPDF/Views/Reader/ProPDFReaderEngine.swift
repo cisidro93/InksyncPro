@@ -321,6 +321,45 @@ struct ProPDFReaderEngine: View {
                 onDismiss: { showCropAdjustmentSheet = false }
             )
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openManualCropEditor)) { _ in
+            showCropAdjustmentSheet = true
+        }
+        .onChange(of: prefs.defaultCropModeRaw) { _, newMode in
+            if newMode == "custom" {
+                let insets = CodableCropInsets(
+                    top: prefs.defaultCropTop,
+                    bottom: prefs.defaultCropBottom,
+                    left: prefs.defaultCropLeft,
+                    right: prefs.defaultCropRight,
+                    modeRaw: "custom"
+                )
+                applyCropInsets(insets)
+            } else if newMode == "smartAuto" {
+                applyCropInsets(.smartAuto)
+            } else {
+                applyCropInsets(.none)
+            }
+        }
+        .onChange(of: prefs.defaultCropTop) { _, _ in
+            if prefs.defaultCropModeRaw == "custom" {
+                applyCropInsets(CodableCropInsets(top: prefs.defaultCropTop, bottom: prefs.defaultCropBottom, left: prefs.defaultCropLeft, right: prefs.defaultCropRight, modeRaw: "custom"))
+            }
+        }
+        .onChange(of: prefs.defaultCropBottom) { _, _ in
+            if prefs.defaultCropModeRaw == "custom" {
+                applyCropInsets(CodableCropInsets(top: prefs.defaultCropTop, bottom: prefs.defaultCropBottom, left: prefs.defaultCropLeft, right: prefs.defaultCropRight, modeRaw: "custom"))
+            }
+        }
+        .onChange(of: prefs.defaultCropLeft) { _, _ in
+            if prefs.defaultCropModeRaw == "custom" {
+                applyCropInsets(CodableCropInsets(top: prefs.defaultCropTop, bottom: prefs.defaultCropBottom, left: prefs.defaultCropLeft, right: prefs.defaultCropRight, modeRaw: "custom"))
+            }
+        }
+        .onChange(of: prefs.defaultCropRight) { _, _ in
+            if prefs.defaultCropModeRaw == "custom" {
+                applyCropInsets(CodableCropInsets(top: prefs.defaultCropTop, bottom: prefs.defaultCropBottom, left: prefs.defaultCropLeft, right: prefs.defaultCropRight, modeRaw: "custom"))
+            }
+        }
     }
 
     // MARK: - Subviews for Fast Compiler Type-Checking
