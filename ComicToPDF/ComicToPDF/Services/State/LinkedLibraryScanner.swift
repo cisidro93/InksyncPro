@@ -524,6 +524,16 @@ final class LinkedLibraryScanner: ObservableObject {
                     metadata.publisher = parsed.publisher
                     metadata.summary = parsed.summary
                     metadata.writer = parsed.writer
+                    metadata.penciller = parsed.penciller
+                    metadata.inker = parsed.inker
+                    metadata.colorist = parsed.colorist
+                    metadata.letterer = parsed.letterer
+                    metadata.coverArtist = parsed.coverArtist
+                    metadata.editor = parsed.editor
+                    metadata.characters = parsed.characters
+                    metadata.genre = parsed.genre
+                    metadata.ageRating = parsed.ageRating
+                    metadata.web = parsed.web
                     metadata.isManga = parsed.manga ? true : nil
                     metadata.tags = parsed.tags
                 } else {

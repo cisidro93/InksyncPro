@@ -314,9 +314,18 @@ struct PDFMetadata: Codable, Equatable, Hashable, Sendable {
     var publicationDate: Date?
     var summary: String?
     var sourceFileIDs: [UUID]? = nil
-    // âœ… Rich Metadata
+    // ✅ Rich Metadata
     var writer: String?
     var penciller: String?
+    var inker: String?
+    var colorist: String?
+    var letterer: String?
+    var coverArtist: String?
+    var editor: String?
+    var characters: String?
+    var genre: String?
+    var ageRating: String?
+    var web: String?
     
     // âœ… LEGACY PROPERTIES
     @available(*, deprecated, message: "Use universalIssueID instead")

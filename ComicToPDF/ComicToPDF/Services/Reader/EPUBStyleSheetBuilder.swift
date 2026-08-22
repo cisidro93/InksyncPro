@@ -116,11 +116,25 @@ final class EPUBStyleSheetBuilder: Sendable {
             word-break: break-word !important;
         }
         
-        p, div, span, li, a, h1, h2, h3, h4, h5, h6 {
+        body * {
+            font-family: \(effectiveFontFamily) !important;
+        }
+        
+        p, div, span, li, a, blockquote, em, strong, b, i, table, td, th, dt, dd, article, section {
             color: \(theme.textColorHex) !important;
             font-family: \(effectiveFontFamily) !important;
             text-align: \(alignment.cssValue) !important;
             line-height: \(lineSpacingMultiplier) !important;
+            \(hyphenationCSS)
+        }
+        
+        h1, h2, h3, h4, h5, h6 {
+            color: \(theme.textColorHex) !important;
+            font-family: \(effectiveFontFamily) !important;
+            text-align: \(alignment.cssValue) !important;
+            line-height: 1.25 !important;
+            margin-top: 1.2em !important;
+            margin-bottom: 0.6em !important;
             \(hyphenationCSS)
         }
         

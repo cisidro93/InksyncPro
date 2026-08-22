@@ -12,6 +12,16 @@ struct ComicInfoParser {
         var number: String?      // Issue number (can be "1", "1.5", "Annual 2022")
         var volume: Int?
         var writer: String?
+        var penciller: String?
+        var inker: String?
+        var colorist: String?
+        var letterer: String?
+        var coverArtist: String?
+        var editor: String?
+        var characters: String?
+        var genre: String?
+        var ageRating: String?
+        var web: String?
         var publisher: String?
         var year: Int?
         var summary: String?
@@ -98,6 +108,16 @@ private class ComicInfoXMLParser: NSObject, XMLParserDelegate {
         case "Number":       result.number = value
         case "Volume":       result.volume = Int(value)
         case "Writer":       result.writer = value
+        case "Penciller":    result.penciller = value
+        case "Inker":        result.inker = value
+        case "Colorist":     result.colorist = value
+        case "Letterer":     result.letterer = value
+        case "CoverArtist":  result.coverArtist = value
+        case "Editor":       result.editor = value
+        case "Characters":   result.characters = value
+        case "Genre":        result.genre = value
+        case "AgeRating":    result.ageRating = value
+        case "Web":          result.web = value
         case "Publisher":    result.publisher = value
         case "Year":         result.year = Int(value)
         case "Summary":      result.summary = value

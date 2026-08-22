@@ -241,6 +241,36 @@ actor LibraryScanner {
                         if let writer = parsedInfo.writer {
                             metadata.writer = writer
                         }
+                        if let penciller = parsedInfo.penciller {
+                            metadata.penciller = penciller
+                        }
+                        if let inker = parsedInfo.inker {
+                            metadata.inker = inker
+                        }
+                        if let colorist = parsedInfo.colorist {
+                            metadata.colorist = colorist
+                        }
+                        if let letterer = parsedInfo.letterer {
+                            metadata.letterer = letterer
+                        }
+                        if let coverArtist = parsedInfo.coverArtist {
+                            metadata.coverArtist = coverArtist
+                        }
+                        if let editor = parsedInfo.editor {
+                            metadata.editor = editor
+                        }
+                        if let characters = parsedInfo.characters {
+                            metadata.characters = characters
+                        }
+                        if let genre = parsedInfo.genre {
+                            metadata.genre = genre
+                        }
+                        if let ageRating = parsedInfo.ageRating {
+                            metadata.ageRating = ageRating
+                        }
+                        if let web = parsedInfo.web {
+                            metadata.web = web
+                        }
                         if let publisher = parsedInfo.publisher {
                             metadata.publisher = publisher
                         }

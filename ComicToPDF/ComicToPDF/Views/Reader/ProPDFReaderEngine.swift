@@ -61,6 +61,13 @@ struct ProPDFReaderEngine: View {
     @State private var showToast: Bool = false
     @State private var loadFailed: Bool = false
     @State private var loadErrorMessage: String = ""
+    
+    // Encrypted / Locked PDF State
+    @State private var isDocumentLocked: Bool = false
+    @State private var showingPasswordPrompt: Bool = false
+    @State private var passwordInput: String = ""
+    @State private var passwordErrorMessage: String? = nil
+    @State private var pendingLockedDocument: PDFDocument? = nil
 
     private var totalPages: Int {
         pdfDocument?.pageCount ?? pdf.pageCount
@@ -217,6 +224,7 @@ struct ProPDFReaderEngine: View {
 
             toastAlertOverlay
             ReadingJumpToastOverlay()
+            lockedPasswordOverlay
         }
         .overlay {
             if prefs.showReadingRuler {
@@ -563,6 +571,94 @@ struct ProPDFReaderEngine: View {
         }
     }
 
+    @ViewBuilder private var lockedPasswordOverlay: some View {
+        if isDocumentLocked {
+            ZStack {
+                Color.black.opacity(0.85)
+                    .ignoresSafeArea()
+
+                VStack(spacing: 20) {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 52))
+                        .foregroundStyle(LinearGradient(colors: [.inkViolet, .inkOrange], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .shadow(color: .inkViolet.opacity(0.5), radius: 12)
+
+                    VStack(spacing: 6) {
+                        Text("Encrypted PDF Document")
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+
+                        Text("This document is password protected. Enter the decryption password to read.")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.gray)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 16)
+                    }
+
+                    VStack(spacing: 12) {
+                        SecureField("Enter Password", text: $passwordInput)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(passwordErrorMessage != nil ? Color.inkRed : Color.white.opacity(0.2), lineWidth: 1)
+                            )
+                            .onSubmit {
+                                attemptUnlockWithPassword(passwordInput)
+                            }
+
+                        if let error = passwordErrorMessage {
+                            Text(error)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.inkRed)
+                                .transition(.opacity)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+
+                    HStack(spacing: 14) {
+                        Button {
+                            onDismiss()
+                        } label: {
+                            Text("Cancel")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.8))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                        }
+
+                        Button {
+                            attemptUnlockWithPassword(passwordInput)
+                        } label: {
+                            Text("Unlock")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(LinearGradient(colors: [.inkViolet, .inkOrange], startPoint: .leading, endPoint: .trailing), in: RoundedRectangle(cornerRadius: 12))
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                }
+                .padding(24)
+                .frame(maxWidth: 400)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.6), radius: 24, y: 12)
+                .padding(.horizontal, 20)
+            }
+            .transition(.opacity)
+            .zIndex(999)
+        }
+    }
+
     // MARK: - Master Unified Reader Chrome
     @ViewBuilder private var readerChromeView: some View {
         let pageStatus = "\(currentPageIndex + 1) / \(max(1, totalPages))  •  \(velocityEngine.estimatedTimeRemaining)"
@@ -749,6 +845,19 @@ struct ProPDFReaderEngine: View {
             }
             
             if let doc = loaded {
+                if doc.isLocked {
+                    await MainActor.run {
+                        if let accessed = accessedURL {
+                            self.accessedSecurityScopedURL = accessed
+                        }
+                        self.pendingLockedDocument = doc
+                        self.isDocumentLocked = true
+                        self.showingPasswordPrompt = true
+                        self.loadFailed = false
+                    }
+                    return
+                }
+                
                 let savedIndex = await MainActor.run {
                     ReaderProgressTracker.shared.progress(for: sourcePDF.id)?.currentPageIndex ?? 0
                 }
@@ -774,6 +883,29 @@ struct ProPDFReaderEngine: View {
                     self.loadErrorMessage = "Unable to read PDF file at \(sourcePDF.name)."
                 }
             }
+        }
+    }
+
+    private func attemptUnlockWithPassword(_ pass: String) {
+        guard let doc = pendingLockedDocument else { return }
+        if doc.unlock(withPassword: pass) || !doc.isLocked {
+            HapticEngine.success()
+            let savedIndex = ReaderProgressTracker.shared.progress(for: pdf.id)?.currentPageIndex ?? 0
+            self.pdfDocument = doc
+            self.pendingLockedDocument = nil
+            self.isDocumentLocked = false
+            self.showingPasswordPrompt = false
+            self.loadFailed = false
+            self.passwordErrorMessage = nil
+            self.currentPageIndex = max(0, min(savedIndex, doc.pageCount - 1))
+            let savedCrop = ReaderProgressTracker.shared.cropInsets(for: pdf.id)
+            let initialCrop = savedCrop ?? (self.prefs.defaultCropModeRaw == "smartAuto" ? .smartAuto : .none)
+            self.applyCropInsets(initialCrop)
+            self.extractAmbientColor(for: self.currentPageIndex)
+            _ = PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: doc, for: pdf.id)
+        } else {
+            HapticEngine.error()
+            self.passwordErrorMessage = "Incorrect password. Please verify and try again."
         }
     }
 
