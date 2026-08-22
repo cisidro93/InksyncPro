@@ -79,13 +79,7 @@ class ShareViewController: UIViewController {
         while let r = responder {
             let sel = Selector(("openURL:"))
             if r.responds(to: sel) {
-                r.perform(sel, with: deepLinkURL)
-                didOpenViaResponder = true
-                break
-            }
-            let selOptions = Selector(("openURL:options:completionHandler:"))
-            if r.responds(to: selOptions) {
-                r.perform(selOptions, with: deepLinkURL, with: [:] as NSDictionary, with: nil)
+                _ = r.perform(sel, with: deepLinkURL)
                 didOpenViaResponder = true
                 break
             }
