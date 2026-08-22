@@ -2826,22 +2826,25 @@ struct ComicPageView: View {
         }
         
         // 1. Manual Pro Crop Insets (Precision Top/Bottom/Left/Right trim)
-        if let manualInsets = ReaderProgressTracker.shared.cropInsets(for: cache.pdfID), manualInsets.modeRaw == "custom" {
-            let width = sourceImage.size.width
-            let height = sourceImage.size.height
-            let minX = manualInsets.left
-            let minY = manualInsets.top
-            let cropW = max(0.05, 1.0 - manualInsets.left - manualInsets.right)
-            let cropH = max(0.05, 1.0 - manualInsets.top - manualInsets.bottom)
+        let manualInsets = ReaderProgressTracker.shared.cropInsets(for: cache.pdfID)
+        if let insets = manualInsets, insets.modeRaw == "custom" {
+            let minX = insets.left
+            let minY = insets.top
+            let cropW = max(0.05, 1.0 - insets.left - insets.right)
+            let cropH = max(0.05, 1.0 - insets.top - insets.bottom)
             let normalizedRect = CGRect(x: minX, y: minY, width: cropW, height: cropH)
             if let cropped = ImageProcessor.crop(image: sourceImage, to: normalizedRect) {
                 self.displayImage = cropped
                 return
             }
+        } else if let insets = manualInsets, insets.modeRaw == "none" {
+            self.displayImage = sourceImage
+            return
         }
         
-        // 2. Smart Auto Crop
-        if isAutoCropEnabled {
+        // 2. Smart Auto Crop (Document-specific smartAuto or global auto-crop fallback)
+        let shouldAutoCrop = (manualInsets?.modeRaw == "smartAuto") || (manualInsets == nil && isAutoCropEnabled)
+        if shouldAutoCrop {
             cropTask = Task.detached(priority: .userInitiated) {
                 let cropRect = SmartCropper.suggestCrop(for: sourceImage)
                 guard !Task.isCancelled else { return }

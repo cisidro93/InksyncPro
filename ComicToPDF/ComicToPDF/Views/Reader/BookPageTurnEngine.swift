@@ -1113,15 +1113,23 @@ struct TwoUpPageCell: View {
             croppedImage = nil
             return
         }
-        if let manualInsets = ReaderProgressTracker.shared.cropInsets(for: cache.pdfID), manualInsets.modeRaw == "custom" {
-            let width = source.size.width
-            let height = source.size.height
-            let minX = manualInsets.left
-            let minY = manualInsets.top
-            let cropW = max(0.05, 1.0 - manualInsets.left - manualInsets.right)
-            let cropH = max(0.05, 1.0 - manualInsets.top - manualInsets.bottom)
+        let manualInsets = ReaderProgressTracker.shared.cropInsets(for: cache.pdfID)
+        if let insets = manualInsets, insets.modeRaw == "custom" {
+            let minX = insets.left
+            let minY = insets.top
+            let cropW = max(0.05, 1.0 - insets.left - insets.right)
+            let cropH = max(0.05, 1.0 - insets.top - insets.bottom)
             let normalizedRect = CGRect(x: minX, y: minY, width: cropW, height: cropH)
             if let cropped = ImageProcessor.crop(image: source, to: normalizedRect) {
+                self.croppedImage = cropped
+                return
+            }
+        } else if let insets = manualInsets, insets.modeRaw == "none" {
+            self.croppedImage = source
+            return
+        } else if (manualInsets?.modeRaw == "smartAuto") || (manualInsets == nil && EBookPreferences.shared.autoCrop) {
+            if let cropRect = SmartCropper.suggestCrop(for: source),
+               let cropped = ImageProcessor.crop(image: source, to: cropRect) {
                 self.croppedImage = cropped
                 return
             }

@@ -44,16 +44,21 @@ final class SharedImportCoordinator: ObservableObject {
     // MARK: - Entry Points
 
     /// Called by ContentView's willEnterForeground observer, AppDelegate URL handler,
-    /// and the `inksyncpro://` deep-link handler.  Safe to call multiple times — it
+    /// and the `inksyncpro://` deep-link handler. Safe to call multiple times — it
     /// debounces internally.
     func coordinateImport(retryCount: Int = 3, retryDelaySeconds: Double = 0.8) {
         guard !isIngesting else { return }
         isIngesting = true
-        Task { @MainActor [weak self] in
+        Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
-            await self.ingestWithRetry(maxAttempts: retryCount, retryDelay: retryDelaySeconds)
-            self.clearPendingShareFlags()
-            self.isIngesting = false
+            let ingestedNames = await self.ingestWithRetry(maxAttempts: retryCount, retryDelay: retryDelaySeconds)
+            await MainActor.run {
+                for name in ingestedNames {
+                    self.pendingAutoSelectFilenames.insert(name)
+                }
+                self.clearPendingShareFlags()
+                self.isIngesting = false
+            }
         }
     }
 
@@ -68,15 +73,17 @@ final class SharedImportCoordinator: ObservableObject {
 
     // MARK: - Private: Retry Loop
 
-    private func ingestWithRetry(maxAttempts: Int, retryDelay: Double) async {
+    nonisolated private func ingestWithRetry(maxAttempts: Int, retryDelay: Double) async -> [String] {
+        var allIngested: [String] = []
         for attempt in 1...maxAttempts {
-            let ingested = await moveStagedFilesToInbox()
-            if ingested > 0 {
+            let names = await moveStagedFilesToInbox()
+            if !names.isEmpty {
+                allIngested.append(contentsOf: names)
                 Logger.shared.log(
-                    "SharedImportCoordinator: Ingested \(ingested) file(s) on attempt \(attempt)",
+                    "SharedImportCoordinator: Ingested \(names.count) file(s) on attempt \(attempt)",
                     category: "Import", type: .success
                 )
-                return
+                return allIngested
             }
             // No files found yet — the extension process may still be writing.
             if attempt < maxAttempts {
@@ -88,19 +95,19 @@ final class SharedImportCoordinator: ObservableObject {
             "will rely on next foreground scan.",
             category: "Import", type: .warning
         )
+        return allIngested
     }
 
     // MARK: - Private: File Movement
 
-    @discardableResult
-    private func moveStagedFilesToInbox() async -> Int {
+    nonisolated private func moveStagedFilesToInbox() async -> [String] {
         let fm = FileManager.default
         let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fm.temporaryDirectory
         let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
         try? fm.createDirectory(at: inboxDir, withIntermediateDirectories: true)
 
-        var ingestedCount = 0
+        var ingestedFilenames: [String] = []
         var visitedContainers: Set<URL> = []
 
         for groupID in appGroupIDs {
@@ -148,7 +155,7 @@ final class SharedImportCoordinator: ObservableObject {
                     guard supportedExtensions.contains(canonicalExt) else { continue }
 
                     // Ensure the file is completely written before moving.
-                    guard isFileSettled(at: fileURL) else {
+                    guard await isFileSettled(at: fileURL) else {
                         Logger.shared.log(
                             "SharedImportCoordinator: Skipping unsettled file: \(fileURL.lastPathComponent)",
                             category: "Import", type: .warning
@@ -165,8 +172,9 @@ final class SharedImportCoordinator: ObservableObject {
                         if (try? fm.attributesOfItem(atPath: fileURL.path)[.size] as? Int64)
                             == (try? fm.attributesOfItem(atPath: dest.path)[.size] as? Int64) {
                             try? fm.removeItem(at: fileURL)
+                            ingestedFilenames.append(destFilename)
                             Logger.shared.log(
-                                "SharedImportCoordinator: Duplicate skipped: \(destFilename)",
+                                "SharedImportCoordinator: Duplicate recognized & linked: \(destFilename)",
                                 category: "Import"
                             )
                             continue
@@ -176,8 +184,7 @@ final class SharedImportCoordinator: ObservableObject {
 
                     do {
                         try fm.moveItem(at: fileURL, to: dest)
-                        pendingAutoSelectFilenames.insert(destFilename)
-                        ingestedCount += 1
+                        ingestedFilenames.append(destFilename)
                         Logger.shared.log(
                             "SharedImportCoordinator: Moved '\(destFilename)' to InksyncVault/Inbox",
                             category: "Import", type: .success
@@ -188,8 +195,7 @@ final class SharedImportCoordinator: ObservableObject {
                             do {
                                 try data.write(to: dest, options: .atomic)
                                 try? fm.removeItem(at: fileURL)
-                                pendingAutoSelectFilenames.insert(destFilename)
-                                ingestedCount += 1
+                                ingestedFilenames.append(destFilename)
                                 Logger.shared.log(
                                     "SharedImportCoordinator: Streamed '\(destFilename)' to InksyncVault/Inbox",
                                     category: "Import", type: .success
@@ -205,14 +211,14 @@ final class SharedImportCoordinator: ObservableObject {
                 }
             }
         }
-        return ingestedCount
+        return ingestedFilenames
     }
 
     // MARK: - Private: File Settle Check
 
     /// Returns true only when the file size is non-zero AND has not changed in the
-    /// last 200ms — meaning the extension process has finished writing it.
-    private func isFileSettled(at url: URL) -> Bool {
+    /// last 150ms — meaning the extension process has finished writing it.
+    nonisolated private func isFileSettled(at url: URL) async -> Bool {
         let fm = FileManager.default
         guard let attrs1 = try? fm.attributesOfItem(atPath: url.path),
               let size1 = attrs1[.size] as? Int64, size1 > 0
@@ -221,8 +227,8 @@ final class SharedImportCoordinator: ObservableObject {
         // For very small files (<1MB) we trust immediately.
         if size1 < 1_048_576 { return true }
 
-        // For larger files: compare size after 150ms.
-        Thread.sleep(forTimeInterval: 0.15)
+        // For larger files: compare size after 150ms async non-blocking sleep.
+        try? await Task.sleep(nanoseconds: 150_000_000)
         guard let attrs2 = try? fm.attributesOfItem(atPath: url.path),
               let size2 = attrs2[.size] as? Int64
         else { return false }
@@ -231,7 +237,7 @@ final class SharedImportCoordinator: ObservableObject {
 
     // MARK: - Private: Clear App Group Flags
 
-    private func clearPendingShareFlags() {
+    nonisolated private func clearPendingShareFlags() {
         for groupID in appGroupIDs {
             if let ud = UserDefaults(suiteName: groupID) {
                 ud.removeObject(forKey: "pendingShareImportTimestamp")
