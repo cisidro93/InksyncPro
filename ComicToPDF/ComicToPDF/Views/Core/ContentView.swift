@@ -287,37 +287,23 @@ struct ContentView: View {
             Logger.shared.log("⚠️ Memory warning received — purged ReaderImageFilterEngine cache and verified disk storage limits.", category: "Memory", type: .warning)
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            Logger.shared.log("App returned to foreground: trigger auto scan for shared container files", category: "Import")
+            Logger.shared.log("App returned to foreground — coordinating shared import", category: "Import")
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                // Check if the Share Extension set a pending-import flag in App Group
-                let groupIDs = ["group.com.antigravity.ComicToPDF", "group.com.antigravity.inksync", "group.com.antigravity.InksyncPro"]
-                let hasPending = groupIDs.contains(where: {
-                    UserDefaults(suiteName: $0)?.double(forKey: "pendingShareImportTimestamp") ?? 0 > 0
-                })
-                conversionManager.scanLibrary()
-                if hasPending {
-                    // Clear flags
-                    groupIDs.forEach { UserDefaults(suiteName: $0)?.removeObject(forKey: "pendingShareImportTimestamp") }
-                    router.selectedTab = 0
-                    withAnimation(.spring()) {
-                        activeToast = ToastMessage(
-                            title: "Files Imported",
-                            message: "Shared files added to your library.",
-                            systemImage: "arrow.down.doc.fill",
-                            type: .success
-                        )
-                    }
-                    try? await Task.sleep(nanoseconds: 2_500_000_000)
-                    conversionManager.scanLibrary()
+                if SharedImportCoordinator.shared.hasPendingShareImport() {
+                    // Files staged by Share Extension — move them into InksyncVault/Inbox
+                    SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.8)
+                    // Wait for coordinator to finish (it sets isIngesting=false internally)
+                    try? await Task.sleep(nanoseconds: 500_000_000)
                 }
+                conversionManager.scanLibrary()
             }
         }
-        // AppDelegate.application(_:open:options:) posts this on iPadOS when
-        // extensionContext.open() delivers the inksyncpro:// URL via UIKit delegate path
+        // AppDelegate routes inksyncpro:// here after the Share Extension opens the app.
+        // SharedImportCoordinator has already started moving files; we wait for the scan.
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShareImportReceived"))) { _ in
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                // Give coordinator time to finish moving files from App Group container.
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
                 conversionManager.scanLibrary()
                 router.selectedTab = 0
                 withAnimation(.spring()) {
@@ -328,10 +314,18 @@ struct ContentView: View {
                         type: .success
                     )
                 }
+                // Second scan pass catches any large files that finished writing late.
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
                 conversionManager.scanLibrary()
+                // Auto-select newly ingested book if exactly one was imported.
+                let filenames = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
+                if filenames.count == 1, let name = filenames.first,
+                   let match = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == name }) {
+                    self.selectedPDF = match
+                }
             }
         }
+        // AppDelegate routes direct file:// opens here (Open With, Files.app, AirDrop).
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.DirectFileOpenReceived"))) { notification in
             if let destURL = notification.object as? URL {
                 Task { @MainActor in
@@ -339,17 +333,21 @@ struct ContentView: View {
                     conversionManager.scanLibrary()
                     withAnimation(.spring()) {
                         activeToast = ToastMessage(
-                            title: "Document Added",
-                            message: "\(destURL.lastPathComponent) added to your library.",
+                            title: "Added to Library",
+                            message: "\(destURL.lastPathComponent) ready to read.",
                             systemImage: "checkmark.circle.fill",
                             type: .success
                         )
                     }
-                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    // Let the scanner finish registering the file before auto-select.
+                    try? await Task.sleep(nanoseconds: 700_000_000)
                     conversionManager.scanLibrary()
-                    if let newlyImported = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == destURL.lastPathComponent }) {
+                    if let newlyImported = conversionManager.convertedPDFs.first(
+                        where: { $0.url.lastPathComponent == destURL.lastPathComponent }
+                    ) {
                         self.selectedPDF = newlyImported
                     }
+                    SharedImportCoordinator.shared.consumeAutoSelectFilenames()
                 }
             }
         }
@@ -369,8 +367,8 @@ struct ContentView: View {
         ))
         .onOpenURL { url in
             Logger.shared.log("onOpenURL received: \(url.absoluteString)", category: "Import")
-            
-            // Check for inksync:// universal deep links
+
+            // Universal deep links (inksync://, handoff, Spotlight)
             if let destination = UniversalLinkBridge.shared.parse(url: url) {
                 if let targetPDF = conversionManager.convertedPDFs.first(where: { $0.id == destination.documentID }) {
                     self.selectedPDF = targetPDF
@@ -378,10 +376,15 @@ struct ContentView: View {
                 }
                 return
             }
-            
+
+            // inksyncpro://shared-import — Share Extension callback.
+            // AppDelegate already handled this via application(_:open:options:);
+            // onOpenURL may fire as an additional signal on some iOS versions.
+            // We forward it to SharedImportCoordinator so files move if they haven't already.
             if url.scheme == "inksyncpro" {
                 Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                    SharedImportCoordinator.shared.coordinateImport(retryCount: 3, retryDelaySeconds: 0.8)
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
                     conversionManager.scanLibrary()
                     router.selectedTab = 0
                     withAnimation(.spring()) {
@@ -392,65 +395,32 @@ struct ContentView: View {
                             type: .success
                         )
                     }
-                    try? await Task.sleep(nanoseconds: 2_500_000_000)
-                    conversionManager.scanLibrary()
                 }
                 return
             }
+
+            // Direct file:// open — AppDelegate already started copying it.
+            // onOpenURL fires concurrently; just ensure we're on the library tab.
             guard url.isFileURL else { return }
-            
-            let accessing = url.startAccessingSecurityScopedResource()
-            Task.detached(priority: .userInitiated) {
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                
-                let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
-                let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
-                try? FileManager.default.createDirectory(at: inboxDir, withIntermediateDirectories: true)
-                let dest = inboxDir.appendingPathComponent(url.lastPathComponent)
-                try? FileManager.default.removeItem(at: dest)
-                
-                var coordError: NSError?
-                var copySuccess = false
-                NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
-                    do {
-                        try FileManager.default.copyItem(at: safeURL, to: dest)
-                        copySuccess = true
-                    } catch {
-                        Logger.shared.log("onOpenURL: Copy coordinated file failed: \(error.localizedDescription)", category: "Import", type: .error)
-                        if let data = try? Data(contentsOf: safeURL) {
-                            try? data.write(to: dest, options: .atomic)
-                            copySuccess = true
-                        }
-                    }
+            Task { @MainActor in
+                router.selectedTab = 0
+                // Wait for AppDelegate's background copy task to finish (~600ms).
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                conversionManager.scanLibrary()
+                withAnimation(.spring()) {
+                    activeToast = ToastMessage(
+                        title: "Added to Library",
+                        message: "\(url.lastPathComponent) ready to read.",
+                        systemImage: "checkmark.circle.fill",
+                        type: .success
+                    )
                 }
-                
-                if !copySuccess {
-                    if let data = try? Data(contentsOf: url) {
-                        try? data.write(to: dest, options: .atomic)
-                        copySuccess = true
-                    }
-                }
-                
-                await MainActor.run {
-                    router.selectedTab = 0
-                    conversionManager.scanLibrary()
-                    withAnimation(.spring()) {
-                        activeToast = ToastMessage(
-                            title: "Added to Library",
-                            message: "\(url.lastPathComponent) added to your library.",
-                            systemImage: "checkmark.circle.fill",
-                            type: .success
-                        )
-                    }
-                }
-                
-                // Allow scanner to register file then auto-select
                 try? await Task.sleep(nanoseconds: 600_000_000)
-                await MainActor.run {
-                    conversionManager.scanLibrary()
-                    if let newlyImported = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == dest.lastPathComponent }) {
-                        self.selectedPDF = newlyImported
-                    }
+                conversionManager.scanLibrary()
+                if let newlyImported = conversionManager.convertedPDFs.first(
+                    where: { $0.url.lastPathComponent == url.lastPathComponent }
+                ) {
+                    self.selectedPDF = newlyImported
                 }
             }
         }

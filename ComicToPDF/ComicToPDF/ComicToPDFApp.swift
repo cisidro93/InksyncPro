@@ -8,70 +8,91 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         return OrientationLockManager.shared.lockedOrientation
     }
 
-    // MARK: - URL Open Handler (Share Extension → Host App on iPadOS)
-    // extensionContext.open() on iPadOS multi-window does not always trigger
-    // SwiftUI's onOpenURL. This UIApplicationDelegate method is the guaranteed
-    // receiver for all custom URL scheme opens, including those from Share Extensions.
+    // MARK: - URL Open Handler
+    //
+    // This is the guaranteed entry point for ALL custom-scheme and file-URL opens,
+    // regardless of whether SwiftUI's onOpenURL fires (it sometimes doesn't on iPad
+    // multi-window or when the app is already active).
+    //
+    // Pattern:
+    //   inksyncpro://shared-import  ← Share Extension triggered open
+    //   file://...                  ← "Open With" / Files.app / AirDrop
     func application(
         _ app: UIApplication,
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
+
         if url.scheme == "inksyncpro" {
-            // Write a pending-import flag to the shared App Group so ContentView's
-            // willEnterForeground observer picks it up even if onOpenURL doesn't fire.
-            let groupIDs = [
-                "group.com.antigravity.ComicToPDF",
-                "group.com.antigravity.inksync",
-                "group.com.antigravity.InksyncPro"
-            ]
-            for gid in groupIDs {
-                if let ud = UserDefaults(suiteName: gid) {
-                    ud.set(Date().timeIntervalSince1970, forKey: "pendingShareImportTimestamp")
-                    ud.synchronize()
-                }
+            // The Share Extension has already written files to the App Group.
+            // SharedImportCoordinator will move them into InksyncVault/Inbox
+            // with retry logic in case the extension process is still writing.
+            Task { @MainActor in
+                SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.8)
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("InksyncPro.ShareImportReceived"),
+                    object: url
+                )
             }
-            // Post directly so ContentView can scan + navigate without waiting for onOpenURL
-            NotificationCenter.default.post(
-                name: NSNotification.Name("InksyncPro.ShareImportReceived"),
-                object: url
-            )
             return true
         }
 
         if url.isFileURL {
+            // "Open With" / Files.app / AirDrop — copy into InksyncVault/Inbox
+            // on a background thread, then notify ContentView to scan + auto-select.
             let accessing = url.startAccessingSecurityScopedResource()
             Task.detached(priority: .userInitiated) {
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+
+                let appSupport = FileManager.default.urls(
+                    for: .applicationSupportDirectory, in: .userDomainMask
+                ).first ?? FileManager.default.temporaryDirectory
                 let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
                 try? FileManager.default.createDirectory(at: inboxDir, withIntermediateDirectories: true)
                 let dest = inboxDir.appendingPathComponent(url.lastPathComponent)
                 try? FileManager.default.removeItem(at: dest)
-                
+
                 var copySuccess = false
-                NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: nil) { safeURL in
-                    if let _ = try? FileManager.default.copyItem(at: safeURL, to: dest) {
+
+                // NSFileCoordinator respects iCloud and Files-provider file locks.
+                NSFileCoordinator().coordinate(
+                    readingItemAt: url, options: .withoutChanges, error: nil
+                ) { safeURL in
+                    do {
+                        try FileManager.default.copyItem(at: safeURL, to: dest)
                         copySuccess = true
-                    } else if let data = try? Data(contentsOf: safeURL) {
-                        try? data.write(to: dest, options: .atomic)
-                        copySuccess = true
+                    } catch {
+                        if let data = try? Data(contentsOf: safeURL, options: .alwaysMapped) {
+                            copySuccess = (try? data.write(to: dest, options: .atomic)) != nil
+                        }
                     }
                 }
-                
-                if !copySuccess {
-                    if let data = try? Data(contentsOf: url) {
-                        try? data.write(to: dest, options: .atomic)
-                        copySuccess = true
-                    }
+
+                // Final fallback — direct read (handles some iCloud-stub cases).
+                if !copySuccess, let data = try? Data(contentsOf: url, options: .alwaysMapped) {
+                    copySuccess = (try? data.write(to: dest, options: .atomic)) != nil
                 }
-                
+
+                guard copySuccess else {
+                    Logger.shared.log(
+                        "AppDelegate: Failed to copy file \(url.lastPathComponent) to InksyncVault/Inbox",
+                        category: "Import", type: .error
+                    )
+                    return
+                }
+
+                Logger.shared.log(
+                    "AppDelegate: Copied '\(url.lastPathComponent)' → InksyncVault/Inbox",
+                    category: "Import", type: .success
+                )
+
                 await MainActor.run {
-                    NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+                    SharedImportCoordinator.shared.registerDirectlyOpenedFile(at: dest)
                     NotificationCenter.default.post(
                         name: NSNotification.Name("InksyncPro.DirectFileOpenReceived"),
                         object: dest
                     )
+                    NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
                 }
             }
             return true
