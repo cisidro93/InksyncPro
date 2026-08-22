@@ -1127,7 +1127,7 @@ struct TwoUpPageCell: View {
         } else if let insets = manualInsets, insets.modeRaw == "none" {
             self.croppedImage = source
             return
-        } else if (manualInsets?.modeRaw == "smartAuto") || (manualInsets == nil && EBookPreferences.shared.autoCrop) {
+        } else if (manualInsets?.modeRaw == "smartAuto") || (manualInsets == nil && (UserDefaults.standard.bool(forKey: "isAutoCropEnabled") || EBookPreferences.shared.isSmartCropEnabled)) {
             if let cropRect = SmartCropper.suggestCrop(for: source),
                let cropped = ImageProcessor.crop(image: source, to: cropRect) {
                 self.croppedImage = cropped

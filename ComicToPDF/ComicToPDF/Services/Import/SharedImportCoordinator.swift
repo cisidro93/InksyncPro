@@ -249,6 +249,7 @@ final class SharedImportCoordinator: ObservableObject {
 
     // MARK: - Public: Consume after auto-select
 
+    @discardableResult
     func consumeAutoSelectFilenames() -> Set<String> {
         let names = pendingAutoSelectFilenames
         pendingAutoSelectFilenames = []
