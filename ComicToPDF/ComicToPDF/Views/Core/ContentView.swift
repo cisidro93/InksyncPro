@@ -357,6 +357,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ShowSettingsInspector"))) { _ in
             showingSettingsInspector = true
         }
+        .onChange(of: selectedPDF) { _, newPDF in
+            if let pdf = newPDF {
+                AppRouter.shared.presentFullScreen(.read(pdf))
+            }
+        }
         .modifier(iPadKeyboardShortcuts(
             selectedTab: $router.selectedTab,
             showImport: $showingWebExport,
