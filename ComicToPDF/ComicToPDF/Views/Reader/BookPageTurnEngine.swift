@@ -1128,6 +1128,7 @@ struct TwoUpPageCell: View {
                         .applyFilterPreset(activeFilterPreset)
                         .aspectRatio(contentMode: .fit)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+                        .clipped()
                         .transition(.opacity)
                 }
             } else {
@@ -1136,6 +1137,7 @@ struct TwoUpPageCell: View {
                     .transition(.opacity)
             }
         }
+        .clipped()
         .id(index)
         .onAppear {
             image = cache.getImage(at: index)

@@ -2924,6 +2924,7 @@ struct ComicPageView: View {
                             .scaledToFit()
                             .frame(maxWidth: 280)
                     }
+                    .clipped()
                     .sheet(isPresented: $showShareSheet) {
                         if let item = shareItem {
                             ShareSheet(activityItems: [item])
@@ -2931,6 +2932,7 @@ struct ComicPageView: View {
                         }
                     }
                 }
+                .clipped()
             } else {
                 ZStack {
                     Color.black

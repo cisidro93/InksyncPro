@@ -57,13 +57,17 @@ actor PDFRenderActor {
             Logger.shared.log("Page index \(index) is out of bounds (total pages: \(doc.pageCount)).", category: "PDFRenderActor", type: .warning)
             return nil
         }
-        let pageRect = page.bounds(for: .mediaBox)
+        let cropBox = page.bounds(for: .cropBox)
+        let mediaBox = page.bounds(for: .mediaBox)
+        let pageRect = (cropBox.width > 0 && cropBox.height > 0) ? cropBox : mediaBox
+        let targetBox: PDFDisplayBox = (cropBox.width > 0 && cropBox.height > 0) ? .cropBox : .mediaBox
+        
         guard pageRect.width > 0 && pageRect.height > 0 && !pageRect.width.isNaN && !pageRect.height.isNaN && scale > 0 && !scale.isNaN else {
             Logger.shared.log("Page index \(index) has invalid/zero bounds or scale (width: \(pageRect.width), height: \(pageRect.height), scale: \(scale)).", category: "PDFRenderActor", type: .warning)
             return nil
         }
         
-// Cap max pixel dimension at 3072 for ultra-sharp Retina/iPad Pro rendering
+        // Cap max pixel dimension at 3072 for ultra-sharp Retina/iPad Pro rendering
         var size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
         let maxDim: CGFloat = 3072.0
         if size.width > maxDim || size.height > maxDim {
@@ -93,11 +97,17 @@ actor PDFRenderActor {
                 
                 cgCtx.setFillColor(CGColor(gray: 1.0, alpha: 1.0))
                 cgCtx.fill(CGRect(origin: .zero, size: size))
+                
+                // Flip vertical for CoreGraphics coordinate space and scale to fit target size
                 cgCtx.translateBy(x: 0, y: size.height)
                 let actualScaleX = size.width / pageRect.width
                 let actualScaleY = size.height / pageRect.height
                 cgCtx.scaleBy(x: actualScaleX, y: -actualScaleY)
-                page.draw(with: .mediaBox, to: cgCtx)
+                
+                // Offset by page origin so any non-zero cropBox/mediaBox origin is perfectly centered
+                cgCtx.translateBy(x: -pageRect.origin.x, y: -pageRect.origin.y)
+                
+                page.draw(with: targetBox, to: cgCtx)
             }
         }
     }
