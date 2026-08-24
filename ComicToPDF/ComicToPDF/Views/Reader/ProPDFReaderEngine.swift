@@ -438,11 +438,13 @@ struct ProPDFReaderEngine: View {
             )
             .ignoresSafeArea()
 
-            if isPencilMode || prefs.applePencilAutoDraw {
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let shouldShowCanvas = isPencilMode || (isPad && prefs.applePencilAutoDraw)
+            if shouldShowCanvas {
                 PageCanvasOverlay(
                     pdfID: pdf.id,
                     pageIndex: currentPageIndex,
-                    isMarkupEnabled: isPencilMode || prefs.applePencilAutoDraw
+                    isMarkupEnabled: shouldShowCanvas
                 )
                 .ignoresSafeArea()
             }

@@ -112,9 +112,11 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         canvasView.isOpaque = false
         canvasView.backgroundColor = .clear
         
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let prefs = EBookPreferences.shared
-        // Default to pencilOnly so finger gestures smoothly scroll and turn pages
-        let pencilOnly = settingsManager.conversionSettings.pencilOnlyDrawing || prefs.applePencilAutoDraw
+        // On iPad: use .pencilOnly so fingers navigate while Pencil draws.
+        // On iPhone: use .anyInput when markup is enabled so fingers can draw/highlight.
+        let pencilOnly = isPad && (settingsManager.conversionSettings.pencilOnlyDrawing || prefs.applePencilAutoDraw)
         canvasView.drawingPolicy = isMarkupEnabled ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
         canvasView.isUserInteractionEnabled = isMarkupEnabled
         
@@ -127,10 +129,12 @@ struct PKCanvasRepresentation: UIViewRepresentable {
             }
         }
         
-        // Attach Apple Pencil Double-Tap / Squeeze Interaction
-        let pencilInteraction = UIPencilInteraction()
-        pencilInteraction.delegate = context.coordinator
-        canvasView.addInteraction(pencilInteraction)
+        // Attach Apple Pencil Interaction on iPad only
+        if isPad {
+            let pencilInteraction = UIPencilInteraction()
+            pencilInteraction.delegate = context.coordinator
+            canvasView.addInteraction(pencilInteraction)
+        }
         
         let picker = PKToolPicker()
         picker.setVisible(isMarkupEnabled, forFirstResponder: canvasView)
@@ -147,8 +151,9 @@ struct PKCanvasRepresentation: UIViewRepresentable {
     
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
         uiView.isUserInteractionEnabled = isMarkupEnabled
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let prefs = EBookPreferences.shared
-        let pencilOnly = settingsManager.conversionSettings.pencilOnlyDrawing || prefs.applePencilAutoDraw
+        let pencilOnly = isPad && (settingsManager.conversionSettings.pencilOnlyDrawing || prefs.applePencilAutoDraw)
         uiView.drawingPolicy = isMarkupEnabled ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
         context.coordinator.canvasView = uiView
         
