@@ -9,6 +9,7 @@ struct UnifiedReaderView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     
     @State private var showNotebookPanel: Bool
+    @ObservedObject private var prefs = EBookPreferences.shared
     @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
     @State private var notebookWidth: CGFloat = 380
 
@@ -85,7 +86,7 @@ struct UnifiedReaderView: View {
                 }
                 
                 ZStack {
-                    Color(hex: "#0a0a0f").edgesIgnoringSafeArea(.all)
+                    prefs.activeTheme.background.edgesIgnoringSafeArea(.all)
                     
                     if pdf.url.pathExtension.lowercased() == "pdf" || pdf.name.lowercased().hasSuffix(".pdf") {
                         ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
