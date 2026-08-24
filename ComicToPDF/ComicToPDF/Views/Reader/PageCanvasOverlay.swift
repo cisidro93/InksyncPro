@@ -224,12 +224,12 @@ struct PKCanvasRepresentation: UIViewRepresentable {
                     canvas.tool = prev
                     previousInkingTool = current
                 }
-            case .showColorPalette:
+            case .showColorPalette, .showInkAttributes:
                 toolPicker?.setVisible(true, forFirstResponder: canvas)
                 canvas.becomeFirstResponder()
-            case .showInkAttributes, .ignore:
+            case .ignore:
                 break
-            @unknown default:
+            default:
                 if canvas.tool is PKEraserTool {
                     canvas.tool = previousInkingTool ?? PKInkingTool(.pen, color: .systemOrange, width: 3)
                 } else {

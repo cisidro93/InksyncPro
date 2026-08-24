@@ -1525,7 +1525,7 @@ private func computeColumnCount(for size: CGSize) -> Int {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleSidebar"))) { _ in
             withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                showingTOC.toggle()
+                showTOC.toggle()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderZoomIn"))) { _ in

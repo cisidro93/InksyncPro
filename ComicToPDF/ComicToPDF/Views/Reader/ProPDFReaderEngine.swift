@@ -337,7 +337,7 @@ struct ProPDFReaderEngine: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleSidebar"))) { _ in
             withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                showingOutline.toggle()
+                showingOutlineDrawer.toggle()
             }
         }
         .onChange(of: prefs.defaultCropModeRaw) { _, newMode in
@@ -405,9 +405,6 @@ struct ProPDFReaderEngine: View {
     }
 
     @ViewBuilder private func pdfCanvasView(document: PDFDocument) -> some View {
-        let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
-        let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
-
         ZStack {
             ProPDFViewRepresentable(
                 pdf: pdf,
