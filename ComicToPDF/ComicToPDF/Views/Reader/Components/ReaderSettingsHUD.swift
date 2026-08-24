@@ -53,44 +53,9 @@ struct ReaderSettingsHUD: View {
                 VStack(spacing: 12) {
                     // 3-Way Mode Selector
                     HStack(spacing: 8) {
-                        ForEach(["smartAuto", "custom", "none"], id: \.self) { mode in
-                            let isSelected = prefs.defaultCropModeRaw == mode
-                            Button {
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                                    prefs.defaultCropModeRaw = mode
-                                    if mode == "smartAuto" {
-                                        isAutoCropEnabled = true
-                                        prefs.isSmartCropEnabled = true
-                                    } else if mode == "none" {
-                                        isAutoCropEnabled = false
-                                        prefs.isSmartCropEnabled = false
-                                    } else {
-                                        isAutoCropEnabled = true
-                                        prefs.isSmartCropEnabled = true
-                                    }
-                                }
-                                HapticEngine.light()
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: mode == "smartAuto" ? "sparkles" : (mode == "custom" ? "slider.horizontal.3" : "arrow.up.left.and.down.right"))
-                                        .font(.system(size: 13, weight: .medium))
-                                    Text(mode == "smartAuto" ? "Smart Auto" : (mode == "custom" ? "Manual" : "Full Page"))
-                                        .font(.system(size: 12, weight: .semibold))
-                                }
-                                .foregroundStyle(isSelected ? Color.orange : Color.white.opacity(0.7))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(isSelected ? Color.orange.opacity(0.18) : Color.white.opacity(0.08))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .stroke(isSelected ? Color.orange.opacity(0.6) : Color.white.opacity(0.06), lineWidth: 1.5)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        cropModeButton(mode: "smartAuto", title: "Smart Auto", icon: "sparkles")
+                        cropModeButton(mode: "custom",    title: "Manual",     icon: "slider.horizontal.3")
+                        cropModeButton(mode: "none",      title: "Full Page",  icon: "arrow.up.left.and.down.right")
                     }
 
                     if prefs.defaultCropModeRaw == "custom" {
@@ -360,6 +325,41 @@ struct ReaderSettingsHUD: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.white.opacity(0.05))
         )
+    }
+
+    // MARK: - Crop Mode Button
+
+    @ViewBuilder
+    private func cropModeButton(mode: String, title: String, icon: String) -> some View {
+        let isSelected: Bool = (prefs.defaultCropModeRaw == mode)
+        Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                prefs.defaultCropModeRaw = mode
+                let enabled = (mode != "none")
+                isAutoCropEnabled = enabled
+                prefs.isSmartCropEnabled = enabled
+            }
+            HapticEngine.light()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .medium))
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(isSelected ? Color.orange : Color.white.opacity(0.7))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? Color.orange.opacity(0.18) : Color.white.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? Color.orange.opacity(0.6) : Color.white.opacity(0.06), lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

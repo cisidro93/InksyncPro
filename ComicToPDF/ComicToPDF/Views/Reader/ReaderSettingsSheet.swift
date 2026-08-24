@@ -173,44 +173,9 @@ struct ReaderSettingsSheet: View {
                     .foregroundStyle(Color.inkTextSecondary)
                 
                 HStack(spacing: 8) {
-                    ForEach(["smartAuto", "custom", "none"], id: \.self) { mode in
-                        let isSelected = prefs.defaultCropModeRaw == mode
-                        Button {
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                                prefs.defaultCropModeRaw = mode
-                                if mode == "smartAuto" {
-                                    isAutoCropEnabled = true
-                                    prefs.isSmartCropEnabled = true
-                                } else if mode == "none" {
-                                    isAutoCropEnabled = false
-                                    prefs.isSmartCropEnabled = false
-                                } else {
-                                    isAutoCropEnabled = true
-                                    prefs.isSmartCropEnabled = true
-                                }
-                            }
-                            HapticEngine.light()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: mode == "smartAuto" ? "sparkles" : (mode == "custom" ? "slider.horizontal.3" : "arrow.up.left.and.down.right"))
-                                    .font(.system(size: 13, weight: .medium))
-                                Text(mode == "smartAuto" ? "Smart Auto" : (mode == "custom" ? "Manual" : "Full Page"))
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                            .foregroundStyle(isSelected ? Color.orange : Color.inkTextSecondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 9)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(isSelected ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .stroke(isSelected ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    sheetCropModeButton(mode: "smartAuto", title: "Smart Auto", icon: "sparkles")
+                    sheetCropModeButton(mode: "custom",    title: "Manual",     icon: "slider.horizontal.3")
+                    sheetCropModeButton(mode: "none",      title: "Full Page",  icon: "arrow.up.left.and.down.right")
                 }
             }
             .padding(.horizontal, 16)
@@ -676,6 +641,39 @@ private struct TapZoneStyleCard: View {
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+    }
+
+    @ViewBuilder
+    private func sheetCropModeButton(mode: String, title: String, icon: String) -> some View {
+        let isSelected: Bool = (prefs.defaultCropModeRaw == mode)
+        Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                prefs.defaultCropModeRaw = mode
+                let enabled = (mode != "none")
+                isAutoCropEnabled = enabled
+                prefs.isSmartCropEnabled = enabled
+            }
+            HapticEngine.light()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .medium))
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(isSelected ? Color.orange : Color.inkTextSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 
