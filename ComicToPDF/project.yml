@@ -27,6 +27,7 @@ targets:
       - package: ZIPFoundation
       - package: Unrar
       - target: ComicToPDFShare
+        embed: true
 
     configFiles:
       Debug: Config.xcconfig
@@ -81,6 +82,11 @@ targets:
         NSBonjourServices:
           - "_calibrewireless._tcp"
           - "_inksync._tcp"
+        CFBundleURLTypes:
+          - CFBundleURLName: com.antigravity.InksyncPro.oauth
+            CFBundleURLSchemes:
+              - inksyncpro
+              - inksync
         UIAppFonts:
           - AtkinsonHyperlegible-Regular.ttf
           - AtkinsonHyperlegible-Bold.ttf
@@ -107,7 +113,10 @@ targets:
               - public.cbz-archive
               - public.zip-archive
               - public.archive
+              - com.pkware.zip-archive
               - public.data
+              - public.content
+              - public.item
           - CFBundleTypeName: "Comic Book RAR Archive"
             LSHandlerRank: Owner
             LSItemContentTypes:
@@ -116,18 +125,35 @@ targets:
               - public.cbr-archive
               - com.rarlab.rar-archive
               - public.rar-archive
+              - public.archive
+              - public.data
+              - public.content
+              - public.item
           - CFBundleTypeName: "7-Zip Comic Archive"
             LSHandlerRank: Owner
             LSItemContentTypes:
               - org.7-zip.7-zip-archive
+              - public.archive
+              - public.data
+              - public.content
+              - public.item
           - CFBundleTypeName: "PDF Document"
             LSHandlerRank: Owner
             LSItemContentTypes:
               - com.adobe.pdf
+              - public.pdf
+              - public.composite-content
+              - public.data
+              - public.content
+              - public.item
           - CFBundleTypeName: "EPUB eBook"
             LSHandlerRank: Owner
             LSItemContentTypes:
               - org.idpf.epub-container
+              - public.epub
+              - public.data
+              - public.content
+              - public.item
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: public.comma-separated-values-text
             UTTypeDescription: CSV File

@@ -1846,6 +1846,9 @@ struct ComicReaderEngine: View {
                 onDismiss: { showCropAdjustmentSheet = false }
             )
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openManualCropEditor)) { _ in
+            showCropAdjustmentSheet = true
+        }
         .onDisappear {
             BackTapManager.shared.isEnabled = false
         }
@@ -2315,6 +2318,14 @@ struct ComicReaderEngine: View {
                     readingMode: $readingMode,
                     activeFilterPreset: $activeFilterPreset,
                     prefersTwoUpSpreads: $prefersTwoUpSpreads,
+                    onOpenVisualCrop: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            showingSettingsHUD = false
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            showCropAdjustmentSheet = true
+                        }
+                    },
                     onDismiss: {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showingSettingsHUD = false }
                     }
