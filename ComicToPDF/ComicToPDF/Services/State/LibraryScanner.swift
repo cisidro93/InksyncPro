@@ -46,15 +46,10 @@ actor LibraryScanner {
         let docDir    = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
 
         // Bridge Shared container files from iOS Share Extension into local Inbox
-        let appGroupIDs = [
-            "group.com.antigravity.InksyncPro",
-            "group.com.antigravity.ComicToPDF",
-            "group.com.antigravity.inksync"
-        ]
         var scannedGroupURLs: Set<URL> = []
-        for groupID in appGroupIDs {
-            if let groupURL = fileManager.containerURL(forSecurityApplicationGroupIdentifier: groupID),
-               !scannedGroupURLs.contains(groupURL) {
+        let searchContainers = SharedImportCoordinator.getAllSearchContainers()
+        for groupURL in searchContainers {
+            if !scannedGroupURLs.contains(groupURL) {
                 scannedGroupURLs.insert(groupURL)
                 let sharedDirs = [
                     groupURL.appendingPathComponent("PendingConversions", isDirectory: true),

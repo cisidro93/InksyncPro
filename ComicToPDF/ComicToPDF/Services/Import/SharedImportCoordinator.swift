@@ -179,6 +179,34 @@ final class SharedImportCoordinator: ObservableObject {
 
     // MARK: - Private: File Movement
 
+    nonisolated static func getAllSearchContainers() -> [URL] {
+        let fm = FileManager.default
+        var containers: [URL] = []
+        let groupIDs = [
+            "group.com.antigravity.InksyncPro",
+            "group.com.antigravity.ComicToPDF",
+            "group.com.antigravity.inksync"
+        ]
+        for id in groupIDs {
+            if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: id) {
+                if !containers.contains(container) {
+                    containers.append(container)
+                }
+            }
+        }
+        if let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first, !containers.contains(docs) {
+            containers.append(docs)
+        }
+        if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first, !containers.contains(appSupport) {
+            containers.append(appSupport)
+        }
+        let tmp = fm.temporaryDirectory
+        if !containers.contains(tmp) {
+            containers.append(tmp)
+        }
+        return containers
+    }
+
     nonisolated private func moveStagedFilesToInbox() async -> [String] {
         let fm = FileManager.default
         let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -189,10 +217,8 @@ final class SharedImportCoordinator: ObservableObject {
         var ingestedFilenames: [String] = []
         var visitedContainers: Set<URL> = []
 
-        for groupID in appGroupIDs {
-            guard let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID) else {
-                continue
-            }
+        let searchContainers = Self.getAllSearchContainers()
+        for container in searchContainers {
             if visitedContainers.contains(container) { continue }
             visitedContainers.insert(container)
 
@@ -351,10 +377,10 @@ final class SharedImportCoordinator: ObservableObject {
             return true
         }
 
-        // Also check physical directories in App Groups for any staged files
+        // Also check physical directories in App Groups and fallbacks for any staged files
         let fm = FileManager.default
-        for groupID in appGroupIDs {
-            guard let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { continue }
+        let searchContainers = Self.getAllSearchContainers()
+        for container in searchContainers {
             let stagingDirs = [
                 container.appendingPathComponent("ShareStaging"),
                 container.appendingPathComponent("Inbox"),

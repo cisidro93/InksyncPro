@@ -4,9 +4,9 @@
 <dict>
     <key>com.apple.security.application-groups</key>
     <array>
+        <string>group.com.antigravity.InksyncPro</string>
         <string>group.com.antigravity.ComicToPDF</string>
         <string>group.com.antigravity.inksync</string>
-        <string>group.com.antigravity.InksyncPro</string>
     </array>
 </dict>
 </plist>

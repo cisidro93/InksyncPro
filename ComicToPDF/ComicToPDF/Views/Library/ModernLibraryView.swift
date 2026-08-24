@@ -538,6 +538,14 @@ struct ModernLibraryView: View {
                 rebuildNativeCache()
                 viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .libraryNeedsRescan)) { _ in
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShareImportReceived"))) { _ in
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+            }
     }
 
     // MARK: - Alert Shell (rootShell + alerts + onDrop)
