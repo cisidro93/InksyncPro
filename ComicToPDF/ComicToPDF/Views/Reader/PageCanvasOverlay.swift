@@ -112,14 +112,31 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         canvasView.isOpaque = false
         canvasView.backgroundColor = .clear
         
-        let pencilOnly = settingsManager.conversionSettings.pencilOnlyDrawing
+        let prefs = EBookPreferences.shared
+        // Default to pencilOnly so finger gestures smoothly scroll and turn pages
+        let pencilOnly = settingsManager.conversionSettings.pencilOnlyDrawing || prefs.applePencilAutoDraw
         canvasView.drawingPolicy = isMarkupEnabled ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
         canvasView.isUserInteractionEnabled = isMarkupEnabled
+        
+        // Configure default tool
+        if canvasView.tool is PKInkingTool || !(canvasView.tool is PKEraserTool) {
+            if prefs.applePencilDefaultTool == "highlighter" {
+                canvasView.tool = PKInkingTool(.marker, color: UIColor.systemYellow.withAlphaComponent(0.5), width: 16)
+            } else {
+                canvasView.tool = PKInkingTool(.pen, color: UIColor.systemOrange, width: 3)
+            }
+        }
+        
+        // Attach Apple Pencil Double-Tap / Squeeze Interaction
+        let pencilInteraction = UIPencilInteraction()
+        pencilInteraction.delegate = context.coordinator
+        canvasView.addInteraction(pencilInteraction)
         
         let picker = PKToolPicker()
         picker.setVisible(isMarkupEnabled, forFirstResponder: canvasView)
         picker.addObserver(canvasView)
         context.coordinator.toolPicker = picker
+        context.coordinator.canvasView = canvasView
         
         if isMarkupEnabled {
             canvasView.becomeFirstResponder()
@@ -130,8 +147,10 @@ struct PKCanvasRepresentation: UIViewRepresentable {
     
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
         uiView.isUserInteractionEnabled = isMarkupEnabled
-        let pencilOnly = settingsManager.conversionSettings.pencilOnlyDrawing
+        let prefs = EBookPreferences.shared
+        let pencilOnly = settingsManager.conversionSettings.pencilOnlyDrawing || prefs.applePencilAutoDraw
         uiView.drawingPolicy = isMarkupEnabled ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
+        context.coordinator.canvasView = uiView
         
         if isMarkupEnabled {
             uiView.becomeFirstResponder()
@@ -146,16 +165,34 @@ struct PKCanvasRepresentation: UIViewRepresentable {
     }
     
     static func dismantleUIView(_ uiView: PKCanvasView, coordinator: Coordinator) {
-        // Ensure the ToolPicker stops observing and the canvas resigns first responder.
-        // Without this, the PKCanvasView holds a dangling PKToolPicker observation
-        // after the overlay is removed from the hierarchy (e.g. page change or reader exit).
         coordinator.toolPicker?.setVisible(false, forFirstResponder: uiView)
         coordinator.toolPicker?.removeObserver(uiView)
         uiView.resignFirstResponder()
         coordinator.toolPicker = nil
+        coordinator.canvasView = nil
     }
     
-    class Coordinator: NSObject {
+    class Coordinator: NSObject, UIPencilInteractionDelegate {
         var toolPicker: PKToolPicker?
+        weak var canvasView: PKCanvasView?
+        private var previousInkingTool: PKTool?
+        
+        func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+            guard let canvas = canvasView else { return }
+            HapticEngine.light()
+            
+            if canvas.tool is PKEraserTool {
+                // Switch back to previous tool or default highlighter
+                if let prev = previousInkingTool {
+                    canvas.tool = prev
+                } else {
+                    canvas.tool = PKInkingTool(.marker, color: UIColor.systemYellow.withAlphaComponent(0.5), width: 16)
+                }
+            } else {
+                // Save current tool and switch to eraser
+                previousInkingTool = canvas.tool
+                canvas.tool = PKEraserTool(.vector)
+            }
+        }
     }
 }

@@ -48,6 +48,8 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         for gesture in pvc.gestureRecognizers {
             if gesture is UITapGestureRecognizer {
                 gesture.isEnabled = false
+            } else if let pan = gesture as? UIPanGestureRecognizer {
+                pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
             }
         }
 
@@ -56,21 +58,23 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         // and before the primary WKWebView mounts its first content frame.
         view.backgroundColor = UIColor(hex: prefs.activeTheme.cssBackground) ?? .black
 
-        // Double tap
+        // Double tap — restricted to direct finger touches
         let doubleTap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleDoubleTap(_:))
         )
         doubleTap.numberOfTapsRequired = 2
+        doubleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         doubleTap.cancelsTouchesInView = false
         view.addGestureRecognizer(doubleTap)
 
-        // Single tap — handles left/center/right zones
+        // Single tap — handles left/center/right zones — restricted to direct finger touches
         let singleTap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleSingleTap(_:))
         )
         singleTap.numberOfTapsRequired = 1
+        singleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         singleTap.require(toFail: doubleTap)
         view.addGestureRecognizer(singleTap)
 

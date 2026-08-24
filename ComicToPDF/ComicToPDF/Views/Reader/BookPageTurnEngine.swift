@@ -103,6 +103,8 @@ struct PageCurlReader: UIViewControllerRepresentable {
         for gesture in pageViewController.gestureRecognizers {
             if gesture is UITapGestureRecognizer {
                 gesture.isEnabled = false
+            } else if let pan = gesture as? UIPanGestureRecognizer {
+                pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
             }
         }
 
@@ -110,11 +112,13 @@ struct PageCurlReader: UIViewControllerRepresentable {
         
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
+        doubleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         doubleTap.cancelsTouchesInView = false
         view.addGestureRecognizer(doubleTap)
 
         let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSingleTap(_:)))
         singleTap.numberOfTapsRequired = 1
+        singleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         singleTap.require(toFail: doubleTap)
         view.addGestureRecognizer(singleTap)
 
@@ -719,6 +723,8 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
         for gesture in pageViewController.gestureRecognizers {
             if gesture is UITapGestureRecognizer {
                 gesture.isEnabled = false
+            } else if let pan = gesture as? UIPanGestureRecognizer {
+                pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
             }
         }
 
@@ -726,11 +732,13 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
         
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
+        doubleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         doubleTap.cancelsTouchesInView = false
         view.addGestureRecognizer(doubleTap)
 
         let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSingleTap(_:)))
         singleTap.numberOfTapsRequired = 1
+        singleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         singleTap.require(toFail: doubleTap)
         view.addGestureRecognizer(singleTap)
 

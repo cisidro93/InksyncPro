@@ -73,37 +73,43 @@ class ShareViewController: UIViewController {
             }
         }
 
-        // ── Step 2: Open the host app via UIResponder chain ───────────────────
-        var didOpenViaResponder = false
-        var responder: UIResponder? = self
-        while let r = responder {
-            let sel = Selector(("openURL:"))
-            if r.responds(to: sel) {
-                _ = r.perform(sel, with: deepLinkURL)
-                didOpenViaResponder = true
-                break
+        // ── Step 2: Open host app via UIApplication shared instance ───────────
+        if let appClass = NSClassFromString("UIApplication") as? NSObject.Type,
+           let sharedApp = appClass.perform(NSSelectorFromString("sharedApplication"))?.takeUnretainedValue() as? NSObject {
+            
+            let openWithCompletionSel = NSSelectorFromString("openURL:options:completionHandler:")
+            if sharedApp.responds(to: openWithCompletionSel) {
+                typealias OpenWithCompletion = @convention(c) (AnyObject, Selector, NSURL, NSDictionary, (@convention(block) (Bool) -> Void)?) -> Void
+                if let method = sharedApp.method(for: openWithCompletionSel) {
+                    let openImp = unsafeBitCast(method, to: OpenWithCompletion.self)
+                    openImp(sharedApp, openWithCompletionSel, deepLinkURL as NSURL, [:] as NSDictionary) { [weak self] _ in
+                        DispatchQueue.main.async {
+                            self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+                        }
+                    }
+                    return
+                }
             }
-            responder = r.next
+
+            let legacyOpenSel = NSSelectorFromString("openURL:")
+            if sharedApp.responds(to: legacyOpenSel) {
+                typealias LegacyOpen = @convention(c) (AnyObject, Selector, NSURL) -> Bool
+                if let method = sharedApp.method(for: legacyOpenSel) {
+                    let openImp = unsafeBitCast(method, to: LegacyOpen.self)
+                    _ = openImp(sharedApp, legacyOpenSel, deepLinkURL as NSURL)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                        self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+                    }
+                    return
+                }
+            }
         }
 
-        if didOpenViaResponder {
-            // Dismiss extension after giving SpringBoard time to start app switch
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                self?.extensionContext?.completeRequest(
-                    returningItems: nil,
-                    completionHandler: nil
-                )
+        // Fallback: extensionContext?.open
+        extensionContext?.open(deepLinkURL, completionHandler: { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
             }
-        } else {
-            // Fallback to extensionContext.open
-            extensionContext?.open(deepLinkURL, completionHandler: { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.extensionContext?.completeRequest(
-                        returningItems: nil,
-                        completionHandler: nil
-                    )
-                }
-            })
-        }
+        })
     }
 }

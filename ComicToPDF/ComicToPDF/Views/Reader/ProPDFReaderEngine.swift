@@ -438,11 +438,11 @@ struct ProPDFReaderEngine: View {
             )
             .ignoresSafeArea()
 
-            if isPencilMode {
+            if isPencilMode || prefs.applePencilAutoDraw {
                 PageCanvasOverlay(
                     pdfID: pdf.id,
                     pageIndex: currentPageIndex,
-                    isMarkupEnabled: isPencilMode
+                    isMarkupEnabled: isPencilMode || prefs.applePencilAutoDraw
                 )
                 .ignoresSafeArea()
             }
@@ -1356,14 +1356,16 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.minScaleFactor = 0.25
         pdfView.maxScaleFactor = 6.0
 
-        // Single Tap gesture setup
+        // Single Tap gesture setup — restricted to direct finger touches so Apple Pencil annotates without flipping pages
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        tapGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         tapGesture.cancelsTouchesInView = false
         pdfView.addGestureRecognizer(tapGesture)
 
-        // Double Tap Zoom setup
+        // Double Tap Zoom setup — restricted to direct finger touches
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
+        doubleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         doubleTap.cancelsTouchesInView = false
         pdfView.addGestureRecognizer(doubleTap)
         tapGesture.require(toFail: doubleTap)

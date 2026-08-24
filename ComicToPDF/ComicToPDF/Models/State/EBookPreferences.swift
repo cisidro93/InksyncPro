@@ -205,6 +205,20 @@ class EBookPreferences: ObservableObject {
     func isTypographyLockedForBook(_ bookID: String) -> Bool {
         bookTypographyProfiles[bookID] != nil
     }
+
+    // MARK: - Apple Pencil & Native Annotation Settings
+    @AppStorage("ebook_applePencilAutoDraw") var applePencilAutoDraw: Bool = true {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_applePencilDefaultTool") var applePencilDefaultTool: String = "highlighter" {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_applePencilDoubleTapAction") var applePencilDoubleTapAction: String = "switchEraser" {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_applePencilHoverEnabled") var applePencilHoverEnabled: Bool = true {
+        didSet { objectWillChange.send() }
+    }
 }
 
 // MARK: - Per-Book Typography Profile
