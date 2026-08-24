@@ -31,6 +31,7 @@ struct MetadataInboxView: View {
                     
                     Button("Dismiss") {
                         dismiss()
+                        AppRouter.shared.dismissSheet()
                     }
                     .font(.system(size: 15, weight: .semibold))
                     .padding(.horizontal, 24)

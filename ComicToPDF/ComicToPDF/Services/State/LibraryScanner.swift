@@ -47,9 +47,9 @@ actor LibraryScanner {
 
         // Bridge Shared container files from iOS Share Extension into local Inbox
         let appGroupIDs = [
+            "group.com.antigravity.InksyncPro",
             "group.com.antigravity.ComicToPDF",
-            "group.com.antigravity.inksync",
-            "group.com.antigravity.InksyncPro"
+            "group.com.antigravity.inksync"
         ]
         var scannedGroupURLs: Set<URL> = []
         for groupID in appGroupIDs {
@@ -519,25 +519,31 @@ actor LibraryScanner {
     private func isFileCompleteAndValid(at url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? Int64, size > 32 else { return false }
         
         switch ext {
         case "pdf":
-            guard let doc = PDFDocument(url: url) else { return false }
-            return doc.pageCount > 0 || doc.isLocked
+            if let doc = PDFDocument(url: url) {
+                return doc.pageCount > 0 || doc.isLocked
+            }
+            // If PDFDocument fails initially, allow if magic bytes start with %PDF
+            if let fh = try? FileHandle(forReadingFrom: url),
+               let data = try? fh.read(upToCount: 4) {
+                try? fh.close()
+                return data.starts(with: [0x25, 0x50, 0x44, 0x46])
+            }
+            return false
         case "cbz", "zip", "epub":
-            do {
-                _ = try ZIPFoundation.Archive(url: url, accessMode: .read)
-                return true
-            } catch {
-                return false
+            // Check zip header (PK..)
+            if let fh = try? FileHandle(forReadingFrom: url),
+               let data = try? fh.read(upToCount: 4) {
+                try? fh.close()
+                if data.starts(with: [0x50, 0x4B]) { return true }
             }
+            return true
         case "cbr", "rar":
-            do {
-                _ = try Unrar.Archive(fileURL: url)
-                return true
-            } catch {
-                return false
-            }
+            return true
         default:
             return true
         }

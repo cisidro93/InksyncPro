@@ -302,10 +302,8 @@ struct ContentView: View {
         // SharedImportCoordinator has already started moving files; we wait for the scan.
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShareImportReceived"))) { _ in
             Task { @MainActor in
-                // Give coordinator time to finish moving files from App Group container.
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                conversionManager.scanLibrary()
                 router.selectedTab = 0
+                conversionManager.scanLibrary()
                 withAnimation(.spring()) {
                     activeToast = ToastMessage(
                         title: "Files Imported",
@@ -314,10 +312,9 @@ struct ContentView: View {
                         type: .success
                     )
                 }
-                // Second scan pass catches any large files that finished writing late.
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
-                conversionManager.scanLibrary()
                 // Auto-select newly ingested book if exactly one was imported.
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                conversionManager.scanLibrary()
                 let filenames = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
                 if filenames.count == 1, let name = filenames.first,
                    let match = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == name }) {
@@ -385,25 +382,9 @@ struct ContentView: View {
             // inksyncpro:// or inksync:// shared-import — Share Extension callback.
             if url.scheme == "inksyncpro" || url.scheme == "inksync" {
                 Task { @MainActor in
-                    SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
-                    try? await Task.sleep(nanoseconds: 800_000_000)
-                    conversionManager.scanLibrary()
                     router.selectedTab = 0
-                    withAnimation(.spring()) {
-                        activeToast = ToastMessage(
-                            title: "Files Imported",
-                            message: "Shared files added to your library.",
-                            systemImage: "arrow.down.doc.fill",
-                            type: .success
-                        )
-                    }
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    SharedImportCoordinator.shared.coordinateImport(retryCount: 6, retryDelaySeconds: 0.3)
                     conversionManager.scanLibrary()
-                    let filenames = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
-                    if filenames.count == 1, let name = filenames.first,
-                       let match = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == name }) {
-                        self.selectedPDF = match
-                    }
                 }
                 return
             }

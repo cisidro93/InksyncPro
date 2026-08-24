@@ -57,8 +57,14 @@ struct WorkspaceView: View {
                     ActiveWorkspaceListView()
                         .workspaceVisible(mode == .active)
 
-                    InboxReviewView()
-                        .workspaceVisible(mode == .inbox)
+                    InboxReviewView(onDismiss: {
+                        if isSheet {
+                            dismiss()
+                        } else {
+                            mode = .active
+                        }
+                    })
+                    .workspaceVisible(mode == .inbox)
 
                     GoConvertView()
                         .workspaceVisible(mode == .convert)
