@@ -205,6 +205,8 @@ targets:
     platform: iOS
     sources:
       - path: ComicToPDFShare
+    info:
+      path: ComicToPDFShare/Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.antigravity.InksyncPro.ComicToPDFShare
