@@ -421,6 +421,39 @@ struct ReaderSettingsSheet: View {
             }
         }
     }
+
+    @ViewBuilder
+    private func sheetCropModeButton(mode: String, title: String, icon: String) -> some View {
+        let isSelected: Bool = (prefs.defaultCropModeRaw == mode)
+        Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                prefs.defaultCropModeRaw = mode
+                let enabled = (mode != "none")
+                isAutoCropEnabled = enabled
+                prefs.isSmartCropEnabled = enabled
+            }
+            HapticEngine.light()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .medium))
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(isSelected ? Color.orange : Color.inkTextSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 // MARK: - Sub-components
@@ -641,39 +674,6 @@ private struct TapZoneStyleCard: View {
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
-    }
-
-    @ViewBuilder
-    private func sheetCropModeButton(mode: String, title: String, icon: String) -> some View {
-        let isSelected: Bool = (prefs.defaultCropModeRaw == mode)
-        Button {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                prefs.defaultCropModeRaw = mode
-                let enabled = (mode != "none")
-                isAutoCropEnabled = enabled
-                prefs.isSmartCropEnabled = enabled
-            }
-            HapticEngine.light()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .foregroundStyle(isSelected ? Color.orange : Color.inkTextSecondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? Color.orange.opacity(0.12) : Color.inkSurfaceRaised)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isSelected ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
-            )
-        }
-        .buttonStyle(.plain)
     }
 }
 
