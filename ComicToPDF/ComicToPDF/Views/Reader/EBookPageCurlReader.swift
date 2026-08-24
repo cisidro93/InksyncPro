@@ -78,6 +78,14 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         singleTap.require(toFail: doubleTap)
         view.addGestureRecognizer(singleTap)
 
+        // Pinch to Zoom / Scale Text (Kindle-style interactive text scaling)
+        let pinch = UIPinchGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePinch(_:))
+        )
+        pinch.cancelsTouchesInView = false
+        view.addGestureRecognizer(pinch)
+
         context.coordinator.pageViewController = pvc
 
         let initialVCs = context.coordinator.spreadViewControllers(for: initialPage)
@@ -575,7 +583,52 @@ extension EBookPageCurlReader {
 
         // MARK: - Gesture Handlers
 
-        @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {}
+        private var initialPinchFontSize: Double = 0
+        private var lastLiveStyleUpdate: Date = Date()
+
+        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            switch gesture.state {
+            case .began:
+                initialPinchFontSize = parent.prefs.fontSize
+            case .changed:
+                guard initialPinchFontSize > 0 else { return }
+                let scale = Double(gesture.scale)
+                let newSize = initialPinchFontSize * scale
+                let clamped = max(12.0, min(44.0, round(newSize)))
+                if clamped != parent.prefs.fontSize {
+                    parent.prefs.fontSize = clamped
+                    HapticEngine.selection()
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("InksyncPro.fontSizePinchChanged"),
+                        object: nil,
+                        userInfo: ["fontSize": clamped]
+                    )
+                    if Date().timeIntervalSince(lastLiveStyleUpdate) > 0.08 {
+                        lastLiveStyleUpdate = Date()
+                        updateLiveStyles()
+                    }
+                }
+            case .ended, .cancelled:
+                initialPinchFontSize = 0
+                updateLiveStyles()
+            default:
+                break
+            }
+        }
+
+        @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+            // Double-tap resets font size to default 18pt if changed, or triggers chrome
+            if parent.prefs.fontSize != 18.0 {
+                parent.prefs.fontSize = 18.0
+                HapticEngine.selection()
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("InksyncPro.fontSizePinchChanged"),
+                    object: nil,
+                    userInfo: ["fontSize": 18.0]
+                )
+                updateLiveStyles()
+            }
+        }
 
         private var tapZoneStyle: TapZoneStyle {
             // Read from shared prefs so live setting changes in EBookSettingsPanel

@@ -1149,6 +1149,11 @@ struct BookReaderEngine: View {
     @State private var toastMessage = ""
     @FocusState private var isReaderFocused: Bool
     
+    // Kindle-Style Font Size HUD
+    @State private var showFontSizeHUD = false
+    @State private var currentPinchFontSize: Double = 18
+    @State private var fontSizeHUDTask: Task<Void, Never>? = nil
+    
     init(pdf: ConvertedPDF, onDismiss: @escaping () -> Void, allBooks: [ConvertedPDF] = []) {
         self.pdf = pdf
         self.onDismiss = onDismiss
@@ -1422,7 +1427,50 @@ private func computeColumnCount(for size: CGSize) -> Int {
                     .zIndex(100)
             }
 
+            if showFontSizeHUD {
+                VStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: "textformat.size")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.orange)
+                        Text("Aa  \(Int(currentPinchFontSize)) pt")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(prefs.activeTheme.foreground(colorScheme: colorScheme))
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.orange.opacity(0.4), lineWidth: 1.5)
+                    )
+                    .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+                    .padding(.top, 64)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(120)
+            }
+
             ReadingJumpToastOverlay()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.fontSizePinchChanged"))) { notification in
+            if let newSize = notification.userInfo?["fontSize"] as? Double {
+                currentPinchFontSize = newSize
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    showFontSizeHUD = true
+                }
+                fontSizeHUDTask?.cancel()
+                fontSizeHUDTask = Task {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            showFontSizeHUD = false
+                        }
+                    }
+                }
+            }
         }
         .sheet(isPresented: $showReadingStatsHUD) {
             ReadingStatsHUDView(
