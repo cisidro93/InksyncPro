@@ -154,7 +154,7 @@ struct ProPDFReaderEngine: View {
                     let mediaBox = page.bounds(for: .mediaBox)
                     let croppedRect = CGRect(
                         x: mediaBox.minX + (mediaBox.width * insets.left),
-                        y: mediaBox.minY + (mediaBox.height * insets.bottom),
+                        y: mediaBox.minY + (mediaBox.height * insets.top),
                         width: max(10, mediaBox.width * (1.0 - insets.left - insets.right)),
                         height: max(10, mediaBox.height * (1.0 - insets.top - insets.bottom))
                     )
