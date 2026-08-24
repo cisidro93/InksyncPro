@@ -30,13 +30,13 @@ final class SharedImportCoordinator: ObservableObject {
     @Published private(set) var pendingAutoSelectFilenames: Set<String> = []
 
     private let appGroupIDs = [
+        "group.com.antigravity.InksyncPro",
         "group.com.antigravity.ComicToPDF",
-        "group.com.antigravity.inksync",
-        "group.com.antigravity.InksyncPro"
+        "group.com.antigravity.inksync"
     ]
 
     private let supportedExtensions: Set<String> = [
-        "pdf", "epub", "cbz", "cbr", "cb7", "cbt"
+        "pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z", "tar", "txt", "md"
     ]
 
     private var isIngesting = false
@@ -190,9 +190,10 @@ final class SharedImportCoordinator: ObservableObject {
         var visitedContainers: Set<URL> = []
 
         for groupID in appGroupIDs {
-            guard let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID),
-                  !visitedContainers.contains(container)
-            else { continue }
+            guard let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID) else {
+                continue
+            }
+            if visitedContainers.contains(container) { continue }
             visitedContainers.insert(container)
 
             let stagingDirs = [
@@ -223,12 +224,19 @@ final class SharedImportCoordinator: ObservableObject {
                     }
 
                     // Map zip/rar aliases to canonical comic extensions.
-                    let canonicalExt: String
+                    var canonicalExt: String
                     switch ext {
                     case "zip":     canonicalExt = "cbz"
                     case "rar":     canonicalExt = "cbr"
                     case "7z":      canonicalExt = "cb7"
                     default:        canonicalExt = ext
+                    }
+
+                    // If extension is missing or unrecognized, detect from magic bytes
+                    if !supportedExtensions.contains(canonicalExt) || canonicalExt.isEmpty || canonicalExt == "tmp" {
+                        if let detected = Self.detectExtensionFromMagicBytes(fileURL) {
+                            canonicalExt = detected
+                        }
                     }
 
                     guard supportedExtensions.contains(canonicalExt) else { continue }
@@ -362,5 +370,33 @@ final class SharedImportCoordinator: ObservableObject {
             }
         }
         return false
+    }
+
+    // MARK: - Magic Byte Helper
+
+    nonisolated static func detectExtensionFromMagicBytes(_ fileURL: URL) -> String? {
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL),
+              let data = try? fileHandle.read(upToCount: 2000) else { return nil }
+        defer { try? fileHandle.close() }
+        guard data.count >= 4 else { return nil }
+
+        // PDF (%PDF)
+        if data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46 { return "pdf" }
+        // RAR (Rar!)
+        if data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && data[3] == 0x21 { return "cbr" }
+        // ZIP / CBZ / EPUB (PK\x03\x04 or PK\x05\x06)
+        if (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04) ||
+           (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x05 && data[3] == 0x06) {
+            let header = String(decoding: data.prefix(500), as: UTF8.self)
+            if header.contains("mimetype") && (header.contains("epub+zip") || header.contains("epub")) {
+                return "epub"
+            }
+            return "cbz"
+        }
+        // 7-Zip (7z\xBC\xAF\x27\x1C)
+        if data[0] == 0x37 && data[1] == 0x7A && data[2] == 0xBC && data[3] == 0xAF {
+            return "cb7"
+        }
+        return nil
     }
 }
