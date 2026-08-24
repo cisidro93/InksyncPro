@@ -1517,6 +1517,29 @@ private func computeColumnCount(for size: CGSize) -> Int {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageForward"))) { _ in
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageBackward"))) { _ in
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleSidebar"))) { _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                showingTOC.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderZoomIn"))) { _ in
+            prefs.fontSize = min(44, prefs.fontSize + 2)
+            HapticEngine.selection()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderZoomOut"))) { _ in
+            prefs.fontSize = max(12, prefs.fontSize - 2)
+            HapticEngine.selection()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderResetZoom"))) { _ in
+            prefs.fontSize = 18
+            HapticEngine.selection()
+        }
         .popover(item: Binding<FootnoteItem?>(
             get: { activeFootnoteText.map { FootnoteItem(text: $0) } },
             set: { activeFootnoteText = $0?.text }

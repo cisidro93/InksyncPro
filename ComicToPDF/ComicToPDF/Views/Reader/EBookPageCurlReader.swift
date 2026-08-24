@@ -192,6 +192,15 @@ extension EBookPageCurlReader {
             self.parent = parent
             super.init()
             setupPrimaryWebView()
+            
+            NotificationCenter.default.addObserver(forName: NSNotification.Name("EBookTurnPageForward"), object: nil, queue: .main) { [weak self] _ in
+                guard let self = self, let pvc = self.pageViewController else { return }
+                self.turnForward(pvc)
+            }
+            NotificationCenter.default.addObserver(forName: NSNotification.Name("EBookTurnPageBackward"), object: nil, queue: .main) { [weak self] _ in
+                guard let self = self, let pvc = self.pageViewController else { return }
+                self.turnBackward(pvc)
+            }
         }
 
         nonisolated func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -199,6 +208,8 @@ extension EBookPageCurlReader {
         }
 
         func cleanup() {
+            NotificationCenter.default.removeObserver(self, name: NSNotification.Name("EBookTurnPageForward"), object: nil)
+            NotificationCenter.default.removeObserver(self, name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
             guard let wv = primaryWebView else { return }
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "metrics")
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "highlight")

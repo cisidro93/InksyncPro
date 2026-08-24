@@ -185,6 +185,16 @@ targets:
             UTTypeConformsTo: [public.archive]
             UTTypeTagSpecification:
               public.filename-extension: [7z, cb7]
+          - UTTypeIdentifier: public.tar-archive
+            UTTypeDescription: Comic Book Tar Archive
+            UTTypeConformsTo: [public.archive]
+            UTTypeTagSpecification:
+              public.filename-extension: [tar, cbt]
+          - UTTypeIdentifier: net.daringfireball.markdown
+            UTTypeDescription: Markdown Document
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [md, markdown]
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.antigravity.cbz
             UTTypeDescription: Comic Book Archive (Zip)

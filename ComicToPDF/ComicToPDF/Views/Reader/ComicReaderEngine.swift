@@ -1933,6 +1933,30 @@ struct ComicReaderEngine: View {
             saveProgressAndDismiss()
             return .handled
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageForward"))) { _ in
+            if isMangaComic || readingMode == .mangaRTL {
+                prevPage()
+            } else {
+                nextPage()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageBackward"))) { _ in
+            if isMangaComic || readingMode == .mangaRTL {
+                nextPage()
+            } else {
+                prevPage()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleMarkupMode"))) { _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                isDialogueLensEnabled.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleSidebar"))) { _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                showAnnotations.toggle()
+            }
+        }
     } // closes GeometryReader
 } // end body
 

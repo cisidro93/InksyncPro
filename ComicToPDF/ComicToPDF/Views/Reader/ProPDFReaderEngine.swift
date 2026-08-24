@@ -324,6 +324,22 @@ struct ProPDFReaderEngine: View {
         .onReceive(NotificationCenter.default.publisher(for: .openManualCropEditor)) { _ in
             showCropAdjustmentSheet = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageForward"))) { _ in
+            advancePage(forward: true)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageBackward"))) { _ in
+            advancePage(forward: false)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleMarkupMode"))) { _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                isPencilMode.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleSidebar"))) { _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                showingOutline.toggle()
+            }
+        }
         .onChange(of: prefs.defaultCropModeRaw) { _, newMode in
             if newMode == "custom" {
                 let insets = CodableCropInsets(

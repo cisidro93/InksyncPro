@@ -200,6 +200,37 @@ struct UnifiedReaderView: View {
         .onAppear {
             Logger.shared.log("UnifiedReaderView presented for '\(pdf.name)'. contentType=\(pdf.contentType)", category: "Reader", type: .info)
         }
+        .readerKeyboardShortcuts(
+            onNextPage: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            },
+            onPreviousPage: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            },
+            onToggleMarkup: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleMarkupMode"), object: nil)
+            },
+            onToggleNotebook: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    showNotebookPanel.toggle()
+                }
+            },
+            onToggleSidebar: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSidebar"), object: nil)
+            },
+            onZoomIn: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderZoomIn"), object: nil)
+            },
+            onZoomOut: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderZoomOut"), object: nil)
+            },
+            onResetZoom: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderResetZoom"), object: nil)
+            },
+            onDismiss: {
+                dismiss()
+            }
+        )
     }
     
     // MARK: - Static EPUB Comic Detection (runs off main thread)

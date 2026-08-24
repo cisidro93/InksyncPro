@@ -2,13 +2,33 @@ import SwiftUI
 import SwiftData
 import PencilKit
 
+/// Custom PKCanvasView subclass that forwards finger touches (taps, pans, page turns)
+/// down to the underlying reader when drawingPolicy is `.pencilOnly`.
+final class PassthroughPKCanvasView: PKCanvasView {
+    var allowFingerDrawing: Bool = false
+    
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // If finger drawing is disabled (Pencil Only mode on iPad):
+        if !allowFingerDrawing {
+            if let touches = event?.allTouches, !touches.isEmpty {
+                let hasStylus = touches.contains { $0.type == .pencil || $0.type == .stylus }
+                if !hasStylus {
+                    // Finger touch: pass through to PDFView / Reader
+                    return nil
+                }
+            }
+        }
+        return super.hitTest(point, with: event)
+    }
+}
+
 struct PageCanvasOverlay: View {
     let pdfID: UUID?
     let pageIndex: Int
     let isMarkupEnabled: Bool
     
     @Environment(\.modelContext) private var modelContext
-    @State private var canvasView = PKCanvasView()
+    @State private var canvasView = PassthroughPKCanvasView()
     @State private var activeAnnotation: SDAnnotation?
     @State private var hasLoaded = false
     
@@ -104,11 +124,11 @@ struct PageCanvasOverlay: View {
 }
 
 struct PKCanvasRepresentation: UIViewRepresentable {
-    @Binding var canvasView: PKCanvasView
+    @Binding var canvasView: PassthroughPKCanvasView
     let isMarkupEnabled: Bool
     @EnvironmentObject var settingsManager: AppSettingsManager
     
-    func makeUIView(context: Context) -> PKCanvasView {
+    func makeUIView(context: Context) -> PassthroughPKCanvasView {
         canvasView.isOpaque = false
         canvasView.backgroundColor = .clear
         
@@ -117,8 +137,10 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         // On iPad: use .pencilOnly so fingers navigate while Pencil draws.
         // On iPhone: use .anyInput when markup is enabled so fingers can draw/highlight.
         let pencilOnly = isPad && (settingsManager.conversionSettings.pencilOnlyDrawing || prefs.applePencilAutoDraw)
+        canvasView.allowFingerDrawing = isMarkupEnabled && !pencilOnly
         canvasView.drawingPolicy = isMarkupEnabled ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
         canvasView.isUserInteractionEnabled = isMarkupEnabled
+        canvasView.drawingGestureRecognizer.cancelsTouchesInView = false
         
         // Configure default tool
         if canvasView.tool is PKInkingTool || !(canvasView.tool is PKEraserTool) {
@@ -149,12 +171,14 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         return canvasView
     }
     
-    func updateUIView(_ uiView: PKCanvasView, context: Context) {
+    func updateUIView(_ uiView: PassthroughPKCanvasView, context: Context) {
         uiView.isUserInteractionEnabled = isMarkupEnabled
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let prefs = EBookPreferences.shared
         let pencilOnly = isPad && (settingsManager.conversionSettings.pencilOnlyDrawing || prefs.applePencilAutoDraw)
+        uiView.allowFingerDrawing = isMarkupEnabled && !pencilOnly
         uiView.drawingPolicy = isMarkupEnabled ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
+        uiView.drawingGestureRecognizer.cancelsTouchesInView = false
         context.coordinator.canvasView = uiView
         
         if isMarkupEnabled {
@@ -169,7 +193,7 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         Coordinator()
     }
     
-    static func dismantleUIView(_ uiView: PKCanvasView, coordinator: Coordinator) {
+    static func dismantleUIView(_ uiView: PassthroughPKCanvasView, coordinator: Coordinator) {
         coordinator.toolPicker?.setVisible(false, forFirstResponder: uiView)
         coordinator.toolPicker?.removeObserver(uiView)
         uiView.resignFirstResponder()
@@ -179,25 +203,54 @@ struct PKCanvasRepresentation: UIViewRepresentable {
     
     class Coordinator: NSObject, UIPencilInteractionDelegate {
         var toolPicker: PKToolPicker?
-        weak var canvasView: PKCanvasView?
+        weak var canvasView: PassthroughPKCanvasView?
         private var previousInkingTool: PKTool?
         
         func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
             guard let canvas = canvasView else { return }
             HapticEngine.light()
             
-            if canvas.tool is PKEraserTool {
-                // Switch back to previous tool or default highlighter
-                if let prev = previousInkingTool {
-                    canvas.tool = prev
+            switch UIPencilInteraction.preferredTapAction {
+            case .switchEraser:
+                if canvas.tool is PKEraserTool {
+                    canvas.tool = previousInkingTool ?? PKInkingTool(.pen, color: .systemOrange, width: 3)
                 } else {
-                    canvas.tool = PKInkingTool(.marker, color: UIColor.systemYellow.withAlphaComponent(0.5), width: 16)
+                    previousInkingTool = canvas.tool
+                    canvas.tool = PKEraserTool(.vector)
                 }
-            } else {
-                // Save current tool and switch to eraser
-                previousInkingTool = canvas.tool
-                canvas.tool = PKEraserTool(.vector)
+            case .switchPrevious:
+                if let prev = previousInkingTool {
+                    let current = canvas.tool
+                    canvas.tool = prev
+                    previousInkingTool = current
+                }
+            case .showColorPalette:
+                toolPicker?.setVisible(true, forFirstResponder: canvas)
+                canvas.becomeFirstResponder()
+            case .showInkAttributes, .ignore:
+                break
+            @unknown default:
+                if canvas.tool is PKEraserTool {
+                    canvas.tool = previousInkingTool ?? PKInkingTool(.pen, color: .systemOrange, width: 3)
+                } else {
+                    previousInkingTool = canvas.tool
+                    canvas.tool = PKEraserTool(.vector)
+                }
             }
         }
+        
+        #if compiler(>=6.0)
+        @available(iOS 17.5, *)
+        func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+            guard let canvas = canvasView else { return }
+            if squeeze.phase == .ended {
+                HapticEngine.selection()
+                if let picker = toolPicker {
+                    picker.setVisible(true, forFirstResponder: canvas)
+                    canvas.becomeFirstResponder()
+                }
+            }
+        }
+        #endif
     }
 }
