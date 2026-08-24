@@ -326,6 +326,9 @@ struct ReaderSettingsHUD: View {
             )
             .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Slider Row
 
     @ViewBuilder
