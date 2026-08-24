@@ -1072,12 +1072,12 @@ struct ProPDFReaderEngine: View {
     }
 
     private func advancePage(forward: Bool) {
-        let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
-        let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
+        let isLandscape = (pdfViewReference?.bounds.width ?? UIScreen.main.bounds.width) > (pdfViewReference?.bounds.height ?? UIScreen.main.bounds.height)
+        let isTwoUp = (pdfViewReference?.displayMode == .twoUp || pdfViewReference?.displayMode == .twoUpContinuous)
         let isManga = isMangaMode || prefs.pdfRTL
         let effectiveForward = isManga ? !forward : forward
 
-        if isDual {
+        if isTwoUp {
             if effectiveForward {
                 if currentPageIndex == 0 {
                     jumpToPage(1)

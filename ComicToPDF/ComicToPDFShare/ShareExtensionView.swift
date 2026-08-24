@@ -683,9 +683,9 @@ struct ShareExtensionView: View {
     nonisolated static func getAppGroupContainers() -> [URL] {
         var containers: [URL] = []
         let groupIDs = [
+            "group.com.antigravity.InksyncPro",
             "group.com.antigravity.ComicToPDF",
-            "group.com.antigravity.inksync",
-            "group.com.antigravity.InksyncPro"
+            "group.com.antigravity.inksync"
         ]
         for id in groupIDs {
             if let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id) {

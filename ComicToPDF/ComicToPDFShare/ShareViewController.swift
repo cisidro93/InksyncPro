@@ -60,9 +60,9 @@ class ShareViewController: UIViewController {
 
         // ── Step 1: Write import flags to every known App Group suite ──────────
         let appGroupIDs = [
+            "group.com.antigravity.InksyncPro",
             "group.com.antigravity.ComicToPDF",
-            "group.com.antigravity.inksync",
-            "group.com.antigravity.InksyncPro"
+            "group.com.antigravity.inksync"
         ]
         let timestamp = Date().timeIntervalSince1970
         for gid in appGroupIDs {
@@ -83,7 +83,7 @@ class ShareViewController: UIViewController {
                 if let method = sharedApp.method(for: openWithCompletionSel) {
                     let openImp = unsafeBitCast(method, to: OpenWithCompletion.self)
                     openImp(sharedApp, openWithCompletionSel, deepLinkURL as NSURL, [:] as NSDictionary) { [weak self] _ in
-                        DispatchQueue.main.async {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                             self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
                         }
                     }
