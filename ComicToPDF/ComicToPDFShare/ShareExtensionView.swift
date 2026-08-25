@@ -739,19 +739,32 @@ struct ShareExtensionView: View {
         var primaryResultURL: URL? = nil
         
         for container in containers {
-            // Stage into isolated session directory so it is never deleted by markForConversion
             let stagingURL = container.appendingPathComponent("ShareStaging", isDirectory: true)
+            let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
+            let pendingURL = container.appendingPathComponent("PendingConversions", isDirectory: true)
             try? FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: pendingURL, withIntermediateDirectories: true)
+
             let destURL = stagingURL.appendingPathComponent(cleanDest)
+            let inboxDestURL = inboxURL.appendingPathComponent(cleanDest)
+            let pendingDestURL = pendingURL.appendingPathComponent(cleanDest)
+
             try? FileManager.default.removeItem(at: destURL)
+            try? FileManager.default.removeItem(at: inboxDestURL)
+            try? FileManager.default.removeItem(at: pendingDestURL)
             
             var didCopy = false
             do {
                 try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                try? FileManager.default.copyItem(at: destURL, to: inboxDestURL)
+                try? FileManager.default.copyItem(at: destURL, to: pendingDestURL)
                 didCopy = true
             } catch {
                 if let data = try? Data(contentsOf: sourceURL, options: .alwaysMapped) {
                     if (try? data.write(to: destURL, options: .atomic)) != nil {
+                        try? data.write(to: inboxDestURL, options: .atomic)
+                        try? data.write(to: pendingDestURL, options: .atomic)
                         didCopy = true
                     }
                 }
@@ -774,11 +787,22 @@ struct ShareExtensionView: View {
         var primaryResultURL: URL? = nil
         for container in containers {
             let stagingURL = container.appendingPathComponent("ShareStaging", isDirectory: true)
+            let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
+            let pendingURL = container.appendingPathComponent("PendingConversions", isDirectory: true)
             try? FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: pendingURL, withIntermediateDirectories: true)
+
             let destURL = stagingURL.appendingPathComponent(destFilename)
+            let inboxDest = inboxURL.appendingPathComponent(destFilename)
+            let pendingDest = pendingURL.appendingPathComponent(destFilename)
             try? FileManager.default.removeItem(at: destURL)
+            try? FileManager.default.removeItem(at: inboxDest)
+            try? FileManager.default.removeItem(at: pendingDest)
             
             if (try? data.write(to: destURL, options: .atomic)) != nil {
+                try? data.write(to: inboxDest, options: .atomic)
+                try? data.write(to: pendingDest, options: .atomic)
                 if primaryResultURL == nil { primaryResultURL = destURL }
             }
         }

@@ -298,10 +298,17 @@ final class SharedImportCoordinator: ObservableObject {
                     let destFilename = "\(base).\(canonicalExt)"
                     let dest = inboxDir.appendingPathComponent(destFilename)
 
+                    func getFileSize(at path: String) -> Int64 {
+                        guard let attrs = try? fm.attributesOfItem(atPath: path),
+                              let val = attrs[.size] else { return 0 }
+                        return (val as? NSNumber)?.int64Value ?? (val as? Int64) ?? (val as? UInt64).map(Int64.init) ?? 0
+                    }
+
                     // Skip if an identical file is already in the inbox (dedup).
                     if fm.fileExists(atPath: dest.path) {
-                        if (try? fm.attributesOfItem(atPath: fileURL.path)[.size] as? Int64)
-                            == (try? fm.attributesOfItem(atPath: dest.path)[.size] as? Int64) {
+                        let sourceSize = getFileSize(at: fileURL.path)
+                        let destSize = getFileSize(at: dest.path)
+                        if sourceSize > 0 && sourceSize == destSize {
                             try? fm.removeItem(at: fileURL)
                             ingestedFilenames.append(destFilename)
                             Logger.shared.log(
@@ -352,8 +359,10 @@ final class SharedImportCoordinator: ObservableObject {
     nonisolated private func isFileSettled(at url: URL) async -> Bool {
         let fm = FileManager.default
         guard let attrs1 = try? fm.attributesOfItem(atPath: url.path),
-              let size1 = attrs1[.size] as? Int64, size1 > 0
+              let sizeVal1 = attrs1[.size]
         else { return false }
+        let size1 = (sizeVal1 as? NSNumber)?.int64Value ?? (sizeVal1 as? Int64) ?? (sizeVal1 as? UInt64).map(Int64.init) ?? 0
+        guard size1 > 0 else { return false }
 
         // For very small files (<1MB) we trust immediately.
         if size1 < 1_048_576 { return true }
@@ -361,8 +370,9 @@ final class SharedImportCoordinator: ObservableObject {
         // For larger files: compare size after 150ms async non-blocking sleep.
         try? await Task.sleep(nanoseconds: 150_000_000)
         guard let attrs2 = try? fm.attributesOfItem(atPath: url.path),
-              let size2 = attrs2[.size] as? Int64
+              let sizeVal2 = attrs2[.size]
         else { return false }
+        let size2 = (sizeVal2 as? NSNumber)?.int64Value ?? (sizeVal2 as? Int64) ?? (sizeVal2 as? UInt64).map(Int64.init) ?? 0
         return size1 == size2
     }
 

@@ -89,7 +89,11 @@ struct UnifiedReaderView: View {
                     prefs.activeTheme.background.edgesIgnoringSafeArea(.all)
                     
                     if pdf.url.pathExtension.lowercased() == "pdf" || pdf.name.lowercased().hasSuffix(".pdf") {
-                        ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                        if pdf.contentType == .comic && pdf.metadata.hasFormatOverride {
+                            ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                        } else {
+                            ProPDFReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                        }
                     } else if needsEPUBComicCheck {
                         ProgressView("Loading…")
                             .foregroundColor(.white)

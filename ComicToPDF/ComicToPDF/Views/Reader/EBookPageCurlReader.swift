@@ -207,6 +207,15 @@ extension EBookPageCurlReader {
             return true
         }
 
+        nonisolated func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            // Prevent page-turn tap gesture from intercepting touch when user interacts with text selection handles or loupe
+            if let className = touch.view.map({ NSStringFromClass(type(of: $0)) }),
+               className.contains("Selection") || className.contains("RangeView") || className.contains("Handle") || className.contains("Loupe") {
+                return false
+            }
+            return true
+        }
+
         func cleanup() {
             NotificationCenter.default.removeObserver(self, name: NSNotification.Name("EBookTurnPageForward"), object: nil)
             NotificationCenter.default.removeObserver(self, name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
@@ -649,6 +658,33 @@ extension EBookPageCurlReader {
 
         @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {
             guard let view = gesture.view, let pvc = pageViewController else { return }
+
+            // If text is currently selected in the WKWebView, dismiss the selection first
+            // rather than flipping the page while the reader was in selection mode.
+            if let wv = primaryWebView {
+                wv.evaluateJavaScript("window.getSelection() && !window.getSelection().isCollapsed") { [weak self, weak view, weak pvc] result, _ in
+                    guard let self = self, let view = view, let pvc = pvc else { return }
+                    if let isSelected = result as? Bool, isSelected {
+                        // User tapped while text was selected: clear selection, don't turn page
+                        wv.evaluateJavaScript("window.getSelection().removeAllRanges();")
+                        return
+                    }
+                    
+                    let location = gesture.location(in: view)
+                    let width = view.bounds.width
+                    let zones = self.tapZoneStyle.zones
+
+                    if location.x < width * zones.leftEdge {
+                        self.turnBackward(pvc)
+                    } else if location.x > width * zones.rightEdge {
+                        self.turnForward(pvc)
+                    } else {
+                        self.parent.onCenterTap()
+                    }
+                }
+                return
+            }
+
             let location = gesture.location(in: view)
             let width = view.bounds.width
             let zones = tapZoneStyle.zones
@@ -1049,12 +1085,20 @@ extension EBookPageCurlReader {
                 scroll-behavior: auto !important; 
                 -webkit-overflow-scrolling: auto !important;
             }
+            ::selection {
+                background-color: rgba(255, 214, 10, 0.5) !important;
+                color: inherit !important;
+            }
+            ::-moz-selection {
+                background-color: rgba(255, 214, 10, 0.5) !important;
+                color: inherit !important;
+            }
             html, body {
                 margin: 0 !important; padding: 0 !important;
                 width: 100% !important;
                 height: 100% !important;
                 column-width: auto !important;
-                touch-action: none;
+                touch-action: pan-y pinch-zoom;
                 scroll-behavior: auto !important;
                 scroll-snap-type: none !important;
                 background-color: \(bgColor) !important;
@@ -1073,6 +1117,8 @@ extension EBookPageCurlReader {
                 background-color: transparent !important;
                 word-wrap: break-word;
                 -webkit-text-size-adjust: none;
+                -webkit-user-select: text !important;
+                user-select: text !important;
                 letter-spacing: \(letterSpacing) !important;
                 word-spacing: \(wordSpacing) !important;
                 -webkit-hyphens: \(hyphenCSS) !important;
@@ -1097,6 +1143,8 @@ extension EBookPageCurlReader {
                 height: 100% !important;
                 max-width: 100% !important;
                 overflow: visible !important;
+                -webkit-user-select: text !important;
+                user-select: text !important;
                 \(pagedCSS)
                 /* No CSS transition — column jumps are instantaneous; animation belongs to UIPageViewController curl. */
             }
