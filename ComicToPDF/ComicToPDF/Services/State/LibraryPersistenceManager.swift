@@ -54,7 +54,24 @@ class LibraryPersistenceManager {
             do {
                 let (legacyPDFs, legacyCols) = try await LibraryRepository.shared.loadLibrary()
                 
-                manager.convertedPDFs = legacyPDFs
+                func normalizeFilename(_ raw: String) -> String {
+                    let decoded = raw.removingPercentEncoding ?? raw
+                    return decoded.precomposedStringWithCanonicalMapping.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                
+                var uniquePDFs: [ConvertedPDF] = []
+                var seenKeys = Set<String>()
+                for pdf in legacyPDFs {
+                    let key = normalizeFilename(pdf.url.lastPathComponent)
+                    let altKey = normalizeFilename(pdf.name)
+                    if !seenKeys.contains(key) && !seenKeys.contains(altKey) {
+                        seenKeys.insert(key)
+                        seenKeys.insert(altKey)
+                        uniquePDFs.append(pdf)
+                    }
+                }
+                
+                manager.convertedPDFs = uniquePDFs
                 manager.collections = legacyCols
                 
                 // Organize flat library files under series subdirectories retroactively

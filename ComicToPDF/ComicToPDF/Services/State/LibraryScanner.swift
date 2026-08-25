@@ -122,9 +122,11 @@ actor LibraryScanner {
         var newPDFs: [ConvertedPDF] = []
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
 
-        var (existingRelPaths, existingCanonicalPaths) = await MainActor.run {
+        var (existingRelPaths, existingCanonicalPaths, existingFilenames, existingBaseNames) = await MainActor.run {
             var rels = Set<String>()
             var paths = Set<String>()
+            var filenames = Set<String>()
+            var baseNames = Set<String>()
             
             for pdf in manager.convertedPDFs {
                 if pdf.isLinked {
@@ -133,8 +135,14 @@ actor LibraryScanner {
                     rels.insert(relativePath(for: pdf.url))
                 }
                 paths.insert(pdf.url.resolvingSymlinksInPath().path.lowercased())
+                let fn = normalizeFilename(pdf.url.lastPathComponent)
+                filenames.insert(fn)
+                let base = normalizeFilename((pdf.url.lastPathComponent as NSString).deletingPathExtension)
+                baseNames.insert(base)
+                baseNames.insert(normalizeFilename(pdf.name))
+                baseNames.insert(normalizeFilename(pdf.metadata.title))
             }
-            return (rels, paths)
+            return (rels, paths, filenames, baseNames)
         }
 
         // Scan Documents directory, Wi-Fi transfer Inbox, and all shared App Group staging directories
@@ -166,17 +174,32 @@ actor LibraryScanner {
                 guard ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) else { continue }
 
                 let filename = normalizeFilename(fileURL.lastPathComponent)
+                let nameWithoutExt = normalizeFilename((fileURL.lastPathComponent as NSString).deletingPathExtension)
                 let relPath = relativePath(for: fileURL)
                 let canonicalPath = fileURL.resolvingSymlinksInPath().path.lowercased()
                 
-                // Exact path-based duplicate protection: Skip if relative path or canonical path already exists
-                if existingRelPaths.contains(relPath) || existingCanonicalPaths.contains(canonicalPath) {
+                // Exact path-based & filename-based duplicate protection: Skip if already loaded in memory
+                if existingRelPaths.contains(relPath) || existingCanonicalPaths.contains(canonicalPath) || existingFilenames.contains(filename) || existingBaseNames.contains(nameWithoutExt) {
+                    // Update existing item's URL in memory if the file was migrated to a series subdirectory or new container path
+                    await MainActor.run {
+                        if let idx = manager.convertedPDFs.firstIndex(where: {
+                            normalizeFilename($0.url.lastPathComponent) == filename ||
+                            normalizeFilename(($0.url.lastPathComponent as NSString).deletingPathExtension) == nameWithoutExt ||
+                            normalizeFilename($0.name) == nameWithoutExt
+                        }) {
+                            if manager.convertedPDFs[idx].url.path != fileURL.path {
+                                manager.convertedPDFs[idx].url = fileURL
+                            }
+                        }
+                    }
                     continue
                 }
                 
                 // Track newly discovered file in set so intra-pass duplicates across folders are also prevented:
                 existingRelPaths.insert(relPath)
                 existingCanonicalPaths.insert(canonicalPath)
+                existingFilenames.insert(filename)
+                existingBaseNames.insert(nameWithoutExt)
                 
                 // Skip files currently being uploaded via WiFi
                 guard !ActiveUploadRegistry.shared.isUploading(fileURL) else { continue }

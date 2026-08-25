@@ -47,6 +47,13 @@ final class LibraryService: ObservableObject {
             
             self.collections = loadedCollections
             self.virtualOmnibuses = loadedOmnibuses
+            
+            // Keep ConversionManager in sync with the deduplicated authoritative store
+            if let manager = ConversionManager.shared {
+                manager.convertedPDFs = self.items
+                manager.collections = self.collections
+            }
+            
             Logger.shared.log("LibraryService: loaded \(self.items.count) items, \(loadedCollections.count) collections, \(loadedOmnibuses.count) virtual omnibuses.", category: "Library")
             self.syncAllRemoteVirtualOmnibuses()
         } catch {
