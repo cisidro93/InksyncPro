@@ -141,7 +141,8 @@ struct ModernLibraryView: View {
             // so notification-based lookups (Resume, Handoff) fire correctly even
             // if onAppear hasn't run yet (e.g. app launch via Spotlight/widget).
             .task(id: conversionManager.convertedPDFs.count) {
-                if cachedVisiblePDFs.isEmpty { rebuildNativeCache() }
+                rebuildNativeCache()
+                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
             }
             .focusable()
             .focused($isLibraryFocused)

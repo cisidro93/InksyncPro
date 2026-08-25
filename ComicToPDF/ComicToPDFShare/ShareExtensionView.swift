@@ -569,6 +569,25 @@ struct ShareExtensionView: View {
                 }
             }
 
+            // Immediately pre-stage all discovered files into App Group Inbox & PendingConversions
+            for file in filesToProcess {
+                try? self.markForConversion(file)
+            }
+            
+            let appGroupIDs = [
+                "group.com.antigravity.InksyncPro",
+                "group.com.antigravity.ComicToPDF",
+                "group.com.antigravity.inksync"
+            ]
+            let timestamp = Date().timeIntervalSince1970
+            for gid in appGroupIDs {
+                if let ud = UserDefaults(suiteName: gid) {
+                    ud.set(timestamp, forKey: "pendingShareImportTimestamp")
+                    ud.set(true, forKey: "hasPendingShareImport")
+                    ud.synchronize()
+                }
+            }
+
             self.selectedFiles = filesToProcess
             self.isLoading = false
         }
@@ -809,9 +828,9 @@ struct ShareExtensionView: View {
                 if stagedCount > 0 {
                     // Set import flags immediately in all App Group UserDefaults suites
                     let appGroupIDs = [
+                        "group.com.antigravity.InksyncPro",
                         "group.com.antigravity.ComicToPDF",
-                        "group.com.antigravity.inksync",
-                        "group.com.antigravity.InksyncPro"
+                        "group.com.antigravity.inksync"
                     ]
                     let timestamp = Date().timeIntervalSince1970
                     for gid in appGroupIDs {
@@ -822,6 +841,9 @@ struct ShareExtensionView: View {
                         }
                     }
                     showingSuccess = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                        onOpenApp()
+                    }
                 } else {
                     showingSuccess = false
                     if errorMessage == nil {
