@@ -89,7 +89,7 @@ struct UnifiedReaderView: View {
                     prefs.activeTheme.background.edgesIgnoringSafeArea(.all)
                     
                     if pdf.url.pathExtension.lowercased() == "pdf" || pdf.name.lowercased().hasSuffix(".pdf") {
-                        if pdf.contentType == .comic && pdf.metadata.hasFormatOverride {
+                        if pdf.contentType == .comic && pdf.metadata.hasFormatOverride == true {
                             ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                         } else {
                             ProPDFReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
