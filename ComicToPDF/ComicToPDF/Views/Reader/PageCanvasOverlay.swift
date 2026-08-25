@@ -230,16 +230,24 @@ struct PKCanvasRepresentation: UIViewRepresentable {
             case .ignore:
                 break
             default:
-                if canvas.tool is PKEraserTool {
-                    canvas.tool = previousInkingTool ?? PKInkingTool(.pen, color: .systemOrange, width: 3)
+                // Covers .showContextualPalette and .runSystemShortcut (iOS 17.5+)
+                // and any future cases Apple may add.  Showing the tool picker is
+                // the safest fallback for all palette-adjacent actions.
+                if #available(iOS 17.5, *) {
+                    toolPicker?.setVisible(true, forFirstResponder: canvas)
+                    canvas.becomeFirstResponder()
                 } else {
-                    previousInkingTool = canvas.tool
-                    canvas.tool = PKEraserTool(.vector)
+                    // Pre-iOS 17.5: no additional cases exist; default to eraser toggle.
+                    if canvas.tool is PKEraserTool {
+                        canvas.tool = previousInkingTool ?? PKInkingTool(.pen, color: .systemOrange, width: 3)
+                    } else {
+                        previousInkingTool = canvas.tool
+                        canvas.tool = PKEraserTool(.vector)
+                    }
                 }
             }
         }
         
-        #if compiler(>=6.0)
         @available(iOS 17.5, *)
         func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
             guard let canvas = canvasView else { return }
@@ -251,6 +259,5 @@ struct PKCanvasRepresentation: UIViewRepresentable {
                 }
             }
         }
-        #endif
     }
 }

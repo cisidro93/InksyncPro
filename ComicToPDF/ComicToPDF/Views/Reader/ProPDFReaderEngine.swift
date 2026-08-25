@@ -452,6 +452,13 @@ struct ProPDFReaderEngine: View {
             .ignoresSafeArea()
 
             let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            // Show the PencilKit canvas layer when:
+            //   - The user has explicitly toggled markup mode (isPencilMode), OR
+            //   - On iPad, Apple Pencil auto-draw is enabled in preferences.
+            // Removing the iPad guard from the second clause allows iPhone users
+            // to annotate with their finger when they activate markup mode via
+            // the toolbar. PKCanvasRepresentation already sets drawingPolicy to
+            // .anyInput on non-iPad devices so finger drawing works correctly.
             let shouldShowCanvas = isPencilMode || (isPad && prefs.applePencilAutoDraw)
             if shouldShowCanvas {
                 PageCanvasOverlay(

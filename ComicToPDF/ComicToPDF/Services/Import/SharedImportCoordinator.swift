@@ -56,9 +56,11 @@ final class SharedImportCoordinator: ObservableObject {
                 for name in ingestedNames {
                     self.pendingAutoSelectFilenames.insert(name)
                 }
-                self.clearPendingShareFlags()
-                self.isIngesting = false
+                // ✅ Only clear flags after a SUCCESSFUL import so that subsequent
+                // foreground events can still trigger a retry if the extension
+                // process was still writing when this coordinator first ran.
                 if !ingestedNames.isEmpty {
+                    self.clearPendingShareFlags()
                     Logger.shared.log(
                         "SharedImportCoordinator: Completed import of \(ingestedNames.count) file(s), notifying system",
                         category: "Import", type: .success
@@ -68,7 +70,13 @@ final class SharedImportCoordinator: ObservableObject {
                         object: nil
                     )
                     NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+                } else {
+                    Logger.shared.log(
+                        "SharedImportCoordinator: No files ingested — leaving flags set for next foreground retry.",
+                        category: "Import", type: .warning
+                    )
                 }
+                self.isIngesting = false
             }
         }
     }
@@ -154,6 +162,10 @@ final class SharedImportCoordinator: ObservableObject {
 
     nonisolated private func ingestWithRetry(maxAttempts: Int, retryDelay: Double) async -> [String] {
         var allIngested: [String] = []
+        // Progressive retry schedule: each attempt doubles the wait, giving the
+        // Share Extension process more time to finish writing large files.
+        // e.g. with retryDelay=0.5 → waits of 0.5, 1.0, 2.0, 4.0 seconds.
+        var currentDelay = retryDelay
         for attempt in 1...maxAttempts {
             let names = await moveStagedFilesToInbox()
             if !names.isEmpty {
@@ -165,8 +177,14 @@ final class SharedImportCoordinator: ObservableObject {
                 return allIngested
             }
             // No files found yet — the extension process may still be writing.
+            // Use exponential back-off so large file copies get enough time.
             if attempt < maxAttempts {
-                try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
+                Logger.shared.log(
+                    "SharedImportCoordinator: Attempt \(attempt)/\(maxAttempts) — no staged files yet, waiting \(String(format: "%.1f", currentDelay))s",
+                    category: "Import"
+                )
+                try? await Task.sleep(nanoseconds: UInt64(currentDelay * 1_000_000_000))
+                currentDelay = min(currentDelay * 2, 8.0) // cap at 8 seconds
             }
         }
         Logger.shared.log(
