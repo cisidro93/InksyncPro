@@ -266,6 +266,77 @@
         <dict>
             <key>UTTypeConformsTo</key>
             <array>
+                <string>public.data</string>
+                <string>public.composite-content</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>PDF Document</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.adobe.pdf</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>pdf</string>
+                    <string>PDF</string>
+                </array>
+                <key>public.mime-type</key>
+                <array>
+                    <string>application/pdf</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.composite-content</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>Electronic Publication (EPUB)</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>org.idpf.epub-container</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>epub</string>
+                    <string>EPUB</string>
+                </array>
+                <key>public.mime-type</key>
+                <array>
+                    <string>application/epub+zip</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.archive</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>RAR Archive</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.rarlab.rar-archive</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>rar</string>
+                    <string>RAR</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
                 <string>public.plain-text</string>
             </array>
             <key>UTTypeDescription</key>

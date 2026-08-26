@@ -180,6 +180,23 @@ targets:
             UTTypeConformsTo: [public.archive]
             UTTypeTagSpecification:
               public.filename-extension: [cbr]
+          - UTTypeIdentifier: com.adobe.pdf
+            UTTypeDescription: PDF Document
+            UTTypeConformsTo: [public.data, public.composite-content]
+            UTTypeTagSpecification:
+              public.filename-extension: [pdf, PDF]
+              public.mime-type: [application/pdf]
+          - UTTypeIdentifier: org.idpf.epub-container
+            UTTypeDescription: Electronic Publication (EPUB)
+            UTTypeConformsTo: [public.data, public.composite-content]
+            UTTypeTagSpecification:
+              public.filename-extension: [epub, EPUB]
+              public.mime-type: [application/epub+zip]
+          - UTTypeIdentifier: com.rarlab.rar-archive
+            UTTypeDescription: RAR Archive
+            UTTypeConformsTo: [public.data, public.archive]
+            UTTypeTagSpecification:
+              public.filename-extension: [rar, RAR]
           - UTTypeIdentifier: org.7-zip.7-zip-archive
             UTTypeDescription: 7-Zip Archive
             UTTypeConformsTo: [public.archive]
