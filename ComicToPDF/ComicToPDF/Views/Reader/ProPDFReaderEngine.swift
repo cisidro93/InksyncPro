@@ -453,7 +453,6 @@ struct ProPDFReaderEngine: View {
             )
             .ignoresSafeArea()
 
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
             // Only mount the PencilKit drawing canvas when Markup Mode is explicitly toggled
             // by the user via the toolbar icon. This ensures that normal reading, finger text selection,
             // and tap-to-turn gestures are never intercepted by the PKCanvasView layer.
@@ -1094,7 +1093,6 @@ struct ProPDFReaderEngine: View {
     }
 
     private func advancePage(forward: Bool) {
-        let isLandscape = (pdfViewReference?.bounds.width ?? UIScreen.main.bounds.width) > (pdfViewReference?.bounds.height ?? UIScreen.main.bounds.height)
         let isTwoUp = (pdfViewReference?.displayMode == .twoUp || pdfViewReference?.displayMode == .twoUpContinuous)
         let isManga = isMangaMode || prefs.pdfRTL
         let effectiveForward = isManga ? !forward : forward
@@ -1143,7 +1141,7 @@ struct ProPDFReaderEngine: View {
                     let annotation = PDFAnnotation(bounds: line.bounds, forType: .highlight, withProperties: nil)
                     annotation.color = highlightColor
                     annotation.contents = text
-                    annotation.quadrilateralPoints = line.quadPoints
+                    annotation.quadrilateralPoints = line.quadPoints.map { NSValue(cgPoint: $0) }
                     page.addAnnotation(annotation)
                     didAddNative = true
                 }
@@ -1392,10 +1390,15 @@ struct VisualPDFScrubber: View {
 }
 
 // MARK: - PDF Selection Snapshot Model
+struct PDFSelectionLine: Sendable {
+    let bounds: CGRect
+    let quadPoints: [CGPoint]
+}
+
 struct PDFSelectionSnapshot: Sendable {
     let text: String
     let pageIndex: Int
-    let lines: [(bounds: CGRect, quadPoints: [NSValue])]
+    let lines: [PDFSelectionLine]
     let normalizedBounds: CodableCGRect?
 }
 
@@ -1704,7 +1707,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         @MainActor @objc func selectionChanged(_ notification: Notification) {
             guard let pdfView = notification.object as? PDFView else { return }
             if let selection = pdfView.currentSelection, let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                var linesInfo: [(bounds: CGRect, quadPoints: [NSValue])] = []
+                var linesInfo: [PDFSelectionLine] = []
                 var pageIndex = parent.currentPageIndex
                 var normBounds: CodableCGRect? = nil
                 
@@ -1720,8 +1723,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                         let p2 = CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)
                         let p3 = CGPoint(x: lineBounds.minX, y: lineBounds.minY)
                         let p4 = CGPoint(x: lineBounds.maxX, y: lineBounds.minY)
-                        let quads = [NSValue(cgPoint: p1), NSValue(cgPoint: p2), NSValue(cgPoint: p3), NSValue(cgPoint: p4)]
-                        linesInfo.append((bounds: lineBounds, quadPoints: quads))
+                        let quads = [p1, p2, p3, p4]
+                        linesInfo.append(PDFSelectionLine(bounds: lineBounds, quadPoints: quads))
                     }
                     let selBounds = selection.bounds(for: firstPage)
                     if pageBounds.width > 0 && pageBounds.height > 0 {
