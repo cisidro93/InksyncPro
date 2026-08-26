@@ -136,7 +136,25 @@ jobs:
         fi
 
         if [ -z "$DOWNLOAD_URL" ]; then
-          echo "Catbox failed, trying 0x0.st..."
+          echo "Catbox failed, trying tmpfiles.org..."
+          TMP_RESP=$(curl -s -F "file=@$IPA_FILE" https://tmpfiles.org/api/v1/upload || true)
+          TMP_URL=$(echo "$TMP_RESP" | grep -o -E '"url":"https://tmpfiles.org/[0-9]+/[^"]+' | cut -d'"' -f4 | sed 's|tmpfiles.org/|tmpfiles.org/dl/|' || true)
+          if [[ "$TMP_URL" =~ ^https://.* ]]; then
+            DOWNLOAD_URL="$TMP_URL"
+          fi
+        fi
+
+        if [ -z "$DOWNLOAD_URL" ]; then
+          echo "Trying uguu.se..."
+          UGUU_RESP=$(curl -s -F "files[]=@$IPA_FILE" https://uguu.se/upload.php || true)
+          UGUU_URL=$(echo "$UGUU_RESP" | grep -o -E '"url":"https://a.uguu.se/[^"]+' | cut -d'"' -f4 || true)
+          if [[ "$UGUU_URL" =~ ^https://.* ]]; then
+            DOWNLOAD_URL="$UGUU_URL"
+          fi
+        fi
+
+        if [ -z "$DOWNLOAD_URL" ]; then
+          echo "Trying 0x0.st..."
           NULL_RESP=$(curl -s -F "file=@$IPA_FILE" https://0x0.st || true)
           if [[ "$NULL_RESP" =~ ^https://.* ]]; then
             DOWNLOAD_URL=$(echo "$NULL_RESP" | tr -d '\r\n')
@@ -144,18 +162,12 @@ jobs:
         fi
 
         if [ -z "$DOWNLOAD_URL" ]; then
-          echo "0x0.st failed, trying pixeldrain..."
+          echo "Trying pixeldrain..."
           PIXEL_RESP=$(curl -s -u : -F "file=@$IPA_FILE" https://pixeldrain.com/api/file || true)
           FILE_ID=$(echo "$PIXEL_RESP" | grep -o -E '"id":"[a-zA-Z0-9]+"' | cut -d'"' -f4 || true)
           if [ -n "$FILE_ID" ]; then
             DOWNLOAD_URL="https://pixeldrain.com/api/file/$FILE_ID"
           fi
-        fi
-
-        if [ -z "$DOWNLOAD_URL" ]; then
-          echo "Pixeldrain failed, trying bashupload..."
-          BASH_RESP=$(curl -s https://bashupload.com/ -T "$IPA_FILE" || true)
-          DOWNLOAD_URL=$(echo "$BASH_RESP" | grep -o -E "https://bashupload.com/[a-zA-Z0-9./_-]+" | head -n 1 || true)
         fi
 
         if [ -n "$DOWNLOAD_URL" ]; then
