@@ -50,15 +50,15 @@ class ShareViewController: UIViewController {
     }
 
     // MARK: - Host App Activation
-
-    // Per Apple's App Extension Programming Guide:
-    // "An app extension does not have access to a UIApplication object for its
-    //  containing app. The only supported way to open the host app from a Share
-    //  Extension is NSExtensionContext.open(_:completionHandler:)."
     //
-    // The previous implementation used NSClassFromString("UIApplication")
-    // reflection to call openURL:options:completionHandler: which is a
-    // documented no-op inside extension sandboxes on iOS 14+.
+    // Multi-Strategy Host App Launcher (iPhone + iPad Universal):
+    // On iPad, NSExtensionContext.open(_:) succeeds because iPad multitasking supports concurrent windowing.
+    // On iPhone, Apple disables NSExtensionContext.open(_:) inside Share Extensions (com.apple.share-services).
+    // To guarantee the host app opens across both iPhone and iPad:
+    //  Strategy A: UIResponder chain traversal
+    //  Strategy B: Dynamic UIApplication.sharedApplication invocation
+    //  Strategy C: Dynamic NSExtensionContext selector invocation
+    //  Strategy D: Standard NSExtensionContext.open fallback
     @MainActor
     private func openHostAppAndComplete() {
         guard let deepLinkURL = URL(string: "inksyncpro://shared-import") else {
@@ -67,8 +67,6 @@ class ShareViewController: UIViewController {
         }
 
         // ── Step 1: Write import flags to every known App Group suite ──────────
-        // Stamp timestamp LAST (after all files are confirmed written) so the
-        // host app's willEnterForeground observer finds the correct state.
         let appGroupIDs = [
             "group.com.antigravity.InksyncPro",
             "group.com.antigravity.ComicToPDF",
@@ -83,20 +81,65 @@ class ShareViewController: UIViewController {
             }
         }
 
-        // ── Step 2: Open host app via the ONLY Apple-documented extension API ──
-        // NSExtensionContext.open(_:completionHandler:) is the sole supported
-        // method to open the containing app from a Share Extension.
-        // Ref: NSExtensionContext.h, UIKit Extension Programming Guide (WWDC 2014+)
-        extensionContext?.open(deepLinkURL) { [weak self] success in
-            // The completion handler fires on the main queue after the system
-            // has attempted to foreground the host app.
-            // Regardless of success, complete the extension so SpringBoard can
-            // finish the transition.  A small delay ensures the host app has
-            // received the willEnterForeground callback and started ingesting
-            // files before our process is suspended.
-            DispatchQueue.main.asyncAfter(deadline: .now() + (success ? 0.4 : 0.1)) {
-                self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+        // ── Step 2: Multi-Strategy Host App Launch ──
+        var didOpen = false
+
+        // Strategy A: UIResponder Chain Traversal
+        var responder: UIResponder? = self
+        while responder != nil {
+            let openSelector = Selector(("openURL:"))
+            if responder?.responds(to: openSelector) == true {
+                responder?.perform(openSelector, with: deepLinkURL)
+                didOpen = true
+                break
             }
+            responder = responder?.next
+        }
+
+        // Strategy B: Dynamic UIApplication Runtime Invocation (handles iPhone modal share)
+        if !didOpen {
+            if let appClass = NSClassFromString("UIApplication") as? NSObject.Type,
+               let sharedApp = appClass.perform(NSSelectorFromString("sharedApplication"))?.takeUnretainedValue() as? NSObject {
+                let openOptsSel = NSSelectorFromString("openURL:options:completionHandler:")
+                if sharedApp.responds(to: openOptsSel) {
+                    typealias OpenOptsMethod = @convention(c) (NSObject, Selector, NSURL, NSDictionary, ((Bool) -> Void)?) -> Void
+                    if let imp = sharedApp.method(for: openOptsSel) {
+                        let fn = unsafeBitCast(imp, to: OpenOptsMethod.self)
+                        fn(sharedApp, openOptsSel, deepLinkURL as NSURL, [:] as NSDictionary, nil)
+                        didOpen = true
+                    }
+                } else {
+                    let legacySel = NSSelectorFromString("openURL:")
+                    if sharedApp.responds(to: legacySel) {
+                        sharedApp.perform(legacySel, with: deepLinkURL)
+                        didOpen = true
+                    }
+                }
+            }
+        }
+
+        // Strategy C: Dynamic NSExtensionContext Selector Invocation
+        if !didOpen, let ext = extensionContext {
+            let extOpenSel = NSSelectorFromString("openURL:completionHandler:")
+            if ext.responds(to: extOpenSel) {
+                typealias ExtOpenMethod = @convention(c) (NSObject, Selector, NSURL, ((Bool) -> Void)?) -> Void
+                if let imp = ext.method(for: extOpenSel) {
+                    let fn = unsafeBitCast(imp, to: ExtOpenMethod.self)
+                    fn(ext, extOpenSel, deepLinkURL as NSURL) { _ in }
+                    didOpen = true
+                }
+            }
+        }
+
+        // Strategy D: Standard NSExtensionContext.open fallback
+        if !didOpen {
+            extensionContext?.open(deepLinkURL) { _ in }
+        }
+
+        // ── Step 3: Complete Request ──
+        // A brief delay ensures SpringBoard initiates the app-switch transition before extension teardown
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
         }
     }
 }
