@@ -739,16 +739,18 @@ struct ShareExtensionView: View {
         let accessing = sourceURL.startAccessingSecurityScopedResource()
         defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
 
-        // Attempt coordinated read
-        let coordinator = NSFileCoordinator()
-        var coordError: NSError?
-        coordinator.coordinate(readingItemAt: sourceURL, options: .withoutChanges, error: &coordError) { coordinatedURL in
-            let innerAccess = coordinatedURL.startAccessingSecurityScopedResource()
-            defer { if innerAccess { coordinatedURL.stopAccessingSecurityScopedResource() } }
-            sourceData = try? Data(contentsOf: coordinatedURL, options: .alwaysMapped)
-        }
+        // Fast direct read first (avoids NSFileCoordinator timeout on temporary sandbox URLs)
+        sourceData = try? Data(contentsOf: sourceURL, options: .alwaysMapped)
+        
         if sourceData == nil {
-            sourceData = try? Data(contentsOf: sourceURL, options: .alwaysMapped)
+            // Coordinated fallback for external security-scoped file systems
+            let coordinator = NSFileCoordinator()
+            var coordError: NSError?
+            coordinator.coordinate(readingItemAt: sourceURL, options: .withoutChanges, error: &coordError) { coordinatedURL in
+                let innerAccess = coordinatedURL.startAccessingSecurityScopedResource()
+                defer { if innerAccess { coordinatedURL.stopAccessingSecurityScopedResource() } }
+                sourceData = try? Data(contentsOf: coordinatedURL, options: .alwaysMapped)
+            }
         }
         
         for container in containers {

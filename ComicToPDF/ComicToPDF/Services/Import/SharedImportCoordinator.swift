@@ -40,8 +40,24 @@ final class SharedImportCoordinator: ObservableObject {
     ]
 
     private var isIngesting = false
+    private var inFlightDirectOpens: Set<String> = []
 
     // MARK: - Entry Points
+
+    /// Direct async entry point used by LibraryScanner and background tasks
+    func coordinateImportDirect() async {
+        let ingestedNames = await self.moveStagedFilesToInbox()
+        if !ingestedNames.isEmpty {
+            for name in ingestedNames {
+                self.pendingAutoSelectFilenames.insert(name)
+            }
+            self.clearPendingShareFlags()
+            Logger.shared.log(
+                "SharedImportCoordinator: Direct imported \(ingestedNames.count) file(s)",
+                category: "Import", type: .success
+            )
+        }
+    }
 
     /// Called by ContentView's willEnterForeground observer, AppDelegate URL handler,
     /// scenePhase changes, and the `inksyncpro://` deep-link handler. Safe to call
@@ -86,6 +102,17 @@ final class SharedImportCoordinator: ObservableObject {
     /// and dispatches notifications for UI update.
     @discardableResult
     func handleDirectFileOpen(url: URL) async -> URL? {
+        let pathKey = url.path
+        if inFlightDirectOpens.contains(pathKey) {
+            let appSupport = FileManager.default.urls(
+                for: .applicationSupportDirectory, in: .userDomainMask
+            ).first ?? FileManager.default.temporaryDirectory
+            let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+            return inboxDir.appendingPathComponent(url.lastPathComponent)
+        }
+        inFlightDirectOpens.insert(pathKey)
+        defer { inFlightDirectOpens.remove(pathKey) }
+
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 

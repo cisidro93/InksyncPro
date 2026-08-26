@@ -29,6 +29,7 @@ struct ProPDFReaderEngine: View {
 
     // Text Selection & Markup HUD
     @State private var selectedTextForHUD: String? = nil
+    @State private var activeSelectionSnapshot: PDFSelectionSnapshot? = nil
     @State private var speechSynthesizer = AVSpeechSynthesizer()
 
     // Environment & Preferences
@@ -422,9 +423,10 @@ struct ProPDFReaderEngine: View {
                 onTapCenter: {
                     toggleChrome()
                 },
-                onTextSelectionChanged: { text in
+                onTextSelectionChanged: { text, snapshot in
                     withAnimation(.easeInOut(duration: 0.18)) {
                         selectedTextForHUD = text
+                        activeSelectionSnapshot = snapshot
                     }
                 },
                 onScaleChanged: { scale in
@@ -931,6 +933,8 @@ struct ProPDFReaderEngine: View {
                     
                     // Ingest native third-party PDF annotations into AnnotationStore
                     _ = PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: doc, for: sourcePDF.id)
+                    // Ingest and render all existing InkSync Pro highlights, notes, and ink from AnnotationStore onto the live document
+                    PDFAnnotationSyncBridge.shared.applyStoreAnnotations(for: sourcePDF.id, to: doc)
                 }
             } else {
                 accessedURL?.stopAccessingSecurityScopedResource()
@@ -959,6 +963,7 @@ struct ProPDFReaderEngine: View {
             self.applyCropInsets(initialCrop)
             self.extractAmbientColor(for: self.currentPageIndex)
             _ = PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: doc, for: pdf.id)
+            PDFAnnotationSyncBridge.shared.applyStoreAnnotations(for: pdf.id, to: doc)
         } else {
             HapticEngine.error()
             self.passwordErrorMessage = "Incorrect password. Please verify and try again."
@@ -1125,17 +1130,50 @@ struct ProPDFReaderEngine: View {
     }
 
     private func saveHighlight(text: String, color: PDFHighlightColor) {
-        if let pdfView = pdfViewReference, let selection = pdfView.currentSelection {
+        let highlightColor = color.uiColor.withAlphaComponent(0.45)
+        var didAddNative = false
+        var savedBounds: CodableCGRect? = nil
+        var targetPageIndex = currentPageIndex
+
+        if let snapshot = activeSelectionSnapshot {
+            targetPageIndex = snapshot.pageIndex
+            savedBounds = snapshot.normalizedBounds
+            if let doc = pdfDocument, let page = doc.page(at: snapshot.pageIndex) {
+                for line in snapshot.lines {
+                    let annotation = PDFAnnotation(bounds: line.bounds, forType: .highlight, withProperties: nil)
+                    annotation.color = highlightColor
+                    annotation.contents = text
+                    annotation.quadrilateralPoints = line.quadPoints
+                    page.addAnnotation(annotation)
+                    didAddNative = true
+                }
+            }
+        }
+
+        if !didAddNative, let pdfView = pdfViewReference, let selection = pdfView.currentSelection {
             for page in selection.pages {
+                if let doc = pdfView.document {
+                    targetPageIndex = doc.index(for: page)
+                }
+                let pageBounds = page.bounds(for: .cropBox)
+                let selBounds = selection.bounds(for: page)
+                if pageBounds.width > 0 && pageBounds.height > 0 && savedBounds == nil {
+                    savedBounds = CodableCGRect(
+                        x: Double((selBounds.minX - pageBounds.minX) / pageBounds.width),
+                        y: Double((selBounds.minY - pageBounds.minY) / pageBounds.height),
+                        width: Double(selBounds.width / pageBounds.width),
+                        height: Double(selBounds.height / pageBounds.height)
+                    )
+                }
                 let lineSelections = selection.selectionsByLine()
                 let targetLines = lineSelections.isEmpty ? [selection] : lineSelections
                 for lineSel in targetLines {
                     let lineBounds = lineSel.bounds(for: page)
                     guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
                     let annotation = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
-                    annotation.color = color.uiColor.withAlphaComponent(0.45)
+                    annotation.color = highlightColor
+                    annotation.contents = text
 
-                    // In iOS 16/17/18 PDFKit, quadrilateralPoints is required for .highlight annotations to render
                     let p1 = CGPoint(x: lineBounds.minX, y: lineBounds.maxY)
                     let p2 = CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)
                     let p3 = CGPoint(x: lineBounds.minX, y: lineBounds.minY)
@@ -1148,26 +1186,33 @@ struct ProPDFReaderEngine: View {
                     ]
 
                     page.addAnnotation(annotation)
+                    didAddNative = true
                 }
             }
-            pdfView.clearSelection()
-            pdfView.setNeedsDisplay()
-            pdfView.layoutDocumentView()
-            pdfView.subviews.forEach { $0.setNeedsDisplay() }
-            HapticEngine.selection()
+        }
+
+        if let pv = pdfViewReference {
+            pv.clearSelection()
+            pv.setNeedsDisplay()
+            pv.layoutDocumentView()
+            pv.subviews.forEach { $0.setNeedsDisplay() }
         }
 
         let highlight = Annotation(
             pdfID: pdf.id,
-            pageIndex: currentPageIndex,
-            chapterTitle: "Page \(currentPageIndex + 1)",
+            pageIndex: targetPageIndex,
+            chapterTitle: "Page \(targetPageIndex + 1)",
             kind: .highlight,
             createdAt: Date(),
             modifiedAt: Date(),
             colorHex: color.rawValue,
-            selectedText: text
+            selectedText: text,
+            bounds: savedBounds
         )
         AnnotationStore.shared.add(highlight)
+        activeSelectionSnapshot = nil
+        showToastMessage("Highlight Added")
+        HapticEngine.selection()
     }
 
     private func saveNote(text: String, note: String) {
@@ -1346,6 +1391,14 @@ struct VisualPDFScrubber: View {
     }
 }
 
+// MARK: - PDF Selection Snapshot Model
+struct PDFSelectionSnapshot: Sendable {
+    let text: String
+    let pageIndex: Int
+    let lines: [(bounds: CGRect, quadPoints: [NSValue])]
+    let normalizedBounds: CodableCGRect?
+}
+
 // MARK: - UIViewRepresentable for Vector PDFKit View
 struct ProPDFViewRepresentable: UIViewRepresentable {
     let pdf: ConvertedPDF
@@ -1357,7 +1410,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     var onPrevPage: () -> Void
     var onNextPage: () -> Void
     var onTapCenter: () -> Void
-    var onTextSelectionChanged: (String?) -> Void
+    var onTextSelectionChanged: (String?, PDFSelectionSnapshot?) -> Void
     var onScaleChanged: ((CGFloat) -> Void)? = nil
     var onHyperlinkSelected: ((Int, PDFPage) -> Void)? = nil
 
@@ -1544,7 +1597,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             // If text is currently selected in PDFView, clear selection on single tap instead of turning page
             if let selection = view.currentSelection, let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 view.clearSelection()
-                parent.onTextSelectionChanged(nil)
+                parent.onTextSelectionChanged(nil, nil)
                 return
             }
 
@@ -1650,10 +1703,45 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         @MainActor @objc func selectionChanged(_ notification: Notification) {
             guard let pdfView = notification.object as? PDFView else { return }
-            if let selection = pdfView.currentSelection, let text = selection.string, !text.isEmpty {
-                parent.onTextSelectionChanged(text)
+            if let selection = pdfView.currentSelection, let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                var linesInfo: [(bounds: CGRect, quadPoints: [NSValue])] = []
+                var pageIndex = parent.currentPageIndex
+                var normBounds: CodableCGRect? = nil
+                
+                if let firstPage = selection.pages.first, let doc = pdfView.document {
+                    pageIndex = doc.index(for: firstPage)
+                    let pageBounds = firstPage.bounds(for: .cropBox)
+                    let lineSelections = selection.selectionsByLine()
+                    let targetLines = lineSelections.isEmpty ? [selection] : lineSelections
+                    for lineSel in targetLines {
+                        let lineBounds = lineSel.bounds(for: firstPage)
+                        guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
+                        let p1 = CGPoint(x: lineBounds.minX, y: lineBounds.maxY)
+                        let p2 = CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)
+                        let p3 = CGPoint(x: lineBounds.minX, y: lineBounds.minY)
+                        let p4 = CGPoint(x: lineBounds.maxX, y: lineBounds.minY)
+                        let quads = [NSValue(cgPoint: p1), NSValue(cgPoint: p2), NSValue(cgPoint: p3), NSValue(cgPoint: p4)]
+                        linesInfo.append((bounds: lineBounds, quadPoints: quads))
+                    }
+                    let selBounds = selection.bounds(for: firstPage)
+                    if pageBounds.width > 0 && pageBounds.height > 0 {
+                        normBounds = CodableCGRect(
+                            x: Double((selBounds.minX - pageBounds.minX) / pageBounds.width),
+                            y: Double((selBounds.minY - pageBounds.minY) / pageBounds.height),
+                            width: Double(selBounds.width / pageBounds.width),
+                            height: Double(selBounds.height / pageBounds.height)
+                        )
+                    }
+                }
+                let snapshot = PDFSelectionSnapshot(
+                    text: text,
+                    pageIndex: pageIndex,
+                    lines: linesInfo,
+                    normalizedBounds: normBounds
+                )
+                parent.onTextSelectionChanged(text, snapshot)
             } else {
-                parent.onTextSelectionChanged(nil)
+                parent.onTextSelectionChanged(nil, nil)
             }
         }
     }

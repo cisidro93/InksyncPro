@@ -45,63 +45,8 @@ actor LibraryScanner {
         let inboxDir  = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
         let docDir    = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
 
-        // Bridge Shared container files from iOS Share Extension into local Inbox
-        var scannedGroupURLs: Set<URL> = []
-        let searchContainers = SharedImportCoordinator.getAllSearchContainers()
-        for groupURL in searchContainers {
-            if !scannedGroupURLs.contains(groupURL) {
-                scannedGroupURLs.insert(groupURL)
-                let sharedDirs = [
-                    groupURL.appendingPathComponent("PendingConversions", isDirectory: true),
-                    groupURL.appendingPathComponent("Inbox", isDirectory: true),
-                    groupURL.appendingPathComponent("ShareStaging", isDirectory: true)
-                ]
-                for sharedDir in sharedDirs {
-                    guard let enumerator = fileManager.enumerator(at: sharedDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { continue }
-                    while let fileURL = enumerator.nextObject() as? URL {
-                        var isDir: ObjCBool = false
-                        guard fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDir), !isDir.boolValue else { continue }
-                        
-                        let ext = fileURL.pathExtension.lowercased()
-                        if ext == "manifest" || fileURL.lastPathComponent.contains(".manifest.json") {
-                            try? fileManager.removeItem(at: fileURL)
-                        } else if ["cbz", "cbr", "pdf", "epub", "zip", "rar", "cb7", "cbt", "7z", "tar"].contains(ext) || isSupportedSharedFile(fileURL) {
-                            try? fileManager.createDirectory(at: inboxDir, withIntermediateDirectories: true)
-                            
-                            let cleanBase = (fileURL.lastPathComponent as NSString).deletingPathExtension
-                            let targetExt: String
-                            if ext == "zip" {
-                                targetExt = "cbz"
-                            } else if ext == "rar" {
-                                targetExt = "cbr"
-                            } else if ext == "7z" {
-                                targetExt = "cb7"
-                            } else if ext.isEmpty {
-                                targetExt = detectExtensionFromMagicBytes(fileURL) ?? "cbz"
-                            } else {
-                                targetExt = ext
-                            }
-                            
-                            let targetFilename = cleanBase + "." + targetExt
-                            let dest = inboxDir.appendingPathComponent(targetFilename)
-                            try? fileManager.removeItem(at: dest)
-                            do {
-                                try fileManager.moveItem(at: fileURL, to: dest)
-                                Logger.shared.log("LibraryScanner: imported shared file '\(targetFilename)'", category: "Import", type: .success)
-                            } catch {
-                                if let data = try? Data(contentsOf: fileURL) {
-                                    try? data.write(to: dest, options: .atomic)
-                                    try? fileManager.removeItem(at: fileURL)
-                                    Logger.shared.log("LibraryScanner: imported shared file '\(targetFilename)' via stream copy", category: "Import", type: .success)
-                                } else {
-                                    Logger.shared.log("LibraryScanner: failed to import shared file: \(error.localizedDescription)", category: "Import", type: .error)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Ensure SharedImportCoordinator processes any staged files first
+        await SharedImportCoordinator.shared.coordinateImportDirect()
 
         func normalizeFilename(_ raw: String) -> String {
             let decoded = raw.removingPercentEncoding ?? raw
@@ -122,11 +67,10 @@ actor LibraryScanner {
         var newPDFs: [ConvertedPDF] = []
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
 
-        var (existingRelPaths, existingCanonicalPaths, existingFilenames, existingBaseNames) = await MainActor.run {
+        var (existingRelPaths, existingCanonicalPaths, existingFilenames) = await MainActor.run {
             var rels = Set<String>()
             var paths = Set<String>()
             var filenames = Set<String>()
-            var baseNames = Set<String>()
             
             for pdf in manager.convertedPDFs {
                 if pdf.isLinked {
@@ -137,21 +81,12 @@ actor LibraryScanner {
                 paths.insert(pdf.url.resolvingSymlinksInPath().path.lowercased())
                 let fn = normalizeFilename(pdf.url.lastPathComponent)
                 filenames.insert(fn)
-                let base = normalizeFilename((pdf.url.lastPathComponent as NSString).deletingPathExtension)
-                baseNames.insert(base)
-                baseNames.insert(normalizeFilename(pdf.name))
-                baseNames.insert(normalizeFilename(pdf.metadata.title))
             }
-            return (rels, paths, filenames, baseNames)
+            return (rels, paths, filenames)
         }
 
-        // Scan Documents directory, Wi-Fi transfer Inbox, and all shared App Group staging directories
-        let sharedScanDirs = scannedGroupURLs.flatMap { [
-            $0.appendingPathComponent("Inbox", isDirectory: true),
-            $0.appendingPathComponent("PendingConversions", isDirectory: true),
-            $0.appendingPathComponent("ShareStaging", isDirectory: true)
-        ]}
-        let dirsToScan = [docDir, inboxDir] + sharedScanDirs
+        // Scan Documents directory and InksyncVault Inbox
+        let dirsToScan = [docDir, inboxDir]
 
         for scanDir in dirsToScan {
             guard let enumerator = fileManager.enumerator(
@@ -174,32 +109,18 @@ actor LibraryScanner {
                 guard ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) else { continue }
 
                 let filename = normalizeFilename(fileURL.lastPathComponent)
-                let nameWithoutExt = normalizeFilename((fileURL.lastPathComponent as NSString).deletingPathExtension)
                 let relPath = relativePath(for: fileURL)
                 let canonicalPath = fileURL.resolvingSymlinksInPath().path.lowercased()
                 
-                // Exact path-based & filename-based duplicate protection: Skip if already loaded in memory
-                if existingRelPaths.contains(relPath) || existingCanonicalPaths.contains(canonicalPath) || existingFilenames.contains(filename) || existingBaseNames.contains(nameWithoutExt) {
-                    // Update existing item's URL in memory if the file was migrated to a series subdirectory or new container path
-                    await MainActor.run {
-                        if let idx = manager.convertedPDFs.firstIndex(where: {
-                            normalizeFilename($0.url.lastPathComponent) == filename ||
-                            normalizeFilename(($0.url.lastPathComponent as NSString).deletingPathExtension) == nameWithoutExt ||
-                            normalizeFilename($0.name) == nameWithoutExt
-                        }) {
-                            if manager.convertedPDFs[idx].url.path != fileURL.path {
-                                manager.convertedPDFs[idx].url = fileURL
-                            }
-                        }
-                    }
+                // Exact path-based duplicate protection: Skip if this exact file is already loaded in memory
+                if existingRelPaths.contains(relPath) || existingCanonicalPaths.contains(canonicalPath) {
                     continue
                 }
                 
-                // Track newly discovered file in set so intra-pass duplicates across folders are also prevented:
+                // Track newly discovered file in set so intra-pass duplicates across folders are prevented:
                 existingRelPaths.insert(relPath)
                 existingCanonicalPaths.insert(canonicalPath)
                 existingFilenames.insert(filename)
-                existingBaseNames.insert(nameWithoutExt)
                 
                 // Skip files currently being uploaded via WiFi
                 guard !ActiveUploadRegistry.shared.isUploading(fileURL) else { continue }
