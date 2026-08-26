@@ -303,7 +303,7 @@ struct EPUBMerger: Sendable {
         var spineItems: [String] = []
         
         // Base closure to "Seal" a volume
-        let sealCurrentEPUB = { [self] (dirURL: URL, volIdx: Int, mItems: [String], sItems: [String], volumeHasLandscape: Bool, firstW: Int, firstH: Int) throws -> URL in
+        let sealCurrentEPUB = { (dirURL: URL, volIdx: Int, mItems: [String], sItems: [String], volumeHasLandscape: Bool, firstW: Int, firstH: Int) throws -> URL in
             let oebps = dirURL.appendingPathComponent("OEBPS")
             
             let bookUUID = UUID().uuidString

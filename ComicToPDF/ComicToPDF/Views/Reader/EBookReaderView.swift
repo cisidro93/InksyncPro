@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 import ZIPFoundation
 import SwiftData
+import AVFoundation
 
 // MARK: - EBookReaderView
 struct EBookReaderView: View {
