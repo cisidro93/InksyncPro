@@ -733,9 +733,6 @@ struct ShareExtensionView: View {
         }
         
         let cleanDest = destFilename.replacingOccurrences(of: ".tmp", with: "")
-        let accessing = sourceURL.startAccessingSecurityScopedResource()
-        defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
-        
         var primaryResultURL: URL? = nil
         
         var sourceData: Data? = nil
