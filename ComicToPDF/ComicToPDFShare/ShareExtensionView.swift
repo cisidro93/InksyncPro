@@ -738,6 +738,22 @@ struct ShareExtensionView: View {
         
         var primaryResultURL: URL? = nil
         
+        var sourceData: Data? = nil
+        let accessing = sourceURL.startAccessingSecurityScopedResource()
+        defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
+
+        // Attempt coordinated read
+        let coordinator = NSFileCoordinator()
+        var coordError: NSError?
+        coordinator.coordinate(readingItemAt: sourceURL, options: .withoutChanges, error: &coordError) { coordinatedURL in
+            let innerAccess = coordinatedURL.startAccessingSecurityScopedResource()
+            defer { if innerAccess { coordinatedURL.stopAccessingSecurityScopedResource() } }
+            sourceData = try? Data(contentsOf: coordinatedURL, options: .alwaysMapped)
+        }
+        if sourceData == nil {
+            sourceData = try? Data(contentsOf: sourceURL, options: .alwaysMapped)
+        }
+        
         for container in containers {
             let stagingURL = container.appendingPathComponent("ShareStaging", isDirectory: true)
             let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
@@ -755,18 +771,21 @@ struct ShareExtensionView: View {
             try? FileManager.default.removeItem(at: pendingDestURL)
             
             var didCopy = false
-            do {
-                try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                try? FileManager.default.copyItem(at: destURL, to: inboxDestURL)
-                try? FileManager.default.copyItem(at: destURL, to: pendingDestURL)
-                didCopy = true
-            } catch {
-                if let data = try? Data(contentsOf: sourceURL, options: .alwaysMapped) {
-                    if (try? data.write(to: destURL, options: .atomic)) != nil {
-                        try? data.write(to: inboxDestURL, options: .atomic)
-                        try? data.write(to: pendingDestURL, options: .atomic)
-                        didCopy = true
-                    }
+            if let data = sourceData {
+                if (try? data.write(to: destURL, options: .atomic)) != nil {
+                    try? data.write(to: inboxDestURL, options: .atomic)
+                    try? data.write(to: pendingDestURL, options: .atomic)
+                    didCopy = true
+                }
+            }
+            if !didCopy {
+                do {
+                    try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                    try? FileManager.default.copyItem(at: destURL, to: inboxDestURL)
+                    try? FileManager.default.copyItem(at: destURL, to: pendingDestURL)
+                    didCopy = true
+                } catch {
+                    // Fallback handled
                 }
             }
             if didCopy && primaryResultURL == nil {

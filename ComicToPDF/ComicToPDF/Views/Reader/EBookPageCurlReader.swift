@@ -969,7 +969,30 @@ extension EBookPageCurlReader {
 
         private func handleHighlightRequest() {
             guard let wv = primaryWebView else { return }
-            wv.evaluateJavaScript("window.getSelection().toString()") { [weak self] result, _ in
+            let js = """
+            (function() {
+                var sel = window.getSelection();
+                if (!sel || sel.isCollapsed || sel.rangeCount === 0) return "";
+                var text = sel.toString();
+                if (!text || text.trim().length === 0) return "";
+                if (window.applyInksyncHighlight) {
+                    window.applyInksyncHighlight('#ffd700');
+                } else {
+                    try {
+                        var range = sel.getRangeAt(0);
+                        var mark = document.createElement('mark');
+                        mark.className = 'inksync-highlight';
+                        mark.style.backgroundColor = '#ffd700';
+                        mark.style.color = 'inherit';
+                        mark.style.borderRadius = '2px';
+                        range.surroundContents(mark);
+                        sel.removeAllRanges();
+                    } catch(e) {}
+                }
+                return text;
+            })();
+            """
+            wv.evaluateJavaScript(js) { [weak self] result, _ in
                 if let text = result as? String, !text.isEmpty {
                     self?.parent.onHighlightCreated?(text)
                 }

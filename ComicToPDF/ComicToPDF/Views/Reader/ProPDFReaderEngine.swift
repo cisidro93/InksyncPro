@@ -1139,11 +1139,26 @@ struct ProPDFReaderEngine: View {
                     guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
                     let annotation = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
                     annotation.color = color.uiColor.withAlphaComponent(0.45)
+
+                    // In iOS 16/17/18 PDFKit, quadrilateralPoints is required for .highlight annotations to render
+                    let p1 = CGPoint(x: lineBounds.minX, y: lineBounds.maxY)
+                    let p2 = CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)
+                    let p3 = CGPoint(x: lineBounds.minX, y: lineBounds.minY)
+                    let p4 = CGPoint(x: lineBounds.maxX, y: lineBounds.minY)
+                    annotation.quadrilateralPoints = [
+                        NSValue(cgPoint: p1),
+                        NSValue(cgPoint: p2),
+                        NSValue(cgPoint: p3),
+                        NSValue(cgPoint: p4)
+                    ]
+
                     page.addAnnotation(annotation)
                 }
             }
             pdfView.clearSelection()
             pdfView.setNeedsDisplay()
+            pdfView.layoutDocumentView()
+            pdfView.subviews.forEach { $0.setNeedsDisplay() }
             HapticEngine.selection()
         }
 
