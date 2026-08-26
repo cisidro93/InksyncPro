@@ -1116,6 +1116,15 @@ extension EBookPageCurlReader {
                 background-color: rgba(255, 214, 10, 0.5) !important;
                 color: inherit !important;
             }
+            mark.inksync-highlight, .inksync-highlight {
+                background-color: rgba(255, 214, 10, 0.45) !important;
+                color: inherit !important;
+                border-radius: 2px !important;
+                padding: 0 1px !important;
+                margin: 0 !important;
+                box-decoration-break: clone !important;
+                -webkit-box-decoration-break: clone !important;
+            }
             html, body {
                 margin: 0 !important; padding: 0 !important;
                 width: 100% !important;
