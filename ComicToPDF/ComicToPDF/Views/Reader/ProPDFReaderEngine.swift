@@ -452,19 +452,14 @@ struct ProPDFReaderEngine: View {
             .ignoresSafeArea()
 
             let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            // Show the PencilKit canvas layer when:
-            //   - The user has explicitly toggled markup mode (isPencilMode), OR
-            //   - On iPad, Apple Pencil auto-draw is enabled in preferences.
-            // Removing the iPad guard from the second clause allows iPhone users
-            // to annotate with their finger when they activate markup mode via
-            // the toolbar. PKCanvasRepresentation already sets drawingPolicy to
-            // .anyInput on non-iPad devices so finger drawing works correctly.
-            let shouldShowCanvas = isPencilMode || (isPad && prefs.applePencilAutoDraw)
-            if shouldShowCanvas {
+            // Only mount the PencilKit drawing canvas when Markup Mode is explicitly toggled
+            // by the user via the toolbar icon. This ensures that normal reading, finger text selection,
+            // and tap-to-turn gestures are never intercepted by the PKCanvasView layer.
+            if isPencilMode {
                 PageCanvasOverlay(
                     pdfID: pdf.id,
                     pageIndex: currentPageIndex,
-                    isMarkupEnabled: shouldShowCanvas
+                    isMarkupEnabled: true
                 )
                 .ignoresSafeArea()
             }
@@ -1376,12 +1371,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let prefs = EBookPreferences.shared
         let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
-
-        let viewOptions: [UIPageViewController.OptionsKey: Any] = [
-            .spineLocation: NSNumber(value: isDual ? UIPageViewController.SpineLocation.mid.rawValue : UIPageViewController.SpineLocation.min.rawValue)
-        ]
-        pdfView.usePageViewController(true, withViewOptions: viewOptions)
-        pdfView.displayMode = isDual ? .twoUp : .singlePage
+        pdfView.usePageViewController(false)
+        pdfView.displayMode = isDual ? .twoUp : .singlePageContinuous
         pdfView.displaysAsBook = isDual
 
         let margin = max(0, prefs.textMargin)
@@ -1549,6 +1540,14 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         @MainActor @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let view = gesture.view as? PDFView else { return }
+
+            // If text is currently selected in PDFView, clear selection on single tap instead of turning page
+            if let selection = view.currentSelection, let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                view.clearSelection()
+                parent.onTextSelectionChanged(nil)
+                return
+            }
+
             let location = gesture.location(in: view)
             let width = view.bounds.width
             let prefs = EBookPreferences.shared
