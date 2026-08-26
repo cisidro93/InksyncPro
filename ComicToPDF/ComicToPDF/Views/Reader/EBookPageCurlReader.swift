@@ -22,6 +22,8 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
     var onPrev: () -> Void
     var onCenterTap: () -> Void
     var onHighlightCreated: ((String) -> Void)? = nil
+    var onTextSelected: ((String) -> Void)? = nil
+    var onSelectionDismissed: (() -> Void)? = nil
     var pdfID: UUID? = nil
     var initialScrollFraction: Double = 0.0
     var onScrollFractionChanged: ((Double) -> Void)? = nil
@@ -222,6 +224,8 @@ extension EBookPageCurlReader {
             guard let wv = primaryWebView else { return }
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "metrics")
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "highlight")
+            wv.configuration.userContentController.removeScriptMessageHandler(forName: "onTextSelected")
+            wv.configuration.userContentController.removeScriptMessageHandler(forName: "onSelectionDismissed")
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "footnote")
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "scrollFraction")
             wv.navigationDelegate = nil
@@ -237,6 +241,8 @@ extension EBookPageCurlReader {
             let controller = config.userContentController
             controller.add(self, name: "metrics")
             controller.add(self, name: "highlight")
+            controller.add(self, name: "onTextSelected")
+            controller.add(self, name: "onSelectionDismissed")
             controller.add(self, name: "footnote")
             controller.add(self, name: "scrollFraction")
 
@@ -861,6 +867,10 @@ extension EBookPageCurlReader {
                 didReceiveMetrics(current: current, totalPages: total, fromPageIndex: currentPageIndex)
             } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
                 parent.onHighlightCreated?(text)
+            } else if message.name == "onTextSelected", let text = message.body as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                parent.onTextSelected?(text)
+            } else if message.name == "onSelectionDismissed" {
+                parent.onSelectionDismissed?()
             } else if message.name == "footnote", let body = message.body as? [String: String], let text = body["text"] {
                 parent.onFootnoteTapped?(text)
             }
@@ -1324,11 +1334,29 @@ extension EBookPageCurlReader {
                 applyPagePosition();
             });
 
-            window.applyInksyncHighlight = function(colorHex) {
+            document.addEventListener('selectionchange', function() {
                 var sel = window.getSelection();
-                if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+                if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+                    if (window.__lastSelectedText) {
+                        window.__lastSelectedText = "";
+                        try { window.webkit.messageHandlers.onSelectionDismissed.postMessage({}); } catch(e) {}
+                    }
+                    return;
+                }
                 var text = sel.toString().trim();
-                if (!text) return;
+                if (text.length > 0 && text !== window.__lastSelectedText) {
+                    window.__lastSelectedText = text;
+                    try {
+                        window.webkit.messageHandlers.onTextSelected.postMessage(text);
+                    } catch(e) {}
+                }
+            });
+
+            window.applyInksyncHighlight = function(colorHex, symbol) {
+                var sel = window.getSelection();
+                if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return "";
+                var text = sel.toString().trim();
+                if (!text) return "";
                 var range = sel.getRangeAt(0);
                 var mark = document.createElement('mark');
                 mark.className = 'inksync-highlight';
@@ -1336,14 +1364,23 @@ extension EBookPageCurlReader {
                 mark.style.color = 'inherit';
                 mark.style.borderRadius = '2px';
                 mark.style.mixBlendMode = 'multiply';
-                try { range.surroundContents(mark); } catch(e) {
-                    var frag = range.extractContents(); mark.appendChild(frag); range.insertNode(mark);
+                if (symbol) {
+                    mark.setAttribute('data-symbol', symbol);
+                }
+                try {
+                    range.surroundContents(mark);
+                } catch(e) {
+                    var frag = range.extractContents();
+                    mark.appendChild(frag);
+                    range.insertNode(mark);
                 }
                 sel.removeAllRanges();
-                window.webkit.messageHandlers.highlight.postMessage(text);
+                window.__lastSelectedText = "";
+                try { window.webkit.messageHandlers.highlight.postMessage(text); } catch(e) {}
+                return text;
             };
 
-            window.restoreInksyncHighlight = function(textToFind, colorHex) {
+            window.restoreInksyncHighlight = function(textToFind, colorHex, symbol) {
                 if (!textToFind) return;
                 var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
                 var node;
@@ -1359,6 +1396,10 @@ extension EBookPageCurlReader {
                             mark.style.backgroundColor = colorHex || '#ffd700';
                             mark.style.color = 'inherit';
                             mark.style.borderRadius = '2px';
+                            mark.style.mixBlendMode = 'multiply';
+                            if (symbol) {
+                                mark.setAttribute('data-symbol', symbol);
+                            }
                             range.surroundContents(mark);
                         } catch(e) {}
                         break;

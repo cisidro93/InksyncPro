@@ -138,6 +138,21 @@ final class PDFAnnotationSyncBridge: Sendable {
         Logger.shared.log("PDFAnnotationSync: Applied \(storeAnnotations.count) annotations onto active PDF document", category: "PDF")
     }
 
+    // MARK: - Sync & Persist to Document Disk Storage
+    
+    /// Synchronizes all in-memory and SwiftData annotations from `AnnotationStore` directly into the live `PDFDocument`
+    /// and writes the updated document back to disk.
+    @MainActor
+    func syncStoreToDocument(for pdfID: UUID, in document: PDFDocument, at destinationURL: URL? = nil) {
+        applyStoreAnnotations(for: pdfID, to: document)
+        if let targetURL = destinationURL ?? document.documentURL {
+            let didAccess = targetURL.startAccessingSecurityScopedResource()
+            defer { if didAccess { targetURL.stopAccessingSecurityScopedResource() } }
+            document.write(to: targetURL)
+            Logger.shared.log("PDFAnnotationSync: Persisted PDF with annotations to disk at \(targetURL.lastPathComponent)", category: "PDF", type: .success)
+        }
+    }
+
     // MARK: - Export Inksync Annotations to Native PDFDocument
     
     /// Writes all InkSync Pro highlights, Pencil drawings, and Adler notes into the `PDFDocument` as native ISO annotations.

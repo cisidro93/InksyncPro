@@ -56,6 +56,7 @@ struct EBookReaderView: View {
     
     @State private var activeHighlightToEdit: SDAnnotation? = nil
     @State private var annotationForFullEdit: SDAnnotation? = nil
+    @State private var selectedTextForHUD: String? = nil
     @State private var lastBrightnessDragValue: CGFloat = 0
     // Gap A: Annotations panel
     @State private var showAnnotations = false
@@ -133,24 +134,17 @@ struct EBookReaderView: View {
                                     onPrev:      prevChapter,
                                     onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
                                     onHighlightCreated: { selectedText in
-                                        guard let p = pdf else { return }
-                                        let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
-                                        let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
-                                        let highlight = Annotation(
-                                            pdfID: p.id,
-                                            pageIndex: currentIndex,
-                                            chapterTitle: spineLabel,
-                                            kind: .highlight,
-                                            createdAt: Date(),
-                                            modifiedAt: Date(),
-                                            colorHex: "#ffd700",
-                                            selectedText: selectedText
-                                        )
-                                        AnnotationStore.shared.add(highlight)
-                                        let sdAnnotation = SDAnnotation(from: highlight)
-                                        modelContext.insert(sdAnnotation)
-                                        try? modelContext.save()
-                                        activeHighlightToEdit = sdAnnotation
+                                        applyHighlight(text: selectedText, colorHex: "#FFD600", symbol: nil)
+                                    },
+                                    onTextSelected: { text in
+                                        withAnimation(.easeInOut(duration: 0.18)) {
+                                            selectedTextForHUD = text
+                                        }
+                                    },
+                                    onSelectionDismissed: {
+                                        withAnimation(.easeInOut(duration: 0.18)) {
+                                            selectedTextForHUD = nil
+                                        }
                                     },
                                     pdfID: pdf?.id,
                                     initialScrollFraction: UserDefaults.standard.double(forKey: "ebook_fraction_\(fileURL.lastPathComponent.hashValue)"),
@@ -248,6 +242,9 @@ struct EBookReaderView: View {
                 bottomBar
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+        }
+        .overlay {
+            textSelectionHUDOverlay
         }
         // Settings sheet lives here only — NOT duplicated inside chapterDrawer
         .sheet(isPresented: $showingSettingsPanel) {
@@ -974,6 +971,95 @@ struct EBookReaderView: View {
         // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
+    }
+
+    // MARK: - Text Selection & Highlighting HUD
+    @ViewBuilder private var textSelectionHUDOverlay: some View {
+        if let selectedText = selectedTextForHUD, !selectedText.isEmpty {
+            VStack {
+                Spacer()
+                ProPDFTextSelectionHUD(
+                    selectedText: selectedText,
+                    pageIndex: currentIndex,
+                    onHighlight: { color in
+                        applyHighlight(text: selectedText, colorHex: color.rawValue, symbol: nil)
+                        selectedTextForHUD = nil
+                    },
+                    onAddNote: { note in
+                        applyHighlight(text: selectedText, colorHex: "#FFD600", note: note, symbol: nil)
+                        selectedTextForHUD = nil
+                    },
+                    onCopy: {
+                        UIPasteboard.general.string = selectedText
+                        selectedTextForHUD = nil
+                    },
+                    onSpeak: { text in
+                        speakText(text)
+                    },
+                    onCreateZettelkastenCard: { text in
+                        createZettelkastenCard(text: text)
+                        selectedTextForHUD = nil
+                    },
+                    onAddMarginaliaSymbol: { symbol in
+                        applyHighlight(text: selectedText, colorHex: "#FFD600", symbol: symbol)
+                        selectedTextForHUD = nil
+                    }
+                )
+                .padding(.bottom, showHUD ? 80 : 30)
+                .padding(.horizontal, 20)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    private func applyHighlight(text: String, colorHex: String, note: String? = nil, symbol: String? = nil) {
+        guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
+        let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
+        let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
+        
+        let safeSymbol = symbol?.replacingOccurrences(of: "'", with: "\\'") ?? ""
+        let js = "if (window.applyInksyncHighlight) { window.applyInksyncHighlight('\(colorHex)', '\(safeSymbol)'); }"
+        webViewReference?.evaluateJavaScript(js)
+        
+        var highlight = Annotation(
+            pdfID: p.id,
+            pageIndex: currentIndex,
+            chapterTitle: spineLabel,
+            kind: note != nil ? .note : .highlight,
+            createdAt: Date(),
+            modifiedAt: Date(),
+            colorHex: colorHex,
+            selectedText: text,
+            noteText: note
+        )
+        if let s = symbol {
+            highlight.marginaliaSymbolRaw = s
+            if note == nil {
+                highlight.noteText = "Marginalia Symbol: \(s)"
+            }
+        }
+        AnnotationStore.shared.add(highlight)
+        let sdAnnotation = SDAnnotation(from: highlight)
+        modelContext.insert(sdAnnotation)
+        try? modelContext.save()
+        HapticEngine.selection()
+    }
+
+    private func createZettelkastenCard(text: String) {
+        guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
+        let card = SDNotebook(
+            title: "Quote from \(p.name) (Section \(currentIndex + 1))",
+            linkedBookID: p.id
+        )
+        modelContext.insert(card)
+        try? modelContext.save()
+        HapticEngine.success()
+    }
+
+    private func speakText(_ text: String) {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        AVSpeechSynthesizer().speak(utterance)
     }
 }
 

@@ -377,6 +377,20 @@ struct ProPDFReaderEngine: View {
                 applyCropInsets(CodableCropInsets(top: prefs.defaultCropTop, bottom: prefs.defaultCropBottom, left: prefs.defaultCropLeft, right: prefs.defaultCropRight, modeRaw: "custom"))
             }
         }
+        .onDisappear {
+            saveReadingProgress()
+            if let doc = pdfDocument {
+                PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc)
+            }
+            accessedSecurityScopedURL?.stopAccessingSecurityScopedResource()
+            accessedSecurityScopedURL = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            saveReadingProgress()
+            if let doc = pdfDocument {
+                PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc)
+            }
+        }
     }
 
     // MARK: - Subviews for Fast Compiler Type-Checking
@@ -1208,6 +1222,9 @@ struct ProPDFReaderEngine: View {
             bounds: savedBounds
         )
         AnnotationStore.shared.add(highlight)
+        if let doc = pdfDocument {
+            PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc)
+        }
         activeSelectionSnapshot = nil
         showToastMessage("Highlight Added")
         HapticEngine.selection()
