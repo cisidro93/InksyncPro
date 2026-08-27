@@ -5,6 +5,7 @@ import ZIPFoundation
 import CoreTransferable
 import UIKit
 import SwiftData
+import AVFoundation
 
 
 @MainActor

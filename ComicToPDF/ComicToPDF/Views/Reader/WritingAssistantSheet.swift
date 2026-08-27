@@ -349,7 +349,7 @@ struct WritingAssistantSheet: View {
     
     private func analyzeText() {
         var newIssues: [AssistantIssue] = []
-        var textState = correctedText
+        let textState = correctedText
         
         // 1. Spell Check using UITextChecker
         let checker = UITextChecker()
@@ -449,7 +449,7 @@ struct WritingAssistantSheet: View {
         let tagOptions: NLTagger.Options = [.omitWhitespace, .omitPunctuation, .joinNames]
         
         tagger.enumerateTags(in: textState.startIndex..<textState.endIndex, unit: .word, scheme: .nameType, options: tagOptions) { tag, tokenRange in
-            if let tag = tag {
+            if tag != nil {
                 let matchedWord = String(textState[tokenRange])
                 if let firstChar = matchedWord.first, firstChar.isLowercase {
                     let capitalized = matchedWord.prefix(1).uppercased() + matchedWord.dropFirst()

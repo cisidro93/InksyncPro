@@ -4,6 +4,23 @@ import ZIPFoundation
 import PDFKit
 import Unrar
 
+private final class ExtractedFileBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var urls: [URL] = []
+    
+    func append(_ url: URL) {
+        lock.lock()
+        defer { lock.unlock() }
+        urls.append(url)
+    }
+    
+    func results() -> [URL] {
+        lock.lock()
+        defer { lock.unlock() }
+        return urls
+    }
+}
+
 struct ZipUtilities {
     
     /// Extract all image files from a comic archive (CBZ/ZIP/PDF/CBR/CBT).
@@ -33,7 +50,6 @@ struct ZipUtilities {
                 let filename = sourceURL.deletingPathExtension().lastPathComponent
                 let uniqueID = UUID().uuidString.prefix(8)
                 let tempDir = fileManager.temporaryDirectory.appendingPathComponent("extract_\(filename)_\(uniqueID)")
-                var enumerationArchive: ZIPFoundation.Archive? = nil
                 do {
                     // Security scope is managed by the CALLER — do not open it here.
                     // See doc comment on extractComic for the ownership contract.
@@ -41,7 +57,7 @@ struct ZipUtilities {
                     // 2. Create Target Directory
                     try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
                     
-                    var extractedFiles: [URL] = []
+                    let accumulator = ExtractedFileBox()
                     
                     // 3. Extraction Strategy
                     if ext == "pdf" {
@@ -73,7 +89,7 @@ struct ZipUtilities {
                                     let fileURL = tempDir.appendingPathComponent(pageName)
                                     if let data = image.jpegData(compressionQuality: 0.85) {
                                         try data.write(to: fileURL)
-                                        extractedFiles.append(fileURL)
+                                        accumulator.append(fileURL)
                                     }
                                 }
                             }
@@ -100,7 +116,6 @@ struct ZipUtilities {
 
                         // ── Phase 1: Enumerate qualifying entry paths (no I/O, metadata only) ──
                         let activeEnumerationArchive = try ZIPFoundation.Archive(url: sourceURL, accessMode: .read, pathEncoding: .utf8)
-                        enumerationArchive = activeEnumerationArchive
 
                         let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
                         var qualifiedPaths: [String] = []
@@ -130,8 +145,6 @@ struct ZipUtilities {
                         let chunks = stride(from: 0, to: qualifiedPaths.count, by: chunkSize)
                             .map { Array(qualifiedPaths[$0 ..< min($0 + chunkSize, qualifiedPaths.count)]) }
 
-                        // Serial queue guards appends to extractedFiles from concurrent workers.
-                        let appendQueue = DispatchQueue(label: "inksync.zip.append")
                         let workerGroup = DispatchGroup()
 
                         for chunk in chunks {
@@ -169,7 +182,7 @@ struct ZipUtilities {
                                         // stream entry directly to disk — no intermediate Data buffer.
                                         do {
                                             _ = try workerArchive.extract(entry, to: destinationURL)
-                                            appendQueue.sync { extractedFiles.append(destinationURL) }
+                                            accumulator.append(destinationURL)
                                         } catch {
                                             Logger.shared.log(
                                                 "ZipUtilities: failed to extract \(path): \(error.localizedDescription)",
@@ -183,19 +196,15 @@ struct ZipUtilities {
                         workerGroup.wait()
                     }
 
-
-
                     // 5. Sort and Finish
-                    let sortedURLs = extractedFiles.sorted {
+                    let sortedURLs = accumulator.results().sorted {
                         $0.path.localizedStandardCompare($1.path) == .orderedAscending
                     }
                     
                     Logger.shared.log("Successfully unpacked \(sortedURLs.count) files", category: "System", type: .success)
-                    enumerationArchive = nil
                     continuation.resume(returning: (tempDir, sortedURLs))
                     
                 } catch {
-                    enumerationArchive = nil
                     Logger.shared.log("Crash/Error in ZipUtilities: \(error.localizedDescription)", category: "System", type: .error)
                     try? fileManager.removeItem(at: tempDir)
                     continuation.resume(throwing: error)

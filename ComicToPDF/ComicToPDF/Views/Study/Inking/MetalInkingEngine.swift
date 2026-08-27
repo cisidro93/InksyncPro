@@ -208,6 +208,7 @@ public struct MetalInkingCanvasView: UIViewRepresentable {
             self.parent = parent
         }
         
+        @MainActor
         func setupMetal(mtkView: MTKView) {
             guard let dev = mtkView.device else { return }
             self.device = dev

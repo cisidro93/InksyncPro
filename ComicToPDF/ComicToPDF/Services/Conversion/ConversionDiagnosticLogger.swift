@@ -132,7 +132,7 @@ struct ConversionDiagnosticLogger {
     
     /// Forensically inspects and logs the internal structure of a generated EPUB archive.
     private static func auditEPUBStructure(at url: URL) {
-        guard let archive = try? Archive(url: url, accessMode: .read) else {
+        guard let archive = Archive(url: url, accessMode: .read) else {
             Logger.shared.log("❌ [EPUB AUDIT] Could not open generated archive at \(url.lastPathComponent)", category: "Conversion", type: .error)
             return
         }

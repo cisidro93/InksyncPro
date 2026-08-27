@@ -382,16 +382,12 @@ final class WiFiServer: ObservableObject, Sendable {
     
     private func handleConnection(_ connection: NWConnection) {
         let context = ConnectionContext()
-        let cleanIP: String
         if case let .hostPort(host, _) = connection.endpoint {
             let ipStr = "\(host)".components(separatedBy: "%").first ?? "\(host)"
-            cleanIP = ipStr
             context.remoteIP = ipStr
             
             lastSeenIPs[ipStr] = Date()
             updateActiveConnectionsCount()
-        } else {
-            cleanIP = ""
         }
         
         Logger.shared.log("New Connection from \(connection.endpoint)", category: "Network")

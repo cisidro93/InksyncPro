@@ -286,7 +286,7 @@ actor ImportOrchestrator {
                 var fileName = url.lastPathComponent
                 let overrideMeta = overrides[url]
                 let parsedTokens = DeterministicFilenameParser.parse(filename: fileName)
-                let series = overrideMeta?.series ?? parsedTokens.seriesName ?? "Unknown"
+                let series = overrideMeta?.series ?? parsedTokens.seriesName
                 let cleanSeries = series.trimmingCharacters(in: .whitespacesAndNewlines)
                                        .replacingOccurrences(of: "/", with: "-")
                                        .replacingOccurrences(of: "\\", with: "-")

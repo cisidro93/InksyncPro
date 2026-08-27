@@ -41,9 +41,6 @@ public final class DeterministicStudyIndexer: Sendable {
             let segments = clean.split(separator: "/").map(String.init)
             guard !segments.isEmpty else { continue }
             
-            var currentPath = "#"
-            var currentMap = rootMap
-            
             // Recursively build branches
             insertPath(segments: segments, fullCount: count, into: &rootMap, pathPrefix: "#")
         }

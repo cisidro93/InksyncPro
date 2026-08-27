@@ -197,20 +197,24 @@ extension EBookPageCurlReader {
             setupPrimaryWebView()
             
             NotificationCenter.default.addObserver(forName: NSNotification.Name("EBookTurnPageForward"), object: nil, queue: .main) { [weak self] _ in
-                guard let self = self, let pvc = self.pageViewController else { return }
-                self.turnForward(pvc)
+                MainActor.assumeIsolated {
+                    guard let self = self, let pvc = self.pageViewController else { return }
+                    self.turnForward(pvc)
+                }
             }
             NotificationCenter.default.addObserver(forName: NSNotification.Name("EBookTurnPageBackward"), object: nil, queue: .main) { [weak self] _ in
-                guard let self = self, let pvc = self.pageViewController else { return }
-                self.turnBackward(pvc)
+                MainActor.assumeIsolated {
+                    guard let self = self, let pvc = self.pageViewController else { return }
+                    self.turnBackward(pvc)
+                }
             }
         }
 
-        nonisolated func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             return true
         }
 
-        nonisolated func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             // Prevent page-turn tap gesture from intercepting touch when user interacts with text selection handles or loupe
             if let className = touch.view.map({ NSStringFromClass(type(of: $0)) }),
                className.contains("Selection") || className.contains("RangeView") || className.contains("Handle") || className.contains("Loupe") {
@@ -800,7 +804,7 @@ extension EBookPageCurlReader {
             webView.reload()
         }
 
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
             guard let url = navigationAction.request.url else {
                 decisionHandler(.allow)
                 return

@@ -96,9 +96,9 @@ public actor JITComicCacheEngine {
                 if let image = await self.loadPageImage(archiveURL: archiveURL, pageIndex: index) {
                     if shouldGenerateMipmap {
                         let mipmap = await self.downscaleMipmap(image: image)
-                        await self.storeMipmap(mipmap, forKey: key)
+                        self.storeMipmap(mipmap, forKey: key)
                     } else {
-                        await self.storeImage(image, forKey: key)
+                        self.storeImage(image, forKey: key)
                     }
                 }
             }
@@ -183,7 +183,7 @@ public actor JITComicCacheEngine {
         // Restore normal governor behavior after 10 seconds
         Task {
             try? await Task.sleep(nanoseconds: 10_000_000_000)
-            await self.resetMemoryPressureFlag()
+            self.resetMemoryPressureFlag()
         }
     }
     

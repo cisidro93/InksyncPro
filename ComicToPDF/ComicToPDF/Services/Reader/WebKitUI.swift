@@ -152,7 +152,7 @@ public struct WebView: UIViewRepresentable {
             self.parent = parent
         }
         
-        public func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        public func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
             if let url = navigationAction.request.url, let onNavigate = parent.onNavigate {
                 if !onNavigate(url, webView) {
                     decisionHandler(.cancel)
@@ -182,7 +182,7 @@ public struct WebView: UIViewRepresentable {
             parent.messageHandler?(message)
         }
         
-        public func scrollViewDidEndDragging(_ scrollView: UIScrollView, decelerate: Bool) {
+        public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
             parent.scrollViewDidEndDragging?(scrollView, decelerate)
         }
         

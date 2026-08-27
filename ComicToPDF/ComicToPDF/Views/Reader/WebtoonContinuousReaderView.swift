@@ -105,7 +105,7 @@ public struct WebtoonContinuousReaderView: UIViewRepresentable {
             self.pageURLs = urls
             
             // Build placeholder image views
-            for (index, url) in urls.enumerated() {
+            for (index, _) in urls.enumerated() {
                 let iv = UIImageView()
                 iv.contentMode = .scaleAspectFill
                 iv.clipsToBounds = true
