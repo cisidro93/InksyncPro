@@ -137,6 +137,16 @@ struct EBookReaderView: View {
                                     onHighlightCreated: { selectedText in
                                         applyHighlight(text: selectedText, colorHex: "#FFD600", symbol: nil)
                                     },
+                                    onHighlightTapped: { tappedText in
+                                        guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
+                                        let storeAnns = AnnotationStore.shared.annotations(for: p.id)
+                                        if let match = storeAnns.first(where: { ($0.selectedText ?? "").contains(tappedText) || tappedText.contains($0.selectedText ?? "") }),
+                                           let sdMatch = try? modelContext.fetch(FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.id == match.id })).first {
+                                            withAnimation(.easeInOut(duration: 0.18)) {
+                                                activeHighlightToEdit = sdMatch
+                                            }
+                                        }
+                                    },
                                     onTextSelected: { text in
                                         withAnimation(.easeInOut(duration: 0.18)) {
                                             selectedTextForHUD = text
@@ -308,12 +318,15 @@ struct EBookReaderView: View {
             HighlightQuickPopoverView(
                 annotation: annotation,
                 onDelete: {
-                    // Remove from AnnotationStore (in-memory + SwiftData via its own context)
+                    if let text = annotation.selectedText {
+                        let safeText = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+                        webViewReference?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight(`\(safeText)`); }")
+                    }
                     let pid = annotation.pdfID
                     AnnotationStore.shared.delete(id: annotation.id, pdfID: pid)
-                    // Also remove from the SwiftUI modelContext (UI layer)
                     modelContext.delete(annotation)
                     try? modelContext.save()
+                    HapticEngine.selection()
                     activeHighlightToEdit = nil
                 },
                 onEditNote: {
@@ -321,7 +334,10 @@ struct EBookReaderView: View {
                     activeHighlightToEdit = nil
                 },
                 onColorSelected: { colorHex in
-                    // Update colour in AnnotationStore (in-memory + SwiftData)
+                    if let text = annotation.selectedText {
+                        let safeText = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+                        webViewReference?.evaluateJavaScript("if (window.updateInksyncHighlightColor) { window.updateInksyncHighlightColor(`\(safeText)`, '\(colorHex)'); }")
+                    }
                     let pid = annotation.pdfID
                     let matching = AnnotationStore.shared.annotations(for: pid)
                         .first(where: { $0.id == annotation.id })
@@ -329,9 +345,9 @@ struct EBookReaderView: View {
                         updated.colorHex = colorHex
                         AnnotationStore.shared.update(updated)
                     }
-                    // Also update the SDAnnotation in the SwiftUI model layer
                     annotation.colorHex = colorHex
                     try? modelContext.save()
+                    HapticEngine.selection()
                 }
             )
             .presentationCompactAdaptation(.popover)

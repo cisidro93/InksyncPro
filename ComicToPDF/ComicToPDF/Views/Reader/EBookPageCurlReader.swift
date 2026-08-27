@@ -22,6 +22,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
     var onPrev: () -> Void
     var onCenterTap: () -> Void
     var onHighlightCreated: ((String) -> Void)? = nil
+    var onHighlightTapped: ((String) -> Void)? = nil
     var onTextSelected: ((String) -> Void)? = nil
     var onSelectionDismissed: (() -> Void)? = nil
     var pdfID: UUID? = nil
@@ -224,6 +225,7 @@ extension EBookPageCurlReader {
             guard let wv = primaryWebView else { return }
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "metrics")
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "highlight")
+            wv.configuration.userContentController.removeScriptMessageHandler(forName: "onHighlightTapped")
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "onTextSelected")
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "onSelectionDismissed")
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "footnote")
@@ -241,6 +243,7 @@ extension EBookPageCurlReader {
             let controller = config.userContentController
             controller.add(self, name: "metrics")
             controller.add(self, name: "highlight")
+            controller.add(self, name: "onHighlightTapped")
             controller.add(self, name: "onTextSelected")
             controller.add(self, name: "onSelectionDismissed")
             controller.add(self, name: "footnote")
@@ -867,6 +870,8 @@ extension EBookPageCurlReader {
                 didReceiveMetrics(current: current, totalPages: total, fromPageIndex: currentPageIndex)
             } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
                 parent.onHighlightCreated?(text)
+            } else if message.name == "onHighlightTapped", let text = message.body as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                parent.onHighlightTapped?(text)
             } else if message.name == "onTextSelected", let text = message.body as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 parent.onTextSelected?(text)
             } else if message.name == "onSelectionDismissed" {
@@ -1025,10 +1030,12 @@ extension EBookPageCurlReader {
             for ann in annotations {
                 guard let text = ann.selectedText, let color = ann.colorHex else { continue }
                 let safeText = text
+                    .replacingOccurrences(of: "\\", with: "\\\\")
                     .replacingOccurrences(of: "`", with: "\\`")
                     .replacingOccurrences(of: "\"", with: "\\\"")
                     .replacingOccurrences(of: "\n", with: " ")
-                let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
+                let safeSymbol = (ann.marginaliaSymbolRaw ?? "").replacingOccurrences(of: "'", with: "\\'")
+                let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)', '\(safeSymbol)');"
                 webView.evaluateJavaScript(js)
             }
         }
@@ -1127,13 +1134,28 @@ extension EBookPageCurlReader {
                 color: inherit !important;
             }
             mark.inksync-highlight, .inksync-highlight {
-                background-color: rgba(255, 214, 10, 0.45) !important;
+                background-color: rgba(255, 214, 10, 0.45);
                 color: inherit !important;
-                border-radius: 2px !important;
-                padding: 0 1px !important;
+                border-radius: 3px !important;
+                padding: 1px 2px !important;
                 margin: 0 !important;
                 box-decoration-break: clone !important;
                 -webkit-box-decoration-break: clone !important;
+                cursor: pointer !important;
+                mix-blend-mode: multiply;
+                transition: opacity 0.15s ease, filter 0.15s ease !important;
+            }
+            mark.inksync-highlight:active {
+                filter: brightness(0.88) !important;
+                opacity: 0.85 !important;
+            }
+            mark.inksync-highlight[data-symbol]:after {
+                content: " [" attr(data-symbol) "]";
+                font-size: 0.75em !important;
+                font-weight: bold !important;
+                color: #ff9800 !important;
+                opacity: 0.9 !important;
+                vertical-align: super !important;
             }
             html, body {
                 margin: 0 !important; padding: 0 !important;
@@ -1352,6 +1374,18 @@ extension EBookPageCurlReader {
                 }
             });
 
+            document.addEventListener('click', function(e) {
+                var mark = e.target.closest ? e.target.closest('mark.inksync-highlight') : null;
+                if (mark) {
+                    var text = mark.textContent.trim();
+                    if (text) {
+                        try {
+                            window.webkit.messageHandlers.onHighlightTapped.postMessage(text);
+                        } catch(err) {}
+                    }
+                }
+            }, true);
+
             window.applyInksyncHighlight = function(colorHex, symbol) {
                 var sel = window.getSelection();
                 if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return "";
@@ -1360,9 +1394,9 @@ extension EBookPageCurlReader {
                 var range = sel.getRangeAt(0);
                 var mark = document.createElement('mark');
                 mark.className = 'inksync-highlight';
-                mark.style.backgroundColor = colorHex || '#ffd700';
+                mark.style.backgroundColor = colorHex || '#FFD600';
                 mark.style.color = 'inherit';
-                mark.style.borderRadius = '2px';
+                mark.style.borderRadius = '3px';
                 mark.style.mixBlendMode = 'multiply';
                 if (symbol) {
                     mark.setAttribute('data-symbol', symbol);
@@ -1370,14 +1404,62 @@ extension EBookPageCurlReader {
                 try {
                     range.surroundContents(mark);
                 } catch(e) {
-                    var frag = range.extractContents();
-                    mark.appendChild(frag);
-                    range.insertNode(mark);
+                    try {
+                        var frag = range.extractContents();
+                        mark.appendChild(frag);
+                        range.insertNode(mark);
+                    } catch(err) {
+                        var walker = document.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT, null, false);
+                        var textNode;
+                        while ((textNode = walker.nextNode())) {
+                            if (range.intersectsNode(textNode)) {
+                                var subMark = document.createElement('mark');
+                                subMark.className = 'inksync-highlight';
+                                subMark.style.backgroundColor = colorHex || '#FFD600';
+                                subMark.style.mixBlendMode = 'multiply';
+                                if (symbol) subMark.setAttribute('data-symbol', symbol);
+                                var startOffset = (textNode === range.startContainer) ? range.startOffset : 0;
+                                var endOffset = (textNode === range.endContainer) ? range.endOffset : textNode.nodeValue.length;
+                                var subRange = document.createRange();
+                                subRange.setStart(textNode, startOffset);
+                                subRange.setEnd(textNode, endOffset);
+                                try { subRange.surroundContents(subMark); } catch(x) {}
+                            }
+                        }
+                    }
                 }
                 sel.removeAllRanges();
                 window.__lastSelectedText = "";
                 try { window.webkit.messageHandlers.highlight.postMessage(text); } catch(e) {}
                 return text;
+            };
+
+            window.updateInksyncHighlightColor = function(textToFind, newColorHex) {
+                if (!textToFind) return;
+                var marks = document.querySelectorAll('mark.inksync-highlight');
+                for (var i = 0; i < marks.length; i++) {
+                    if (marks[i].textContent.indexOf(textToFind) !== -1 || textToFind.indexOf(marks[i].textContent) !== -1) {
+                        marks[i].style.backgroundColor = newColorHex;
+                    }
+                }
+            };
+
+            window.removeInksyncHighlight = function(textToFind) {
+                if (!textToFind) return;
+                var marks = document.querySelectorAll('mark.inksync-highlight');
+                for (var i = 0; i < marks.length; i++) {
+                    if (marks[i].textContent.indexOf(textToFind) !== -1 || textToFind.indexOf(marks[i].textContent) !== -1) {
+                        var mark = marks[i];
+                        var parent = mark.parentNode;
+                        if (parent) {
+                            while (mark.firstChild) {
+                                parent.insertBefore(mark.firstChild, mark);
+                            }
+                            parent.removeChild(mark);
+                            parent.normalize();
+                        }
+                    }
+                }
             };
 
             window.restoreInksyncHighlight = function(textToFind, colorHex, symbol) {
@@ -1393,9 +1475,9 @@ extension EBookPageCurlReader {
                             range.setEnd(node, idx + textToFind.length);
                             var mark = document.createElement('mark');
                             mark.className = 'inksync-highlight';
-                            mark.style.backgroundColor = colorHex || '#ffd700';
+                            mark.style.backgroundColor = colorHex || '#FFD600';
                             mark.style.color = 'inherit';
-                            mark.style.borderRadius = '2px';
+                            mark.style.borderRadius = '3px';
                             mark.style.mixBlendMode = 'multiply';
                             if (symbol) {
                                 mark.setAttribute('data-symbol', symbol);

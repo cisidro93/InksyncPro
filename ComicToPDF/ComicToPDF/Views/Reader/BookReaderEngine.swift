@@ -1241,7 +1241,7 @@ private func computeColumnCount(for size: CGSize) -> Int {
                                             kind: .highlight,
                                             createdAt: Date(),
                                             modifiedAt: Date(),
-                                            colorHex: "#ffd700",
+                                            colorHex: "#FFD600",
                                             selectedText: selectedText
                                         )
                                         AnnotationStore.shared.add(highlight)
@@ -1251,6 +1251,15 @@ private func computeColumnCount(for size: CGSize) -> Int {
                                         modelContext.insert(sdAnnotation)
                                         try? modelContext.save()
                                         self.activeHighlightToEdit = sdAnnotation
+                                    },
+                                    onHighlightTapped: { tappedText in
+                                        let storeAnns = AnnotationStore.shared.annotations(for: pdf.id)
+                                        if let match = storeAnns.first(where: { ($0.selectedText ?? "").contains(tappedText) || tappedText.contains($0.selectedText ?? "") }),
+                                           let sdMatch = try? modelContext.fetch(FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.id == match.id })).first {
+                                            withAnimation(.easeInOut(duration: 0.18)) {
+                                                activeHighlightToEdit = sdMatch
+                                            }
+                                        }
                                     },
                                     pdfID: pdf.id,
                                     initialScrollFraction: initialScrollFraction,
@@ -1568,11 +1577,13 @@ private func computeColumnCount(for size: CGSize) -> Int {
                 annotation: annotation,
                 onDelete: {
                     if let webView = webViewReference, let text = annotation.selectedText {
-                        let safeText = text.replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
-                        webView.evaluateJavaScript("window.removeInksyncHighlight(`\(safeText)`);")
+                        let safeText = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+                        webView.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight(`\(safeText)`); }")
                     }
+                    AnnotationStore.shared.delete(id: annotation.id, pdfID: pdf.id)
                     modelContext.delete(annotation)
                     try? modelContext.save()
+                    HapticEngine.selection()
                     activeHighlightToEdit = nil
                 },
                 onEditNote: {
@@ -1581,9 +1592,18 @@ private func computeColumnCount(for size: CGSize) -> Int {
                 },
                 onColorSelected: { colorHex in
                     if let webView = webViewReference, let text = annotation.selectedText {
-                        let safeText = text.replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
-                        webView.evaluateJavaScript("window.updateInksyncHighlightColor(`\(safeText)`, '\(colorHex)');")
+                        let safeText = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+                        webView.evaluateJavaScript("if (window.updateInksyncHighlightColor) { window.updateInksyncHighlightColor(`\(safeText)`, '\(colorHex)'); }")
                     }
+                    let matching = AnnotationStore.shared.annotations(for: pdf.id)
+                        .first(where: { $0.id == annotation.id })
+                    if var updated = matching {
+                        updated.colorHex = colorHex
+                        AnnotationStore.shared.update(updated)
+                    }
+                    annotation.colorHex = colorHex
+                    try? modelContext.save()
+                    HapticEngine.selection()
                 }
             )
             .presentationCompactAdaptation(.popover)
@@ -2064,26 +2084,29 @@ struct HighlightQuickPopoverView: View {
     var onColorSelected: (String) -> Void
     
     let colors = [
-        ("#FFD60A", Color.yellow),
-        ("#30D158", Color.green),
-        ("#FF375F", Color.pink),
-        ("#0A84FF", Color.blue),
-        ("#BF5AF2", Color.purple)
+        ("#FFD600", Color.yellow),
+        ("#00E676", Color.green),
+        ("#FF4081", Color.pink),
+        ("#29B6F6", Color.blue),
+        ("#B388FF", Color.purple)
     ]
+
+    private let marginaliaSymbols = ["?", "!", "★", "≠", "Δ"]
     
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             // Colors row
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 ForEach(colors, id: \.0) { item in
                     Circle()
                         .fill(item.1)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 26, height: 26)
                         .overlay(
                             Circle()
-                                .stroke(Color.primary.opacity(0.3), lineWidth: annotation.colorHex == item.0 ? 3 : 0)
+                                .stroke(Color.primary.opacity(0.35), lineWidth: annotation.colorHex?.uppercased() == item.0.uppercased() ? 2.5 : 0)
                         )
                         .onTapGesture {
+                            HapticEngine.selection()
                             annotation.colorHex = item.0
                             annotation.modifiedAt = Date()
                             try? annotation.modelContext?.save()
@@ -2092,43 +2115,89 @@ struct HighlightQuickPopoverView: View {
                 }
             }
             .padding(.top, 4)
+
+            // Marginalia Symbols row
+            HStack(spacing: 8) {
+                ForEach(marginaliaSymbols, id: \.self) { symbol in
+                    Button {
+                        HapticEngine.selection()
+                        annotation.marginaliaSymbolRaw = (annotation.marginaliaSymbolRaw == symbol) ? nil : symbol
+                        annotation.modifiedAt = Date()
+                        try? annotation.modelContext?.save()
+                    } label: {
+                        Text(symbol)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .frame(width: 28, height: 24)
+                            .background(
+                                annotation.marginaliaSymbolRaw == symbol ?
+                                Color.orange.opacity(0.25) : Color.primary.opacity(0.06)
+                            )
+                            .foregroundColor(annotation.marginaliaSymbolRaw == symbol ? .orange : .primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(annotation.marginaliaSymbolRaw == symbol ? Color.orange : Color.clear, lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
             
             Divider()
             
             // Actions row
-            HStack(spacing: 16) {
+            HStack(spacing: 14) {
                 Button(action: onEditNote) {
                     Label("Note", systemImage: "square.and.pencil")
-                        .font(.subheadline)
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.primary)
                 }
                 
                 Button(action: {
                     if let text = annotation.selectedText, !text.isEmpty {
-                        DictionaryLookupService.shared.lookupAndSave(
-                            term: text,
-                            contextSentence: text,
-                            bookTitle: annotation.readwiseBookTitle ?? "EPUB Book"
-                        )
+                        SystemDictionaryPresenter.shared.presentDefinition(for: text)
                     }
                 }) {
-                    Label("Look Up", systemImage: "book.fill")
-                        .font(.subheadline)
+                    Label("Define", systemImage: "book.closed")
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.orange)
+                }
+
+                Button(action: {
+                    if let text = annotation.selectedText, !text.isEmpty {
+                        UIPasteboard.general.string = text
+                        HapticEngine.success()
+                    }
+                }) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
+                }
+
+                Button(action: {
+                    if let text = annotation.selectedText, !text.isEmpty {
+                        let utterance = AVSpeechUtterance(string: text)
+                        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+                        AVSpeechSynthesizer().speak(utterance)
+                    }
+                }) {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
                 }
                 
                 Spacer()
                 
                 Button(action: onDelete) {
-                    Label("Delete", systemImage: "trash")
-                        .font(.subheadline)
+                    Image(systemName: "trash")
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.red)
                 }
             }
             .padding(.horizontal, 4)
         }
         .padding(12)
-        .frame(width: 260, height: 110)
+        .frame(width: 290)
     }
 }
 
