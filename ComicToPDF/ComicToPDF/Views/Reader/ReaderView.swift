@@ -62,6 +62,7 @@ struct ReaderView: View {
     @State private var currentPageIndex = 0
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var loadDiagnosticReport: DocumentDiagnosticReport? = nil
     
     // Binge Mode State
     @State private var showBingePrompt = false
@@ -453,12 +454,25 @@ struct ReaderView: View {
         ZStack {
             if isLoading {
                 CloudAwareLoadingView(pdf: pdf)
-            } else if let error = errorMessage {
-                    VStack {
-                        Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundColor(.red)
-                        Text("Error: \(error)").padding()
+            } else if let report = loadDiagnosticReport {
+                DocumentOpenErrorView(
+                    report: report,
+                    onRetry: {
+                        isLoading = true
+                        errorMessage = nil
+                        loadDiagnosticReport = nil
+                        Task { await prepareArchive() }
+                    },
+                    onDismiss: {
+                        if let onExit = onExit { onExit() } else { dismiss() }
                     }
-                } else {
+                )
+            } else if let error = errorMessage {
+                VStack {
+                    Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundColor(.red)
+                    Text("Error: \(error)").padding()
+                }
+            } else {
                     // ✅ READER CONTENT
                     Group {
                         if fileURL.pathExtension.lowercased() == "pdf" {
@@ -741,8 +755,10 @@ struct ReaderView: View {
 
                 guard coordError == nil, isAccessible else {
                     if didAccess { resolvedURL.stopAccessingSecurityScopedResource() }
+                    let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: pdfItem, error: coordError, context: "ReaderView")
                     await MainActor.run {
-                        self.errorMessage = "External drive is not connected or the file is no longer accessible. Please reconnect the drive and try again."
+                        self.loadDiagnosticReport = report
+                        self.errorMessage = report.rootCauseDescription
                         self.isLoading = false
                     }
                     return
@@ -760,9 +776,10 @@ struct ReaderView: View {
                 return
 
             } catch {
+                let report = DocumentOpenDiagnostics.logFailure(url: activeFileURL, pdf: pdfItem, error: error, context: "ReaderView")
                 await MainActor.run {
-                    Logger.shared.log("ReaderView: Linked drive bookmark resolution failed: \(error.localizedDescription)", category: "ReaderView", type: .error)
-                    self.errorMessage = "Could not access external drive file: \(error.localizedDescription)"
+                    self.loadDiagnosticReport = report
+                    self.errorMessage = report.rootCauseDescription
                     self.isLoading = false
                 }
                 return
@@ -907,8 +924,9 @@ struct ReaderView: View {
                         self.pages = foundPages
                         self.isLoading = false
                         if foundPages.isEmpty {
-                            self.errorMessage = "No pages found in EPUB."
-                            Logger.shared.log("extractAndOpen: EPUB had no image pages at \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .warning)
+                            let report = DocumentOpenDiagnostics.logFailure(url: activeFileURL, pdf: self.pdf, error: nil, context: "ReaderView")
+                            self.loadDiagnosticReport = report
+                            self.errorMessage = report.rootCauseDescription
                         } else {
                             Logger.shared.log("extractAndOpen: EPUB extracted \(foundPages.count) page(s) from \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .success)
                         }
@@ -923,8 +941,9 @@ struct ReaderView: View {
                         self.pages = virtualPages
                         self.isLoading = false
                         if virtualPages.isEmpty {
-                            self.errorMessage = "No images found in comic archive."
-                            Logger.shared.log("extractAndOpen: CBZ/ZIP had no images at \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .warning)
+                            let report = DocumentOpenDiagnostics.logFailure(url: activeFileURL, pdf: self.pdf, error: nil, context: "ReaderView")
+                            self.loadDiagnosticReport = report
+                            self.errorMessage = report.rootCauseDescription
                         } else {
                             Logger.shared.log("extractAndOpen: Direct ZIP streaming initialized with \(virtualPages.count) pages for \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .success)
                         }
@@ -940,8 +959,9 @@ struct ReaderView: View {
                         self.pages = result.imageURLs
                         self.isLoading = false
                         if result.imageURLs.isEmpty {
-                            self.errorMessage = "No images found in comic archive."
-                            Logger.shared.log("extractAndOpen: CBZ/ZIP fallback had no images at \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .warning)
+                            let report = DocumentOpenDiagnostics.logFailure(url: activeFileURL, pdf: self.pdf, error: nil, context: "ReaderView")
+                            self.loadDiagnosticReport = report
+                            self.errorMessage = report.rootCauseDescription
                         } else {
                             Logger.shared.log("extractAndOpen: CBZ/ZIP fallback extracted \(result.imageURLs.count) page(s) from \(activeFileURL.lastPathComponent)", category: "ReaderView", type: .success)
                         }
@@ -949,9 +969,10 @@ struct ReaderView: View {
                 }
             }
         } catch {
+            let report = DocumentOpenDiagnostics.logFailure(url: activeFileURL, pdf: self.pdf, error: error, context: "ReaderView")
             await MainActor.run {
-                Logger.shared.log("Reader extraction failed: \(error.localizedDescription)", category: "ReaderView")
-                self.errorMessage = "Failed to open comic: \(error.localizedDescription)"
+                self.loadDiagnosticReport = report
+                self.errorMessage = report.rootCauseDescription
                 self.isLoading = false
             }
         }

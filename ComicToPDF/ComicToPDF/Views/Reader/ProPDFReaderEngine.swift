@@ -62,6 +62,7 @@ struct ProPDFReaderEngine: View {
     @State private var showToast: Bool = false
     @State private var loadFailed: Bool = false
     @State private var loadErrorMessage: String = ""
+    @State private var loadDiagnosticReport: DocumentDiagnosticReport? = nil
     
     // Encrypted / Locked PDF State
     @State private var isDocumentLocked: Bool = false
@@ -482,8 +483,20 @@ struct ProPDFReaderEngine: View {
     }
 
     @ViewBuilder private var pdfLoadingView: some View {
-        VStack(spacing: 16) {
-            if loadFailed {
+        if loadFailed, let report = loadDiagnosticReport {
+            DocumentOpenErrorView(
+                report: report,
+                onRetry: {
+                    loadFailed = false
+                    loadDiagnosticReport = nil
+                    loadPDFDocument()
+                },
+                onDismiss: {
+                    onDismiss()
+                }
+            )
+        } else if loadFailed {
+            VStack(spacing: 16) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 40))
                     .foregroundColor(.orange)
@@ -501,7 +514,9 @@ struct ProPDFReaderEngine: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
                 .background(Color.inkGreen, in: Capsule())
-            } else {
+            }
+        } else {
+            VStack(spacing: 16) {
                 ProgressView()
                     .scaleEffect(1.2)
                     .tint(.inkGreen)
@@ -951,9 +966,11 @@ struct ProPDFReaderEngine: View {
                 }
             } else {
                 accessedURL?.stopAccessingSecurityScopedResource()
+                let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: sourcePDF, error: nil, context: "ProPDFReaderEngine")
                 await MainActor.run {
+                    self.loadDiagnosticReport = report
                     self.loadFailed = true
-                    self.loadErrorMessage = "Unable to read PDF file at \(sourcePDF.name)."
+                    self.loadErrorMessage = report.rootCauseDescription
                 }
             }
         }

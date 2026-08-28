@@ -143,6 +143,7 @@ final class ComicImageCache: ObservableObject {
     
     @Published var isLoading = true
     @Published var loadError: String? = nil   // Non-nil = show error view with exit button
+    @Published var loadDiagnosticReport: DocumentDiagnosticReport? = nil
     @Published var isLandscapeArray: [Bool] = []
     var pageCount: Int = 0
     let pdfID: UUID
@@ -177,7 +178,9 @@ final class ComicImageCache: ObservableObject {
                 self.virtualCoordinator = nil
                 self.pageCount = 0
                 self.isLoading = false
-                self.loadError = "Could not find virtual omnibus data."
+                let report = DocumentOpenDiagnostics.logFailure(url: pdf.url, pdf: pdf, error: nil, context: "ComicReaderEngine")
+                self.loadDiagnosticReport = report
+                self.loadError = report.rootCauseDescription
             }
         } else {
             isStream = (scheme == "http" || scheme == "https")
@@ -269,11 +272,22 @@ final class ComicImageCache: ObservableObject {
                         accessed.stopAccessingSecurityScopedResource()
                     }
                 }
-                await MainActor.run { [weak self] in
-                    guard let self = self else { return }
-                    self.pageCount = count
-                    self.isLoading = false
-                    self.scanPageOrientations(resolvedURL: resolvedURL)
+                if count == 0 {
+                    let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: pdf, error: nil, context: "ComicReaderEngine")
+                    await MainActor.run { [weak self] in
+                        guard let self = self else { return }
+                        self.loadDiagnosticReport = report
+                        self.loadError = report.rootCauseDescription
+                        self.pageCount = 0
+                        self.isLoading = false
+                    }
+                } else {
+                    await MainActor.run { [weak self] in
+                        guard let self = self else { return }
+                        self.pageCount = count
+                        self.isLoading = false
+                        self.scanPageOrientations(resolvedURL: resolvedURL)
+                    }
                 }
             }
         } else if isPreExtracted {
@@ -304,21 +318,28 @@ final class ComicImageCache: ObservableObject {
                     if let accessed = accessedURL {
                         await MainActor.run { self.activelyAccessedURL = accessed }
                     }
-                    await MainActor.run {
-                        self.extractedTempDir = tempDir
-                        self.extractedImageURLs = imageURLs
-                        self.pageCount = imageURLs.count
-                        self.isLoading = false
-                        if imageURLs.isEmpty {
-                            self.loadError = "The archive contained no readable images."
-                        } else {
+                    if imageURLs.isEmpty {
+                        let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: pdf, error: nil, context: "ComicReaderEngine")
+                        await MainActor.run {
+                            self.loadDiagnosticReport = report
+                            self.loadError = report.rootCauseDescription
+                            self.isLoading = false
+                        }
+                    } else {
+                        await MainActor.run {
+                            self.extractedTempDir = tempDir
+                            self.extractedImageURLs = imageURLs
+                            self.pageCount = imageURLs.count
+                            self.isLoading = false
                             self.scanPageOrientations(resolvedURL: resolvedURL)
                         }
                     }
                 } catch {
                     if let accessed = accessedURL { accessed.stopAccessingSecurityScopedResource() }
+                    let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: pdf, error: error, context: "ComicReaderEngine")
                     await MainActor.run {
-                        self.loadError = "Could not open this file.\n\n\(error.localizedDescription)"
+                        self.loadDiagnosticReport = report
+                        self.loadError = report.rootCauseDescription
                         self.isLoading = false
                     }
                 }
@@ -338,8 +359,10 @@ final class ComicImageCache: ObservableObject {
                 }
                 guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
                     if let accessed = accessedURL { accessed.stopAccessingSecurityScopedResource() }
+                    let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: pdf, error: nil, context: "ComicReaderEngine")
                     await MainActor.run { [weak self] in
-                        self?.loadError = "Could not open the comic archive."
+                        self?.loadDiagnosticReport = report
+                        self?.loadError = report.rootCauseDescription
                         self?.isLoading = false
                     }
                     return
@@ -353,6 +376,17 @@ final class ComicImageCache: ObservableObject {
                     let ext = (name as NSString).pathExtension.lowercased()
                     return imageExtensions.contains(ext)
                 }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                
+                if sortedEntries.isEmpty {
+                    if let accessed = accessedURL { accessed.stopAccessingSecurityScopedResource() }
+                    let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: pdf, error: nil, context: "ComicReaderEngine")
+                    await MainActor.run { [weak self] in
+                        self?.loadDiagnosticReport = report
+                        self?.loadError = report.rootCauseDescription
+                        self?.isLoading = false
+                    }
+                    return
+                }
                 
                 if let accessed = accessedURL {
                     if let self = self {
@@ -1560,7 +1594,13 @@ struct ComicReaderEngine: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if let error = cache.loadError {
+            if let report = cache.loadDiagnosticReport {
+                DocumentOpenErrorView(
+                    report: report,
+                    onRetry: nil,
+                    onDismiss: { onDismiss() }
+                )
+            } else if let error = cache.loadError {
                 // ── Failed file: show error + escape hatch ─────────────────────
                 VStack(spacing: 24) {
                     Image(systemName: "exclamationmark.triangle.fill")

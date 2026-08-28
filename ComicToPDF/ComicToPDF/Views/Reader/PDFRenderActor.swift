@@ -33,7 +33,7 @@ actor PDFRenderActor {
         }
         guard let validDoc = doc else {
             if accessing { url.stopAccessingSecurityScopedResource() }
-            Logger.shared.log("Failed to load PDF document from \(url.lastPathComponent). Corrupt or inaccessible file.", category: "PDFRenderActor", type: .error)
+            DocumentOpenDiagnostics.logFailure(url: url, pdf: nil, error: nil, context: "PDFRenderActor")
             return 0
         }
         if validDoc.isLocked {

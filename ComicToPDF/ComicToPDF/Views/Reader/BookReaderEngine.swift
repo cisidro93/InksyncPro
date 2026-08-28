@@ -26,6 +26,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var currentChapterIndex = 0
     @Published var metadata: EBookMetadata?
     @Published var tocItems: [EBookMetadata.SpineItem] = []
+    @Published var loadDiagnosticReport: DocumentDiagnosticReport? = nil
     
     @Published var isSearching = false
     @Published var searchResults: [SearchResult] = []
@@ -52,7 +53,9 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
         }
     }
     
-    private func unpackEPUB() {
+    func unpackEPUB() {
+        isLoading = true
+        loadDiagnosticReport = nil
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             let fm = FileManager.default
@@ -88,7 +91,11 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
                 guard let activeArchive = archive else {
                     // Stop scope before early return
                     accessedURL?.stopAccessingSecurityScopedResource()
-                    await MainActor.run { self.isLoading = false }
+                    let report = DocumentOpenDiagnostics.logFailure(url: pdfURL, pdf: sourcePDF, error: nil, context: "BookReaderEngine")
+                    await MainActor.run {
+                        self.loadDiagnosticReport = report
+                        self.isLoading = false
+                    }
                     return
                 }
                 for entry in activeArchive {
@@ -159,6 +166,8 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             self.loadChapter(index: self.currentChapterIndex)
             self.buildOrLoadSearchIndex()
         } else {
+            let report = DocumentOpenDiagnostics.logFailure(url: self.pdf.url, pdf: self.pdf, error: nil, context: "BookReaderEngine")
+            self.loadDiagnosticReport = report
             self.isLoading = false
         }
     }
@@ -1196,6 +1205,16 @@ private func computeColumnCount(for size: CGSize) -> Int {
                 if vm.isLoading {
                     ProgressView("Unpacking EPUB...")
                         .foregroundColor(prefs.activeTheme.foreground(colorScheme: .light))
+                } else if let report = vm.loadDiagnosticReport {
+                    DocumentOpenErrorView(
+                        report: report,
+                        onRetry: {
+                            vm.unpackEPUB()
+                        },
+                        onDismiss: {
+                            onDismiss()
+                        }
+                    )
                 } else {
                     if !vm.chapterHtmlFiles.isEmpty {
                         let currentChapterURL = vm.chapterHtmlFiles[vm.currentChapterIndex]

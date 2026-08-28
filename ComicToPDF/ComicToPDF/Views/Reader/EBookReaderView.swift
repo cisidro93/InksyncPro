@@ -45,6 +45,7 @@ struct EBookReaderView: View {
     @State private var showChapterList = false
     @State private var showHUD = true
     @State private var errorMessage: String?
+    @State private var loadDiagnosticReport: DocumentDiagnosticReport? = nil
     @State private var unzipDir: URL?
 
     // Page state matching current chapter
@@ -764,14 +765,30 @@ struct EBookReaderView: View {
         }
     }
     
+    @ViewBuilder
     private func readerErrorView(_ msg: String) -> some View {
-        VStack(spacing: 14) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 44))
-                .foregroundStyle(.orange)
-            Text("Couldn't Open Book").font(.headline).foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
-            Text(msg).font(.subheadline).foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.6))
-                .multilineTextAlignment(.center).padding(.horizontal, 40)
+        if let report = loadDiagnosticReport {
+            DocumentOpenErrorView(
+                report: report,
+                onRetry: {
+                    isLoading = true
+                    errorMessage = nil
+                    loadDiagnosticReport = nil
+                    Task { await loadBook() }
+                },
+                onDismiss: {
+                    if let onExit = onExit { onExit() } else { dismiss() }
+                }
+            )
+        } else {
+            VStack(spacing: 14) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.orange)
+                Text("Couldn't Open Book").font(.headline).foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme))
+                Text(msg).font(.subheadline).foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.6))
+                    .multilineTextAlignment(.center).padding(.horizontal, 40)
+            }
         }
     }
     
@@ -843,9 +860,10 @@ struct EBookReaderView: View {
                 do {
                     resolvedURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
                 } catch {
+                    let report = DocumentOpenDiagnostics.logFailure(url: fileURL, pdf: pdf, error: error, context: "EBookReaderView")
                     await MainActor.run {
-                        Logger.shared.log("EBookReader cloud stream failed: \(error.localizedDescription)", category: "EBook", type: .error)
-                        self.errorMessage = "Failed to stream cloud file: \(error.localizedDescription)"
+                        self.loadDiagnosticReport = report
+                        self.errorMessage = report.rootCauseDescription
                         self.isLoading = false
                     }
                     return
@@ -879,11 +897,12 @@ struct EBookReaderView: View {
             }
         } catch {
             accessedURL?.stopAccessingSecurityScopedResource()
+            let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: pdf, error: error, context: "EBookReaderView")
             await MainActor.run {
-                errorMessage = "Could not extract book: \(error.localizedDescription)"
-                isLoading = false
+                self.loadDiagnosticReport = report
+                self.errorMessage = report.rootCauseDescription
+                self.isLoading = false
             }
-            Logger.shared.log("EBookReader: extraction failed — \(error.localizedDescription)", category: "EBook", type: .error)
             return
         }
         
@@ -908,7 +927,9 @@ struct EBookReaderView: View {
                     prefs.applyBookTypography(bookID: bookID)
                 }
             } else {
-                self.errorMessage = "This EPUB file seems to be corrupted or missing a valid reading spine."
+                let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: pdf, error: nil, context: "EBookReaderView")
+                self.loadDiagnosticReport = report
+                self.errorMessage = report.rootCauseDescription
             }
             self.isLoading = false
             trackEBookProgress()
