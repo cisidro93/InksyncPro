@@ -53,6 +53,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                 gesture.isEnabled = false
             } else if let pan = gesture as? UIPanGestureRecognizer {
                 pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+                pan.delegate = context.coordinator
             }
         }
 
@@ -210,12 +211,25 @@ extension EBookPageCurlReader {
             }
         }
 
+        var isUserSelectingText: Bool = false
+
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            let otherName = NSStringFromClass(type(of: otherGestureRecognizer))
+            let gName = NSStringFromClass(type(of: gestureRecognizer))
+            if otherName.contains("Selection") || otherName.contains("Range") || otherName.contains("Text") || otherName.contains("Loupe") ||
+               gName.contains("Selection") || gName.contains("Range") || gName.contains("Text") || gName.contains("Loupe") {
+                return false
+            }
+            return false
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            if isUserSelectingText { return false }
             return true
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            // Prevent page-turn tap gesture from intercepting touch when user interacts with text selection handles or loupe
+            if isUserSelectingText { return false }
             if let className = touch.view.map({ NSStringFromClass(type(of: $0)) }),
                className.contains("Selection") || className.contains("RangeView") || className.contains("Handle") || className.contains("Loupe") {
                 return false
@@ -877,8 +891,10 @@ extension EBookPageCurlReader {
             } else if message.name == "onHighlightTapped", let text = message.body as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 parent.onHighlightTapped?(text)
             } else if message.name == "onTextSelected", let text = message.body as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                self.isUserSelectingText = true
                 parent.onTextSelected?(text)
             } else if message.name == "onSelectionDismissed" {
+                self.isUserSelectingText = false
                 parent.onSelectionDismissed?()
             } else if message.name == "footnote", let body = message.body as? [String: String], let text = body["text"] {
                 parent.onFootnoteTapped?(text)
@@ -1222,6 +1238,8 @@ extension EBookPageCurlReader {
                 box-sizing: border-box !important;
                 word-break: break-word !important;
                 overflow-wrap: break-word !important;
+                -webkit-user-select: text !important;
+                user-select: text !important;
             }
             body, p, span, li, td, th, div, a { font-family: \(fontFamily) !important; }
             body, p, li, td, th, a { font-size: \(fontSize)px !important; }

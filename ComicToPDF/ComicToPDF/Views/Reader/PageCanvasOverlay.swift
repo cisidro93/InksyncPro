@@ -142,13 +142,9 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         canvasView.isUserInteractionEnabled = isMarkupEnabled
         canvasView.drawingGestureRecognizer.cancelsTouchesInView = false
         
-        // Configure default tool
+        // Configure default tool to vibrant highlighter
         if canvasView.tool is PKInkingTool || !(canvasView.tool is PKEraserTool) {
-            if prefs.applePencilDefaultTool == "highlighter" {
-                canvasView.tool = PKInkingTool(.marker, color: UIColor.systemYellow.withAlphaComponent(0.5), width: 16)
-            } else {
-                canvasView.tool = PKInkingTool(.pen, color: UIColor.systemOrange, width: 3)
-            }
+            canvasView.tool = PKInkingTool(.marker, color: UIColor.systemYellow.withAlphaComponent(0.55), width: 22)
         }
         
         // Attach Apple Pencil Interaction on iPad only
