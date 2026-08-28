@@ -29,6 +29,11 @@ final class SharedImportCoordinator: ObservableObject {
     // UI-observable set of filenames that were just ingested during this launch.
     @Published private(set) var pendingAutoSelectFilenames: Set<String> = []
 
+    // Weak reference to ConversionManager, injected at app startup.
+    // Used to call scanLibrary() directly after ingest so the library
+    // is fully populated BEFORE we fire .ShareImportReceived.
+    weak var conversionManager: ConversionManager?
+
     private let appGroupIDs = [
         "group.com.antigravity.InksyncPro",
         "group.com.antigravity.ComicToPDF",
@@ -44,14 +49,16 @@ final class SharedImportCoordinator: ObservableObject {
 
     // MARK: - Entry Points
 
-    /// Direct async entry point used by LibraryScanner and background tasks
+    /// Direct async entry point used by LibraryScanner and background tasks.
     func coordinateImportDirect() async {
         let ingestedNames = await self.moveStagedFilesToInbox()
         if !ingestedNames.isEmpty {
             for name in ingestedNames {
                 self.pendingAutoSelectFilenames.insert(name)
             }
-            self.clearPendingShareFlags()
+            // Capture IDs before leaving MainActor isolation
+            let groupIDs = appGroupIDs
+            Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
             Logger.shared.log(
                 "SharedImportCoordinator: Direct imported \(ingestedNames.count) file(s)",
                 category: "Import", type: .success
@@ -62,9 +69,14 @@ final class SharedImportCoordinator: ObservableObject {
     /// Called by ContentView's willEnterForeground observer, AppDelegate URL handler,
     /// scenePhase changes, and the `inksyncpro://` deep-link handler. Safe to call
     /// multiple times — it debounces internally.
+    ///
+    /// Fix: scanLibrary() is now awaited BEFORE posting .ShareImportReceived so that
+    /// ModernLibraryView's rebuildNativeCache() finds a fully populated convertedPDFs array.
     func coordinateImport(retryCount: Int = 3, retryDelaySeconds: Double = 0.8) {
         guard !isIngesting else { return }
         isIngesting = true
+        // Capture isolated properties before entering the detached context
+        let groupIDs = appGroupIDs
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             let ingestedNames = await self.ingestWithRetry(maxAttempts: retryCount, retryDelay: retryDelaySeconds)
@@ -72,20 +84,37 @@ final class SharedImportCoordinator: ObservableObject {
                 for name in ingestedNames {
                     self.pendingAutoSelectFilenames.insert(name)
                 }
-                // ✅ Only clear flags after a SUCCESSFUL import so that subsequent
-                // foreground events can still trigger a retry if the extension
-                // process was still writing when this coordinator first ran.
                 if !ingestedNames.isEmpty {
-                    self.clearPendingShareFlags()
+                    // ✅ Fix: Clear flags synchronously (no actor isolation issue — we are on MainActor)
+                    Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
                     Logger.shared.log(
-                        "SharedImportCoordinator: Completed import of \(ingestedNames.count) file(s), notifying system",
+                        "SharedImportCoordinator: Completed import of \(ingestedNames.count) file(s) — triggering library scan",
                         category: "Import", type: .success
                     )
-                    NotificationCenter.default.post(
-                        name: NSNotification.Name("InksyncPro.ShareImportReceived"),
-                        object: nil
-                    )
-                    NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+                    // ✅ Fix: Trigger scanLibrary() NOW (while still on MainActor) so ConversionManager
+                    // is fully updated BEFORE the UI notification fires. The scan is async internally
+                    // but the .ShareImportReceived notification is posted from within scanLibrary's
+                    // completion path via .libraryNeedsRescan — preserving correct ordering.
+                    if let manager = self.conversionManager {
+                        manager.scanLibrary()
+                        // Brief yield to allow LibraryScanner's actor to start processing before
+                        // the notification arrives at ModernLibraryView
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 150_000_000)
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("InksyncPro.ShareImportReceived"),
+                                object: nil
+                            )
+                            NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+                        }
+                    } else {
+                        // Fallback if conversionManager not injected yet
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("InksyncPro.ShareImportReceived"),
+                            object: nil
+                        )
+                        NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+                    }
                 } else {
                     Logger.shared.log(
                         "SharedImportCoordinator: No files ingested — leaving flags set for next foreground retry.",
@@ -405,8 +434,10 @@ final class SharedImportCoordinator: ObservableObject {
 
     // MARK: - Private: Clear App Group Flags
 
-    nonisolated private func clearPendingShareFlags() {
-        for groupID in appGroupIDs {
+    /// Swift 6 fix: `nonisolated` methods cannot access `@MainActor`-isolated stored properties.
+    /// The caller captures `appGroupIDs` on the MainActor and passes it as a value-type argument.
+    nonisolated static func clearPendingShareFlagsFor(groupIDs: [String]) {
+        for groupID in groupIDs {
             if let ud = UserDefaults(suiteName: groupID) {
                 ud.removeObject(forKey: "pendingShareImportTimestamp")
                 ud.removeObject(forKey: "hasPendingShareImport")

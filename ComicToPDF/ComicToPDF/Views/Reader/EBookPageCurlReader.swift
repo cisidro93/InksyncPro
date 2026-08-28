@@ -212,19 +212,25 @@ extension EBookPageCurlReader {
         }
 
         var isUserSelectingText: Bool = false
+        // Tracks whether the most recent touch began as a drag (text-selection intent).
+        // Set by JS touchstart/touchend movement tracking and reset by handleSingleTap.
+        var isTouchDragActive: Bool = false
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             let otherName = NSStringFromClass(type(of: otherGestureRecognizer))
-            let gName = NSStringFromClass(type(of: gestureRecognizer))
-            if otherName.contains("Selection") || otherName.contains("Range") || otherName.contains("Text") || otherName.contains("Loupe") ||
-               gName.contains("Selection") || gName.contains("Range") || gName.contains("Text") || gName.contains("Loupe") {
-                return false
+            // ✅ Fix: Allow WebKit's internal text-selection recognizers to run simultaneously
+            // with our tap zone recognizer. Previously returning false here was causing the
+            // UIKit tap to cancel WebKit's long-press selection gesture entirely.
+            if otherName.contains("Selection") || otherName.contains("Range") ||
+               otherName.contains("Loupe") || otherName.contains("LoupeGesture") {
+                return true
             }
             return false
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            if isUserSelectingText { return false }
+            // Block our tap if JS reported a drag/selection touch is in progress
+            if isUserSelectingText || isTouchDragActive { return false }
             return true
         }
 
@@ -286,10 +292,22 @@ extension EBookPageCurlReader {
             wv.scrollView.contentInsetAdjustmentBehavior = .never
             wv.scrollView.contentInset = .zero
 
+            // ✅ Fix: Short-press recognizer (80ms) that the tap zone must wait for.
+            // If the user's touch moves > 5pt (selection drag), the long-press fires and
+            // our tap zone handler sees isTouchDragActive = true and bails out.
+            let selectionGuard = UILongPressGestureRecognizer(target: self, action: #selector(handleSelectionGuard(_:)))
+            selectionGuard.minimumPressDuration = 0.08
+            selectionGuard.allowableMovement = 5
+            selectionGuard.cancelsTouchesInView = false
+            selectionGuard.delegate = self
+            wv.addGestureRecognizer(selectionGuard)
+
             let webTap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(_:)))
             webTap.numberOfTapsRequired = 1
             webTap.cancelsTouchesInView = false
             webTap.delegate = self
+            // ✅ Fix: Tap zone must wait for the selection guard to confirm it is NOT a drag
+            webTap.require(toFail: selectionGuard)
             wv.addGestureRecognizer(webTap)
 
             self.primaryWebView = wv
@@ -683,8 +701,24 @@ extension EBookPageCurlReader {
             parent.prefs.tapZoneStyle
         }
 
+        /// Selection guard gesture — fires when touch is stationary > 80ms (text selection intent).
+        /// Resets automatically when the gesture ends. The tap zone recognizer requires this to fail.
+        @objc func handleSelectionGuard(_ gesture: UILongPressGestureRecognizer) {
+            switch gesture.state {
+            case .began:
+                // The touch lingered — this is likely a text selection attempt, not a page tap
+                isTouchDragActive = true
+            case .ended, .cancelled, .failed:
+                isTouchDragActive = false
+            default:
+                break
+            }
+        }
+
         @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {
             guard let view = gesture.view, let pvc = pageViewController else { return }
+            // Reset drag guard on every completed tap
+            isTouchDragActive = false
 
             // If text is currently selected in the WKWebView, dismiss the selection first
             // rather than flipping the page while the reader was in selection mode.
@@ -1396,6 +1430,31 @@ extension EBookPageCurlReader {
                     } catch(e) {}
                 }
             });
+
+            // ✅ Fix: Track touch movement so the native tap-zone guard can detect
+            // text-selection drags before the UITapGestureRecognizer fires.
+            (function() {
+                var __touchStartX = 0, __touchStartY = 0;
+                document.addEventListener('touchstart', function(e) {
+                    var t = e.touches[0];
+                    if (t) { __touchStartX = t.clientX; __touchStartY = t.clientY; }
+                    window.__selectionDragActive = false;
+                }, { passive: true });
+                document.addEventListener('touchmove', function(e) {
+                    var t = e.touches[0];
+                    if (t) {
+                        var dx = t.clientX - __touchStartX;
+                        var dy = t.clientY - __touchStartY;
+                        if (Math.sqrt(dx*dx + dy*dy) > 5) {
+                            window.__selectionDragActive = true;
+                        }
+                    }
+                }, { passive: true });
+                document.addEventListener('touchend', function() {
+                    // Keep flag alive for one frame so Swift tap handler can read it
+                    setTimeout(function() { window.__selectionDragActive = false; }, 80);
+                }, { passive: true });
+            })();
 
             document.addEventListener('click', function(e) {
                 var mark = e.target.closest ? e.target.closest('mark.inksync-highlight') : null;

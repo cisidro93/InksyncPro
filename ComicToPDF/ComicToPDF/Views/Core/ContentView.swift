@@ -180,6 +180,8 @@ struct ContentView: View {
         }
         .onAppear {
             LinkedLibraryScanner.shared.conversionManager = conversionManager
+            // Inject so coordinator can call scanLibrary() before firing .ShareImportReceived (race-condition fix)
+            SharedImportCoordinator.shared.conversionManager = conversionManager
             AnnotationStore.shared.initialize(with: modelContext)
             PageModelStore.shared.initialize(with: modelContext)
             

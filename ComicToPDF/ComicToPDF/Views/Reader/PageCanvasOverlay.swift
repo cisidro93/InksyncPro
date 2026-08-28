@@ -26,15 +26,23 @@ struct PageCanvasOverlay: View {
     let pdfID: UUID?
     let pageIndex: Int
     let isMarkupEnabled: Bool
+    /// Passed explicitly from the parent view to avoid relying on a potentially
+    /// broken @EnvironmentObject chain across UIViewRepresentable boundaries.
+    let pencilOnlyDrawing: Bool
     
-    @Environment(\.modelContext) private var modelContext
+    // ✅ Fix: Use sharedModelContainer.mainContext directly rather than @Environment(\. modelContext)
+    // which silently fails when the view is not embedded in a .modelContainer() ancestor.
+    private var modelContext: ModelContext {
+        InksyncProApp.sharedModelContainer.mainContext
+    }
+    
     @State private var canvasView = PassthroughPKCanvasView()
     @State private var activeAnnotation: SDAnnotation?
     @State private var hasLoaded = false
     
     var body: some View {
         GeometryReader { geo in
-            PKCanvasRepresentation(canvasView: $canvasView, isMarkupEnabled: isMarkupEnabled)
+            PKCanvasRepresentation(canvasView: $canvasView, isMarkupEnabled: isMarkupEnabled, pencilOnlyDrawing: pencilOnlyDrawing)
                 .onAppear {
                     loadDrawing()
                 }
@@ -52,9 +60,10 @@ struct PageCanvasOverlay: View {
         guard let pdfID = pdfID else { return }
         let targetID = pdfID
         let pIndex = pageIndex
+        let ctx = modelContext
         let descriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.pdfID == targetID && $0.pageIndex == pIndex && $0.kindRaw == "ink" })
         
-        if let existing = try? modelContext.fetch(descriptor).first {
+        if let existing = try? ctx.fetch(descriptor).first {
             self.activeAnnotation = existing
             if let data = existing.drawingData, let drawing = try? PKDrawing(data: data) {
                 self.canvasView.drawing = drawing
@@ -70,7 +79,7 @@ struct PageCanvasOverlay: View {
     
     private func saveDrawing() {
         guard hasLoaded, let pdfID = pdfID else { return }
-        
+        let ctx = modelContext
         let currentDrawingData = canvasView.drawing.dataRepresentation()
         let drawing = canvasView.drawing
         
@@ -96,10 +105,10 @@ struct PageCanvasOverlay: View {
             )
             newInk.kindRaw = "ink"
             newInk.drawingData = currentDrawingData
-            modelContext.insert(newInk)
+            ctx.insert(newInk)
             self.activeAnnotation = newInk
         }
-        try? modelContext.save()
+        try? ctx.save()
         
         if let annotation = activeAnnotation {
             if !drawing.bounds.isEmpty {
@@ -109,7 +118,7 @@ struct PageCanvasOverlay: View {
                             if let active = self.activeAnnotation, active.drawingOCRText != ocrText {
                                 active.drawingOCRText = ocrText
                                 active.modifiedAt = Date()
-                                try? self.modelContext.save()
+                                try? ctx.save()
                                 Logger.shared.log("Page ink OCR updated for page \(self.pageIndex): \(ocrText.prefix(40))...", category: "OCR", type: .success)
                                 SpotlightIndexer.shared.indexAnnotation(active)
                             }
@@ -126,7 +135,10 @@ struct PageCanvasOverlay: View {
 struct PKCanvasRepresentation: UIViewRepresentable {
     @Binding var canvasView: PassthroughPKCanvasView
     let isMarkupEnabled: Bool
-    @EnvironmentObject var settingsManager: AppSettingsManager
+    /// ✅ Fix: Passed as explicit init parameter instead of @EnvironmentObject to prevent
+    /// a fatal runtime crash ("No ObservableObject of type AppSettingsManager found")
+    /// when AppSettingsManager is not in the environment chain above a UIViewRepresentable.
+    let pencilOnlyDrawing: Bool
     
     func makeUIView(context: Context) -> PassthroughPKCanvasView {
         canvasView.isOpaque = false
@@ -136,7 +148,7 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         let prefs = EBookPreferences.shared
         // On iPad: use .pencilOnly so fingers navigate while Pencil draws.
         // On iPhone: use .anyInput when markup is enabled so fingers can draw/highlight.
-        let pencilOnly = isPad && (settingsManager.conversionSettings.pencilOnlyDrawing || prefs.applePencilAutoDraw)
+        let pencilOnly = isPad && (pencilOnlyDrawing || prefs.applePencilAutoDraw)
         canvasView.allowFingerDrawing = isMarkupEnabled && !pencilOnly
         canvasView.drawingPolicy = isMarkupEnabled ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
         canvasView.isUserInteractionEnabled = isMarkupEnabled
@@ -171,7 +183,7 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         uiView.isUserInteractionEnabled = isMarkupEnabled
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let prefs = EBookPreferences.shared
-        let pencilOnly = isPad && (settingsManager.conversionSettings.pencilOnlyDrawing || prefs.applePencilAutoDraw)
+        let pencilOnly = isPad && (pencilOnlyDrawing || prefs.applePencilAutoDraw)
         uiView.allowFingerDrawing = isMarkupEnabled && !pencilOnly
         uiView.drawingPolicy = isMarkupEnabled ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
         uiView.drawingGestureRecognizer.cancelsTouchesInView = false

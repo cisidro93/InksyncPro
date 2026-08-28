@@ -50,9 +50,11 @@ struct ReaderChrome: View {
     var isPDF: Bool = false
     var isReflowActive: Bool = false
     var isAutoCropEnabled: Bool = false
+    var isMarkupActive: Bool = false
     var onCropToggle: (() -> Void)? = nil
     var onManualCropToggle: (() -> Void)? = nil
     var onReflowToggle: (() -> Void)? = nil
+    var onMarkupToggle: (() -> Void)? = nil
 
     // Enhancement
     var isEnhanced: Bool = false
@@ -105,9 +107,11 @@ struct ReaderChrome: View {
         isPDF: Bool = false,
         isReflowActive: Bool = false,
         isAutoCropEnabled: Bool = false,
+        isMarkupActive: Bool = false,
         onCropToggle: (() -> Void)? = nil,
         onManualCropToggle: (() -> Void)? = nil,
         onReflowToggle: (() -> Void)? = nil,
+        onMarkupToggle: (() -> Void)? = nil,
         isEnhanced: Bool = false,
         onEnhanceToggle: (() -> Void)? = nil,
         isSettingsActive: Bool = false,
@@ -144,9 +148,11 @@ struct ReaderChrome: View {
         self.isPDF = isPDF
         self.isReflowActive = isReflowActive
         self.isAutoCropEnabled = isAutoCropEnabled
+        self.isMarkupActive = isMarkupActive
         self.onCropToggle = onCropToggle
         self.onManualCropToggle = onManualCropToggle
         self.onReflowToggle = onReflowToggle
+        self.onMarkupToggle = onMarkupToggle
         self.isEnhanced = isEnhanced
         self.onEnhanceToggle = onEnhanceToggle
         self.isSettingsActive = isSettingsActive
@@ -268,6 +274,11 @@ struct ReaderChrome: View {
 
                         if isPDF {
                             Divider()
+                            if let onMarkup = onMarkupToggle {
+                                Button(action: onMarkup) {
+                                    Label(isMarkupActive ? "Exit Pencil Markup" : "Pencil & Inking Markup", systemImage: isMarkupActive ? "pencil.slash" : "pencil.tip.crop.circle")
+                                }
+                            }
                             if let onReflow = onReflowToggle {
                                 Button(action: onReflow) {
                                     Label(isReflowActive ? "Original PDF Layout" : "Reflow Text", systemImage: "text.alignleft")
@@ -320,6 +331,16 @@ struct ReaderChrome: View {
                             active: isEnhanced,
                             activeColor: .yellow,
                             action: { onEnhanceToggle?() }
+                        )
+                    }
+
+                    if let onMarkup = onMarkupToggle {
+                        chromeButton(
+                            icon: isMarkupActive ? "pencil.tip.crop.circle.badge.plus.fill" : "pencil.tip.crop.circle",
+                            label: "Pencil & Inking",
+                            active: isMarkupActive,
+                            activeColor: .yellow,
+                            action: onMarkup
                         )
                     }
 
@@ -577,6 +598,16 @@ struct ReaderChrome: View {
 
                 // Right cluster
                 HStack(spacing: 4) {
+                    if let onMarkup = onMarkupToggle {
+                        barButton(
+                            icon: isMarkupActive ? "pencil.tip.crop.circle.badge.plus.fill" : "pencil.tip.crop.circle",
+                            label: "Pencil Markup",
+                            tint: isMarkupActive ? Color.yellow : Color.primary
+                        ) {
+                            Haptics.shared.playImpact(style: .light)
+                            onMarkup()
+                        }
+                    }
                     if let onTOC = onTOCToggle {
                         barButton(icon: "list.bullet", label: "Table of Contents", tint: .primary) {
                             Haptics.shared.playImpact(style: .light)

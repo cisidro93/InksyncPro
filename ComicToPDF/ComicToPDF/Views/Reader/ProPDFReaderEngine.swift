@@ -39,6 +39,9 @@ struct ProPDFReaderEngine: View {
     @FocusState private var isReaderFocused: Bool
     @StateObject private var velocityEngine = ReaderVelocityEngine()
     @StateObject private var readingRoom = ReadingRoomSession()
+    // ✅ Fix: Inject AppSettingsManager so we can pass pencilOnlyDrawing to PageCanvasOverlay,
+    // preventing a silent fatal crash from a missing @EnvironmentObject in PKCanvasRepresentation.
+    @EnvironmentObject private var settingsManager: AppSettingsManager
 
     // Ambient page color extraction
     @State private var ambientPageColor: Color = .clear
@@ -336,6 +339,10 @@ struct ProPDFReaderEngine: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
                 isPencilMode.toggle()
             }
+            // ✅ Fix: Disable PDFView touch interception when PKCanvasView overlay is active.
+            // Without this, PDFView's internal gesture recognizers absorb all Pencil and finger
+            // touches before they can reach the PKCanvasView layer above it in the z-order.
+            pdfViewReference?.isUserInteractionEnabled = !isPencilMode
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleSidebar"))) { _ in
             withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
@@ -475,7 +482,10 @@ struct ProPDFReaderEngine: View {
                 PageCanvasOverlay(
                     pdfID: pdf.id,
                     pageIndex: currentPageIndex,
-                    isMarkupEnabled: true
+                    isMarkupEnabled: true,
+                    // ✅ Fix: Pass pencilOnlyDrawing explicitly so PKCanvasRepresentation never needs
+                    // @EnvironmentObject AppSettingsManager (which crashed when not injected).
+                    pencilOnlyDrawing: settingsManager.conversionSettings.pencilOnlyDrawing
                 )
                 .ignoresSafeArea()
             }
@@ -816,6 +826,7 @@ struct ProPDFReaderEngine: View {
             isPDF: true,
             isReflowActive: isReflowMode,
             isAutoCropEnabled: activeCropInsets.isEnabled,
+            isMarkupActive: isPencilMode,
             onCropToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                     if activeCropInsets.isEnabled {
@@ -835,6 +846,15 @@ struct ProPDFReaderEngine: View {
                     prefs.pdfReflowMode = isReflowMode
                 }
                 HapticEngine.medium()
+            },
+            onMarkupToggle: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                    isPencilMode.toggle()
+                }
+                pdfViewReference?.isUserInteractionEnabled = !isPencilMode
+                if isPencilMode {
+                    showToastMessage("Pencil Markup Active")
+                }
             },
             isEnhanced: activeFilterPreset != .original,
             onEnhanceToggle: {
