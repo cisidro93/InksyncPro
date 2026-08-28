@@ -26,11 +26,11 @@ struct PageCanvasOverlay: View {
     let pdfID: UUID?
     let pageIndex: Int
     let isMarkupEnabled: Bool
-    /// Passed explicitly from the parent view to avoid relying on a potentially
-    /// broken @EnvironmentObject chain across UIViewRepresentable boundaries.
-    let pencilOnlyDrawing: Bool
+    /// Passed explicitly from the parent view or defaults to AppSettingsManager.shared
+    /// to avoid relying on a potentially broken @EnvironmentObject chain across UIViewRepresentable boundaries.
+    var pencilOnlyDrawing: Bool = AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
     
-    // ✅ Fix: Use sharedModelContainer.mainContext directly rather than @Environment(\. modelContext)
+    // ✅ Fix: Use sharedModelContainer.mainContext directly rather than @Environment(\.modelContext)
     // which silently fails when the view is not embedded in a .modelContainer() ancestor.
     private var modelContext: ModelContext {
         InksyncProApp.sharedModelContainer.mainContext
