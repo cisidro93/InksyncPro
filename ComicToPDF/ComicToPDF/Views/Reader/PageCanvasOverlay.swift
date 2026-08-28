@@ -112,16 +112,14 @@ struct PageCanvasOverlay: View {
         
         if let annotation = activeAnnotation {
             if !drawing.bounds.isEmpty {
-                Task.detached(priority: .background) {
+                Task { @MainActor in
                     if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
-                        await MainActor.run {
-                            if let active = self.activeAnnotation, active.drawingOCRText != ocrText {
-                                active.drawingOCRText = ocrText
-                                active.modifiedAt = Date()
-                                try? ctx.save()
-                                Logger.shared.log("Page ink OCR updated for page \(self.pageIndex): \(ocrText.prefix(40))...", category: "OCR", type: .success)
-                                SpotlightIndexer.shared.indexAnnotation(active)
-                            }
+                        if let active = self.activeAnnotation, active.drawingOCRText != ocrText {
+                            active.drawingOCRText = ocrText
+                            active.modifiedAt = Date()
+                            try? InksyncProApp.sharedModelContainer.mainContext.save()
+                            Logger.shared.log("Page ink OCR updated for page \(self.pageIndex): \(ocrText.prefix(40))...", category: "OCR", type: .success)
+                            SpotlightIndexer.shared.indexAnnotation(active)
                         }
                     }
                 }
