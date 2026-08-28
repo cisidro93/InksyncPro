@@ -4,28 +4,28 @@ import PDFKit
 import ZIPFoundation
 
 /// Standardized forensic diagnostic report for any document that fails to open.
-public struct DocumentDiagnosticReport: Identifiable, Sendable {
-    public let id: UUID
-    public let timestamp: Date
-    public let fileName: String
-    public let fileURL: URL
-    public let fileExtension: String
-    public let fileSizeBytes: Int64
-    public let formattedFileSize: String
-    public let fileExistsOnDisk: Bool
-    public let isSandboxURL: Bool
-    public let isSecurityScoped: Bool
-    public let securityScopeGranted: Bool
-    public let isDriveBookmarkStale: Bool
-    public let detectedFormat: String
-    public let magicBytesHex: String
-    public let isLockedOrEncrypted: Bool
-    public let context: String
-    public let rootCauseDescription: String
-    public let actionableRemediation: String
-    public let underlyingErrorDescription: String?
+struct DocumentDiagnosticReport: Identifiable, Sendable {
+    let id: UUID
+    let timestamp: Date
+    let fileName: String
+    let fileURL: URL
+    let fileExtension: String
+    let fileSizeBytes: Int64
+    let formattedFileSize: String
+    let fileExistsOnDisk: Bool
+    let isSandboxURL: Bool
+    let isSecurityScoped: Bool
+    let securityScopeGranted: Bool
+    let isDriveBookmarkStale: Bool
+    let detectedFormat: String
+    let magicBytesHex: String
+    let isLockedOrEncrypted: Bool
+    let context: String
+    let rootCauseDescription: String
+    let actionableRemediation: String
+    let underlyingErrorDescription: String?
 
-    public init(
+    init(
         id: UUID = UUID(),
         timestamp: Date = Date(),
         fileName: String,
@@ -68,7 +68,7 @@ public struct DocumentDiagnosticReport: Identifiable, Sendable {
     }
 
     /// Full multi-line formatted string for flight recorder logs and clipboard export.
-    public var formattedLogString: String {
+    var formattedLogString: String {
         let timeStr = DateFormatter.localizedString(from: timestamp, dateStyle: .short, timeStyle: .medium)
         var lines: [String] = []
         lines.append("══════════════════════════════════════════════════════════════════")
@@ -106,16 +106,16 @@ public struct DocumentDiagnosticReport: Identifiable, Sendable {
     }
 
     /// Short single-sentence summary for inline HUD toasts.
-    public var condensedSummary: String {
+    var condensedSummary: String {
         "Failed to open '\(fileName)': \(rootCauseDescription)"
     }
 }
 
 /// Centralized diagnostic engine for analyzing, classifying, and logging document opening failures.
-public enum DocumentOpenDiagnostics: Sendable {
+enum DocumentOpenDiagnostics: Sendable {
 
     /// Performs deep forensic analysis of why a file failed to open.
-    public static func analyze(
+    static func analyze(
         url: URL,
         pdf: ConvertedPDF? = nil,
         error: Error? = nil,
@@ -227,7 +227,7 @@ public enum DocumentOpenDiagnostics: Sendable {
     /// Analyzes the failure, logs the full diagnostic report to `Logger.shared` with `.error` level,
     /// and returns the structured report.
     @discardableResult
-    public static func logFailure(
+    static func logFailure(
         url: URL,
         pdf: ConvertedPDF? = nil,
         error: Error? = nil,
