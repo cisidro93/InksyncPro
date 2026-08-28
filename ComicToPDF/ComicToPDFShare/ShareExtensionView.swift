@@ -735,23 +735,8 @@ struct ShareExtensionView: View {
         let cleanDest = destFilename.replacingOccurrences(of: ".tmp", with: "")
         var primaryResultURL: URL? = nil
         
-        var sourceData: Data? = nil
         let accessing = sourceURL.startAccessingSecurityScopedResource()
         defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
-
-        // Fast direct read first (avoids NSFileCoordinator timeout on temporary sandbox URLs)
-        sourceData = try? Data(contentsOf: sourceURL, options: .alwaysMapped)
-        
-        if sourceData == nil {
-            // Coordinated fallback for external security-scoped file systems
-            let coordinator = NSFileCoordinator()
-            var coordError: NSError?
-            coordinator.coordinate(readingItemAt: sourceURL, options: .withoutChanges, error: &coordError) { coordinatedURL in
-                let innerAccess = coordinatedURL.startAccessingSecurityScopedResource()
-                defer { if innerAccess { coordinatedURL.stopAccessingSecurityScopedResource() } }
-                sourceData = try? Data(contentsOf: coordinatedURL, options: .alwaysMapped)
-            }
-        }
         
         for container in containers {
             let stagingURL = container.appendingPathComponent("ShareStaging", isDirectory: true)
@@ -770,23 +755,37 @@ struct ShareExtensionView: View {
             try? FileManager.default.removeItem(at: pendingDestURL)
             
             var didCopy = false
-            if let data = sourceData {
-                if (try? data.write(to: destURL, options: .atomic)) != nil {
-                    try? data.write(to: inboxDestURL, options: .atomic)
-                    try? data.write(to: pendingDestURL, options: .atomic)
+            
+            // Priority 1: Zero-copy APFS File System Block Clone
+            do {
+                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+                try? FileManager.default.copyItem(at: destURL, to: inboxDestURL)
+                try? FileManager.default.copyItem(at: destURL, to: pendingDestURL)
+                didCopy = true
+            } catch {
+                // Priority 2: Coordinated read via NSFileCoordinator
+                let coordinator = NSFileCoordinator()
+                var coordError: NSError?
+                coordinator.coordinate(readingItemAt: sourceURL, options: .withoutChanges, error: &coordError) { coordinatedURL in
+                    let innerAccess = coordinatedURL.startAccessingSecurityScopedResource()
+                    defer { if innerAccess { coordinatedURL.stopAccessingSecurityScopedResource() } }
+                    if (try? FileManager.default.copyItem(at: coordinatedURL, to: destURL)) != nil {
+                        try? FileManager.default.copyItem(at: destURL, to: inboxDestURL)
+                        try? FileManager.default.copyItem(at: destURL, to: pendingDestURL)
+                        didCopy = true
+                    }
+                }
+            }
+
+            // Priority 3: Memory-mapped atomic stream fallback
+            if !didCopy, let sourceData = try? Data(contentsOf: sourceURL, options: .alwaysMapped) {
+                if (try? sourceData.write(to: destURL, options: .atomic)) != nil {
+                    try? sourceData.write(to: inboxDestURL, options: .atomic)
+                    try? sourceData.write(to: pendingDestURL, options: .atomic)
                     didCopy = true
                 }
             }
-            if !didCopy {
-                do {
-                    try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                    try? FileManager.default.copyItem(at: destURL, to: inboxDestURL)
-                    try? FileManager.default.copyItem(at: destURL, to: pendingDestURL)
-                    didCopy = true
-                } catch {
-                    // Fallback handled
-                }
-            }
+
             if didCopy && primaryResultURL == nil {
                 primaryResultURL = destURL
             }
