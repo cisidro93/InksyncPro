@@ -1033,13 +1033,14 @@ extension EBookPageCurlReader {
                 }
             for ann in annotations {
                 guard let text = ann.selectedText, let color = ann.colorHex else { continue }
+                let idStr = ann.id.uuidString
                 let safeText = text
                     .replacingOccurrences(of: "\\", with: "\\\\")
                     .replacingOccurrences(of: "`", with: "\\`")
                     .replacingOccurrences(of: "\"", with: "\\\"")
                     .replacingOccurrences(of: "\n", with: " ")
                 let safeSymbol = (ann.marginaliaSymbolRaw ?? "").replacingOccurrences(of: "'", with: "\\'")
-                let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)', '\(safeSymbol)');"
+                let js = "window.restoreInksyncHighlight('\(idStr)', `\(safeText)`, '\(color)', '\(safeSymbol)');"
                 webView.evaluateJavaScript(js)
             }
         }
@@ -1438,39 +1439,60 @@ extension EBookPageCurlReader {
                 return text;
             };
 
-            window.updateInksyncHighlightColor = function(textToFind, newColorHex) {
-                if (!textToFind) return;
-                var marks = document.querySelectorAll('mark.inksync-highlight');
-                for (var i = 0; i < marks.length; i++) {
-                    if (marks[i].textContent.indexOf(textToFind) !== -1 || textToFind.indexOf(marks[i].textContent) !== -1) {
-                        marks[i].style.backgroundColor = newColorHex;
-                    }
-                }
-            };
-
-            window.removeInksyncHighlight = function(textToFind) {
-                if (!textToFind) return;
-                var marks = document.querySelectorAll('mark.inksync-highlight');
-                for (var i = 0; i < marks.length; i++) {
-                    if (marks[i].textContent.indexOf(textToFind) !== -1 || textToFind.indexOf(marks[i].textContent) !== -1) {
-                        var mark = marks[i];
-                        var parent = mark.parentNode;
-                        if (parent) {
-                            while (mark.firstChild) {
-                                parent.insertBefore(mark.firstChild, mark);
-                            }
-                            parent.removeChild(mark);
-                            parent.normalize();
+            window.updateInksyncHighlightColor = function(idOrText, newColorHex) {
+                if (!idOrText) return;
+                var targetMarks = [];
+                var idMark = document.querySelector('mark.inksync-highlight[data-id="' + idOrText + '"]');
+                if (idMark) {
+                    targetMarks.push(idMark);
+                } else {
+                    var marks = document.querySelectorAll('mark.inksync-highlight');
+                    for (var i = 0; i < marks.length; i++) {
+                        if (marks[i].textContent.indexOf(idOrText) !== -1 || idOrText.indexOf(marks[i].textContent) !== -1) {
+                            targetMarks.push(marks[i]);
                         }
                     }
                 }
+                for (var j = 0; j < targetMarks.length; j++) {
+                    targetMarks[j].style.backgroundColor = newColorHex;
+                }
             };
 
-            window.restoreInksyncHighlight = function(textToFind, colorHex, symbol) {
+            window.removeInksyncHighlight = function(idOrText) {
+                if (!idOrText) return;
+                var targetMarks = [];
+                var idMark = document.querySelector('mark.inksync-highlight[data-id="' + idOrText + '"]');
+                if (idMark) {
+                    targetMarks.push(idMark);
+                } else {
+                    var marks = document.querySelectorAll('mark.inksync-highlight');
+                    for (var i = 0; i < marks.length; i++) {
+                        if (marks[i].textContent.indexOf(idOrText) !== -1 || idOrText.indexOf(marks[i].textContent) !== -1) {
+                            targetMarks.push(marks[i]);
+                        }
+                    }
+                }
+                for (var j = 0; j < targetMarks.length; j++) {
+                    var mark = targetMarks[j];
+                    var parent = mark.parentNode;
+                    if (parent) {
+                        while (mark.firstChild) {
+                            parent.insertBefore(mark.firstChild, mark);
+                        }
+                        parent.removeChild(mark);
+                        parent.normalize();
+                    }
+                }
+            };
+
+            window.restoreInksyncHighlight = function(id, textToFind, colorHex, symbol) {
                 if (!textToFind) return;
                 var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
                 var node;
                 while ((node = walker.nextNode())) {
+                    if (node.parentElement && node.parentElement.closest && node.parentElement.closest('mark.inksync-highlight')) {
+                        continue;
+                    }
                     var idx = node.nodeValue.indexOf(textToFind);
                     if (idx !== -1) {
                         try {
@@ -1479,6 +1501,7 @@ extension EBookPageCurlReader {
                             range.setEnd(node, idx + textToFind.length);
                             var mark = document.createElement('mark');
                             mark.className = 'inksync-highlight';
+                            if (id) mark.setAttribute('data-id', id);
                             mark.style.backgroundColor = colorHex || '#FFD600';
                             mark.style.color = 'inherit';
                             mark.style.borderRadius = '3px';

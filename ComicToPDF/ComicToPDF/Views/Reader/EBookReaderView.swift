@@ -318,9 +318,12 @@ struct EBookReaderView: View {
             HighlightQuickPopoverView(
                 annotation: annotation,
                 onDelete: {
+                    let idStr = annotation.id.uuidString
                     if let text = annotation.selectedText {
                         let safeText = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
-                        webViewReference?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight(`\(safeText)`); }")
+                        webViewReference?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(idStr)'); window.removeInksyncHighlight(`\(safeText)`); }")
+                    } else {
+                        webViewReference?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(idStr)'); }")
                     }
                     let pid = annotation.pdfID
                     AnnotationStore.shared.delete(id: annotation.id, pdfID: pid)
@@ -334,9 +337,12 @@ struct EBookReaderView: View {
                     activeHighlightToEdit = nil
                 },
                 onColorSelected: { colorHex in
+                    let idStr = annotation.id.uuidString
                     if let text = annotation.selectedText {
                         let safeText = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
-                        webViewReference?.evaluateJavaScript("if (window.updateInksyncHighlightColor) { window.updateInksyncHighlightColor(`\(safeText)`, '\(colorHex)'); }")
+                        webViewReference?.evaluateJavaScript("if (window.updateInksyncHighlightColor) { window.updateInksyncHighlightColor('\(idStr)', '\(colorHex)'); window.updateInksyncHighlightColor(`\(safeText)`, '\(colorHex)'); }")
+                    } else {
+                        webViewReference?.evaluateJavaScript("if (window.updateInksyncHighlightColor) { window.updateInksyncHighlightColor('\(idStr)', '\(colorHex)'); }")
                     }
                     let pid = annotation.pdfID
                     let matching = AnnotationStore.shared.annotations(for: pid)

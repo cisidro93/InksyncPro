@@ -1577,9 +1577,14 @@ private func computeColumnCount(for size: CGSize) -> Int {
             HighlightQuickPopoverView(
                 annotation: annotation,
                 onDelete: {
-                    if let webView = webViewReference, let text = annotation.selectedText {
-                        let safeText = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
-                        webView.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight(`\(safeText)`); }")
+                    let idStr = annotation.id.uuidString
+                    if let webView = webViewReference {
+                        if let text = annotation.selectedText {
+                            let safeText = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+                            webView.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(idStr)'); window.removeInksyncHighlight(`\(safeText)`); }")
+                        } else {
+                            webView.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(idStr)'); }")
+                        }
                     }
                     AnnotationStore.shared.delete(id: annotation.id, pdfID: pdf.id)
                     modelContext.delete(annotation)
@@ -1592,9 +1597,14 @@ private func computeColumnCount(for size: CGSize) -> Int {
                     activeHighlightToEdit = nil
                 },
                 onColorSelected: { colorHex in
-                    if let webView = webViewReference, let text = annotation.selectedText {
-                        let safeText = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
-                        webView.evaluateJavaScript("if (window.updateInksyncHighlightColor) { window.updateInksyncHighlightColor(`\(safeText)`, '\(colorHex)'); }")
+                    let idStr = annotation.id.uuidString
+                    if let webView = webViewReference {
+                        if let text = annotation.selectedText {
+                            let safeText = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "`", with: "\\`").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+                            webView.evaluateJavaScript("if (window.updateInksyncHighlightColor) { window.updateInksyncHighlightColor('\(idStr)', '\(colorHex)'); window.updateInksyncHighlightColor(`\(safeText)`, '\(colorHex)'); }")
+                        } else {
+                            webView.evaluateJavaScript("if (window.updateInksyncHighlightColor) { window.updateInksyncHighlightColor('\(idStr)', '\(colorHex)'); }")
+                        }
                     }
                     let matching = AnnotationStore.shared.annotations(for: pdf.id)
                         .first(where: { $0.id == annotation.id })
