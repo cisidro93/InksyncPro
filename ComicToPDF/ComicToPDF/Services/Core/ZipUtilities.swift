@@ -153,8 +153,8 @@ struct ZipUtilities {
                                 defer { workerGroup.leave() }
 
                                 // Each worker opens its own Archive — independent file handle & position.
-                                guard let workerArchive = ZIPFoundation.Archive(
-                                    url: sourceURL, accessMode: .read
+                                guard let workerArchive = try? ZIPFoundation.Archive(
+                                    url: sourceURL, accessMode: .read, pathEncoding: .utf8
                                 ) else {
                                     Logger.shared.log(
                                         "ZipUtilities: worker failed to open archive \(sourceURL.lastPathComponent)",

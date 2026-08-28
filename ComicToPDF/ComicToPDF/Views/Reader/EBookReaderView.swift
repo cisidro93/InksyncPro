@@ -842,6 +842,11 @@ struct EBookReaderView: View {
         trackEBookProgress()
     }
     
+    nonisolated private static func unzipBook(from source: URL, to destination: URL) throws {
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try FileManager.default.unzipItem(at: source, to: destination)
+    }
+
     // MARK: - Load & Cleanup
     private func loadBook() async {
         Logger.shared.log("EBookReader: opening \(fileURL.lastPathComponent)", category: "EBook")
@@ -851,89 +856,82 @@ struct EBookReaderView: View {
         let savedPage = UserDefaults.standard.integer(forKey: pageKey)
         
         // Linked Library: resolve security-scoped URL.
-        var resolvedURL: URL = fileURL
+        var targetURL: URL = fileURL
         var accessedURL: URL? = nil
         
         if let pdf = pdf {
             if case .cloud = pdf.sourceMode {
-                await MainActor.run { self.errorMessage = nil }
+                self.errorMessage = nil
                 do {
-                    resolvedURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
+                    targetURL = try await CloudDownloadManager.shared.streamCloudFile(pdf: pdf)
                 } catch {
                     let report = DocumentOpenDiagnostics.logFailure(url: fileURL, pdf: pdf, error: error, context: "EBookReaderView")
-                    await MainActor.run {
-                        self.loadDiagnosticReport = report
-                        self.errorMessage = report.rootCauseDescription
-                        self.isLoading = false
-                    }
+                    self.loadDiagnosticReport = report
+                    self.errorMessage = report.rootCauseDescription
+                    self.isLoading = false
                     return
                 }
             } else if case .linked(let bm) = pdf.sourceMode,
                let url = try? BookmarkResolver.shared.resolve(bm) {
                 let didAccess = url.startAccessingSecurityScopedResource()
-                resolvedURL = url
+                targetURL = url
                 if didAccess { accessedURL = url }
             }
         }
 
+        let sourceURL = targetURL
+
         // Parse metadata (streaming OPF, no full unzip)
-        let parsed = await EBookParser.shared.parse(epub: resolvedURL)
+        let parsed = await EBookParser.shared.parse(epub: sourceURL)
         
         // Unzip for content serving (WKWebView needs local file access)
         // Deterministic cache key: filename + mtime → same book reopens instantly
-        let mtime = (try? resolvedURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
-        let cacheKey = abs("\(resolvedURL.lastPathComponent)_\(Int(mtime.timeIntervalSince1970))".hashValue)
+        let mtime = (try? sourceURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+        let cacheKey = abs("\(sourceURL.lastPathComponent)_\(Int(mtime.timeIntervalSince1970))".hashValue)
         let dest = FileManager.default.temporaryDirectory.appendingPathComponent("EBook_\(cacheKey)")
 
         do {
             if !FileManager.default.fileExists(atPath: dest.path) {
-                // Unzip is a synchronous, potentially multi-second operation.
-                // Doing it on the main actor blocks the runloop and risks a watchdog
-                // kill during device orientation changes — move to a detached task.
+                let destination = dest
                 try await Task.detached(priority: .userInitiated) {
-                    try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
-                    try FileManager.default.unzipItem(at: resolvedURL, to: dest)
+                    try Self.unzipBook(from: sourceURL, to: destination)
                 }.value
             }
         } catch {
             accessedURL?.stopAccessingSecurityScopedResource()
-            let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: pdf, error: error, context: "EBookReaderView")
-            await MainActor.run {
-                self.loadDiagnosticReport = report
-                self.errorMessage = report.rootCauseDescription
-                self.isLoading = false
-            }
+            let report = DocumentOpenDiagnostics.logFailure(url: sourceURL, pdf: pdf, error: error, context: "EBookReaderView")
+            self.loadDiagnosticReport = report
+            self.errorMessage = report.rootCauseDescription
+            self.isLoading = false
             return
         }
         
         // Extraction done, stop security scope
         accessedURL?.stopAccessingSecurityScopedResource()
         
-        await MainActor.run {
-            self.unzipDir = dest
-            if let parsed = parsed, !parsed.spineItems.isEmpty {
-                self.metadata = parsed
-                // Restore saved chapter (clamp to valid range)
-                let total = parsed.spineItems.count
-                self.currentIndex = min(saved, max(0, total - 1))
-                if saved == self.currentIndex {
-                    self.chapterPage = savedPage
-                } else {
-                    self.chapterPage = 0
-                }
-                // Apply per-book theme + typography profiles if saved
-                if let bookID = pdf?.id.uuidString {
-                    prefs.applyBookTheme(bookID: bookID)
-                    prefs.applyBookTypography(bookID: bookID)
-                }
+        self.unzipDir = dest
+        if let parsed = parsed, !parsed.spineItems.isEmpty {
+            self.metadata = parsed
+            // Restore saved chapter (clamp to valid range)
+            let total = parsed.spineItems.count
+            self.currentIndex = min(saved, max(0, total - 1))
+            if saved == self.currentIndex {
+                self.chapterPage = savedPage
             } else {
-                let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: pdf, error: nil, context: "EBookReaderView")
-                self.loadDiagnosticReport = report
-                self.errorMessage = report.rootCauseDescription
+                self.chapterPage = 0
             }
-            self.isLoading = false
-            trackEBookProgress()
+            // Apply per-book theme + typography profiles if saved
+            if let bookID = pdf?.id.uuidString {
+                prefs.applyBookTheme(bookID: bookID)
+                prefs.applyBookTypography(bookID: bookID)
+            }
+        } else {
+            let report = DocumentOpenDiagnostics.logFailure(url: sourceURL, pdf: pdf, error: nil, context: "EBookReaderView")
+            self.loadDiagnosticReport = report
+            self.errorMessage = report.rootCauseDescription
         }
+        self.isLoading = false
+        trackEBookProgress()
     }
     
         private func saveProgress() {

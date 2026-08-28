@@ -1248,7 +1248,7 @@ final class WiFiServer: ObservableObject, Sendable {
                 
                 let newArchive: ZIPFoundation.Archive
                 do {
-                    newArchive = try ZIPFoundation.Archive(url: tempZipURL, accessMode: .create)
+                    newArchive = try ZIPFoundation.Archive(url: tempZipURL, accessMode: .create, pathEncoding: .utf8)
                 } catch {
                     sendResponse(connection, 500, "Failed to create archive stream: \(error.localizedDescription)", origin: origin)
                     return
