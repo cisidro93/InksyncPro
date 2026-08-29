@@ -182,7 +182,7 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         context.coordinator.toolPicker = picker
         context.coordinator.canvasView = canvasView
         
-        if isMarkupEnabled {
+        if isMarkupEnabled || (isPad && prefs.applePencilAutoDraw) {
             canvasView.becomeFirstResponder()
         }
         
@@ -204,13 +204,11 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         }
         context.coordinator.canvasView = uiView
         
-        if isMarkupEnabled {
+        if isMarkupEnabled || (isPad && prefs.applePencilAutoDraw) {
             uiView.becomeFirstResponder()
-            context.coordinator.toolPicker?.setVisible(true, forFirstResponder: uiView)
+            context.coordinator.toolPicker?.setVisible(isMarkupEnabled, forFirstResponder: uiView)
         } else {
-            if !isPad || !prefs.applePencilAutoDraw {
-                uiView.resignFirstResponder()
-            }
+            uiView.resignFirstResponder()
             context.coordinator.toolPicker?.setVisible(false, forFirstResponder: uiView)
         }
     }
