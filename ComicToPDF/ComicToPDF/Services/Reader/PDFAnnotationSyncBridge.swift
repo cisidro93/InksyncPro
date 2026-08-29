@@ -65,11 +65,12 @@ final class PDFAnnotationSyncBridge: Sendable {
                         let targetLines = lines.isEmpty ? [match] : lines
                         for line in targetLines {
                             let lineBounds = line.bounds(for: page)
-                            guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
+                            guard lineBounds != .zero, lineBounds.width > 2, lineBounds.height > 2 else { continue }
                             let nativeHighlight = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
                             nativeHighlight.color = highlightColor
                             nativeHighlight.contents = text
-                            nativeHighlight.quadrilateralPoints = quadrilateralPoints(for: lineBounds)
+                            // Do NOT set quadrilateralPoints — PDFKit derives them from bounds.
+                            // Custom quads cause invisible annotations on many PDF layouts.
                             page.addAnnotation(nativeHighlight)
                             didAdd = true
                         }
@@ -90,11 +91,11 @@ final class PDFAnnotationSyncBridge: Sendable {
                     } else {
                         bounds = CGRect(x: pageBounds.minX + 20, y: pageBounds.maxY - 100, width: pageBounds.width - 40, height: 24)
                     }
-                    guard bounds.width > 2 && bounds.height > 2 else { continue }
+                    guard bounds.width > 2, bounds.height > 2 else { continue }
                     let nativeHighlight = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
                     nativeHighlight.color = highlightColor
                     nativeHighlight.contents = annotation.selectedText ?? annotation.noteText
-                    nativeHighlight.quadrilateralPoints = quadrilateralPoints(for: bounds)
+                    // Do NOT set quadrilateralPoints — see above.
                     page.addAnnotation(nativeHighlight)
                 }
                 
@@ -188,7 +189,7 @@ final class PDFAnnotationSyncBridge: Sendable {
                     nativeHighlight.color = UIColor.systemYellow.withAlphaComponent(0.45)
                 }
                 nativeHighlight.contents = annotation.selectedText ?? annotation.noteText
-                nativeHighlight.quadrilateralPoints = quadrilateralPoints(for: bounds)
+                // Do NOT set quadrilateralPoints — PDFKit derives them from bounds.
                 page.addAnnotation(nativeHighlight)
                 
             case .note:
@@ -236,19 +237,7 @@ final class PDFAnnotationSyncBridge: Sendable {
         Logger.shared.log("PDFAnnotationSync: Exported \(storeAnnotations.count) annotations into native PDF document", category: "PDF")
     }
 
-    /// Converts a bounding box into 4 quadrilateral points in standard PDFKit vertex order.
-    private func quadrilateralPoints(for rect: CGRect) -> [NSValue] {
-        let p1 = CGPoint(x: rect.minX, y: rect.maxY)
-        let p2 = CGPoint(x: rect.maxX, y: rect.maxY)
-        let p3 = CGPoint(x: rect.minX, y: rect.minY)
-        let p4 = CGPoint(x: rect.maxX, y: rect.minY)
-        return [
-            NSValue(cgPoint: p1),
-            NSValue(cgPoint: p2),
-            NSValue(cgPoint: p3),
-            NSValue(cgPoint: p4)
-        ]
-    }
+    // MARK: - Coordinate Helpers (intentionally removed quadrilateralPoints — PDFKit derives them from bounds)
     
     // MARK: - Import Native PDF Annotations into InkSync Pro
     

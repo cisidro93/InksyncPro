@@ -31,6 +31,19 @@ enum PDFHighlightColor: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Pre-multiplied highlight UIColor ready to pass directly to PDFAnnotation.color.
+    /// Never use `uiColor.withAlphaComponent(0.45)` — the hex round-trip degrades saturation
+    /// for vivid colors like Emerald Green and Electric Blue.
+    var directHighlightUIColor: UIColor {
+        switch self {
+        case .yellow: return UIColor(red: 1.0,  green: 0.84, blue: 0.0,  alpha: 0.45)
+        case .green:  return UIColor(red: 0.0,  green: 0.90, blue: 0.46, alpha: 0.45)
+        case .blue:   return UIColor(red: 0.16, green: 0.71, blue: 0.96, alpha: 0.45)
+        case .pink:   return UIColor(red: 1.0,  green: 0.25, blue: 0.51, alpha: 0.45)
+        case .purple: return UIColor(red: 0.70, green: 0.53, blue: 1.0,  alpha: 0.45)
+        }
+    }
+
     var displayName: String {
         switch self {
         case .yellow: return "Solar Yellow"

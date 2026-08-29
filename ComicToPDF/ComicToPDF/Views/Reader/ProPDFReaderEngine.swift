@@ -1173,27 +1173,45 @@ struct ProPDFReaderEngine: View {
         HapticEngine.selection()
     }
 
+    // MARK: - Highlight Annotation Pipeline
+
+    /// Commits a highlight annotation for `text` in `color` onto the PDF page.
+    ///
+    /// **Three-path resolution strategy** (ordered by reliability):
+    /// 1. `activeSelectionSnapshot.lines` — captured at selection time; most accurate.
+    /// 2. `pdfView.currentSelection.selectionsByLine()` — fallback if snapshot is nil.
+    /// 3. `doc.findString(text)` — last resort text search.
+    ///
+    /// **No `quadrilateralPoints` are set.** Setting custom quad points that don't
+    /// exactly match PDFKit's internal glyph-level geometry produces invisible
+    /// annotations. PDFKit derives correct quad points from `bounds` automatically.
     private func saveHighlight(text: String, color: PDFHighlightColor) {
-        let highlightColor = color.uiColor.withAlphaComponent(0.45)
+        // Build the RGBA UIColor directly — never via hex round-trip which can
+        // silently collapse HSL saturation for colors like Emerald or Electric Blue.
+        let highlightColor = color.directHighlightUIColor
         var didAddNative = false
         var savedBounds: CodableCGRect? = nil
         var targetPageIndex = currentPageIndex
 
+        // ── Path 1: Use pre-captured selection snapshot ───────────────────────────
         if let snapshot = activeSelectionSnapshot {
             targetPageIndex = snapshot.pageIndex
             savedBounds = snapshot.normalizedBounds
             if let doc = pdfDocument, let page = doc.page(at: snapshot.pageIndex) {
                 for line in snapshot.lines {
-                    let annotation = PDFAnnotation(bounds: line.bounds, forType: .highlight, withProperties: nil)
-                    annotation.color = highlightColor
-                    annotation.contents = text
-                    annotation.quadrilateralPoints = line.quadPoints.map { NSValue(cgPoint: $0) }
-                    page.addAnnotation(annotation)
+                    guard line.bounds.width > 2, line.bounds.height > 2 else { continue }
+                    let ann = PDFAnnotation(bounds: line.bounds, forType: .highlight, withProperties: nil)
+                    ann.color = highlightColor
+                    ann.contents = text
+                    // Do NOT set quadrilateralPoints — PDFKit derives them from bounds.
+                    // Setting incorrect quads is the #1 cause of invisible highlights.
+                    page.addAnnotation(ann)
                     didAddNative = true
                 }
             }
         }
 
+        // ── Path 2: Decompose current PDFView selection by line ───────────────────
         if !didAddNative, let pdfView = pdfViewReference, let selection = pdfView.currentSelection {
             for page in selection.pages {
                 if let doc = pdfView.document {
@@ -1201,7 +1219,7 @@ struct ProPDFReaderEngine: View {
                 }
                 let pageBounds = page.bounds(for: .cropBox)
                 let selBounds = selection.bounds(for: page)
-                if pageBounds.width > 0 && pageBounds.height > 0 && savedBounds == nil {
+                if pageBounds.width > 0, pageBounds.height > 0, savedBounds == nil {
                     savedBounds = CodableCGRect(
                         x: Double((selBounds.minX - pageBounds.minX) / pageBounds.width),
                         y: Double((selBounds.minY - pageBounds.minY) / pageBounds.height),
@@ -1209,32 +1227,21 @@ struct ProPDFReaderEngine: View {
                         height: Double(selBounds.height / pageBounds.height)
                     )
                 }
-                let lineSelections = selection.selectionsByLine()
-                let targetLines = lineSelections.isEmpty ? [selection] : lineSelections
+                let lines = selection.selectionsByLine()
+                let targetLines = lines.isEmpty ? [selection] : lines
                 for lineSel in targetLines {
                     let lineBounds = lineSel.bounds(for: page)
-                    guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
-                    let annotation = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
-                    annotation.color = highlightColor
-                    annotation.contents = text
-
-                    let p1 = CGPoint(x: lineBounds.minX, y: lineBounds.maxY)
-                    let p2 = CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)
-                    let p3 = CGPoint(x: lineBounds.minX, y: lineBounds.minY)
-                    let p4 = CGPoint(x: lineBounds.maxX, y: lineBounds.minY)
-                    annotation.quadrilateralPoints = [
-                        NSValue(cgPoint: p1),
-                        NSValue(cgPoint: p2),
-                        NSValue(cgPoint: p3),
-                        NSValue(cgPoint: p4)
-                    ]
-
-                    page.addAnnotation(annotation)
+                    guard lineBounds != .zero, lineBounds.width > 2, lineBounds.height > 2 else { continue }
+                    let ann = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
+                    ann.color = highlightColor
+                    ann.contents = text
+                    page.addAnnotation(ann)
                     didAddNative = true
                 }
             }
         }
 
+        // ── Path 3: Text-search fallback ──────────────────────────────────────────
         if !didAddNative, let doc = pdfDocument, let page = doc.page(at: targetPageIndex) {
             let matches = doc.findString(text, withOptions: .caseInsensitive)
             for match in matches where match.pages.contains(page) {
@@ -1242,39 +1249,24 @@ struct ProPDFReaderEngine: View {
                 let targetLines = lines.isEmpty ? [match] : lines
                 for line in targetLines {
                     let lineBounds = line.bounds(for: page)
-                    guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
-                    let annotation = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
-                    annotation.color = highlightColor
-                    annotation.contents = text
-                    annotation.quadrilateralPoints = [
-                        NSValue(cgPoint: CGPoint(x: lineBounds.minX, y: lineBounds.maxY)),
-                        NSValue(cgPoint: CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)),
-                        NSValue(cgPoint: CGPoint(x: lineBounds.minX, y: lineBounds.minY)),
-                        NSValue(cgPoint: CGPoint(x: lineBounds.maxX, y: lineBounds.minY))
-                    ]
-                    page.addAnnotation(annotation)
+                    guard lineBounds != .zero, lineBounds.width > 2, lineBounds.height > 2 else { continue }
+                    let ann = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
+                    ann.color = highlightColor
+                    ann.contents = text
+                    page.addAnnotation(ann)
                     didAddNative = true
                 }
                 if didAddNative { break }
             }
         }
 
+        // ── Force immediate tile repaint so highlight appears without scroll ──────
         if let pv = pdfViewReference {
-            pv.clearSelection()
             pv.setCurrentSelection(nil, animate: false)
-            pv.layoutDocumentView()
-            pv.setNeedsDisplay()
-            if let docView = pv.documentView {
-                docView.setNeedsDisplay()
-            }
-            for subview in pv.subviews {
-                subview.setNeedsDisplay()
-                for inner in subview.subviews {
-                    inner.setNeedsDisplay()
-                }
-            }
+            forcePageRedraw(pv, pageIndex: targetPageIndex)
         }
 
+        // ── Persist to AnnotationStore and sync to disk ───────────────────────────
         let highlight = Annotation(
             pdfID: pdf.id,
             pageIndex: targetPageIndex,
@@ -1293,6 +1285,25 @@ struct ProPDFReaderEngine: View {
         activeSelectionSnapshot = nil
         showToastMessage("Highlight Added")
         HapticEngine.selection()
+    }
+
+    /// Forces PDFView to repaint annotation tiles on the target page immediately.
+    /// Calling `go(to:)` causes PDFKit to regenerate the page's tile pool, which
+    /// is the most reliable way to make newly added annotations appear without
+    /// requiring a manual scroll or zoom.
+    private func forcePageRedraw(_ pdfView: PDFView, pageIndex: Int) {
+        if let page = pdfView.document?.page(at: pageIndex) {
+            // go(to:) regenerates the tile layer for the page — more reliable than setNeedsDisplay alone
+            pdfView.go(to: page)
+        }
+        pdfView.layoutDocumentView()
+        pdfView.setNeedsDisplay()
+        pdfView.documentView?.setNeedsDisplay()
+        // Walk immediate subviews for any PDFPageView layers that also need redraw
+        for sv in pdfView.subviews {
+            sv.setNeedsDisplay()
+            for inner in sv.subviews { inner.setNeedsDisplay() }
+        }
     }
 
     private func saveNote(text: String, note: String) {
@@ -1508,48 +1519,61 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFView()
         pdfView.delegate = context.coordinator
+        // Horizontal paging feels most natural for a reader app on iOS
         pdfView.displayDirection = .horizontal
         pdfView.pageShadowsEnabled = true
         pdfView.backgroundColor = .clear
         pdfView.isOpaque = false
+
         let prefs = EBookPreferences.shared
         let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
+
+        // Use singlePage (non-continuous) as the default mode so PDFViewPageChanged fires
+        // reliably on every page turn. singlePageContinuous only fires on visible-page
+        // threshold crossings which can miss pages when scrolling quickly.
         pdfView.usePageViewController(false)
-        pdfView.displayMode = isDual ? .twoUp : .singlePageContinuous
+        pdfView.displayMode = isDual ? .twoUp : .singlePage
         pdfView.displaysAsBook = isDual
 
         let margin = max(0, prefs.textMargin)
         pdfView.pageBreakMargins = UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)
 
-        // Assign document AFTER display configuration
+        // Assign document AFTER display configuration so PDFKit lays out correctly
         pdfView.document = document
         pdfView.autoScales = true
         pdfView.minScaleFactor = 0.25
-        pdfView.maxScaleFactor = 6.0
+        pdfView.maxScaleFactor = 8.0
 
-        // Single Tap gesture setup — restricted to direct finger touches so Apple Pencil annotates without flipping pages
+        // ── Tap gesture (finger only) ──────────────────────────────────────────────
+        // Restricted to .direct so Apple Pencil strokes never trigger page turns.
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         tapGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         tapGesture.cancelsTouchesInView = false
         pdfView.addGestureRecognizer(tapGesture)
 
-        // Double Tap Zoom setup — restricted to direct finger touches
+        // ── Double-tap zoom (finger only) ─────────────────────────────────────────
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
         doubleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         doubleTap.cancelsTouchesInView = false
         pdfView.addGestureRecognizer(doubleTap)
+        // Single-tap must wait for double-tap to fail — standard iOS pattern
         tapGesture.require(toFail: doubleTap)
 
-        // Fluid Word-Snapping Glide Highlight Gesture setup
+        // ── Glide (word-snap) highlight gesture (finger only) ─────────────────────
+        // CRITICAL: allowedTouchTypes = [.direct] ensures Apple Pencil strokes are
+        // never consumed by this recognizer — the Pencil routes to PKCanvasView only.
+        // We do NOT chain tapGesture.require(toFail: glideRecognizer) here because
+        // that would block every single tap until a 0.15s long-press timeout elapes,
+        // making navigation feel sluggish and causing missed taps.
         let glideRecognizer = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleGlideSelection(_:)))
-        glideRecognizer.minimumPressDuration = 0.15
-        glideRecognizer.allowableMovement = 1000
+        glideRecognizer.minimumPressDuration = 0.3
+        glideRecognizer.allowableMovement = 2000
         glideRecognizer.cancelsTouchesInView = false
+        glideRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         glideRecognizer.delegate = context.coordinator
         pdfView.addGestureRecognizer(glideRecognizer)
-        tapGesture.require(toFail: glideRecognizer)
 
         NotificationCenter.default.addObserver(
             context.coordinator,
@@ -1557,14 +1581,12 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             name: .PDFViewPageChanged,
             object: pdfView
         )
-
         NotificationCenter.default.addObserver(
             context.coordinator,
             selector: #selector(Coordinator.selectionChanged(_:)),
             name: .PDFViewSelectionChanged,
             object: pdfView
         )
-
         NotificationCenter.default.addObserver(
             context.coordinator,
             selector: #selector(Coordinator.scaleChanged(_:)),
@@ -1582,14 +1604,14 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: PDFView, context: Context) {
         if uiView.document != document {
             uiView.document = document
-            // autoScales will re-compute fit after document swap without manual override.
             uiView.autoScales = true
         }
+
         let prefs = EBookPreferences.shared
         let isLandscape = uiView.bounds.width > uiView.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
         let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
-        
+
         if uiView.displayMode != targetDisplayMode {
             uiView.displayMode = targetDisplayMode
         }
@@ -1614,15 +1636,13 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             context.coordinator.lastCropMode = isCroppedMode
             context.coordinator.lastTextMargin = prefs.textMargin
 
-            // Recompute fitScale against real current frame; only touch scaleFactor
-            // if autoScales is off (i.e. user has manually zoomed in via gesture).
             let fitScale = uiView.scaleFactorForSizeToFit
             if fitScale > 0.001 {
                 uiView.minScaleFactor = fitScale
-                uiView.maxScaleFactor = fitScale * 7.0
+                uiView.maxScaleFactor = fitScale * 8.0
                 if let sv = uiView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
                     sv.minimumZoomScale = fitScale
-                    sv.maximumZoomScale = fitScale * 7.0
+                    sv.maximumZoomScale = fitScale * 8.0
                 }
             }
 
@@ -1632,8 +1652,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     uiView.scaleFactor = targetScale
                 }
             } else if context.coordinator.userCustomZoomScale == nil {
-                // Defer to autoScales for the baseline fit — only nudge if PDFKit
-                // settled on a value that is clearly wrong (> 5% off actual fit).
                 if fitScale > 0.001 && abs(uiView.scaleFactor - fitScale) > fitScale * 0.05 {
                     uiView.scaleFactor = fitScale
                 }
@@ -1642,14 +1660,24 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         context.coordinator.lastBoundsSize = uiView.bounds.size
 
-        // Guarantee PDFView active page displays target pageIndex cleanly without re-entrant animation corruption
-        if let targetPage = document.page(at: currentPageIndex), uiView.currentPage != targetPage {
-            if context.coordinator.lastTargetPageIndex != currentPageIndex {
-                context.coordinator.lastTargetPageIndex = currentPageIndex
-                uiView.go(to: targetPage)
-            }
-        } else {
+        // ── Page navigation guard ─────────────────────────────────────────────────
+        // Only call go(to:) when the index change originated from our code (bookmark
+        // jump, scrubber, keyboard), NOT when it was already triggered by the user
+        // scrolling (PDFViewPageChanged notification). Calling go(to:) in response to
+        // a scroll notification creates a feedback loop that causes pages to be skipped.
+        guard !context.coordinator.isNavigatingProgrammatically else { return }
+
+        if let targetPage = document.page(at: currentPageIndex),
+           uiView.currentPage != targetPage,
+           context.coordinator.lastTargetPageIndex != currentPageIndex {
             context.coordinator.lastTargetPageIndex = currentPageIndex
+            context.coordinator.isNavigatingProgrammatically = true
+            uiView.go(to: targetPage)
+            // Clear flag after RunLoop cycle so the resulting PDFViewPageChanged
+            // notification (triggered by go(to:)) is correctly ignored.
+            DispatchQueue.main.async {
+                context.coordinator.isNavigatingProgrammatically = false
+            }
         }
     }
 
@@ -1673,6 +1701,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         var lastTargetPageIndex: Int = -1
         var lastBoundsSize: CGSize = .zero
         var userCustomZoomScale: CGFloat? = nil
+
+        // Prevents updateUIView.go(to:) from re-triggering when PDFViewPageChanged fires
+        // after a programmatic navigation call. Without this flag, the two fight each
+        // other and pages get skipped or stuck.
+        var isNavigatingProgrammatically: Bool = false
 
         // Fluid Word-Snapping Glide Selection Session Tracking
         private var glideStartPoint: CGPoint? = nil
@@ -1870,10 +1903,14 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         }
 
         @MainActor @objc func pageChanged(_ notification: Notification) {
+            // If we triggered this notification ourselves via go(to:), ignore it —
+            // the binding is already set to the correct index.
+            guard !isNavigatingProgrammatically else { return }
             guard let pdfView = notification.object as? PDFView,
                   let page = pdfView.currentPage,
                   let doc = pdfView.document else { return }
             let idx = doc.index(for: page)
+            guard idx >= 0, idx < doc.pageCount else { return }
             if self.parent.currentPageIndex != idx {
                 self.lastTargetPageIndex = idx
                 self.parent.currentPageIndex = idx
