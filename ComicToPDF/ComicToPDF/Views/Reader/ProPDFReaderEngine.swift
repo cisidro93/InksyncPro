@@ -1262,9 +1262,6 @@ struct ProPDFReaderEngine: View {
         if let pv = pdfViewReference {
             pv.clearSelection()
             pv.setCurrentSelection(nil, animate: false)
-            if let targetPage = pdfDocument?.page(at: targetPageIndex) ?? pv.currentPage {
-                NotificationCenter.default.post(name: .PDFViewAnnotationsDidChange, object: targetPage)
-            }
             pv.layoutDocumentView()
             pv.setNeedsDisplay()
             if let docView = pv.documentView {
