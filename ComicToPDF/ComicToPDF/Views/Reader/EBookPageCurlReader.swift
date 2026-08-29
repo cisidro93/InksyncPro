@@ -284,12 +284,11 @@ extension EBookPageCurlReader {
             wv.scrollView.contentInsetAdjustmentBehavior = .never
             wv.scrollView.contentInset = .zero
 
-            // ✅ Fix: Short-press recognizer (80ms) that the tap zone must wait for.
-            // If the user's touch moves > 5pt (selection drag), the long-press fires and
-            // our tap zone handler sees isTouchDragActive = true and bails out.
+            // ✅ Fix: Long-press recognizer (250ms) that the tap zone waits for.
+            // If the user long-presses to select/highlight text, selectionGuard fires and
+            // prevents the single-tap page turn gesture from triggering.
             let selectionGuard = UILongPressGestureRecognizer(target: self, action: #selector(handleSelectionGuard(_:)))
-            selectionGuard.minimumPressDuration = 0.08
-            selectionGuard.allowableMovement = 5
+            selectionGuard.minimumPressDuration = 0.25
             selectionGuard.cancelsTouchesInView = false
             selectionGuard.delegate = self
             wv.addGestureRecognizer(selectionGuard)

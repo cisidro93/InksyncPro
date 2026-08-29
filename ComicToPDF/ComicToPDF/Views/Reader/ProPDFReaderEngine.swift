@@ -339,10 +339,6 @@ struct ProPDFReaderEngine: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
                 isPencilMode.toggle()
             }
-            // ✅ Fix: Disable PDFView touch interception when PKCanvasView overlay is active.
-            // Without this, PDFView's internal gesture recognizers absorb all Pencil and finger
-            // touches before they can reach the PKCanvasView layer above it in the z-order.
-            pdfViewReference?.isUserInteractionEnabled = !isPencilMode
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleSidebar"))) { _ in
             withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
@@ -850,7 +846,6 @@ struct ProPDFReaderEngine: View {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
                     isPencilMode.toggle()
                 }
-                pdfViewReference?.isUserInteractionEnabled = !isPencilMode
                 if isPencilMode {
                     showToastMessage("Pencil Markup Active")
                 }

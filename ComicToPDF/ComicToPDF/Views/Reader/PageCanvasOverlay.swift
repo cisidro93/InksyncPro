@@ -2,21 +2,25 @@ import SwiftUI
 import SwiftData
 import PencilKit
 
-/// Custom PKCanvasView subclass that forwards finger touches (taps, pans, page turns)
-/// down to the underlying reader when drawingPolicy is `.pencilOnly`.
+/// Custom PKCanvasView subclass that forwards finger touches (taps, pans, page turns, text selection)
+/// down to the underlying PDFView while allowing Apple Pencil to draw seamlessly.
 final class PassthroughPKCanvasView: PKCanvasView {
     var allowFingerDrawing: Bool = false
     
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        // If finger drawing is disabled (Pencil Only mode on iPad):
         if !allowFingerDrawing {
             if let touches = event?.allTouches, !touches.isEmpty {
                 let hasStylus = touches.contains { $0.type == .pencil || $0.type == .stylus }
-                if !hasStylus {
-                    // Finger touch: pass through to PDFView / Reader
+                if hasStylus {
+                    return super.hitTest(point, with: event)
+                } else {
+                    // Direct finger touches pass directly through to PDFView
                     return nil
                 }
             }
+            // If event has no touches yet (initial hitTest probe by gesture recognizer):
+            // Return nil so underlying PDFView handles finger taps, zooming, and text selection
+            return nil
         }
         return super.hitTest(point, with: event)
     }
@@ -91,24 +95,24 @@ struct PageCanvasOverlay: View {
         if let annotation = activeAnnotation {
             annotation.drawingData = currentDrawingData
             annotation.modifiedAt = Date()
+            try? ctx.save()
         } else {
-            let newInk = SDAnnotation(
+            var dto = Annotation(
                 id: UUID(),
-                pdfID: pdfID.uuidString,
+                pdfID: pdfID,
                 pageIndex: pageIndex,
-                text: nil,
-                note: nil,
-                isReadwiseImport: false,
-                readwiseBookTitle: nil,
-                readwiseAuthor: nil,
-                createdAt: Date()
+                chapterTitle: nil,
+                kind: .ink,
+                createdAt: Date(),
+                modifiedAt: Date()
             )
-            newInk.kindRaw = "ink"
-            newInk.drawingData = currentDrawingData
+            dto.drawingData = currentDrawingData
+            let newInk = SDAnnotation(from: dto)
             ctx.insert(newInk)
             self.activeAnnotation = newInk
+            try? ctx.save()
+            AnnotationStore.shared.add(dto)
         }
-        try? ctx.save()
         
         if let annotation = activeAnnotation {
             if !drawing.bounds.isEmpty {
@@ -148,8 +152,9 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         // On iPhone: use .anyInput when markup is enabled so fingers can draw/highlight.
         let pencilOnly = isPad && (pencilOnlyDrawing || prefs.applePencilAutoDraw)
         canvasView.allowFingerDrawing = isMarkupEnabled && !pencilOnly
-        canvasView.drawingPolicy = isMarkupEnabled ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
-        canvasView.isUserInteractionEnabled = isMarkupEnabled
+        canvasView.drawingPolicy = pencilOnly ? .pencilOnly : .anyInput
+        // Always enabled so Apple Pencil touches reach hitTest!
+        canvasView.isUserInteractionEnabled = true
         canvasView.drawingGestureRecognizer.cancelsTouchesInView = false
         
         // Configure default tool to vibrant highlighter
@@ -178,12 +183,12 @@ struct PKCanvasRepresentation: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: PassthroughPKCanvasView, context: Context) {
-        uiView.isUserInteractionEnabled = isMarkupEnabled
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let prefs = EBookPreferences.shared
         let pencilOnly = isPad && (pencilOnlyDrawing || prefs.applePencilAutoDraw)
         uiView.allowFingerDrawing = isMarkupEnabled && !pencilOnly
-        uiView.drawingPolicy = isMarkupEnabled ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
+        uiView.drawingPolicy = pencilOnly ? .pencilOnly : .anyInput
+        uiView.isUserInteractionEnabled = true
         uiView.drawingGestureRecognizer.cancelsTouchesInView = false
         context.coordinator.canvasView = uiView
         
@@ -191,7 +196,10 @@ struct PKCanvasRepresentation: UIViewRepresentable {
             uiView.becomeFirstResponder()
             context.coordinator.toolPicker?.setVisible(true, forFirstResponder: uiView)
         } else {
-            uiView.resignFirstResponder()
+            if !isPad || !prefs.applePencilAutoDraw {
+                uiView.resignFirstResponder()
+            }
+            context.coordinator.toolPicker?.setVisible(false, forFirstResponder: uiView)
         }
     }
     
