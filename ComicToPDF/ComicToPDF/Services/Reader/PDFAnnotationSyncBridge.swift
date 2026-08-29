@@ -50,8 +50,8 @@ final class PDFAnnotationSyncBridge: Sendable {
                 if alreadyPresent { continue }
                 
                 let highlightColor: UIColor
-                if let hex = annotation.colorHex {
-                    highlightColor = UIColor(Color(hex: hex)).withAlphaComponent(0.45)
+                if let hex = annotation.colorHex, let c = UIColor(hexString: hex) {
+                    highlightColor = c.withAlphaComponent(0.45)
                 } else {
                     highlightColor = UIColor.systemYellow.withAlphaComponent(0.45)
                 }
@@ -182,8 +182,8 @@ final class PDFAnnotationSyncBridge: Sendable {
                 }
                 
                 let nativeHighlight = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
-                if let hex = annotation.colorHex {
-                    nativeHighlight.color = UIColor(Color(hex: hex)).withAlphaComponent(0.45)
+                if let hex = annotation.colorHex, let c = UIColor(hexString: hex) {
+                    nativeHighlight.color = c.withAlphaComponent(0.45)
                 } else {
                     nativeHighlight.color = UIColor.systemYellow.withAlphaComponent(0.45)
                 }
@@ -358,6 +358,24 @@ public enum PDFSyncError: LocalizedError, Sendable {
 }
 
 private extension UIColor {
+    convenience init?(hexString: String) {
+        let clean = hexString.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        guard Scanner(string: clean).scanHexInt64(&int) else { return nil }
+        let r, g, b, a: CGFloat
+        switch clean.count {
+        case 3: // RGB (12-bit)
+            (r, g, b, a) = (CGFloat((int >> 8) * 17) / 255, CGFloat((int >> 4 & 0xF) * 17) / 255, CGFloat((int & 0xF) * 17) / 255, 1)
+        case 6: // RGB (24-bit)
+            (r, g, b, a) = (CGFloat((int >> 16) & 0xFF) / 255, CGFloat((int >> 8) & 0xFF) / 255, CGFloat(int & 0xFF) / 255, 1)
+        case 8: // ARGB (32-bit)
+            (r, g, b, a) = (CGFloat((int >> 16) & 0xFF) / 255, CGFloat((int >> 8) & 0xFF) / 255, CGFloat(int & 0xFF) / 255, CGFloat((int >> 24) & 0xFF) / 255)
+        default:
+            return nil
+        }
+        self.init(red: r, green: g, blue: b, alpha: a)
+    }
+
     func toHexString() -> String {
         var r: CGFloat = 0
         var g: CGFloat = 0

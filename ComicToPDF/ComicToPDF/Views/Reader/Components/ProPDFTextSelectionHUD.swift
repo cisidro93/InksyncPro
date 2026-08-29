@@ -12,11 +12,23 @@ enum PDFHighlightColor: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     var color: Color {
-        Color(hex: rawValue)
+        switch self {
+        case .yellow: return Color(red: 1.0, green: 0.84, blue: 0.0)
+        case .green:  return Color(red: 0.0, green: 0.90, blue: 0.46)
+        case .blue:   return Color(red: 0.16, green: 0.71, blue: 0.96)
+        case .pink:   return Color(red: 1.0, green: 0.25, blue: 0.51)
+        case .purple: return Color(red: 0.70, green: 0.53, blue: 1.0)
+        }
     }
 
     var uiColor: UIColor {
-        UIColor(Color(hex: rawValue))
+        switch self {
+        case .yellow: return UIColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0)
+        case .green:  return UIColor(red: 0.0, green: 0.90, blue: 0.46, alpha: 1.0)
+        case .blue:   return UIColor(red: 0.16, green: 0.71, blue: 0.96, alpha: 1.0)
+        case .pink:   return UIColor(red: 1.0, green: 0.25, blue: 0.51, alpha: 1.0)
+        case .purple: return UIColor(red: 0.70, green: 0.53, blue: 1.0, alpha: 1.0)
+        }
     }
 
     var displayName: String {
@@ -163,18 +175,24 @@ struct ProPDFTextSelectionHUD: View {
                     // Color Pickers
                     HStack(spacing: 8) {
                         ForEach(PDFHighlightColor.allCases) { highlightColor in
-                            Circle()
-                                .fill(highlightColor.color)
-                                .frame(width: 22, height: 22)
-                                .shadow(color: highlightColor.color.opacity(0.4), radius: 3)
-                                .overlay(
+                            Button(action: {
+                                HapticEngine.selection()
+                                onHighlight(highlightColor)
+                            }) {
+                                ZStack {
                                     Circle()
-                                        .stroke(Color.white.opacity(0.8), lineWidth: 1.5)
-                                )
-                                .onTapGesture {
-                                    HapticEngine.light()
-                                    onHighlight(highlightColor)
+                                        .fill(highlightColor.color)
+                                        .frame(width: 24, height: 24)
+                                        .shadow(color: highlightColor.color.opacity(0.5), radius: 3)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.white.opacity(0.85), lineWidth: 1.5)
+                                        )
                                 }
+                                .frame(width: 36, height: 36)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 

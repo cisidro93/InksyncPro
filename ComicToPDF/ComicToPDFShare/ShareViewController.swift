@@ -82,63 +82,32 @@ class ShareViewController: UIViewController {
         }
 
         // ── Step 2: Multi-Strategy Host App Launch ──
-        var didOpen = false
+        // Strategy A: Dynamic NSExtensionContext openURL selector invocation
+        let extOpenSel = NSSelectorFromString("openURL:completionHandler:")
+        if let ext = extensionContext, ext.responds(to: extOpenSel) {
+            let imp = ext.method(for: extOpenSel)
+            typealias ExtOpenMethod = @convention(c) (NSObject, Selector, NSURL, ((Bool) -> Void)?) -> Void
+            let fn = unsafeBitCast(imp, to: ExtOpenMethod.self)
+            fn(ext, extOpenSel, deepLinkURL as NSURL) { _ in }
+        }
 
-        // Strategy A: UIResponder Chain Traversal
-        var responder: UIResponder? = self
-        while responder != nil {
-            let openSelector = Selector(("openURL:"))
-            if responder?.responds(to: openSelector) == true {
-                responder?.perform(openSelector, with: deepLinkURL)
-                didOpen = true
+        // Strategy B: UIResponder Chain Traversal from window root
+        var responder: UIResponder? = self.view.window?.rootViewController ?? self
+        while let r = responder {
+            let openSelector = NSSelectorFromString("openURL:")
+            if r.responds(to: openSelector) {
+                r.perform(openSelector, with: deepLinkURL)
                 break
             }
-            responder = responder?.next
+            responder = r.next
         }
 
-        // Strategy B: Dynamic UIApplication Runtime Invocation (handles iPhone modal share)
-        if !didOpen {
-            if let appClass = NSClassFromString("UIApplication") as? NSObject.Type,
-               let sharedApp = appClass.perform(NSSelectorFromString("sharedApplication"))?.takeUnretainedValue() as? NSObject {
-                let openOptsSel = NSSelectorFromString("openURL:options:completionHandler:")
-                if sharedApp.responds(to: openOptsSel) {
-                    typealias OpenOptsMethod = @convention(c) (NSObject, Selector, NSURL, NSDictionary, ((Bool) -> Void)?) -> Void
-                    if let imp = sharedApp.method(for: openOptsSel) {
-                        let fn = unsafeBitCast(imp, to: OpenOptsMethod.self)
-                        fn(sharedApp, openOptsSel, deepLinkURL as NSURL, [:] as NSDictionary, nil)
-                        didOpen = true
-                    }
-                } else {
-                    let legacySel = NSSelectorFromString("openURL:")
-                    if sharedApp.responds(to: legacySel) {
-                        sharedApp.perform(legacySel, with: deepLinkURL)
-                        didOpen = true
-                    }
-                }
-            }
-        }
-
-        // Strategy C: Dynamic NSExtensionContext Selector Invocation
-        if !didOpen, let ext = extensionContext {
-            let extOpenSel = NSSelectorFromString("openURL:completionHandler:")
-            if ext.responds(to: extOpenSel) {
-                typealias ExtOpenMethod = @convention(c) (NSObject, Selector, NSURL, ((Bool) -> Void)?) -> Void
-                if let imp = ext.method(for: extOpenSel) {
-                    let fn = unsafeBitCast(imp, to: ExtOpenMethod.self)
-                    fn(ext, extOpenSel, deepLinkURL as NSURL) { _ in }
-                    didOpen = true
-                }
-            }
-        }
-
-        // Strategy D: Standard NSExtensionContext.open fallback
-        if !didOpen {
-            extensionContext?.open(deepLinkURL) { _ in }
-        }
+        // Strategy C: Standard NSExtensionContext.open fallback
+        extensionContext?.open(deepLinkURL) { _ in }
 
         // ── Step 3: Complete Request ──
         // A brief delay ensures SpringBoard initiates the app-switch transition before extension teardown
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
         }
     }

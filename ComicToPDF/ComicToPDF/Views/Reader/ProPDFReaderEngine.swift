@@ -1235,11 +1235,42 @@ struct ProPDFReaderEngine: View {
             }
         }
 
+        if !didAddNative, let doc = pdfDocument, let page = doc.page(at: targetPageIndex) {
+            let matches = doc.findString(text, withOptions: .caseInsensitive)
+            for match in matches where match.pages.contains(page) {
+                let lines = match.selectionsByLine()
+                let targetLines = lines.isEmpty ? [match] : lines
+                for line in targetLines {
+                    let lineBounds = line.bounds(for: page)
+                    guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
+                    let annotation = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
+                    annotation.color = highlightColor
+                    annotation.contents = text
+                    annotation.quadrilateralPoints = [
+                        NSValue(cgPoint: CGPoint(x: lineBounds.minX, y: lineBounds.maxY)),
+                        NSValue(cgPoint: CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)),
+                        NSValue(cgPoint: CGPoint(x: lineBounds.minX, y: lineBounds.minY)),
+                        NSValue(cgPoint: CGPoint(x: lineBounds.maxX, y: lineBounds.minY))
+                    ]
+                    page.addAnnotation(annotation)
+                    didAddNative = true
+                }
+                if didAddNative { break }
+            }
+        }
+
         if let pv = pdfViewReference {
             pv.clearSelection()
+            pv.setCurrentSelection(nil, animate: false)
             pv.setNeedsDisplay()
             pv.layoutDocumentView()
-            pv.subviews.forEach { $0.setNeedsDisplay() }
+            if let docView = pv.documentView {
+                docView.setNeedsDisplay()
+            }
+            pv.subviews.forEach { 
+                $0.setNeedsDisplay()
+                $0.subviews.forEach { $0.setNeedsDisplay() }
+            }
         }
 
         let highlight = Annotation(
