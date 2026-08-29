@@ -1452,6 +1452,19 @@ extension EBookPageCurlReader {
                 }, { passive: true });
             })();
 
+            // ✅ Fluid Word-Snapping Live Selection Listener
+            document.addEventListener('selectionchange', function() {
+                var sel = window.getSelection();
+                if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+                    var text = sel.toString().trim();
+                    if (text.length > 0) {
+                        try {
+                            window.webkit.messageHandlers.onTextSelected.postMessage(text);
+                        } catch(e) {}
+                    }
+                }
+            });
+
             document.addEventListener('click', function(e) {
                 var mark = e.target.closest ? e.target.closest('mark.inksync-highlight') : null;
                 if (mark) {

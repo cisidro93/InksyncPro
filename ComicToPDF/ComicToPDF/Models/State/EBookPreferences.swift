@@ -120,6 +120,7 @@ class EBookPreferences: ObservableObject {
     @AppStorage("pdf_fitToWidth") var pdfFitToWidth: Bool = false
     @AppStorage("pdf_rtlDirection") var pdfRTL: Bool = false
     @AppStorage("autoLandscapeDualPage") var autoLandscapeDualPage: Bool = true
+    @AppStorage("pdf_glideHighlighting") var glideHighlighting: Bool = true
 
     // MARK: - Auto-Theme Scheduling
     @AppStorage("ebook_autoThemeEnabled")   var isAutoThemeEnabled: Bool = false

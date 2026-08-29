@@ -1509,6 +1509,15 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.addGestureRecognizer(doubleTap)
         tapGesture.require(toFail: doubleTap)
 
+        // Fluid Word-Snapping Glide Highlight Gesture setup
+        let glideRecognizer = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleGlideSelection(_:)))
+        glideRecognizer.minimumPressDuration = 0.15
+        glideRecognizer.allowableMovement = 1000
+        glideRecognizer.cancelsTouchesInView = false
+        glideRecognizer.delegate = context.coordinator
+        pdfView.addGestureRecognizer(glideRecognizer)
+        tapGesture.require(toFail: glideRecognizer)
+
         NotificationCenter.default.addObserver(
             context.coordinator,
             selector: #selector(Coordinator.pageChanged(_:)),
@@ -1623,7 +1632,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         NotificationCenter.default.removeObserver(coordinator, name: .PDFViewScaleChanged, object: uiView)
     }
 
-    class Coordinator: NSObject, PDFViewDelegate {
+    class Coordinator: NSObject, PDFViewDelegate, UIGestureRecognizerDelegate {
         var parent: ProPDFViewRepresentable
         var lastCropMode: Bool = false
         var lastTextMargin: CGFloat = -1
@@ -1632,8 +1641,90 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         var lastBoundsSize: CGSize = .zero
         var userCustomZoomScale: CGFloat? = nil
 
+        // Fluid Word-Snapping Glide Selection Session Tracking
+        private var glideStartPoint: CGPoint? = nil
+        private var glideStartPage: PDFPage? = nil
+        private var glideStartWord: PDFSelection? = nil
+        private var lastGlideWordCount: Int = 0
+
         init(_ parent: ProPDFViewRepresentable) {
             self.parent = parent
+        }
+
+        // MARK: - Fluid Word-Snapping Glide Selection
+        @MainActor @objc func handleGlideSelection(_ gesture: UILongPressGestureRecognizer) {
+            guard let pdfView = gesture.view as? PDFView else { return }
+            let locationInView = gesture.location(in: pdfView)
+
+            switch gesture.state {
+            case .began:
+                guard let page = pdfView.page(for: locationInView, nearest: true) else { return }
+                let locationInPage = pdfView.convert(locationInView, to: page)
+                
+                if let initialWord = page.selectionForWord(at: locationInPage) ?? page.selection(from: locationInPage, to: locationInPage) {
+                    glideStartPoint = locationInPage
+                    glideStartPage = page
+                    glideStartWord = initialWord
+                    lastGlideWordCount = 1
+                    pdfView.setCurrentSelection(initialWord, animate: false)
+                    HapticEngine.selection()
+                } else {
+                    glideStartPoint = nil
+                    glideStartPage = nil
+                    glideStartWord = nil
+                }
+
+            case .changed:
+                guard let startPoint = glideStartPoint,
+                      let startPage = glideStartPage,
+                      let currentTargetPage = pdfView.page(for: locationInView, nearest: true),
+                      currentTargetPage == startPage else { return }
+                
+                let currentPointInPage = pdfView.convert(locationInView, to: startPage)
+                
+                if let rangeSelection = startPage.selection(from: startPoint, to: currentPointInPage) {
+                    if let endWord = startPage.selectionForWord(at: currentPointInPage) {
+                        rangeSelection.add(endWord)
+                    }
+                    if let startWord = glideStartWord {
+                        rangeSelection.add(startWord)
+                    }
+                    
+                    let words = rangeSelection.string?.split(whereSeparator: { $0.isWhitespace || $0.isPunctuation }).count ?? 0
+                    if words != lastGlideWordCount && words > 0 {
+                        lastGlideWordCount = words
+                        HapticEngine.selection()
+                    }
+                    
+                    pdfView.setCurrentSelection(rangeSelection, animate: false)
+                }
+
+            case .ended:
+                if let selection = pdfView.currentSelection, let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    selectionChanged(Notification(name: .PDFViewSelectionChanged, object: pdfView))
+                    HapticEngine.light()
+                }
+                glideStartPoint = nil
+                glideStartPage = nil
+                glideStartWord = nil
+                lastGlideWordCount = 0
+
+            case .cancelled, .failed:
+                glideStartPoint = nil
+                glideStartPage = nil
+                glideStartWord = nil
+                lastGlideWordCount = 0
+
+            default:
+                break
+            }
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            if otherGestureRecognizer is UIPinchGestureRecognizer {
+                return true
+            }
+            return false
         }
 
         // MARK: - PDFViewDelegate Link Interception
