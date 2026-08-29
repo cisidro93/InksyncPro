@@ -1262,14 +1262,19 @@ struct ProPDFReaderEngine: View {
         if let pv = pdfViewReference {
             pv.clearSelection()
             pv.setCurrentSelection(nil, animate: false)
-            pv.setNeedsDisplay()
+            if let targetPage = pdfDocument?.page(at: targetPageIndex) ?? pv.currentPage {
+                NotificationCenter.default.post(name: .PDFViewAnnotationsDidChange, object: targetPage)
+            }
             pv.layoutDocumentView()
+            pv.setNeedsDisplay()
             if let docView = pv.documentView {
                 docView.setNeedsDisplay()
             }
-            pv.subviews.forEach { 
-                $0.setNeedsDisplay()
-                $0.subviews.forEach { $0.setNeedsDisplay() }
+            for subview in pv.subviews {
+                subview.setNeedsDisplay()
+                for inner in subview.subviews {
+                    inner.setNeedsDisplay()
+                }
             }
         }
 
@@ -1752,10 +1757,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-            if otherGestureRecognizer is UIPinchGestureRecognizer {
-                return true
-            }
-            return false
+            return true
         }
 
         // MARK: - PDFViewDelegate Link Interception
