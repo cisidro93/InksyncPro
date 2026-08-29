@@ -217,15 +217,7 @@ extension EBookPageCurlReader {
         var isTouchDragActive: Bool = false
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-            let otherName = NSStringFromClass(type(of: otherGestureRecognizer))
-            // ✅ Fix: Allow WebKit's internal text-selection recognizers to run simultaneously
-            // with our tap zone recognizer. Previously returning false here was causing the
-            // UIKit tap to cancel WebKit's long-press selection gesture entirely.
-            if otherName.contains("Selection") || otherName.contains("Range") ||
-               otherName.contains("Loupe") || otherName.contains("LoupeGesture") {
-                return true
-            }
-            return false
+            return true
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -240,10 +232,6 @@ extension EBookPageCurlReader {
                className.contains("Selection") || className.contains("RangeView") || className.contains("Handle") || className.contains("Loupe") {
                 return false
             }
-            return true
-        }
-
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             return true
         }
 
