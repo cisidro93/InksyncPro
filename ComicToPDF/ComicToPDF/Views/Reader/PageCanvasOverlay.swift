@@ -8,21 +8,22 @@ final class PassthroughPKCanvasView: PKCanvasView {
     var allowFingerDrawing: Bool = false
     
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        if !allowFingerDrawing {
-            if let touches = event?.allTouches, !touches.isEmpty {
-                let hasStylus = touches.contains { $0.type == .pencil || $0.type == .stylus }
-                if hasStylus {
-                    return super.hitTest(point, with: event)
-                } else {
-                    // Direct finger touches pass directly through to PDFView
-                    return nil
-                }
-            }
-            // If event has no touches yet (initial hitTest probe by gesture recognizer):
-            // Return nil so underlying PDFView handles finger taps, zooming, and text selection
-            return nil
+        guard let view = super.hitTest(point, with: event) else { return nil }
+        
+        if allowFingerDrawing {
+            return view
         }
-        return super.hitTest(point, with: event)
+        
+        // If touches are present and all are direct finger touches, forward to PDFView
+        if let touches = event?.allTouches, !touches.isEmpty {
+            let hasStylus = touches.contains { $0.type == .pencil || $0.type == .stylus }
+            if !hasStylus {
+                return nil
+            }
+        }
+        
+        // Return canvas view for Apple Pencil touches and initial hit-test probes
+        return view
     }
 }
 
@@ -153,9 +154,15 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         let pencilOnly = isPad && (pencilOnlyDrawing || prefs.applePencilAutoDraw)
         canvasView.allowFingerDrawing = isMarkupEnabled && !pencilOnly
         canvasView.drawingPolicy = pencilOnly ? .pencilOnly : .anyInput
-        // Always enabled so Apple Pencil touches reach hitTest!
         canvasView.isUserInteractionEnabled = true
         canvasView.drawingGestureRecognizer.cancelsTouchesInView = false
+        canvasView.isScrollEnabled = !pencilOnly
+        canvasView.bounces = false
+        canvasView.showsVerticalScrollIndicator = false
+        canvasView.showsHorizontalScrollIndicator = false
+        if pencilOnly {
+            canvasView.panGestureRecognizer.isEnabled = false
+        }
         
         // Configure default tool to vibrant highlighter
         if canvasView.tool is PKInkingTool || !(canvasView.tool is PKEraserTool) {
@@ -190,6 +197,11 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         uiView.drawingPolicy = pencilOnly ? .pencilOnly : .anyInput
         uiView.isUserInteractionEnabled = true
         uiView.drawingGestureRecognizer.cancelsTouchesInView = false
+        uiView.isScrollEnabled = !pencilOnly
+        uiView.bounces = false
+        if pencilOnly {
+            uiView.panGestureRecognizer.isEnabled = false
+        }
         context.coordinator.canvasView = uiView
         
         if isMarkupEnabled {
