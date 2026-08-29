@@ -475,17 +475,16 @@ struct ProPDFReaderEngine: View {
             )
             .ignoresSafeArea()
 
-            // Only mount the PencilKit drawing canvas when Markup Mode is explicitly toggled
-            // by the user via the toolbar icon. This ensures that normal reading, finger text selection,
-            // and tap-to-turn gestures are never intercepted by the PKCanvasView layer.
-            if isPencilMode {
+            // Mount PencilKit canvas seamlessly on iPad for immediate Apple Pencil inking,
+            // or when Markup Mode is explicitly toggled by the user.
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let shouldMountCanvas = isPencilMode || (isPad && prefs.applePencilAutoDraw)
+            if shouldMountCanvas {
                 PageCanvasOverlay(
                     pdfID: pdf.id,
                     pageIndex: currentPageIndex,
-                    isMarkupEnabled: true,
-                    // ✅ Fix: Pass pencilOnlyDrawing explicitly so PKCanvasRepresentation never needs
-                    // @EnvironmentObject AppSettingsManager (which crashed when not injected).
-                    pencilOnlyDrawing: settingsManager.conversionSettings.pencilOnlyDrawing
+                    isMarkupEnabled: isPencilMode,
+                    pencilOnlyDrawing: isPencilMode ? settingsManager.conversionSettings.pencilOnlyDrawing : true
                 )
                 .ignoresSafeArea()
             }
@@ -972,6 +971,7 @@ struct ProPDFReaderEngine: View {
                         self.accessedSecurityScopedURL = accessed
                     }
                     self.pdfDocument = doc
+                    self.resolvedURL = resolvedURL
                     self.loadFailed = false
                     self.currentPageIndex = max(0, min(savedIndex, doc.pageCount - 1))
                     let savedCrop = ReaderProgressTracker.shared.cropInsets(for: sourcePDF.id)
@@ -1260,7 +1260,7 @@ struct ProPDFReaderEngine: View {
         )
         AnnotationStore.shared.add(highlight)
         if let doc = pdfDocument {
-            PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc)
+            PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc, at: resolvedURL)
         }
         activeSelectionSnapshot = nil
         showToastMessage("Highlight Added")
@@ -1280,6 +1280,9 @@ struct ProPDFReaderEngine: View {
             noteText: note
         )
         AnnotationStore.shared.add(noteAnn)
+        if let doc = pdfDocument {
+            PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc, at: resolvedURL)
+        }
     }
 
     private func saveMarginalia(text: String, symbol: String) {
@@ -1296,6 +1299,9 @@ struct ProPDFReaderEngine: View {
         )
         ann.marginaliaSymbolRaw = symbol
         AnnotationStore.shared.add(ann)
+        if let doc = pdfDocument {
+            PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc, at: resolvedURL)
+        }
     }
 
     private func speakText(_ text: String) {

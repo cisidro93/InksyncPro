@@ -130,8 +130,27 @@ struct InksyncProApp: App {
                 .modelContainer(InksyncProApp.sharedModelContainer)
                 .preferredColorScheme(selectedTheme.colorScheme)
                 .onAppear {
+                    // Inject ConversionManager into SharedImportCoordinator on app launch
+                    if let manager = ConversionManager.shared {
+                        SharedImportCoordinator.shared.conversionManager = manager
+                    }
                     // Check for any pending imports from Share Extension on launch
-                    SharedImportCoordinator.shared.coordinateImport(retryCount: 3, retryDelaySeconds: 0.5)
+                    SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
+                }
+                .onOpenURL { incomingURL in
+                    Logger.shared.log("InksyncProApp: Received incoming open URL: \(incomingURL.absoluteString)", category: "System")
+                    if incomingURL.scheme == "inksyncpro" {
+                        SharedImportCoordinator.shared.coordinateImport(retryCount: 5, retryDelaySeconds: 0.3)
+                        NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+                    } else if incomingURL.isFileURL {
+                        Task { @MainActor in
+                            if let ingestedDest = await SharedImportCoordinator.shared.handleDirectFileOpen(url: incomingURL) {
+                                Logger.shared.log("InksyncProApp: Directly ingested file: \(ingestedDest.lastPathComponent)", category: "Import", type: .success)
+                            }
+                            ConversionManager.shared?.scanLibrary()
+                            NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+                        }
+                    }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {

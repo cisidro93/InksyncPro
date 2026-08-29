@@ -243,6 +243,10 @@ extension EBookPageCurlReader {
             return true
         }
 
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true
+        }
+
         func cleanup() {
             NotificationCenter.default.removeObserver(self, name: NSNotification.Name("EBookTurnPageForward"), object: nil)
             NotificationCenter.default.removeObserver(self, name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
@@ -717,8 +721,13 @@ extension EBookPageCurlReader {
 
         @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {
             guard let view = gesture.view, let pvc = pageViewController else { return }
-            // Reset drag guard on every completed tap
             isTouchDragActive = false
+
+            if isUserSelectingText {
+                isUserSelectingText = false
+                primaryWebView?.evaluateJavaScript("window.getSelection().removeAllRanges();")
+                return
+            }
 
             // If text is currently selected in the WKWebView, dismiss the selection first
             // rather than flipping the page while the reader was in selection mode.

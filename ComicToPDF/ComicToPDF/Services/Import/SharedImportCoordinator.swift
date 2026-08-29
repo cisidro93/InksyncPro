@@ -197,6 +197,11 @@ final class SharedImportCoordinator: ObservableObject {
         )
 
         registerDirectlyOpenedFile(at: dest)
+        if let manager = conversionManager {
+            manager.scanLibrary()
+        } else {
+            ConversionManager.shared?.scanLibrary()
+        }
         NotificationCenter.default.post(
             name: NSNotification.Name("InksyncPro.DirectFileOpenReceived"),
             object: dest

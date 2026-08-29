@@ -1000,9 +1000,28 @@ struct EPUBWebView: View {
         }
         window.addEventListener('resize', function() { updateMetrics(); goToPage(_currentPage, false); });
 
+        var __touchStartX = 0, __touchStartY = 0, __touchMoved = false;
+        document.addEventListener('touchstart', function(e) {
+            var t = e.touches[0];
+            if (t) { __touchStartX = t.clientX; __touchStartY = t.clientY; }
+            __touchMoved = false;
+        }, { passive: true });
+        document.addEventListener('touchmove', function(e) {
+            var t = e.touches[0];
+            if (t) {
+                var dx = t.clientX - __touchStartX;
+                var dy = t.clientY - __touchStartY;
+                if (Math.sqrt(dx*dx + dy*dy) > 6) {
+                    __touchMoved = true;
+                }
+            }
+        }, { passive: true });
+
         document.addEventListener('click', function(e) {
             if (e.target.tagName.toLowerCase() === 'a') return;
-            if (window.getSelection() && !window.getSelection().isCollapsed) return;
+            if (__touchMoved) return;
+            var sel = window.getSelection();
+            if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) return;
             var x = e.clientX; var w = window.innerWidth;
             var leftEdge = window.__inksync_left_edge || 0.30;
             var rightEdge = window.__inksync_right_edge || 0.70;
@@ -1030,8 +1049,10 @@ struct EPUBWebView: View {
             if (_isNavigating) return;
             clearTimeout(_scrollTimeout);
             _scrollTimeout = setTimeout(function() {
-                if (!_isNavigating) {
-                    updateMetrics();
+                var sy = window.scrollY;
+                var max = document.body.scrollHeight - window.innerHeight;
+                if (max > 0) {
+                    window.webkit.messageHandlers.scrollFraction.postMessage(sy / max);
                 }
             }, 80);
         });
@@ -1044,31 +1065,56 @@ struct EPUBWebView: View {
             if (!text) return;
             var range = sel.getRangeAt(0);
             var mark = document.createElement('mark');
-            mark.style.backgroundColor = colorHex;
+            mark.style.backgroundColor = colorHex || '#FFD600';
             mark.style.color = 'inherit';
-            mark.className = 'inksynced-highlight';
-            range.surroundContents(mark);
+            mark.className = 'inksync-highlight';
+            try {
+                range.surroundContents(mark);
+            } catch(e) {
+                try {
+                    var frag = range.extractContents();
+                    mark.appendChild(frag);
+                    range.insertNode(mark);
+                } catch(err) {}
+            }
             sel.removeAllRanges();
             window.webkit.messageHandlers.highlightHandler.postMessage({ text: text, html: mark.outerHTML });
         };
         
         window.restoreInksyncHighlight = function(text, colorHex) {
+            if (!text || text.trim().length === 0) return;
+            var clean = text.trim();
             var body = document.body;
             var walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null, false);
             var node;
-            while (node = walker.nextNode()) {
-                var idx = node.nodeValue.indexOf(text);
+            while ((node = walker.nextNode())) {
+                if (node.parentElement && node.parentElement.closest && node.parentElement.closest('mark.inksync-highlight')) {
+                    continue;
+                }
+                var val = node.nodeValue || "";
+                var idx = val.indexOf(clean);
+                if (idx === -1 && clean.length > 10) {
+                    var prefix = clean.substring(0, Math.min(24, clean.length));
+                    idx = val.indexOf(prefix);
+                }
                 if (idx !== -1) {
+                    var matchLen = Math.min(clean.length, val.length - idx);
                     var range = document.createRange();
                     range.setStart(node, idx);
-                    range.setEnd(node, idx + text.length);
+                    range.setEnd(node, idx + matchLen);
                     var mark = document.createElement('mark');
-                    mark.style.backgroundColor = colorHex;
+                    mark.style.backgroundColor = colorHex || '#FFD600';
                     mark.style.color = 'inherit';
-                    mark.className = 'inksynced-highlight';
+                    mark.className = 'inksync-highlight';
                     try {
                         range.surroundContents(mark);
-                    } catch(e) {}
+                    } catch(e) {
+                        try {
+                            var frag = range.extractContents();
+                            mark.appendChild(frag);
+                            range.insertNode(mark);
+                        } catch(err) {}
+                    }
                     break;
                 }
             }
