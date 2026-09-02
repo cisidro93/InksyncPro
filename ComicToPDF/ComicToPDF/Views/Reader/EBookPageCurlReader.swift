@@ -47,6 +47,9 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         pvc.dataSource = context.coordinator
         pvc.delegate = context.coordinator
 
+        let view = pvc.view!
+        view.backgroundColor = UIColor(hex: prefs.activeTheme.cssBackground) ?? .black
+
         // Long-press selection guard (250ms) to disambiguate text selection from page taps & curls
         let selectionGuard = UILongPressGestureRecognizer(
             target: context.coordinator,
