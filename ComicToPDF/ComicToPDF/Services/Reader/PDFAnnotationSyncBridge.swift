@@ -69,8 +69,16 @@ final class PDFAnnotationSyncBridge: Sendable {
                             let nativeHighlight = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
                             nativeHighlight.color = highlightColor
                             nativeHighlight.contents = text
-                            // Do NOT set quadrilateralPoints — PDFKit derives them from bounds.
-                            // Custom quads cause invisible annotations on many PDF layouts.
+                            let p1 = CGPoint(x: lineBounds.minX, y: lineBounds.maxY)
+                            let p2 = CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)
+                            let p3 = CGPoint(x: lineBounds.minX, y: lineBounds.minY)
+                            let p4 = CGPoint(x: lineBounds.maxX, y: lineBounds.minY)
+                            nativeHighlight.quadrilateralPoints = [
+                                NSValue(cgPoint: p1),
+                                NSValue(cgPoint: p2),
+                                NSValue(cgPoint: p3),
+                                NSValue(cgPoint: p4)
+                            ]
                             page.addAnnotation(nativeHighlight)
                             didAdd = true
                         }
@@ -95,7 +103,16 @@ final class PDFAnnotationSyncBridge: Sendable {
                     let nativeHighlight = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
                     nativeHighlight.color = highlightColor
                     nativeHighlight.contents = annotation.selectedText ?? annotation.noteText
-                    // Do NOT set quadrilateralPoints — see above.
+                    let p1 = CGPoint(x: bounds.minX, y: bounds.maxY)
+                    let p2 = CGPoint(x: bounds.maxX, y: bounds.maxY)
+                    let p3 = CGPoint(x: bounds.minX, y: bounds.minY)
+                    let p4 = CGPoint(x: bounds.maxX, y: bounds.minY)
+                    nativeHighlight.quadrilateralPoints = [
+                        NSValue(cgPoint: p1),
+                        NSValue(cgPoint: p2),
+                        NSValue(cgPoint: p3),
+                        NSValue(cgPoint: p4)
+                    ]
                     page.addAnnotation(nativeHighlight)
                 }
                 
@@ -189,7 +206,16 @@ final class PDFAnnotationSyncBridge: Sendable {
                     nativeHighlight.color = UIColor.systemYellow.withAlphaComponent(0.45)
                 }
                 nativeHighlight.contents = annotation.selectedText ?? annotation.noteText
-                // Do NOT set quadrilateralPoints — PDFKit derives them from bounds.
+                let p1 = CGPoint(x: bounds.minX, y: bounds.maxY)
+                let p2 = CGPoint(x: bounds.maxX, y: bounds.maxY)
+                let p3 = CGPoint(x: bounds.minX, y: bounds.minY)
+                let p4 = CGPoint(x: bounds.maxX, y: bounds.minY)
+                nativeHighlight.quadrilateralPoints = [
+                    NSValue(cgPoint: p1),
+                    NSValue(cgPoint: p2),
+                    NSValue(cgPoint: p3),
+                    NSValue(cgPoint: p4)
+                ]
                 page.addAnnotation(nativeHighlight)
                 
             case .note:

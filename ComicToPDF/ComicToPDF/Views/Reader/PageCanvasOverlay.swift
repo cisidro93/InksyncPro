@@ -20,15 +20,14 @@ final class PassthroughPKCanvasView: PKCanvasView {
             if hasStylus {
                 return view
             } else {
-                // Direct finger touches pass directly through to PDFView
+                // Direct finger touches pass directly through to PDFView below
                 return nil
             }
         }
         
-        // When event has no touches yet (initial hit-test probe):
-        // Return nil so the underlying PDFView receives finger touches for text selection,
-        // glide highlighting, scrolling, and tapping.
-        return nil
+        // When event has no touches yet (initial hit-test probe from window):
+        // Return view so that Apple Pencil touch recognizers are not filtered out on probe.
+        return view
     }
 }
 

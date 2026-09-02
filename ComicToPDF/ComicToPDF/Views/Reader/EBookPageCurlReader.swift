@@ -91,6 +91,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         view.addGestureRecognizer(pinch)
 
         context.coordinator.pageViewController = pvc
+        context.coordinator.mountPrimaryWebViewOnRoot()
 
         let initialVCs = context.coordinator.spreadViewControllers(for: initialPage)
         context.coordinator.safeSetViewControllers(initialVCs, direction: .forward, animated: false)
@@ -352,6 +353,9 @@ extension EBookPageCurlReader {
 
                 self.chapterHTML = html
                 self.styledCSS = self.buildFullCSS()
+
+                // Mount primaryWebView on root so WebKit processes layout, metrics and JS immediately
+                self.mountPrimaryWebViewOnRoot()
 
                 // Load HTML into primary master WKWebView directly in-memory
                 let fullHTML = self.buildPageHTML(for: self.currentPageIndex)
@@ -1302,7 +1306,6 @@ extension EBookPageCurlReader {
             pre, table, code { max-width: 100% !important; overflow-x: auto !important; word-wrap: break-word !important; white-space: pre-wrap !important; }
             a { color: \(linkColor) !important; }
             blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }
-            mark.inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
             \(fontSize > 28 ? """
             .dropcap, .drop-cap, span.first-letter {
                 float: none !important; font-size: 1em !important; line-height: inherit !important;

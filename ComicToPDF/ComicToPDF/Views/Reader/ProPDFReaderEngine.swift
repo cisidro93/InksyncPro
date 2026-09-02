@@ -1191,8 +1191,6 @@ struct ProPDFReaderEngine: View {
 
         // CRITICAL: Do NOT clear the selection before adding annotations.
         // PDFKit uses the active selection's glyph map to resolve annotation bounds.
-        // Clearing selection first causes newly-added highlight annotations to render
-        // as invisible because the glyph layout cache is purged on selection removal.
 
         // ── Path 1: Use pre-captured selection snapshot ───────────────────────────
         if let snapshot = activeSelectionSnapshot {
@@ -1204,8 +1202,16 @@ struct ProPDFReaderEngine: View {
                     let ann = PDFAnnotation(bounds: line.bounds, forType: .highlight, withProperties: nil)
                     ann.color = highlightColor
                     ann.contents = text
-                    // Do NOT set quadrilateralPoints — PDFKit derives them from bounds.
-                    // Setting incorrect quads is the #1 cause of invisible highlights.
+                    let p1 = CGPoint(x: line.bounds.minX, y: line.bounds.maxY)
+                    let p2 = CGPoint(x: line.bounds.maxX, y: line.bounds.maxY)
+                    let p3 = CGPoint(x: line.bounds.minX, y: line.bounds.minY)
+                    let p4 = CGPoint(x: line.bounds.maxX, y: line.bounds.minY)
+                    ann.quadrilateralPoints = [
+                        NSValue(cgPoint: p1),
+                        NSValue(cgPoint: p2),
+                        NSValue(cgPoint: p3),
+                        NSValue(cgPoint: p4)
+                    ]
                     page.addAnnotation(ann)
                     didAddNative = true
                 }
@@ -1236,6 +1242,16 @@ struct ProPDFReaderEngine: View {
                     let ann = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
                     ann.color = highlightColor
                     ann.contents = text
+                    let p1 = CGPoint(x: lineBounds.minX, y: lineBounds.maxY)
+                    let p2 = CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)
+                    let p3 = CGPoint(x: lineBounds.minX, y: lineBounds.minY)
+                    let p4 = CGPoint(x: lineBounds.maxX, y: lineBounds.minY)
+                    ann.quadrilateralPoints = [
+                        NSValue(cgPoint: p1),
+                        NSValue(cgPoint: p2),
+                        NSValue(cgPoint: p3),
+                        NSValue(cgPoint: p4)
+                    ]
                     page.addAnnotation(ann)
                     didAddNative = true
                 }
@@ -1254,6 +1270,16 @@ struct ProPDFReaderEngine: View {
                     let ann = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
                     ann.color = highlightColor
                     ann.contents = text
+                    let p1 = CGPoint(x: lineBounds.minX, y: lineBounds.maxY)
+                    let p2 = CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)
+                    let p3 = CGPoint(x: lineBounds.minX, y: lineBounds.minY)
+                    let p4 = CGPoint(x: lineBounds.maxX, y: lineBounds.minY)
+                    ann.quadrilateralPoints = [
+                        NSValue(cgPoint: p1),
+                        NSValue(cgPoint: p2),
+                        NSValue(cgPoint: p3),
+                        NSValue(cgPoint: p4)
+                    ]
                     page.addAnnotation(ann)
                     didAddNative = true
                 }
