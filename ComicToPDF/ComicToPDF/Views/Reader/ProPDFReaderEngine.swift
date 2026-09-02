@@ -1131,43 +1131,39 @@ struct ProPDFReaderEngine: View {
                 readingRoom.broadcastPage(clamped, totalPages: max(1, totalPages))
             }
         }
+        // Only update the SwiftUI binding. updateUIView() owns the single
+        // authoritative call to pdfView.go(to:) via the isNavigatingProgrammatically
+        // guard. Calling go(to:) here AND in updateUIView causes a double-navigation
+        // race that manifests as every-other-page skipping.
         currentPageIndex = clamped
-        if let doc = pdfDocument, let page = doc.page(at: clamped), pdfViewReference?.currentPage != page {
-            pdfViewReference?.go(to: page)
-        }
         saveReadingProgress()
     }
 
     private func advancePage(forward: Bool) {
-        let isTwoUp = (pdfViewReference?.displayMode == .twoUp || pdfViewReference?.displayMode == .twoUpContinuous)
         let isManga = isMangaMode || prefs.pdfRTL
         let effectiveForward = isManga ? !forward : forward
 
-        if isTwoUp {
-            if effectiveForward {
-                if currentPageIndex == 0 {
-                    jumpToPage(1)
-                } else if currentPageIndex >= totalPages - 1 {
-                    attemptPDFSeriesContinuation()
-                } else {
-                    jumpToPage(min(totalPages - 1, currentPageIndex + 2))
+        guard let pdfView = pdfViewReference else { return }
+
+        if effectiveForward {
+            if pdfView.canGoToNextPage {
+                // goToNextPage handles twoUp spread boundaries natively —
+                // we never need to manually compute +1 or +2; PDFKit knows.
+                pdfView.goToNextPage(nil)
+                velocityEngine.recordPageTurn()
+                if readingRoom.isHosting {
+                    readingRoom.broadcastPage(currentPageIndex, totalPages: max(1, totalPages))
                 }
             } else {
-                if currentPageIndex <= 1 {
-                    jumpToPage(0)
-                } else {
-                    jumpToPage(max(0, currentPageIndex - 2))
-                }
+                attemptPDFSeriesContinuation()
             }
         } else {
-            if effectiveForward {
-                if currentPageIndex >= totalPages - 1 {
-                    attemptPDFSeriesContinuation()
-                } else {
-                    jumpToPage(currentPageIndex + 1)
+            if pdfView.canGoToPreviousPage {
+                pdfView.goToPreviousPage(nil)
+                velocityEngine.recordPageTurn()
+                if readingRoom.isHosting {
+                    readingRoom.broadcastPage(currentPageIndex, totalPages: max(1, totalPages))
                 }
-            } else {
-                jumpToPage(max(0, currentPageIndex - 1))
             }
         }
         HapticEngine.selection()
@@ -1192,6 +1188,12 @@ struct ProPDFReaderEngine: View {
         var didAddNative = false
         var savedBounds: CodableCGRect? = nil
         var targetPageIndex = currentPageIndex
+        var addedAnnotations: [(PDFAnnotation, PDFPage)] = []
+
+        // CRITICAL: Do NOT clear the selection before adding annotations.
+        // PDFKit uses the active selection's glyph map to resolve annotation bounds.
+        // Clearing selection first causes newly-added highlight annotations to render
+        // as invisible because the glyph layout cache is purged on selection removal.
 
         // ── Path 1: Use pre-captured selection snapshot ───────────────────────────
         if let snapshot = activeSelectionSnapshot {
@@ -1206,6 +1208,7 @@ struct ProPDFReaderEngine: View {
                     // Do NOT set quadrilateralPoints — PDFKit derives them from bounds.
                     // Setting incorrect quads is the #1 cause of invisible highlights.
                     page.addAnnotation(ann)
+                    addedAnnotations.append((ann, page))
                     didAddNative = true
                 }
             }
@@ -1236,6 +1239,7 @@ struct ProPDFReaderEngine: View {
                     ann.color = highlightColor
                     ann.contents = text
                     page.addAnnotation(ann)
+                    addedAnnotations.append((ann, page))
                     didAddNative = true
                 }
             }
@@ -1254,16 +1258,27 @@ struct ProPDFReaderEngine: View {
                     ann.color = highlightColor
                     ann.contents = text
                     page.addAnnotation(ann)
+                    addedAnnotations.append((ann, page))
                     didAddNative = true
                 }
                 if didAddNative { break }
             }
         }
 
-        // ── Force immediate tile repaint so highlight appears without scroll ──────
+        // ── NOW clear selection and force repaint (after annotations are committed) ─
         if let pv = pdfViewReference {
             pv.setCurrentSelection(nil, animate: false)
-            forcePageRedraw(pv, pageIndex: targetPageIndex)
+            // Use setNeedsDisplayForAnnotation for precision repaints —
+            // avoids triggering go(to:) which fires PDFViewPageChanged and
+            // can cause page-jump feedback loops.
+            for (ann, page) in addedAnnotations {
+                pv.setNeedsDisplayForAnnotation(ann)
+                _ = page // reference to prevent capture warning
+            }
+            // Belt-and-suspenders: force layout + display without a navigation call
+            pv.layoutDocumentView()
+            pv.setNeedsDisplay()
+            pv.documentView?.setNeedsDisplay()
         }
 
         // ── Persist to AnnotationStore and sync to disk ───────────────────────────
@@ -1288,18 +1303,12 @@ struct ProPDFReaderEngine: View {
     }
 
     /// Forces PDFView to repaint annotation tiles on the target page immediately.
-    /// Calling `go(to:)` causes PDFKit to regenerate the page's tile pool, which
-    /// is the most reliable way to make newly added annotations appear without
-    /// requiring a manual scroll or zoom.
+    /// NOTE: We deliberately do NOT call go(to:) here — that fires PDFViewPageChanged
+    /// outside of our isNavigatingProgrammatically guard and causes page-jump feedback loops.
     private func forcePageRedraw(_ pdfView: PDFView, pageIndex: Int) {
-        if let page = pdfView.document?.page(at: pageIndex) {
-            // go(to:) regenerates the tile layer for the page — more reliable than setNeedsDisplay alone
-            pdfView.go(to: page)
-        }
         pdfView.layoutDocumentView()
         pdfView.setNeedsDisplay()
         pdfView.documentView?.setNeedsDisplay()
-        // Walk immediate subviews for any PDFPageView layers that also need redraw
         for sv in pdfView.subviews {
             sv.setNeedsDisplay()
             for inner in sv.subviews { inner.setNeedsDisplay() }

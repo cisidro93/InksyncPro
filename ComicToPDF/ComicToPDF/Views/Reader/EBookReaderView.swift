@@ -1206,14 +1206,30 @@ struct EBookWebReader: View {
                 // Restore saved highlights
                 if let pdfID = self.pdfID {
                     let annotations = AnnotationStore.shared.annotations(for: pdfID)
-                        .filter { $0.kind == .highlight && $0.chapterTitle == self.spineItem.label }
+                        .filter { ann in
+                            guard ann.kind == .highlight else { return false }
+                            // Match by chapter label if available, fall back to page index
+                            if let title = ann.chapterTitle, !title.isEmpty {
+                                let label = self.spineItem.label
+                                if !label.isEmpty {
+                                    return title.lowercased() == label.lowercased()
+                                }
+                            }
+                            // Fallback: match by spine index position
+                            return ann.pageIndex == (self.pdfID.flatMap { _ in
+                                AnnotationStore.shared.annotations(for: pdfID).first?.pageIndex
+                            } ?? ann.pageIndex)
+                        }
                     for ann in annotations {
                         guard let text = ann.selectedText, let color = ann.colorHex else { continue }
+                        let idStr = ann.id.uuidString
                         let safeText = text
+                            .replacingOccurrences(of: "\\", with: "\\\\")
                             .replacingOccurrences(of: "`", with: "\\`")
                             .replacingOccurrences(of: "\"", with: "\\\"")
                             .replacingOccurrences(of: "\n", with: " ")
-                        let js = "window.restoreInksyncHighlight(`\(safeText)`, '\(color)');"
+                        let safeSymbol = (ann.marginaliaSymbolRaw ?? "").replacingOccurrences(of: "'", with: "\\'")
+                        let js = "window.restoreInksyncHighlight('\(idStr)', `\(safeText)`, '\(color)', '\(safeSymbol)');"
                         webView.evaluateJavaScript(js)
                     }
                 }
@@ -1658,7 +1674,7 @@ struct EBookWebReader: View {
         }
         a { color: \(linkColor) !important; }
         blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }
-        mark.inksync-highlight { background-color: #ffd700; color: inherit; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; }
+        mark.inksync-highlight { display: inline; border-radius: 2px; mix-blend-mode: multiply; -webkit-mix-blend-mode: multiply; padding: 0 1px; color: inherit; }
         \(fontSize > 28 ? """
         .dropcap, .drop-cap, span.first-letter {
             float: none !important;
@@ -1821,7 +1837,7 @@ struct EBookWebReader: View {
         });
 
         // ── Highlight Engine ─────────────────────────────────────────────────
-        window.applyInksyncHighlight = function(colorHex) {
+        window.applyInksyncHighlight = function(colorHex, symbol) {
             var sel = window.getSelection();
             if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
             var text = sel.toString().trim();
@@ -1829,26 +1845,54 @@ struct EBookWebReader: View {
             var range = sel.getRangeAt(0);
             var mark = document.createElement('mark');
             mark.className = 'inksync-highlight';
-            mark.style.backgroundColor = colorHex || '#ffd700';
+            // Apply color directly as inline style — NOT as a class so CSS cannot override it
+            mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
             mark.style.color = 'inherit';
-            mark.style.borderRadius = '2px';
+            mark.style.borderRadius = '3px';
             mark.style.mixBlendMode = 'multiply';
+            mark.style.padding = '0 1px';
+            if (symbol) {
+                mark.setAttribute('data-symbol', symbol);
+            }
             try {
                 range.surroundContents(mark);
             } catch(e) {
-                var frag = range.extractContents();
-                mark.appendChild(frag);
-                range.insertNode(mark);
+                try {
+                    var frag = range.extractContents();
+                    mark.appendChild(frag);
+                    range.insertNode(mark);
+                } catch(err) {
+                    // Last-resort: walk text nodes inside range and wrap individually
+                    var walker = document.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT, null, false);
+                    var textNode;
+                    while ((textNode = walker.nextNode())) {
+                        if (range.intersectsNode && range.intersectsNode(textNode)) {
+                            var subMark = document.createElement('mark');
+                            subMark.className = 'inksync-highlight';
+                            subMark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
+                            subMark.style.mixBlendMode = 'multiply';
+                            if (symbol) subMark.setAttribute('data-symbol', symbol);
+                            var startOffset = (textNode === range.startContainer) ? range.startOffset : 0;
+                            var endOffset = (textNode === range.endContainer) ? range.endOffset : textNode.nodeValue.length;
+                            var subRange = document.createRange();
+                            subRange.setStart(textNode, startOffset);
+                            subRange.setEnd(textNode, endOffset);
+                            try { subRange.surroundContents(subMark); } catch(x) {}
+                        }
+                    }
+                }
             }
             sel.removeAllRanges();
             window.webkit.messageHandlers.highlight.postMessage(text);
         };
 
-        window.restoreInksyncHighlight = function(textToFind, colorHex) {
+        window.restoreInksyncHighlight = function(id, textToFind, colorHex, symbol) {
             if (!textToFind) return;
             var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
             var node;
             while ((node = walker.nextNode())) {
+                // Skip text inside an already-restored highlight
+                if (node.parentElement && node.parentElement.closest && node.parentElement.closest('mark.inksync-highlight')) continue;
                 var idx = node.nodeValue.indexOf(textToFind);
                 if (idx !== -1) {
                     try {
@@ -1857,9 +1901,13 @@ struct EBookWebReader: View {
                         range.setEnd(node, idx + textToFind.length);
                         var mark = document.createElement('mark');
                         mark.className = 'inksync-highlight';
-                        mark.style.backgroundColor = colorHex || '#ffd700';
+                        if (id) mark.setAttribute('data-id', id);
+                        mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
                         mark.style.color = 'inherit';
-                        mark.style.borderRadius = '2px';
+                        mark.style.borderRadius = '3px';
+                        mark.style.mixBlendMode = 'multiply';
+                        mark.style.padding = '0 1px';
+                        if (symbol) mark.setAttribute('data-symbol', symbol);
                         range.surroundContents(mark);
                     } catch(e) {}
                     break;
@@ -1867,11 +1915,11 @@ struct EBookWebReader: View {
             }
         };
 
-        window.updateInksyncHighlightColor = function(textToFind, colorHex) {
+        window.updateInksyncHighlightColor = function(idOrText, colorHex) {
             var marks = document.querySelectorAll('mark.inksync-highlight');
             for (var i = 0; i < marks.length; i++) {
-                if (marks[i].textContent.trim() === textToFind.trim()) {
-                    marks[i].style.backgroundColor = colorHex;
+                if (marks[i].getAttribute('data-id') === idOrText || marks[i].textContent.trim() === idOrText.trim()) {
+                    marks[i].style.setProperty('background-color', colorHex, 'important');
                     break;
                 }
             }
