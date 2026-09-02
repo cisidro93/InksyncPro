@@ -29,6 +29,7 @@ struct SettingsView: View {
 
     // Adaptive Learning Engine
     @ObservedObject private var aiManager = AdaptiveLearningManager.shared
+    @ObservedObject private var ebookPrefs = EBookPreferences.shared
 
     @State private var showingSystemLogs = false
     
@@ -367,6 +368,17 @@ struct SettingsView: View {
             HStack {
                 settingsIcon("applepencil.and.scribble", color: .orange)
                 Toggle("Apple Pencil Drawing Only", isOn: $settingsManager.conversionSettings.pencilOnlyDrawing)
+            }
+            HStack {
+                settingsIcon("highlighter", color: .yellow)
+                Toggle("Apple Pencil Auto-Highlighter", isOn: $ebookPrefs.applePencilAutoDraw)
+            }
+            if ebookPrefs.applePencilAutoDraw {
+                Picker("Pencil Default Inking", selection: $ebookPrefs.applePencilDefaultTool) {
+                    Text("Highlighter (Marker)").tag("highlighter")
+                    Text("Pen (Fine Ink)").tag("pen")
+                }
+                .pickerStyle(.segmented)
             }
         }
     }

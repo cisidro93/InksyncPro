@@ -52,7 +52,7 @@ struct PageCanvasOverlay: View {
     var body: some View {
         GeometryReader { geo in
             PKCanvasRepresentation(canvasView: $canvasView, isMarkupEnabled: isMarkupEnabled, pencilOnlyDrawing: pencilOnlyDrawing)
-                .allowsHitTesting(isMarkupEnabled)
+                .allowsHitTesting(isMarkupEnabled || (UIDevice.current.userInterfaceIdiom == .pad && EBookPreferences.shared.applePencilAutoDraw))
                 .onAppear {
                     loadDrawing()
                 }
@@ -169,9 +169,14 @@ struct PKCanvasRepresentation: UIViewRepresentable {
             canvasView.panGestureRecognizer.isEnabled = false
         }
         
-        // Configure default tool to vibrant highlighter
+        // Configure default tool to vibrant highlighter or fine pen based on user preference
+        let prefs = EBookPreferences.shared
+        let defaultHighlighter = PKInkingTool(.marker, color: UIColor.systemYellow.withAlphaComponent(0.55), width: 22)
+        let defaultPen = PKInkingTool(.pen, color: .systemOrange, width: 3)
+        let preferredTool = (prefs.applePencilDefaultTool == "pen") ? defaultPen : defaultHighlighter
+        
         if canvasView.tool is PKInkingTool || !(canvasView.tool is PKEraserTool) {
-            canvasView.tool = PKInkingTool(.marker, color: UIColor.systemYellow.withAlphaComponent(0.55), width: 22)
+            canvasView.tool = preferredTool
         }
         
         // Attach Apple Pencil Interaction on iPad only
@@ -183,11 +188,12 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         
         let picker = PKToolPicker()
         picker.setVisible(isMarkupEnabled, forFirstResponder: canvasView)
+        picker.selectedTool = preferredTool
         picker.addObserver(canvasView)
         context.coordinator.toolPicker = picker
         context.coordinator.canvasView = canvasView
         
-        if isMarkupEnabled {
+        if isMarkupEnabled || (isPad && prefs.applePencilAutoDraw) {
             canvasView.becomeFirstResponder()
         }
         
@@ -212,6 +218,11 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         if isMarkupEnabled {
             uiView.becomeFirstResponder()
             context.coordinator.toolPicker?.setVisible(true, forFirstResponder: uiView)
+        } else if isPad && prefs.applePencilAutoDraw {
+            // Keep canvas first responder to receive immediate Apple Pencil strokes with zero latency,
+            // while keeping the floating tool picker hidden during immersive reading.
+            uiView.becomeFirstResponder()
+            context.coordinator.toolPicker?.setVisible(false, forFirstResponder: uiView)
         } else {
             uiView.resignFirstResponder()
             context.coordinator.toolPicker?.setVisible(false, forFirstResponder: uiView)
@@ -239,10 +250,14 @@ struct PKCanvasRepresentation: UIViewRepresentable {
             guard let canvas = canvasView else { return }
             HapticEngine.light()
             
+            let fallbackTool: PKInkingTool = (EBookPreferences.shared.applePencilDefaultTool == "pen")
+                ? PKInkingTool(.pen, color: .systemOrange, width: 3)
+                : PKInkingTool(.marker, color: UIColor.systemYellow.withAlphaComponent(0.55), width: 22)
+            
             switch UIPencilInteraction.preferredTapAction {
             case .switchEraser:
                 if canvas.tool is PKEraserTool {
-                    canvas.tool = previousInkingTool ?? PKInkingTool(.pen, color: .systemOrange, width: 3)
+                    canvas.tool = previousInkingTool ?? fallbackTool
                 } else {
                     previousInkingTool = canvas.tool
                     canvas.tool = PKEraserTool(.vector)
@@ -268,7 +283,7 @@ struct PKCanvasRepresentation: UIViewRepresentable {
                 } else {
                     // Pre-iOS 17.5: no additional cases exist; default to eraser toggle.
                     if canvas.tool is PKEraserTool {
-                        canvas.tool = previousInkingTool ?? PKInkingTool(.pen, color: .systemOrange, width: 3)
+                        canvas.tool = previousInkingTool ?? fallbackTool
                     } else {
                         previousInkingTool = canvas.tool
                         canvas.tool = PKEraserTool(.vector)

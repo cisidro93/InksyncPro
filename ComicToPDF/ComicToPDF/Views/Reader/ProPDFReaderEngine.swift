@@ -482,7 +482,7 @@ struct ProPDFReaderEngine: View {
                     isMarkupEnabled: isPencilMode,
                     pencilOnlyDrawing: isPencilMode ? settingsManager.conversionSettings.pencilOnlyDrawing : true
                 )
-                .allowsHitTesting(isPencilMode)
+                .allowsHitTesting(shouldMountCanvas)
                 .ignoresSafeArea()
             }
         }
@@ -1585,17 +1585,18 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // Single-tap must wait for double-tap to fail — standard iOS pattern
         tapGesture.require(toFail: doubleTap)
 
-        // ── Glide (word-snap) highlight gesture (finger only) ─────────────────────
-        // CRITICAL: allowedTouchTypes = [.direct] ensures Apple Pencil strokes are
-        // never consumed by this recognizer — the Pencil routes to PKCanvasView only.
-        // We do NOT chain tapGesture.require(toFail: glideRecognizer) here because
-        // that would block every single tap until a 0.15s long-press timeout elapes,
-        // making navigation feel sluggish and causing missed taps.
+        // ── Glide (word-snap) highlight gesture (finger and Apple Pencil) ────────
+        // Allows both direct finger touches and Apple Pencil to perform fluid word-snapping
+        // text selection and trigger the highlight HUD. When markup mode or auto-draw is active,
+        // Apple Pencil strokes are intercepted by PageCanvasOverlay for smooth inking.
         let glideRecognizer = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleGlideSelection(_:)))
         glideRecognizer.minimumPressDuration = 0.3
         glideRecognizer.allowableMovement = 2000
         glideRecognizer.cancelsTouchesInView = false
-        glideRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        glideRecognizer.allowedTouchTypes = [
+            NSNumber(value: UITouch.TouchType.direct.rawValue),
+            NSNumber(value: UITouch.TouchType.pencil.rawValue)
+        ]
         glideRecognizer.delegate = context.coordinator
         pdfView.addGestureRecognizer(glideRecognizer)
 
