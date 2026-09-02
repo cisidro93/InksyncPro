@@ -489,7 +489,25 @@ struct ReaderView: View {
                                         withAnimation(.easeInOut(duration: 0.2)) { isToolbarVisible.toggle() }
                                     },
                                     onViewCreated: { ref in pdfViewRef = ref },
-                                    onHighlightRequested: { _ in }
+                                    onHighlightRequested: { selectedText in
+                                        if let pdfID = pdf?.id {
+                                            let highlight = Annotation(
+                                                pdfID: pdfID,
+                                                pageIndex: currentPageIndex,
+                                                chapterTitle: "Page \(currentPageIndex + 1)",
+                                                kind: .highlight,
+                                                createdAt: Date(),
+                                                modifiedAt: Date(),
+                                                colorHex: "FFFF00",
+                                                selectedText: selectedText,
+                                                bounds: nil
+                                            )
+                                            AnnotationStore.shared.add(highlight)
+                                            if let doc = loadedPDFDocument {
+                                                PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdfID, in: doc, at: fileURL)
+                                            }
+                                        }
+                                    }
                                 )
                                 .colorMultiply(.white)
                                 .colorInvertIfDark(theme: EBookPreferences.shared.activeTheme)
@@ -1558,26 +1576,22 @@ struct PDFKitView: UIViewRepresentable {
             for page in pages {
                 let lineSelections = selection.selectionsByLine()
                 let targetLines = lineSelections.isEmpty ? [selection] : lineSelections
-                for lineSel in targetLines {
-                    let lineBounds = lineSel.bounds(for: page)
-                    guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
-                    let annotation = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
-                    annotation.color = UIColor.systemYellow.withAlphaComponent(0.45)
-                    let p1 = CGPoint(x: lineBounds.minX, y: lineBounds.maxY)
-                    let p2 = CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)
-                    let p3 = CGPoint(x: lineBounds.minX, y: lineBounds.minY)
-                    let p4 = CGPoint(x: lineBounds.maxX, y: lineBounds.minY)
-                    annotation.quadrilateralPoints = [
-                        NSValue(cgPoint: p1),
-                        NSValue(cgPoint: p2),
-                        NSValue(cgPoint: p3),
-                        NSValue(cgPoint: p4)
-                    ]
-                    page.addAnnotation(annotation)
-                }
+                let validRects = targetLines.compactMap { $0.bounds(for: page) }.filter { $0 != .zero && $0.width > 2 && $0.height > 2 }
+                guard !validRects.isEmpty else { continue }
+
+                let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
+                guard unionBox.width > 2 && unionBox.height > 2 else { continue }
+
+                let annotation = PDFAnnotation(bounds: unionBox, forType: .highlight, withProperties: nil)
+                annotation.color = UIColor.systemYellow.withAlphaComponent(0.45)
+                annotation.contents = selectedText
+                annotation.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                page.addAnnotation(annotation)
             }
 
             pdfView.clearSelection()
+            pdfView.layoutDocumentView()
+            pdfView.setNeedsDisplay()
             if !selectedText.isEmpty {
                 parent.onHighlightRequested?(selectedText)
             }

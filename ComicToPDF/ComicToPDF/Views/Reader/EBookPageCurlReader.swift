@@ -47,6 +47,17 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         pvc.dataSource = context.coordinator
         pvc.delegate = context.coordinator
 
+        // Long-press selection guard (250ms) to disambiguate text selection from page taps & curls
+        let selectionGuard = UILongPressGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleSelectionGuard(_:))
+        )
+        selectionGuard.minimumPressDuration = 0.25
+        selectionGuard.cancelsTouchesInView = false
+        selectionGuard.delegate = context.coordinator
+        view.addGestureRecognizer(selectionGuard)
+        context.coordinator.selectionGuard = selectionGuard
+
         // Disable UIPageViewController's built-in single-tap (it conflicts with zone taps)
         for gesture in pvc.gestureRecognizers {
             if gesture is UITapGestureRecognizer {
@@ -54,13 +65,9 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             } else if let pan = gesture as? UIPanGestureRecognizer {
                 pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
                 pan.delegate = context.coordinator
+                pan.require(toFail: selectionGuard)
             }
         }
-
-        let view = pvc.view!
-        // Set theme background immediately to prevent white bleed on initial load
-        // and before the primary WKWebView mounts its first content frame.
-        view.backgroundColor = UIColor(hex: prefs.activeTheme.cssBackground) ?? .black
 
         // Double tap — restricted to direct finger touches
         let doubleTap = UITapGestureRecognizer(
@@ -72,14 +79,17 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         doubleTap.cancelsTouchesInView = false
         view.addGestureRecognizer(doubleTap)
 
-        // Single tap — handles left/center/right zones — restricted to direct finger touches
+        // Single tap — handles left/center/right zones — guarded by selectionGuard & doubleTap
         let singleTap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleSingleTap(_:))
         )
         singleTap.numberOfTapsRequired = 1
         singleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        singleTap.cancelsTouchesInView = false
+        singleTap.delegate = context.coordinator
         singleTap.require(toFail: doubleTap)
+        singleTap.require(toFail: selectionGuard)
         view.addGestureRecognizer(singleTap)
 
         // Pinch to Zoom / Scale Text (Kindle-style interactive text scaling)
@@ -216,21 +226,41 @@ extension EBookPageCurlReader {
         // Tracks whether the most recent touch began as a drag (text-selection intent).
         // Set by JS touchstart/touchend movement tracking and reset by handleSingleTap.
         var isTouchDragActive: Bool = false
+        weak var selectionGuard: UILongPressGestureRecognizer?
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            // UIPageViewController's pan gesture should NEVER recognize simultaneously with
+            // WebKit selection, handle adjustment, loupe, or text editing gestures.
+            if gestureRecognizer is UIPanGestureRecognizer || otherGestureRecognizer is UIPanGestureRecognizer {
+                let otherName = NSStringFromClass(type(of: otherGestureRecognizer))
+                if otherName.contains("Selection") || otherName.contains("Range") || otherName.contains("Text") || otherName.contains("Loupe") {
+                    return false
+                }
+            }
             return true
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            // Block our tap if JS reported a drag/selection touch is in progress
-            if isUserSelectingText || isTouchDragActive { return false }
+            // Block our tap or page curl pan if user is actively selecting text or dragging a selection
+            if isUserSelectingText || isTouchDragActive {
+                if gestureRecognizer is UITapGestureRecognizer || gestureRecognizer is UIPanGestureRecognizer {
+                    return false
+                }
+            }
             return true
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            if isUserSelectingText { return false }
-            if let className = touch.view.map({ NSStringFromClass(type(of: $0)) }),
-               className.contains("Selection") || className.contains("RangeView") || className.contains("Handle") || className.contains("Loupe") {
+            // Walk the entire responder hierarchy of the touch to reject text selection handles/loupe
+            var v: UIView? = touch.view
+            while let current = v {
+                let name = NSStringFromClass(type(of: current))
+                if name.contains("Selection") || name.contains("RangeView") || name.contains("Handle") || name.contains("Loupe") || name.contains("TextRange") || name.contains("Grabber") {
+                    return false
+                }
+                v = current.superview
+            }
+            if isUserSelectingText && gestureRecognizer is UIPanGestureRecognizer {
                 return false
             }
             return true
@@ -284,23 +314,6 @@ extension EBookPageCurlReader {
             wv.scrollView.showsVerticalScrollIndicator = false
             wv.scrollView.contentInsetAdjustmentBehavior = .never
             wv.scrollView.contentInset = .zero
-
-            // ✅ Fix: Long-press recognizer (250ms) that the tap zone waits for.
-            // If the user long-presses to select/highlight text, selectionGuard fires and
-            // prevents the single-tap page turn gesture from triggering.
-            let selectionGuard = UILongPressGestureRecognizer(target: self, action: #selector(handleSelectionGuard(_:)))
-            selectionGuard.minimumPressDuration = 0.25
-            selectionGuard.cancelsTouchesInView = false
-            selectionGuard.delegate = self
-            wv.addGestureRecognizer(selectionGuard)
-
-            let webTap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(_:)))
-            webTap.numberOfTapsRequired = 1
-            webTap.cancelsTouchesInView = false
-            webTap.delegate = self
-            // ✅ Fix: Tap zone must wait for the selection guard to confirm it is NOT a drag
-            webTap.require(toFail: selectionGuard)
-            wv.addGestureRecognizer(webTap)
 
             self.primaryWebView = wv
             self.parent.webViewRef = wv
@@ -720,36 +733,46 @@ extension EBookPageCurlReader {
                 return
             }
 
-            // If text is currently selected in the WKWebView, dismiss the selection first
-            // rather than flipping the page while the reader was in selection mode.
-            if let wv = primaryWebView {
-                wv.evaluateJavaScript("window.getSelection() && !window.getSelection().isCollapsed") { [weak self, weak view, weak pvc] result, _ in
-                    guard let self = self, let view = view, let pvc = pvc else { return }
-                    if let isSelected = result as? Bool, isSelected {
-                        // User tapped while text was selected: clear selection, don't turn page
-                        wv.evaluateJavaScript("window.getSelection().removeAllRanges();")
-                        return
-                    }
-                    
-                    let location = gesture.location(in: view)
-                    let width = view.bounds.width
-                    let zones = self.tapZoneStyle.zones
-
-                    if location.x < width * zones.leftEdge {
-                        self.turnBackward(pvc)
-                    } else if location.x > width * zones.rightEdge {
-                        self.turnForward(pvc)
-                    } else {
-                        self.parent.onCenterTap()
-                    }
-                }
+            guard let wv = primaryWebView else {
+                performTapZoneAction(location: gesture.location(in: view), width: view.bounds.width, pvc: pvc)
                 return
             }
 
-            let location = gesture.location(in: view)
-            let width = view.bounds.width
-            let zones = tapZoneStyle.zones
+            let ptInWV = gesture.location(in: wv)
+            let checkJS = """
+            (function() {
+                var sel = window.getSelection();
+                if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) return "selection";
+                if (window.__selectionDragActive) return "drag";
+                var el = document.elementFromPoint(\(ptInWV.x), \(ptInWV.y));
+                if (!el) return "page";
+                if (el.closest('mark.inksync-highlight') || el.classList.contains('inksync-highlight')) return "highlight";
+                if (el.closest('a') || el.tagName === 'A') return "link";
+                if (el.closest('.footnote') || el.getAttribute('epub:type') === 'noteref' || el.getAttribute('epub:type') === 'footnote') return "footnote";
+                return "page";
+            })();
+            """
 
+            wv.evaluateJavaScript(checkJS) { [weak self, weak view, weak pvc] result, _ in
+                guard let self = self, let view = view, let pvc = pvc else { return }
+                let res = result as? String ?? "page"
+                if res == "selection" {
+                    wv.evaluateJavaScript("window.getSelection().removeAllRanges();")
+                    self.isUserSelectingText = false
+                    return
+                }
+                if res == "highlight" || res == "drag" || res == "link" || res == "footnote" {
+                    // Touched a highlight or interactive element; suppress page turn!
+                    return
+                }
+
+                let location = gesture.location(in: view)
+                self.performTapZoneAction(location: location, width: view.bounds.width, pvc: pvc)
+            }
+        }
+
+        private func performTapZoneAction(location: CGPoint, width: CGFloat, pvc: UIPageViewController) {
+            let zones = tapZoneStyle.zones
             if location.x < width * zones.leftEdge {
                 turnBackward(pvc)
             } else if location.x > width * zones.rightEdge {
@@ -922,8 +945,14 @@ extension EBookPageCurlReader {
                 didReceiveMetrics(current: current, totalPages: total, fromPageIndex: currentPageIndex)
             } else if message.name == "highlight", let text = message.body as? String, !text.isEmpty {
                 parent.onHighlightCreated?(text)
-            } else if message.name == "onHighlightTapped", let text = message.body as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                parent.onHighlightTapped?(text)
+                takePageSnapshot(for: currentPageIndex)
+            } else if message.name == "onHighlightTapped" {
+                if let dict = message.body as? [String: String], let text = dict["text"] {
+                    let identifier = dict["id"]?.isEmpty == false ? dict["id"]! : text
+                    parent.onHighlightTapped?(identifier)
+                } else if let text = message.body as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    parent.onHighlightTapped?(text)
+                }
             } else if message.name == "onTextSelected", let text = message.body as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 self.isUserSelectingText = true
                 parent.onTextSelected?(text)
@@ -1064,6 +1093,9 @@ extension EBookPageCurlReader {
             wv.evaluateJavaScript(js) { [weak self] result, _ in
                 if let text = result as? String, !text.isEmpty {
                     self?.parent.onHighlightCreated?(text)
+                    if let cur = self?.currentPageIndex {
+                        self?.takePageSnapshot(for: cur)
+                    }
                 }
             }
         }
@@ -1461,16 +1493,24 @@ extension EBookPageCurlReader {
             document.addEventListener('click', function(e) {
                 var mark = e.target.closest ? e.target.closest('mark.inksync-highlight') : null;
                 if (mark) {
+                    var id = mark.getAttribute('data-id') || '';
                     var text = mark.textContent.trim();
-                    if (text) {
+                    if (id || text) {
                         try {
-                            window.webkit.messageHandlers.onHighlightTapped.postMessage(text);
-                        } catch(err) {}
+                            window.webkit.messageHandlers.onHighlightTapped.postMessage({ id: id, text: text });
+                        } catch(err) {
+                            try { window.webkit.messageHandlers.onHighlightTapped.postMessage(text); } catch(x) {}
+                        }
                     }
                 }
             }, true);
 
-            window.applyInksyncHighlight = function(colorHex, symbol) {
+            window.applyInksyncHighlight = function(id, colorHex, symbol) {
+                if (typeof id === 'string' && id.indexOf('#') === 0) {
+                    symbol = colorHex;
+                    colorHex = id;
+                    id = '';
+                }
                 var sel = window.getSelection();
                 var range = null;
                 if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
@@ -1484,6 +1524,7 @@ extension EBookPageCurlReader {
                 if (!text) return "";
                 var mark = document.createElement('mark');
                 mark.className = 'inksync-highlight';
+                if (id) mark.setAttribute('data-id', id);
                 mark.style.backgroundColor = colorHex || '#FFD600';
                 mark.style.color = 'inherit';
                 mark.style.borderRadius = '3px';
@@ -1505,6 +1546,7 @@ extension EBookPageCurlReader {
                             if (range.intersectsNode(textNode)) {
                                 var subMark = document.createElement('mark');
                                 subMark.className = 'inksync-highlight';
+                                if (id) subMark.setAttribute('data-id', id);
                                 subMark.style.backgroundColor = colorHex || '#FFD600';
                                 subMark.style.mixBlendMode = 'multiply';
                                 if (symbol) subMark.setAttribute('data-symbol', symbol);
@@ -1573,18 +1615,25 @@ extension EBookPageCurlReader {
 
             window.restoreInksyncHighlight = function(id, textToFind, colorHex, symbol) {
                 if (!textToFind) return;
+                var trimmed = textToFind.trim();
                 var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
                 var node;
                 while ((node = walker.nextNode())) {
                     if (node.parentElement && node.parentElement.closest && node.parentElement.closest('mark.inksync-highlight')) {
                         continue;
                     }
-                    var idx = node.nodeValue.indexOf(textToFind);
+                    var val = node.nodeValue;
+                    var idx = val.indexOf(textToFind);
+                    var matchLen = textToFind.length;
+                    if (idx === -1 && trimmed !== textToFind) {
+                        idx = val.indexOf(trimmed);
+                        matchLen = trimmed.length;
+                    }
                     if (idx !== -1) {
                         try {
                             var range = document.createRange();
                             range.setStart(node, idx);
-                            range.setEnd(node, idx + textToFind.length);
+                            range.setEnd(node, idx + matchLen);
                             var mark = document.createElement('mark');
                             mark.className = 'inksync-highlight';
                             if (id) mark.setAttribute('data-id', id);

@@ -52,6 +52,7 @@ struct PageCanvasOverlay: View {
     var body: some View {
         GeometryReader { geo in
             PKCanvasRepresentation(canvasView: $canvasView, isMarkupEnabled: isMarkupEnabled, pencilOnlyDrawing: pencilOnlyDrawing)
+                .allowsHitTesting(isMarkupEnabled)
                 .onAppear {
                     loadDrawing()
                 }
@@ -186,7 +187,7 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         context.coordinator.toolPicker = picker
         context.coordinator.canvasView = canvasView
         
-        if isMarkupEnabled || (isPad && prefs.applePencilAutoDraw) {
+        if isMarkupEnabled {
             canvasView.becomeFirstResponder()
         }
         
@@ -208,9 +209,9 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         }
         context.coordinator.canvasView = uiView
         
-        if isMarkupEnabled || (isPad && prefs.applePencilAutoDraw) {
+        if isMarkupEnabled {
             uiView.becomeFirstResponder()
-            context.coordinator.toolPicker?.setVisible(isMarkupEnabled, forFirstResponder: uiView)
+            context.coordinator.toolPicker?.setVisible(true, forFirstResponder: uiView)
         } else {
             uiView.resignFirstResponder()
             context.coordinator.toolPicker?.setVisible(false, forFirstResponder: uiView)

@@ -59,6 +59,7 @@ struct EBookReaderView: View {
     @State private var activeHighlightToEdit: SDAnnotation? = nil
     @State private var annotationForFullEdit: SDAnnotation? = nil
     @State private var selectedTextForHUD: String? = nil
+    @State private var isApplyingHighlightDirectly = false
     @State private var lastBrightnessDragValue: CGFloat = 0
     // Gap A: Annotations panel
     @State private var showAnnotations = false
@@ -136,12 +137,13 @@ struct EBookReaderView: View {
                                     onPrev:      prevChapter,
                                     onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
                                     onHighlightCreated: { selectedText in
+                                        guard !isApplyingHighlightDirectly else { return }
                                         applyHighlight(text: selectedText, colorHex: "#FFD600", symbol: nil)
                                     },
                                     onHighlightTapped: { tappedText in
                                         guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
                                         let storeAnns = AnnotationStore.shared.annotations(for: p.id)
-                                        if let match = storeAnns.first(where: { ($0.selectedText ?? "").contains(tappedText) || tappedText.contains($0.selectedText ?? "") }),
+                                        if let match = storeAnns.first(where: { $0.id.uuidString == tappedText || ($0.selectedText ?? "").contains(tappedText) || tappedText.contains($0.selectedText ?? "") }),
                                            let sdMatch = try? modelContext.fetch(FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.id == match.id })).first {
                                             withAnimation(.easeInOut(duration: 0.18)) {
                                                 activeHighlightToEdit = sdMatch
@@ -1059,9 +1061,12 @@ struct EBookReaderView: View {
         let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
         let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
         
-        let safeSymbol = symbol?.replacingOccurrences(of: "'", with: "\\'") ?? ""
-        let js = "if (window.applyInksyncHighlight) { window.applyInksyncHighlight('\(colorHex)', '\(safeSymbol)'); }"
-        webViewReference?.evaluateJavaScript(js)
+        isApplyingHighlightDirectly = true
+        defer {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                self.isApplyingHighlightDirectly = false
+            }
+        }
         
         var highlight = Annotation(
             pdfID: p.id,
@@ -1084,6 +1089,11 @@ struct EBookReaderView: View {
         let sdAnnotation = SDAnnotation(from: highlight)
         modelContext.insert(sdAnnotation)
         try? modelContext.save()
+
+        let idStr = highlight.id.uuidString
+        let safeSymbol = symbol?.replacingOccurrences(of: "'", with: "\\'") ?? ""
+        let js = "if (window.applyInksyncHighlight) { window.applyInksyncHighlight('\(idStr)', '\(colorHex)', '\(safeSymbol)'); }"
+        webViewReference?.evaluateJavaScript(js)
         HapticEngine.selection()
     }
 

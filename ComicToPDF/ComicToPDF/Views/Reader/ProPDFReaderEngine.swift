@@ -482,6 +482,7 @@ struct ProPDFReaderEngine: View {
                     isMarkupEnabled: isPencilMode,
                     pencilOnlyDrawing: isPencilMode ? settingsManager.conversionSettings.pencilOnlyDrawing : true
                 )
+                .allowsHitTesting(isPencilMode)
                 .ignoresSafeArea()
             }
         }
@@ -1188,6 +1189,7 @@ struct ProPDFReaderEngine: View {
         var didAddNative = false
         var savedBounds: CodableCGRect? = nil
         var targetPageIndex = currentPageIndex
+        let activeDoc = pdfViewReference?.document ?? pdfDocument
 
         // CRITICAL: Do NOT clear the selection before adding annotations.
         // PDFKit uses the active selection's glyph map to resolve annotation bounds.
@@ -1196,24 +1198,18 @@ struct ProPDFReaderEngine: View {
         if let snapshot = activeSelectionSnapshot {
             targetPageIndex = snapshot.pageIndex
             savedBounds = snapshot.normalizedBounds
-            if let doc = pdfDocument, let page = doc.page(at: snapshot.pageIndex) {
-                for line in snapshot.lines {
-                    guard line.bounds.width > 2, line.bounds.height > 2 else { continue }
-                    let ann = PDFAnnotation(bounds: line.bounds, forType: .highlight, withProperties: nil)
-                    ann.color = highlightColor
-                    ann.contents = text
-                    let p1 = CGPoint(x: line.bounds.minX, y: line.bounds.maxY)
-                    let p2 = CGPoint(x: line.bounds.maxX, y: line.bounds.maxY)
-                    let p3 = CGPoint(x: line.bounds.minX, y: line.bounds.minY)
-                    let p4 = CGPoint(x: line.bounds.maxX, y: line.bounds.minY)
-                    ann.quadrilateralPoints = [
-                        NSValue(cgPoint: p1),
-                        NSValue(cgPoint: p2),
-                        NSValue(cgPoint: p3),
-                        NSValue(cgPoint: p4)
-                    ]
-                    page.addAnnotation(ann)
-                    didAddNative = true
+            if let doc = activeDoc, let page = doc.page(at: snapshot.pageIndex) {
+                let validRects = snapshot.lines.map(\.bounds).filter { $0 != .zero && $0.width > 2 && $0.height > 2 }
+                if !validRects.isEmpty {
+                    let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
+                    if unionBox.width > 2 && unionBox.height > 2 {
+                        let ann = PDFAnnotation(bounds: unionBox, forType: .highlight, withProperties: nil)
+                        ann.color = highlightColor
+                        ann.contents = text
+                        ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                        page.addAnnotation(ann)
+                        didAddNative = true
+                    }
                 }
             }
         }
@@ -1224,66 +1220,60 @@ struct ProPDFReaderEngine: View {
                 if let doc = pdfView.document {
                     targetPageIndex = doc.index(for: page)
                 }
-                let pageBounds = page.bounds(for: .cropBox)
-                let selBounds = selection.bounds(for: page)
-                if pageBounds.width > 0, pageBounds.height > 0, savedBounds == nil {
-                    savedBounds = CodableCGRect(
-                        x: Double((selBounds.minX - pageBounds.minX) / pageBounds.width),
-                        y: Double((selBounds.minY - pageBounds.minY) / pageBounds.height),
-                        width: Double(selBounds.width / pageBounds.width),
-                        height: Double(selBounds.height / pageBounds.height)
-                    )
-                }
                 let lines = selection.selectionsByLine()
                 let targetLines = lines.isEmpty ? [selection] : lines
-                for lineSel in targetLines {
-                    let lineBounds = lineSel.bounds(for: page)
-                    guard lineBounds != .zero, lineBounds.width > 2, lineBounds.height > 2 else { continue }
-                    let ann = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
-                    ann.color = highlightColor
-                    ann.contents = text
-                    let p1 = CGPoint(x: lineBounds.minX, y: lineBounds.maxY)
-                    let p2 = CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)
-                    let p3 = CGPoint(x: lineBounds.minX, y: lineBounds.minY)
-                    let p4 = CGPoint(x: lineBounds.maxX, y: lineBounds.minY)
-                    ann.quadrilateralPoints = [
-                        NSValue(cgPoint: p1),
-                        NSValue(cgPoint: p2),
-                        NSValue(cgPoint: p3),
-                        NSValue(cgPoint: p4)
-                    ]
-                    page.addAnnotation(ann)
-                    didAddNative = true
+                let validRects = targetLines.compactMap { $0.bounds(for: page) }.filter { $0 != .zero && $0.width > 2 && $0.height > 2 }
+                guard !validRects.isEmpty else { continue }
+                
+                let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
+                guard unionBox.width > 2 && unionBox.height > 2 else { continue }
+                
+                let pageBounds = page.bounds(for: .cropBox)
+                if pageBounds.width > 0, pageBounds.height > 0, savedBounds == nil {
+                    savedBounds = CodableCGRect(
+                        x: Double((unionBox.minX - pageBounds.minX) / pageBounds.width),
+                        y: Double((unionBox.minY - pageBounds.minY) / pageBounds.height),
+                        width: Double(unionBox.width / pageBounds.width),
+                        height: Double(unionBox.height / pageBounds.height)
+                    )
                 }
+                let ann = PDFAnnotation(bounds: unionBox, forType: .highlight, withProperties: nil)
+                ann.color = highlightColor
+                ann.contents = text
+                ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                page.addAnnotation(ann)
+                didAddNative = true
             }
         }
 
         // ── Path 3: Text-search fallback ──────────────────────────────────────────
-        if !didAddNative, let doc = pdfDocument, let page = doc.page(at: targetPageIndex) {
+        if !didAddNative, let doc = activeDoc, let page = doc.page(at: targetPageIndex) {
             let matches = doc.findString(text, withOptions: .caseInsensitive)
             for match in matches where match.pages.contains(page) {
                 let lines = match.selectionsByLine()
                 let targetLines = lines.isEmpty ? [match] : lines
-                for line in targetLines {
-                    let lineBounds = line.bounds(for: page)
-                    guard lineBounds != .zero, lineBounds.width > 2, lineBounds.height > 2 else { continue }
-                    let ann = PDFAnnotation(bounds: lineBounds, forType: .highlight, withProperties: nil)
-                    ann.color = highlightColor
-                    ann.contents = text
-                    let p1 = CGPoint(x: lineBounds.minX, y: lineBounds.maxY)
-                    let p2 = CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)
-                    let p3 = CGPoint(x: lineBounds.minX, y: lineBounds.minY)
-                    let p4 = CGPoint(x: lineBounds.maxX, y: lineBounds.minY)
-                    ann.quadrilateralPoints = [
-                        NSValue(cgPoint: p1),
-                        NSValue(cgPoint: p2),
-                        NSValue(cgPoint: p3),
-                        NSValue(cgPoint: p4)
-                    ]
-                    page.addAnnotation(ann)
-                    didAddNative = true
+                let validRects = targetLines.compactMap { $0.bounds(for: page) }.filter { $0 != .zero && $0.width > 2 && $0.height > 2 }
+                guard !validRects.isEmpty else { continue }
+                
+                let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
+                guard unionBox.width > 2 && unionBox.height > 2 else { continue }
+                
+                let pageBounds = page.bounds(for: .cropBox)
+                if pageBounds.width > 0, pageBounds.height > 0, savedBounds == nil {
+                    savedBounds = CodableCGRect(
+                        x: Double((unionBox.minX - pageBounds.minX) / pageBounds.width),
+                        y: Double((unionBox.minY - pageBounds.minY) / pageBounds.height),
+                        width: Double(unionBox.width / pageBounds.width),
+                        height: Double(unionBox.height / pageBounds.height)
+                    )
                 }
-                if didAddNative { break }
+                let ann = PDFAnnotation(bounds: unionBox, forType: .highlight, withProperties: nil)
+                ann.color = highlightColor
+                ann.contents = text
+                ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                page.addAnnotation(ann)
+                didAddNative = true
+                break
             }
         }
 
@@ -1306,7 +1296,7 @@ struct ProPDFReaderEngine: View {
             bounds: savedBounds
         )
         AnnotationStore.shared.add(highlight)
-        if let doc = pdfDocument {
+        if let doc = activeDoc {
             PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc, at: resolvedURL)
         }
         activeSelectionSnapshot = nil
@@ -1323,7 +1313,20 @@ struct ProPDFReaderEngine: View {
         pdfView.documentView?.setNeedsDisplay()
         for sv in pdfView.subviews {
             sv.setNeedsDisplay()
-            for inner in sv.subviews { inner.setNeedsDisplay() }
+            for inner in sv.subviews {
+                inner.setNeedsDisplay()
+                inner.layer.setNeedsDisplay()
+            }
+        }
+        if let docView = pdfView.documentView {
+            for pageView in docView.subviews {
+                pageView.setNeedsDisplay()
+                pageView.layer.setNeedsDisplay()
+                for tile in pageView.subviews {
+                    tile.setNeedsDisplay()
+                    tile.layer.setNeedsDisplay()
+                }
+            }
         }
     }
 
@@ -1950,23 +1953,21 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     let pageBounds = firstPage.bounds(for: .cropBox)
                     let lineSelections = selection.selectionsByLine()
                     let targetLines = lineSelections.isEmpty ? [selection] : lineSelections
+                    var validRects: [CGRect] = []
                     for lineSel in targetLines {
                         let lineBounds = lineSel.bounds(for: firstPage)
-                        guard lineBounds != .zero && lineBounds.width > 2 && lineBounds.height > 2 else { continue }
-                        let p1 = CGPoint(x: lineBounds.minX, y: lineBounds.maxY)
-                        let p2 = CGPoint(x: lineBounds.maxX, y: lineBounds.maxY)
-                        let p3 = CGPoint(x: lineBounds.minX, y: lineBounds.minY)
-                        let p4 = CGPoint(x: lineBounds.maxX, y: lineBounds.minY)
-                        let quads = [p1, p2, p3, p4]
-                        linesInfo.append(PDFSelectionLine(bounds: lineBounds, quadPoints: quads))
+                        guard lineBounds != .zero, lineBounds.width > 2, lineBounds.height > 2 else { continue }
+                        validRects.append(lineBounds)
+                        linesInfo.append(PDFSelectionLine(bounds: lineBounds, quadPoints: []))
                     }
-                    let selBounds = selection.bounds(for: firstPage)
+                    let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
+                    let targetBounds = !validRects.isEmpty ? unionBox : selection.bounds(for: firstPage)
                     if pageBounds.width > 0 && pageBounds.height > 0 {
                         normBounds = CodableCGRect(
-                            x: Double((selBounds.minX - pageBounds.minX) / pageBounds.width),
-                            y: Double((selBounds.minY - pageBounds.minY) / pageBounds.height),
-                            width: Double(selBounds.width / pageBounds.width),
-                            height: Double(selBounds.height / pageBounds.height)
+                            x: Double((targetBounds.minX - pageBounds.minX) / pageBounds.width),
+                            y: Double((targetBounds.minY - pageBounds.minY) / pageBounds.height),
+                            width: Double(targetBounds.width / pageBounds.width),
+                            height: Double(targetBounds.height / pageBounds.height)
                         )
                     }
                 }
