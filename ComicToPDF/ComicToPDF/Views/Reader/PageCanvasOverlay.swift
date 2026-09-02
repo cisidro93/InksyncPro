@@ -170,7 +170,6 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         }
         
         // Configure default tool to vibrant highlighter or fine pen based on user preference
-        let prefs = EBookPreferences.shared
         let defaultHighlighter = PKInkingTool(.marker, color: UIColor.systemYellow.withAlphaComponent(0.55), width: 22)
         let defaultPen = PKInkingTool(.pen, color: .systemOrange, width: 3)
         let preferredTool = (prefs.applePencilDefaultTool == "pen") ? defaultPen : defaultHighlighter
