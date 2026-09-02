@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 struct ShareExtensionView: View {
     let extensionContext: NSExtensionContext?
     var onCancel: () -> Void = {}
-    var onOpenApp: () -> Void = {}
+    var onOpenApp: ([SharedFile]) -> Void = { _ in }
     
     @State private var selectedFiles: [SharedFile] = []
     @State private var isLoading = true
@@ -243,7 +243,7 @@ struct ShareExtensionView: View {
                             .font(.system(size: 14, weight: .medium, design: .rounded))
                             .foregroundColor(.white.opacity(0.8))
 
-                        Button(action: onOpenApp) {
+                        Button(action: { onOpenApp(selectedFiles) }) {
                             HStack(spacing: 6) {
                                 Text("Open InkSync Pro")
                                     .font(.system(size: 15, weight: .bold, design: .rounded))
@@ -559,6 +559,20 @@ struct ShareExtensionView: View {
                         try? FileManager.default.removeItem(at: targetURL)
                         try? FileManager.default.moveItem(at: finalURL, to: targetURL)
                         finalURL = targetURL
+
+                        let containerDir = finalURL.deletingLastPathComponent().deletingLastPathComponent()
+                        let stagedInbox = containerDir.appendingPathComponent("Inbox").appendingPathComponent(sourceFilename)
+                        let properInbox = containerDir.appendingPathComponent("Inbox").appendingPathComponent(properFilename)
+                        if FileManager.default.fileExists(atPath: stagedInbox.path) && stagedInbox.path != properInbox.path {
+                            try? FileManager.default.removeItem(at: properInbox)
+                            try? FileManager.default.moveItem(at: stagedInbox, to: properInbox)
+                        }
+                        let stagedPending = containerDir.appendingPathComponent("PendingConversions").appendingPathComponent(sourceFilename)
+                        let properPending = containerDir.appendingPathComponent("PendingConversions").appendingPathComponent(properFilename)
+                        if FileManager.default.fileExists(atPath: stagedPending.path) && stagedPending.path != properPending.path {
+                            try? FileManager.default.removeItem(at: properPending)
+                            try? FileManager.default.moveItem(at: stagedPending, to: properPending)
+                        }
                     }
 
                     filesToProcess.append(SharedFile(
@@ -883,7 +897,7 @@ struct ShareExtensionView: View {
                     }
                     showingSuccess = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                        onOpenApp()
+                        onOpenApp(selectedFiles)
                     }
                 } else {
                     showingSuccess = false

@@ -10,6 +10,69 @@ extension ConversionManager {
          saveLibrary()
          Task { await self.generateCoverThumbnail(for: pdf) }
      }
+      
+    // MARK: - Direct File Ingestion & Immediate Auto-Open
+    @discardableResult
+    func registerDirectFile(at fileURL: URL, autoOpen: Bool = true) -> ConvertedPDF {
+        let canonicalPath = fileURL.resolvingSymlinksInPath().path.lowercased()
+        let filename = fileURL.lastPathComponent.lowercased()
+
+        // Check if this document is already loaded in memory
+        if let existing = convertedPDFs.first(where: {
+            $0.url.resolvingSymlinksInPath().path.lowercased() == canonicalPath ||
+            $0.url.lastPathComponent.lowercased() == filename
+        }) {
+            if autoOpen {
+                Task { @MainActor in
+                    AppRouter.shared.selectedTab = 0
+                    AppRouter.shared.dismissSheet()
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    AppRouter.shared.presentFullScreen(.read(existing))
+                }
+            }
+            return existing
+        }
+
+        let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+        let cleanTitle = fileURL.deletingPathExtension().lastPathComponent
+        var displayName = cleanTitle.isEmpty ? fileURL.lastPathComponent : cleanTitle
+        if fileURL.pathExtension.lowercased() == "pdf" {
+            if let recoveredTitle = PDFTitleRecoverer.recoverPDFTitle(from: fileURL) {
+                displayName = recoveredTitle
+            }
+        }
+
+        let contentType = MetadataHeuristics.detectAsymmetricContentType(url: fileURL)
+        let pageCount = PhysicalFileSystemRouter.getPageCountStatic(from: fileURL)
+        let coverData = PhysicalFileSystemRouter.extractCoverImageStatic(from: fileURL)?.jpegData(compressionQuality: 0.7)
+
+        var newPDF = ConvertedPDF(
+            name: displayName,
+            url: fileURL,
+            pageCount: pageCount,
+            fileSize: fileSize,
+            metadata: PDFMetadata(title: displayName),
+            coverImageData: coverData,
+            contentType: contentType
+        )
+        newPDF.addedByMode = .pro
+
+        convertedPDFs.insert(newPDF, at: 0)
+        saveLibrary()
+
+        NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+
+        if autoOpen {
+            Task { @MainActor in
+                AppRouter.shared.selectedTab = 0
+                AppRouter.shared.dismissSheet()
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                AppRouter.shared.presentFullScreen(.read(newPDF))
+            }
+        }
+
+        return newPDF
+    }
      
     // MARK: - Thumbnails & Helpers
     func generateCoverThumbnail(for pdf: ConvertedPDF) async {

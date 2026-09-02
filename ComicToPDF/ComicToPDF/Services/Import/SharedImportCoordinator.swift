@@ -49,6 +49,20 @@ final class SharedImportCoordinator: ObservableObject {
 
     // MARK: - Entry Points
 
+    /// Consolidated entry point for ALL external URL handling (custom schemes and file URLs).
+    func handleIncomingURL(_ url: URL) async {
+        Logger.shared.log("SharedImportCoordinator: handleIncomingURL '\(url.absoluteString)'", category: "Import", type: .info)
+        if url.scheme == "inksyncpro" || url.scheme == "inksync" {
+            var targetFile: String? = nil
+            if let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                targetFile = components.queryItems?.first(where: { $0.name == "file" })?.value
+            }
+            coordinateImport(targetFilename: targetFile, retryCount: 5, retryDelaySeconds: 0.3)
+        } else if url.isFileURL {
+            await handleDirectFileOpen(url: url, autoOpen: true)
+        }
+    }
+
     /// Direct async entry point used by LibraryScanner and background tasks.
     func coordinateImportDirect() async {
         let ingestedNames = await self.moveStagedFilesToInbox()
@@ -69,13 +83,9 @@ final class SharedImportCoordinator: ObservableObject {
     /// Called by ContentView's willEnterForeground observer, AppDelegate URL handler,
     /// scenePhase changes, and the `inksyncpro://` deep-link handler. Safe to call
     /// multiple times — it debounces internally.
-    ///
-    /// Fix: scanLibrary() is now awaited BEFORE posting .ShareImportReceived so that
-    /// ModernLibraryView's rebuildNativeCache() finds a fully populated convertedPDFs array.
-    func coordinateImport(retryCount: Int = 3, retryDelaySeconds: Double = 0.8) {
+    func coordinateImport(targetFilename: String? = nil, retryCount: Int = 3, retryDelaySeconds: Double = 0.5) {
         guard !isIngesting else { return }
         isIngesting = true
-        // Capture isolated properties before entering the detached context
         let groupIDs = appGroupIDs
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
@@ -85,36 +95,35 @@ final class SharedImportCoordinator: ObservableObject {
                     self.pendingAutoSelectFilenames.insert(name)
                 }
                 if !ingestedNames.isEmpty {
-                    // ✅ Fix: Clear flags synchronously (no actor isolation issue — we are on MainActor)
                     Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
                     Logger.shared.log(
-                        "SharedImportCoordinator: Completed import of \(ingestedNames.count) file(s) — triggering library scan",
+                        "SharedImportCoordinator: Completed import of \(ingestedNames.count) file(s)",
                         category: "Import", type: .success
                     )
-                    // ✅ Fix: Trigger scanLibrary() NOW (while still on MainActor) so ConversionManager
-                    // is fully updated BEFORE the UI notification fires. The scan is async internally
-                    // but the .ShareImportReceived notification is posted from within scanLibrary's
-                    // completion path via .libraryNeedsRescan — preserving correct ordering.
-                    if let manager = self.conversionManager {
-                        manager.scanLibrary()
-                        // Brief yield to allow LibraryScanner's actor to start processing before
-                        // the notification arrives at ModernLibraryView
-                        Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 150_000_000)
-                            NotificationCenter.default.post(
-                                name: NSNotification.Name("InksyncPro.ShareImportReceived"),
-                                object: nil
-                            )
-                            NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+
+                    let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+                    let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+
+                    let manager = self.conversionManager ?? ConversionManager.shared
+                    var firstPDF: ConvertedPDF? = nil
+
+                    for (idx, name) in ingestedNames.enumerated() {
+                        let fileURL = inboxDir.appendingPathComponent(name)
+                        let shouldOpen = (name == targetFilename) || (targetFilename == nil && idx == 0)
+                        if let pdf = manager?.registerDirectFile(at: fileURL, autoOpen: shouldOpen) {
+                            if shouldOpen && firstPDF == nil {
+                                firstPDF = pdf
+                            }
                         }
-                    } else {
-                        // Fallback if conversionManager not injected yet
-                        NotificationCenter.default.post(
-                            name: NSNotification.Name("InksyncPro.ShareImportReceived"),
-                            object: nil
-                        )
-                        NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
                     }
+
+                    manager?.scanLibrary()
+
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("InksyncPro.ShareImportReceived"),
+                        object: firstPDF
+                    )
+                    NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
                 } else {
                     Logger.shared.log(
                         "SharedImportCoordinator: No files ingested — leaving flags set for next foreground retry.",
@@ -128,16 +137,20 @@ final class SharedImportCoordinator: ObservableObject {
 
     /// Centralized, failsafe direct file:// ingestion method.
     /// Handles security-scoped access, coordination, destination placement in InksyncVault/Inbox,
-    /// and dispatches notifications for UI update.
+    /// direct library registration, and instant presentation in the reader.
     @discardableResult
-    func handleDirectFileOpen(url: URL) async -> URL? {
+    func handleDirectFileOpen(url: URL, autoOpen: Bool = true) async -> URL? {
         let pathKey = url.path
         if inFlightDirectOpens.contains(pathKey) {
             let appSupport = FileManager.default.urls(
                 for: .applicationSupportDirectory, in: .userDomainMask
             ).first ?? FileManager.default.temporaryDirectory
             let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
-            return inboxDir.appendingPathComponent(url.lastPathComponent)
+            let dest = inboxDir.appendingPathComponent(url.lastPathComponent)
+            if autoOpen, let manager = conversionManager ?? ConversionManager.shared {
+                manager.registerDirectFile(at: dest, autoOpen: true)
+            }
+            return dest
         }
         inFlightDirectOpens.insert(pathKey)
         defer { inFlightDirectOpens.remove(pathKey) }
@@ -153,9 +166,12 @@ final class SharedImportCoordinator: ObservableObject {
         let filename = url.lastPathComponent
         let dest = inboxDir.appendingPathComponent(filename)
 
-        // If file is already at destination and valid, register and return
+        // If file is already at destination and valid, register and autoOpen
         if dest.path == url.path && FileManager.default.fileExists(atPath: dest.path) {
             registerDirectlyOpenedFile(at: dest)
+            if let manager = conversionManager ?? ConversionManager.shared {
+                manager.registerDirectFile(at: dest, autoOpen: autoOpen)
+            }
             NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
             return dest
         }
@@ -168,6 +184,8 @@ final class SharedImportCoordinator: ObservableObject {
         NSFileCoordinator().coordinate(
             readingItemAt: url, options: .withoutChanges, error: nil
         ) { safeURL in
+            let innerAccess = safeURL.startAccessingSecurityScopedResource()
+            defer { if innerAccess { safeURL.stopAccessingSecurityScopedResource() } }
             do {
                 try FileManager.default.copyItem(at: safeURL, to: dest)
                 copySuccess = true
@@ -197,10 +215,9 @@ final class SharedImportCoordinator: ObservableObject {
         )
 
         registerDirectlyOpenedFile(at: dest)
-        if let manager = conversionManager {
+        if let manager = conversionManager ?? ConversionManager.shared {
+            manager.registerDirectFile(at: dest, autoOpen: autoOpen)
             manager.scanLibrary()
-        } else {
-            ConversionManager.shared?.scanLibrary()
         }
         NotificationCenter.default.post(
             name: NSNotification.Name("InksyncPro.DirectFileOpenReceived"),
@@ -293,7 +310,7 @@ final class SharedImportCoordinator: ObservableObject {
         let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
         try? fm.createDirectory(at: inboxDir, withIntermediateDirectories: true)
 
-        var ingestedFilenames: [String] = []
+        var ingestedFilenames: Set<String> = []
         var visitedContainers: Set<URL> = []
 
         let searchContainers = Self.getAllSearchContainers()
@@ -371,7 +388,7 @@ final class SharedImportCoordinator: ObservableObject {
                         let destSize = getFileSize(at: dest.path)
                         if sourceSize > 0 && sourceSize == destSize {
                             try? fm.removeItem(at: fileURL)
-                            ingestedFilenames.append(destFilename)
+                            ingestedFilenames.insert(destFilename)
                             Logger.shared.log(
                                 "SharedImportCoordinator: Duplicate recognized & linked: \(destFilename)",
                                 category: "Import"
@@ -383,7 +400,7 @@ final class SharedImportCoordinator: ObservableObject {
 
                     do {
                         try fm.moveItem(at: fileURL, to: dest)
-                        ingestedFilenames.append(destFilename)
+                        ingestedFilenames.insert(destFilename)
                         Logger.shared.log(
                             "SharedImportCoordinator: Moved '\(destFilename)' to InksyncVault/Inbox",
                             category: "Import", type: .success
@@ -394,7 +411,7 @@ final class SharedImportCoordinator: ObservableObject {
                             do {
                                 try data.write(to: dest, options: .atomic)
                                 try? fm.removeItem(at: fileURL)
-                                ingestedFilenames.append(destFilename)
+                                ingestedFilenames.insert(destFilename)
                                 Logger.shared.log(
                                     "SharedImportCoordinator: Streamed '\(destFilename)' to InksyncVault/Inbox",
                                     category: "Import", type: .success
@@ -410,7 +427,7 @@ final class SharedImportCoordinator: ObservableObject {
                 }
             }
         }
-        return ingestedFilenames
+        return Array(ingestedFilenames)
     }
 
     // MARK: - Private: File Settle Check

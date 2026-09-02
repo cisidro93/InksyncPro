@@ -22,29 +22,10 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
-
-        if url.scheme == "inksyncpro" || url.scheme == "inksync" {
-            // The Share Extension has already written files to the App Group.
-            // SharedImportCoordinator will move them into InksyncVault/Inbox
-            // with retry logic in case the extension process is still writing.
-            Task { @MainActor in
-                SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.8)
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("InksyncPro.ShareImportReceived"),
-                    object: url
-                )
-            }
-            return true
+        Task { @MainActor in
+            await SharedImportCoordinator.shared.handleIncomingURL(url)
         }
-
-        if url.isFileURL {
-            Task { @MainActor in
-                await SharedImportCoordinator.shared.handleDirectFileOpen(url: url)
-            }
-            return true
-        }
-
-        return false
+        return true
     }
 
     // MARK: - Background URLSession (OPDSDownloadQueue)
@@ -139,17 +120,8 @@ struct InksyncProApp: App {
                 }
                 .onOpenURL { incomingURL in
                     Logger.shared.log("InksyncProApp: Received incoming open URL: \(incomingURL.absoluteString)", category: "System")
-                    if incomingURL.scheme == "inksyncpro" {
-                        SharedImportCoordinator.shared.coordinateImport(retryCount: 5, retryDelaySeconds: 0.3)
-                        NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
-                    } else if incomingURL.isFileURL {
-                        Task { @MainActor in
-                            if let ingestedDest = await SharedImportCoordinator.shared.handleDirectFileOpen(url: incomingURL) {
-                                Logger.shared.log("InksyncProApp: Directly ingested file: \(ingestedDest.lastPathComponent)", category: "Import", type: .success)
-                            }
-                            ConversionManager.shared?.scanLibrary()
-                            NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
-                        }
+                    Task { @MainActor in
+                        await SharedImportCoordinator.shared.handleIncomingURL(incomingURL)
                     }
                 }
                 .onChange(of: scenePhase) { _, newPhase in

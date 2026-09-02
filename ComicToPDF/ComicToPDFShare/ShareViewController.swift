@@ -29,8 +29,8 @@ class ShareViewController: UIViewController {
             onCancel: { [weak self] in
                 self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
             },
-            onOpenApp: { [weak self] in
-                self?.openHostAppAndComplete()
+            onOpenApp: { [weak self] files in
+                self?.openHostAppAndComplete(files: files)
             }
         )
 
@@ -50,21 +50,13 @@ class ShareViewController: UIViewController {
     }
 
     // MARK: - Host App Activation
-    //
-    // Multi-Strategy Host App Launcher (iPhone + iPad Universal):
-    // On iPad, NSExtensionContext.open(_:) succeeds because iPad multitasking supports concurrent windowing.
-    // On iPhone, Apple disables NSExtensionContext.open(_:) inside Share Extensions (com.apple.share-services).
-    // To guarantee the host app opens across both iPhone and iPad:
-    //  Strategy A: UIResponder chain traversal
-    //  Strategy B: Dynamic UIApplication.sharedApplication invocation
-    //  Strategy C: Dynamic NSExtensionContext selector invocation
-    //  Strategy D: Standard NSExtensionContext.open fallback
     @MainActor
-    private func openHostAppAndComplete() {
-        guard let deepLinkURL = URL(string: "inksyncpro://shared-import") else {
-            extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
-            return
+    private func openHostAppAndComplete(files: [SharedFile]) {
+        var urlComponents = URLComponents(string: "inksyncpro://shared-import")!
+        if let first = files.first {
+            urlComponents.queryItems = [URLQueryItem(name: "file", value: first.name)]
         }
+        let deepLinkURL = urlComponents.url ?? URL(string: "inksyncpro://shared-import")!
 
         // ── Step 1: Write import flags to every known App Group suite ──────────
         let appGroupIDs = [
@@ -81,6 +73,13 @@ class ShareViewController: UIViewController {
             }
         }
 
+        var didFinish = false
+        func finishRequest() {
+            guard !didFinish else { return }
+            didFinish = true
+            self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+        }
+
         // ── Step 2: Multi-Strategy Host App Launch ──
         // Strategy A: Dynamic NSExtensionContext openURL selector invocation
         let extOpenSel = NSSelectorFromString("openURL:completionHandler:")
@@ -88,7 +87,9 @@ class ShareViewController: UIViewController {
             let imp = ext.method(for: extOpenSel)
             typealias ExtOpenMethod = @convention(c) (NSObject, Selector, NSURL, ((Bool) -> Void)?) -> Void
             let fn = unsafeBitCast(imp, to: ExtOpenMethod.self)
-            fn(ext, extOpenSel, deepLinkURL as NSURL) { _ in }
+            fn(ext, extOpenSel, deepLinkURL as NSURL) { _ in
+                DispatchQueue.main.async { finishRequest() }
+            }
         }
 
         // Strategy B: UIResponder Chain Traversal from window root
@@ -103,12 +104,14 @@ class ShareViewController: UIViewController {
         }
 
         // Strategy C: Standard NSExtensionContext.open fallback
-        extensionContext?.open(deepLinkURL) { _ in }
+        extensionContext?.open(deepLinkURL) { _ in
+            DispatchQueue.main.async { finishRequest() }
+        }
 
-        // ── Step 3: Complete Request ──
-        // A brief delay ensures SpringBoard initiates the app-switch transition before extension teardown
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+        // ── Step 3: Safety Fallback Teardown ──
+        // Defer completion until after SpringBoard has initiated the transition
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            finishRequest()
         }
     }
 }

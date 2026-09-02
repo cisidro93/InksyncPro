@@ -301,11 +301,9 @@ struct ContentView: View {
             }
         }
         // AppDelegate routes inksyncpro:// here after the Share Extension opens the app.
-        // SharedImportCoordinator has already started moving files; we wait for the scan.
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShareImportReceived"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShareImportReceived"))) { notification in
             Task { @MainActor in
                 router.selectedTab = 0
-                conversionManager.scanLibrary()
                 withAnimation(.spring()) {
                     activeToast = ToastMessage(
                         title: "Files Imported",
@@ -314,13 +312,16 @@ struct ContentView: View {
                         type: .success
                     )
                 }
-                // Auto-select newly ingested book if exactly one was imported.
-                try? await Task.sleep(nanoseconds: 350_000_000)
-                conversionManager.scanLibrary()
-                let filenames = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
-                if filenames.count == 1, let name = filenames.first,
-                   let match = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == name }) {
-                    self.selectedPDF = match
+                if let pdf = notification.object as? ConvertedPDF {
+                    self.selectedPDF = pdf
+                    AppRouter.shared.presentFullScreen(.read(pdf))
+                } else {
+                    let filenames = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
+                    if let name = filenames.first,
+                       let match = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == name }) {
+                        self.selectedPDF = match
+                        AppRouter.shared.presentFullScreen(.read(match))
+                    }
                 }
             }
         }
@@ -329,7 +330,6 @@ struct ContentView: View {
             if let destURL = notification.object as? URL {
                 Task { @MainActor in
                     router.selectedTab = 0
-                    conversionManager.scanLibrary()
                     withAnimation(.spring()) {
                         activeToast = ToastMessage(
                             title: "Added to Library",
@@ -338,15 +338,13 @@ struct ContentView: View {
                             type: .success
                         )
                     }
-                    // Let the scanner finish registering the file before auto-select.
-                    try? await Task.sleep(nanoseconds: 700_000_000)
-                    conversionManager.scanLibrary()
                     if let newlyImported = conversionManager.convertedPDFs.first(
                         where: { $0.url.lastPathComponent == destURL.lastPathComponent }
                     ) {
                         self.selectedPDF = newlyImported
+                        AppRouter.shared.presentFullScreen(.read(newlyImported))
                     }
-                    SharedImportCoordinator.shared.consumeAutoSelectFilenames()
+                    _ = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
                 }
             }
         }
@@ -381,41 +379,8 @@ struct ContentView: View {
                 return
             }
 
-            // inksyncpro:// or inksync:// shared-import — Share Extension callback.
-            if url.scheme == "inksyncpro" || url.scheme == "inksync" {
-                Task { @MainActor in
-                    router.selectedTab = 0
-                    SharedImportCoordinator.shared.coordinateImport(retryCount: 6, retryDelaySeconds: 0.3)
-                    conversionManager.scanLibrary()
-                }
-                return
-            }
-
-            // Direct file:// open ("Open In", "Copy to InkSync Pro", Files app, AirDrop)
-            if url.isFileURL {
-                Task { @MainActor in
-                    router.selectedTab = 0
-                    if let dest = await SharedImportCoordinator.shared.handleDirectFileOpen(url: url) {
-                        conversionManager.scanLibrary()
-                        withAnimation(.spring()) {
-                            activeToast = ToastMessage(
-                                title: "Added to Library",
-                                message: "\(dest.lastPathComponent) ready to read.",
-                                systemImage: "checkmark.circle.fill",
-                                type: .success
-                            )
-                        }
-                        try? await Task.sleep(nanoseconds: 400_000_000)
-                        conversionManager.scanLibrary()
-                        if let newlyImported = conversionManager.convertedPDFs.first(
-                            where: { $0.url.lastPathComponent == dest.lastPathComponent }
-                        ) {
-                            self.selectedPDF = newlyImported
-                        }
-                        SharedImportCoordinator.shared.consumeAutoSelectFilenames()
-                    }
-                }
-                return
+            Task { @MainActor in
+                await SharedImportCoordinator.shared.handleIncomingURL(url)
             }
         }
         .onChange(of: showingWebExport) { _, showing in
