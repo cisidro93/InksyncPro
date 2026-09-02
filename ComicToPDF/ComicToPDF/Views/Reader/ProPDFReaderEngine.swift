@@ -1188,7 +1188,6 @@ struct ProPDFReaderEngine: View {
         var didAddNative = false
         var savedBounds: CodableCGRect? = nil
         var targetPageIndex = currentPageIndex
-        var addedAnnotations: [(PDFAnnotation, PDFPage)] = []
 
         // CRITICAL: Do NOT clear the selection before adding annotations.
         // PDFKit uses the active selection's glyph map to resolve annotation bounds.
@@ -1208,7 +1207,6 @@ struct ProPDFReaderEngine: View {
                     // Do NOT set quadrilateralPoints — PDFKit derives them from bounds.
                     // Setting incorrect quads is the #1 cause of invisible highlights.
                     page.addAnnotation(ann)
-                    addedAnnotations.append((ann, page))
                     didAddNative = true
                 }
             }
@@ -1239,7 +1237,6 @@ struct ProPDFReaderEngine: View {
                     ann.color = highlightColor
                     ann.contents = text
                     page.addAnnotation(ann)
-                    addedAnnotations.append((ann, page))
                     didAddNative = true
                 }
             }
@@ -1258,7 +1255,6 @@ struct ProPDFReaderEngine: View {
                     ann.color = highlightColor
                     ann.contents = text
                     page.addAnnotation(ann)
-                    addedAnnotations.append((ann, page))
                     didAddNative = true
                 }
                 if didAddNative { break }
@@ -1268,17 +1264,7 @@ struct ProPDFReaderEngine: View {
         // ── NOW clear selection and force repaint (after annotations are committed) ─
         if let pv = pdfViewReference {
             pv.setCurrentSelection(nil, animate: false)
-            // Use setNeedsDisplayForAnnotation for precision repaints —
-            // avoids triggering go(to:) which fires PDFViewPageChanged and
-            // can cause page-jump feedback loops.
-            for (ann, page) in addedAnnotations {
-                pv.setNeedsDisplayForAnnotation(ann)
-                _ = page // reference to prevent capture warning
-            }
-            // Belt-and-suspenders: force layout + display without a navigation call
-            pv.layoutDocumentView()
-            pv.setNeedsDisplay()
-            pv.documentView?.setNeedsDisplay()
+            forcePageRedraw(pv, pageIndex: targetPageIndex)
         }
 
         // ── Persist to AnnotationStore and sync to disk ───────────────────────────
