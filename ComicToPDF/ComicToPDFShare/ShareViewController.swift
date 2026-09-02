@@ -51,6 +51,16 @@ class ShareViewController: UIViewController {
 
     // MARK: - Host App Activation
     @MainActor
+    private var didFinishRequest = false
+
+    @MainActor
+    private func completeHostAppHandover() {
+        guard !didFinishRequest else { return }
+        didFinishRequest = true
+        extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+    }
+
+    @MainActor
     private func openHostAppAndComplete(files: [SharedFile]) {
         var urlComponents = URLComponents(string: "inksyncpro://shared-import")!
         if let first = files.first {
@@ -73,13 +83,6 @@ class ShareViewController: UIViewController {
             }
         }
 
-        var didFinish = false
-        func finishRequest() {
-            guard !didFinish else { return }
-            didFinish = true
-            self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
-        }
-
         // ── Step 2: Multi-Strategy Host App Launch ──
         // Strategy A: Dynamic NSExtensionContext openURL selector invocation
         let extOpenSel = NSSelectorFromString("openURL:completionHandler:")
@@ -87,8 +90,10 @@ class ShareViewController: UIViewController {
             let imp = ext.method(for: extOpenSel)
             typealias ExtOpenMethod = @convention(c) (NSObject, Selector, NSURL, ((Bool) -> Void)?) -> Void
             let fn = unsafeBitCast(imp, to: ExtOpenMethod.self)
-            fn(ext, extOpenSel, deepLinkURL as NSURL) { _ in
-                DispatchQueue.main.async { finishRequest() }
+            fn(ext, extOpenSel, deepLinkURL as NSURL) { [weak self] _ in
+                Task { @MainActor in
+                    self?.completeHostAppHandover()
+                }
             }
         }
 
@@ -104,14 +109,17 @@ class ShareViewController: UIViewController {
         }
 
         // Strategy C: Standard NSExtensionContext.open fallback
-        extensionContext?.open(deepLinkURL) { _ in
-            DispatchQueue.main.async { finishRequest() }
+        extensionContext?.open(deepLinkURL) { [weak self] _ in
+            Task { @MainActor in
+                self?.completeHostAppHandover()
+            }
         }
 
         // ── Step 3: Safety Fallback Teardown ──
         // Defer completion until after SpringBoard has initiated the transition
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            finishRequest()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            self?.completeHostAppHandover()
         }
     }
 }
