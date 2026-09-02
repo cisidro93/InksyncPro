@@ -1422,11 +1422,14 @@ extension EBookPageCurlReader {
                     return;
                 }
                 var text = sel.toString().trim();
-                if (text.length > 0 && text !== window.__lastSelectedText) {
-                    window.__lastSelectedText = text;
-                    try {
-                        window.webkit.messageHandlers.onTextSelected.postMessage(text);
-                    } catch(e) {}
+                if (text.length > 0) {
+                    window.__lastSelectedRange = sel.getRangeAt(0).cloneRange();
+                    if (text !== window.__lastSelectedText) {
+                        window.__lastSelectedText = text;
+                        try {
+                            window.webkit.messageHandlers.onTextSelected.postMessage(text);
+                        } catch(e) {}
+                    }
                 }
             });
 
@@ -1455,19 +1458,6 @@ extension EBookPageCurlReader {
                 }, { passive: true });
             })();
 
-            // ✅ Fluid Word-Snapping Live Selection Listener
-            document.addEventListener('selectionchange', function() {
-                var sel = window.getSelection();
-                if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
-                    var text = sel.toString().trim();
-                    if (text.length > 0) {
-                        try {
-                            window.webkit.messageHandlers.onTextSelected.postMessage(text);
-                        } catch(e) {}
-                    }
-                }
-            });
-
             document.addEventListener('click', function(e) {
                 var mark = e.target.closest ? e.target.closest('mark.inksync-highlight') : null;
                 if (mark) {
@@ -1482,10 +1472,16 @@ extension EBookPageCurlReader {
 
             window.applyInksyncHighlight = function(colorHex, symbol) {
                 var sel = window.getSelection();
-                if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return "";
-                var text = sel.toString().trim();
+                var range = null;
+                if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+                    range = sel.getRangeAt(0);
+                } else if (window.__lastSelectedRange) {
+                    range = window.__lastSelectedRange;
+                }
+                if (!range) return "";
+                var text = (sel && !sel.isCollapsed) ? sel.toString().trim() : (range.toString ? range.toString().trim() : "");
+                if (!text && window.__lastSelectedText) text = window.__lastSelectedText;
                 if (!text) return "";
-                var range = sel.getRangeAt(0);
                 var mark = document.createElement('mark');
                 mark.className = 'inksync-highlight';
                 mark.style.backgroundColor = colorHex || '#FFD600';
@@ -1522,8 +1518,9 @@ extension EBookPageCurlReader {
                         }
                     }
                 }
-                sel.removeAllRanges();
+                if (sel) sel.removeAllRanges();
                 window.__lastSelectedText = "";
+                window.__lastSelectedRange = null;
                 try { window.webkit.messageHandlers.highlight.postMessage(text); } catch(e) {}
                 return text;
             };
