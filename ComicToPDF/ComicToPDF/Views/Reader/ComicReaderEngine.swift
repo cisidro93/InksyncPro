@@ -897,6 +897,12 @@ final class ComicImageCache: ObservableObject {
         guard index >= 0 && index < pageCount else { return nil }
         return cache.object(forKey: NSNumber(value: index))?.size
     }
+
+    /// Non-mutating read of the memory cache for SwiftUI render passes
+    func cachedImage(at index: Int) -> UIImage? {
+        guard index >= 0 && index < pageCount else { return nil }
+        return cache.object(forKey: NSNumber(value: index))
+    }
     
     private func fetchVirtualImageAsync(at index: Int, priority: TaskPriority = .userInitiated) {
         guard let coordinator = self.virtualCoordinator,
@@ -1246,6 +1252,7 @@ final class ComicImageCache: ObservableObject {
             var allSpreads: [[Int]] = []
             let landscapeArray = self.isLandscapeArray
             let totalPages = self.pageCount
+            guard totalPages > 0 else { return [] }
 
             allSpreads.append([0])
             var i = 1
@@ -1337,18 +1344,16 @@ final class ComicImageCache: ObservableObject {
             }
         }
         
-        // Cancel tasks that are no longer in the active prefetch window
+        // Cancel tasks that are no longer in the active prefetch window safely by snapshotting keys
         let siblingIndex = getSiblingIndex(for: index)
-        var cancelledKeys: [Int] = []
-        for (idx, task) in inFlightPrefetchTasks {
+        let keysToCheck = Array(inFlightPrefetchTasks.keys)
+        for idx in keysToCheck {
             if !prefetchIndices.contains(idx) && idx != index && idx != siblingIndex {
-                task.cancel()
-                stopFetching(idx)
-                cancelledKeys.append(idx)
+                if let task = inFlightPrefetchTasks.removeValue(forKey: idx) {
+                    task.cancel()
+                    stopFetching(idx)
+                }
             }
-        }
-        for idx in cancelledKeys {
-            inFlightPrefetchTasks.removeValue(forKey: idx)
         }
         
         // Filter out of bounds and trigger prefetch

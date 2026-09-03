@@ -1146,7 +1146,7 @@ struct TwoUpPageCell: View {
     }
     
     var body: some View {
-        let currentImage = croppedImage ?? image ?? cache.getImage(at: index)
+        let currentImage = croppedImage ?? image ?? cache.cachedImage(at: index)
         
         ZStack {
             Color.black
@@ -1175,6 +1175,13 @@ struct TwoUpPageCell: View {
         }
         .clipped()
         .id(index)
+        .task(id: index) {
+            if image == nil {
+                let img = cache.getImage(at: index)
+                image = img
+                updateCroppedImage(from: img)
+            }
+        }
         .onAppear {
             if image == nil {
                 let img = cache.getImage(at: index)
@@ -1193,7 +1200,7 @@ struct TwoUpPageCell: View {
             updateCroppedImage(from: img)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_CropInsetsChanged"))) { _ in
-            updateCroppedImage(from: image ?? cache.getImage(at: index))
+            updateCroppedImage(from: image ?? cache.cachedImage(at: index))
         }
     }
 }

@@ -1488,8 +1488,8 @@ extension EBookPageCurlReader {
                     }
                 }, { passive: true });
                 document.addEventListener('touchend', function() {
-                    // Keep flag alive for one frame so Swift tap handler can read it
-                    setTimeout(function() { window.__selectionDragActive = false; }, 80);
+                    // Keep flag alive for 200ms so Swift tap handler can read it without edge turn conflicts
+                    setTimeout(function() { window.__selectionDragActive = false; }, 200);
                 }, { passive: true });
             })();
 

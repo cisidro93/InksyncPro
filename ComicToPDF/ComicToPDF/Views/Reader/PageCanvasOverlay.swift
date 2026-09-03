@@ -171,7 +171,8 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         }
         
         // Configure default tool to vibrant highlighter or fine pen based on user preference
-        let defaultHighlighter = PKInkingTool(.marker, color: UIColor.systemYellow.withAlphaComponent(0.55), width: 22)
+        let highlightColor = prefs.defaultHighlightColor.directHighlightUIColor
+        let defaultHighlighter = PKInkingTool(.marker, color: highlightColor, width: 22)
         let defaultPen = PKInkingTool(.pen, color: .systemOrange, width: 3)
         let preferredTool = (prefs.applePencilDefaultTool == "pen") ? defaultPen : defaultHighlighter
         
@@ -215,6 +216,16 @@ struct PKCanvasRepresentation: UIViewRepresentable {
             uiView.panGestureRecognizer.isEnabled = false
         }
         context.coordinator.canvasView = uiView
+        
+        // Keep Apple Pencil highlighter color dynamically synced with active user preference
+        if let currentInk = uiView.tool as? PKInkingTool, currentInk.inkType == .marker {
+            let activeColor = prefs.defaultHighlightColor.directHighlightUIColor
+            if currentInk.color != activeColor {
+                let updatedTool = PKInkingTool(.marker, color: activeColor, width: currentInk.width)
+                uiView.tool = updatedTool
+                context.coordinator.toolPicker?.selectedTool = updatedTool
+            }
+        }
         
         if isMarkupEnabled {
             uiView.becomeFirstResponder()
