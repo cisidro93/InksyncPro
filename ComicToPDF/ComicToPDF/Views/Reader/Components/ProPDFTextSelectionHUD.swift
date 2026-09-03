@@ -36,11 +36,11 @@ enum PDFHighlightColor: String, CaseIterable, Identifiable {
     /// for vivid colors like Emerald Green and Electric Blue.
     var directHighlightUIColor: UIColor {
         switch self {
-        case .yellow: return UIColor(red: 1.0,  green: 0.84, blue: 0.0,  alpha: 0.45)
-        case .green:  return UIColor(red: 0.0,  green: 0.90, blue: 0.46, alpha: 0.45)
-        case .blue:   return UIColor(red: 0.16, green: 0.71, blue: 0.96, alpha: 0.45)
-        case .pink:   return UIColor(red: 1.0,  green: 0.25, blue: 0.51, alpha: 0.45)
-        case .purple: return UIColor(red: 0.70, green: 0.53, blue: 1.0,  alpha: 0.45)
+        case .yellow: return UIColor(red: 1.0,  green: 0.84, blue: 0.0,  alpha: 0.55)
+        case .green:  return UIColor(red: 0.0,  green: 0.85, blue: 0.40, alpha: 0.65)
+        case .blue:   return UIColor(red: 0.15, green: 0.68, blue: 0.95, alpha: 0.65)
+        case .pink:   return UIColor(red: 1.0,  green: 0.20, blue: 0.52, alpha: 0.65)
+        case .purple: return UIColor(red: 0.68, green: 0.48, blue: 0.96, alpha: 0.65)
         }
     }
 

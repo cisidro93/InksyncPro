@@ -220,6 +220,15 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_applePencilHoverEnabled") var applePencilHoverEnabled: Bool = true {
         didSet { objectWillChange.send() }
     }
+
+    // MARK: - Highlight Color Preference
+    @AppStorage("reader_defaultHighlightColor") var defaultHighlightColorRaw: String = "#FFD600" {
+        didSet { objectWillChange.send() }
+    }
+    var defaultHighlightColor: PDFHighlightColor {
+        get { PDFHighlightColor(rawValue: defaultHighlightColorRaw) ?? .yellow }
+        set { defaultHighlightColorRaw = newValue.rawValue }
+    }
 }
 
 // MARK: - Per-Book Typography Profile

@@ -7,7 +7,7 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @StateObject private var conversionManager = ConversionManager()
+    @ObservedObject private var conversionManager = ConversionManager.shared
     @StateObject private var taskEngine = TaskEngine.shared
     @StateObject private var settingsManager = AppSettingsManager.shared
     @ObservedObject private var router = AppRouter.shared
@@ -327,9 +327,20 @@ struct ContentView: View {
         }
         // AppDelegate routes direct file:// opens here (Open With, Files.app, AirDrop).
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.DirectFileOpenReceived"))) { notification in
-            if let destURL = notification.object as? URL {
-                Task { @MainActor in
-                    router.selectedTab = 0
+            Task { @MainActor in
+                router.selectedTab = 0
+                if let pdf = notification.object as? ConvertedPDF {
+                    self.selectedPDF = pdf
+                    withAnimation(.spring()) {
+                        activeToast = ToastMessage(
+                            title: "Added to Library",
+                            message: "\(pdf.name) ready to read.",
+                            systemImage: "checkmark.circle.fill",
+                            type: .success
+                        )
+                    }
+                    AppRouter.shared.presentFullScreen(.read(pdf))
+                } else if let destURL = notification.object as? URL {
                     withAnimation(.spring()) {
                         activeToast = ToastMessage(
                             title: "Added to Library",
@@ -344,8 +355,8 @@ struct ContentView: View {
                         self.selectedPDF = newlyImported
                         AppRouter.shared.presentFullScreen(.read(newlyImported))
                     }
-                    _ = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
                 }
+                _ = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToLibraryTab"))) { _ in

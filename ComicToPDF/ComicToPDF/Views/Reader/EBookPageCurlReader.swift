@@ -1077,15 +1077,15 @@ extension EBookPageCurlReader {
                 var text = sel.toString();
                 if (!text || text.trim().length === 0) return "";
                 if (window.applyInksyncHighlight) {
-                    window.applyInksyncHighlight('#ffd700');
+                    window.applyInksyncHighlight('', '#FFD600', '');
                 } else {
                     try {
                         var range = sel.getRangeAt(0);
                         var mark = document.createElement('mark');
                         mark.className = 'inksync-highlight';
-                        mark.style.backgroundColor = '#ffd700';
+                        mark.style.setProperty('background-color', '#FFD600', 'important');
                         mark.style.color = 'inherit';
-                        mark.style.borderRadius = '2px';
+                        mark.style.borderRadius = '3px';
                         range.surroundContents(mark);
                         sel.removeAllRanges();
                     } catch(e) {}
@@ -1528,7 +1528,7 @@ extension EBookPageCurlReader {
                 var mark = document.createElement('mark');
                 mark.className = 'inksync-highlight';
                 if (id) mark.setAttribute('data-id', id);
-                mark.style.backgroundColor = colorHex || '#FFD600';
+                mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
                 mark.style.color = 'inherit';
                 mark.style.borderRadius = '3px';
                 mark.style.mixBlendMode = 'multiply';
@@ -1550,7 +1550,7 @@ extension EBookPageCurlReader {
                                 var subMark = document.createElement('mark');
                                 subMark.className = 'inksync-highlight';
                                 if (id) subMark.setAttribute('data-id', id);
-                                subMark.style.backgroundColor = colorHex || '#FFD600';
+                                subMark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
                                 subMark.style.mixBlendMode = 'multiply';
                                 if (symbol) subMark.setAttribute('data-symbol', symbol);
                                 var startOffset = (textNode === range.startContainer) ? range.startOffset : 0;
@@ -1640,7 +1640,7 @@ extension EBookPageCurlReader {
                             var mark = document.createElement('mark');
                             mark.className = 'inksync-highlight';
                             if (id) mark.setAttribute('data-id', id);
-                            mark.style.backgroundColor = colorHex || '#FFD600';
+                            mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
                             mark.style.color = 'inherit';
                             mark.style.borderRadius = '3px';
                             mark.style.mixBlendMode = 'multiply';

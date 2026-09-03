@@ -95,13 +95,13 @@ class ConversionManager: ObservableObject {
         proLibraryPDFs = convertedPDFs.filter { (unlocked ? true : !$0.isPrivate) && $0.addedByMode == .pro }
     }
     
-    @MainActor static weak var shared: ConversionManager? = nil
+    // MARK: - Guaranteed Global Singleton
+    @MainActor static let shared = ConversionManager()
     
     private var taskEngineRelay: AnyCancellable?
     private var importMonitorRelay: AnyCancellable?
 
     init() {
-        Self.shared = self
         loadLibrary()
         
         createWelcomeFile()

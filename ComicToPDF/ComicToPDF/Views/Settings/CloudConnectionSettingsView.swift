@@ -124,7 +124,7 @@ struct CloudConnectionSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showDropboxBrowser) {
             CloudFileBrowserView(provider: .dropbox)
-                .environmentObject(LinkedLibraryScanner.shared.conversionManager ?? ConversionManager())
+                .environmentObject(ConversionManager.shared)
         }
     }
 

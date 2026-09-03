@@ -66,14 +66,12 @@ final class PDFAnnotationSyncBridge: Sendable {
                         let validRects = targetLines.compactMap { $0.bounds(for: page) }.filter { $0 != .zero && $0.width > 2 && $0.height > 2 }
                         guard !validRects.isEmpty else { continue }
                         
-                        let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
-                        guard unionBox.width > 2, unionBox.height > 2 else { continue }
-                        
-                        let nativeHighlight = PDFAnnotation(bounds: unionBox, forType: .highlight, withProperties: nil)
-                        nativeHighlight.color = highlightColor
-                        nativeHighlight.contents = text
-                        nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
-                        page.addAnnotation(nativeHighlight)
+                        for rect in validRects {
+                            let nativeHighlight = PDFAnnotation(bounds: rect, forType: .highlight, withProperties: nil)
+                            nativeHighlight.color = highlightColor
+                            nativeHighlight.contents = text
+                            page.addAnnotation(nativeHighlight)
+                        }
                         didAdd = true
                         break // first matching instance on page
                     }
@@ -96,7 +94,6 @@ final class PDFAnnotationSyncBridge: Sendable {
                     let nativeHighlight = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
                     nativeHighlight.color = highlightColor
                     nativeHighlight.contents = annotation.selectedText ?? annotation.noteText
-                    nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: bounds)
                     page.addAnnotation(nativeHighlight)
                 }
                 
@@ -186,12 +183,11 @@ final class PDFAnnotationSyncBridge: Sendable {
                 
                 let nativeHighlight = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
                 if let hex = annotation.colorHex, let c = UIColor(hexString: hex) {
-                    nativeHighlight.color = c.withAlphaComponent(0.45)
+                    nativeHighlight.color = c.withAlphaComponent(0.60)
                 } else {
-                    nativeHighlight.color = UIColor.systemYellow.withAlphaComponent(0.45)
+                    nativeHighlight.color = UIColor.systemYellow.withAlphaComponent(0.55)
                 }
                 nativeHighlight.contents = annotation.selectedText ?? annotation.noteText
-                nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: bounds)
                 page.addAnnotation(nativeHighlight)
                 
             case .note:
@@ -368,12 +364,15 @@ private extension UIColor {
     }
 
     func toHexString() -> String {
-        var r: CGFloat = 0
-        var g: CGFloat = 0
-        var b: CGFloat = 0
-        var a: CGFloat = 0
-        getRed(&r, green: &g, blue: &b, alpha: &a)
-        let rgb: Int = (Int)(r*255)<<16 | (Int)(g*255)<<8 | (Int)(b*255)<<0
-        return String(format: "#%06x", rgb)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard getRed(&r, green: &g, blue: &b, alpha: &a) else {
+            var white: CGFloat = 0
+            if getWhite(&white, alpha: &a) {
+                let rgb = Int(white * 255)
+                return String(format: "#%02x%02x%02x", rgb, rgb, rgb)
+            }
+            return "#FFD600"
+        }
+        return String(format: "#%02x%02x%02x", Int(r * 255), Int(g * 255), Int(b * 255))
     }
 }

@@ -6,8 +6,10 @@ import PencilKit
 /// down to the underlying PDFView while allowing Apple Pencil to draw seamlessly.
 final class PassthroughPKCanvasView: PKCanvasView {
     var allowFingerDrawing: Bool = false
+    var isMarkupActive: Bool = false
     
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard isMarkupActive else { return nil }
         guard let view = super.hitTest(point, with: event) else { return nil }
         
         if allowFingerDrawing {
@@ -25,8 +27,6 @@ final class PassthroughPKCanvasView: PKCanvasView {
             }
         }
         
-        // When event has no touches yet (initial hit-test probe from window):
-        // Return view so that Apple Pencil touch recognizers are not filtered out on probe.
         return view
     }
 }
@@ -52,7 +52,7 @@ struct PageCanvasOverlay: View {
     var body: some View {
         GeometryReader { geo in
             PKCanvasRepresentation(canvasView: $canvasView, isMarkupEnabled: isMarkupEnabled, pencilOnlyDrawing: pencilOnlyDrawing)
-                .allowsHitTesting(isMarkupEnabled || (UIDevice.current.userInterfaceIdiom == .pad && EBookPreferences.shared.applePencilAutoDraw))
+                .allowsHitTesting(isMarkupEnabled)
                 .onAppear {
                     loadDrawing()
                 }
@@ -157,9 +157,10 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         // On iPad: use .pencilOnly so fingers navigate while Pencil draws.
         // On iPhone: use .anyInput when markup is enabled so fingers can draw/highlight.
         let pencilOnly = isPad && (pencilOnlyDrawing || prefs.applePencilAutoDraw)
+        canvasView.isMarkupActive = isMarkupEnabled
         canvasView.allowFingerDrawing = isMarkupEnabled && !pencilOnly
         canvasView.drawingPolicy = pencilOnly ? .pencilOnly : .anyInput
-        canvasView.isUserInteractionEnabled = true
+        canvasView.isUserInteractionEnabled = isMarkupEnabled
         canvasView.drawingGestureRecognizer.cancelsTouchesInView = false
         canvasView.isScrollEnabled = !pencilOnly
         canvasView.bounces = false
@@ -192,7 +193,7 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         context.coordinator.toolPicker = picker
         context.coordinator.canvasView = canvasView
         
-        if isMarkupEnabled || (isPad && prefs.applePencilAutoDraw) {
+        if isMarkupEnabled {
             canvasView.becomeFirstResponder()
         }
         
@@ -203,9 +204,10 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let prefs = EBookPreferences.shared
         let pencilOnly = isPad && (pencilOnlyDrawing || prefs.applePencilAutoDraw)
+        uiView.isMarkupActive = isMarkupEnabled
         uiView.allowFingerDrawing = isMarkupEnabled && !pencilOnly
         uiView.drawingPolicy = pencilOnly ? .pencilOnly : .anyInput
-        uiView.isUserInteractionEnabled = true
+        uiView.isUserInteractionEnabled = isMarkupEnabled
         uiView.drawingGestureRecognizer.cancelsTouchesInView = false
         uiView.isScrollEnabled = !pencilOnly
         uiView.bounces = false
@@ -217,11 +219,6 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         if isMarkupEnabled {
             uiView.becomeFirstResponder()
             context.coordinator.toolPicker?.setVisible(true, forFirstResponder: uiView)
-        } else if isPad && prefs.applePencilAutoDraw {
-            // Keep canvas first responder to receive immediate Apple Pencil strokes with zero latency,
-            // while keeping the floating tool picker hidden during immersive reading.
-            uiView.becomeFirstResponder()
-            context.coordinator.toolPicker?.setVisible(false, forFirstResponder: uiView)
         } else {
             uiView.resignFirstResponder()
             context.coordinator.toolPicker?.setVisible(false, forFirstResponder: uiView)

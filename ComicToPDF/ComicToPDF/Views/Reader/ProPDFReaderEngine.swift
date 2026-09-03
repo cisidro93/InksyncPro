@@ -471,18 +471,14 @@ struct ProPDFReaderEngine: View {
             )
             .ignoresSafeArea()
 
-            // Mount PencilKit canvas seamlessly on iPad for immediate Apple Pencil inking,
-            // or when Markup Mode is explicitly toggled by the user.
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let shouldMountCanvas = isPencilMode || (isPad && prefs.applePencilAutoDraw)
-            if shouldMountCanvas {
+            if isPencilMode {
                 PageCanvasOverlay(
                     pdfID: pdf.id,
                     pageIndex: currentPageIndex,
                     isMarkupEnabled: isPencilMode,
-                    pencilOnlyDrawing: isPencilMode ? settingsManager.conversionSettings.pencilOnlyDrawing : true
+                    pencilOnlyDrawing: settingsManager.conversionSettings.pencilOnlyDrawing
                 )
-                .allowsHitTesting(shouldMountCanvas)
+                .allowsHitTesting(true)
                 .ignoresSafeArea()
             }
         }
@@ -599,15 +595,19 @@ struct ProPDFReaderEngine: View {
                     selectedText: selectedText,
                     pageIndex: currentPageIndex,
                     onHighlight: { color in
+                        EBookPreferences.shared.defaultHighlightColor = color
                         saveHighlight(text: selectedText, color: color)
                         selectedTextForHUD = nil
                     },
                     onAddNote: { note in
-                        saveNote(text: selectedText, note: note)
+                        saveNote(text: selectedText, note: note, color: EBookPreferences.shared.defaultHighlightColor)
                         selectedTextForHUD = nil
                     },
                     onCopy: {
+                        UIPasteboard.general.string = selectedText
                         selectedTextForHUD = nil
+                        HapticEngine.selection()
+                        showToastMessage("Copied to Clipboard")
                     },
                     onSpeak: { text in
                         speakText(text)
@@ -617,7 +617,7 @@ struct ProPDFReaderEngine: View {
                         selectedTextForHUD = nil
                     },
                     onAddMarginaliaSymbol: { symbol in
-                        saveMarginalia(text: selectedText, symbol: symbol)
+                        saveMarginalia(text: selectedText, symbol: symbol, color: EBookPreferences.shared.defaultHighlightColor)
                         selectedTextForHUD = nil
                     }
                 )
@@ -1201,15 +1201,13 @@ struct ProPDFReaderEngine: View {
             if let doc = activeDoc, let page = doc.page(at: snapshot.pageIndex) {
                 let validRects = snapshot.lines.map(\.bounds).filter { $0 != .zero && $0.width > 2 && $0.height > 2 }
                 if !validRects.isEmpty {
-                    let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
-                    if unionBox.width > 2 && unionBox.height > 2 {
-                        let ann = PDFAnnotation(bounds: unionBox, forType: .highlight, withProperties: nil)
+                    for rect in validRects {
+                        let ann = PDFAnnotation(bounds: rect, forType: .highlight, withProperties: nil)
                         ann.color = highlightColor
                         ann.contents = text
-                        ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
                         page.addAnnotation(ann)
-                        didAddNative = true
                     }
+                    didAddNative = true
                 }
             }
         }
@@ -1226,8 +1224,6 @@ struct ProPDFReaderEngine: View {
                 guard !validRects.isEmpty else { continue }
                 
                 let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
-                guard unionBox.width > 2 && unionBox.height > 2 else { continue }
-                
                 let pageBounds = page.bounds(for: .cropBox)
                 if pageBounds.width > 0, pageBounds.height > 0, savedBounds == nil {
                     savedBounds = CodableCGRect(
@@ -1237,11 +1233,12 @@ struct ProPDFReaderEngine: View {
                         height: Double(unionBox.height / pageBounds.height)
                     )
                 }
-                let ann = PDFAnnotation(bounds: unionBox, forType: .highlight, withProperties: nil)
-                ann.color = highlightColor
-                ann.contents = text
-                ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
-                page.addAnnotation(ann)
+                for rect in validRects {
+                    let ann = PDFAnnotation(bounds: rect, forType: .highlight, withProperties: nil)
+                    ann.color = highlightColor
+                    ann.contents = text
+                    page.addAnnotation(ann)
+                }
                 didAddNative = true
             }
         }
@@ -1256,8 +1253,6 @@ struct ProPDFReaderEngine: View {
                 guard !validRects.isEmpty else { continue }
                 
                 let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
-                guard unionBox.width > 2 && unionBox.height > 2 else { continue }
-                
                 let pageBounds = page.bounds(for: .cropBox)
                 if pageBounds.width > 0, pageBounds.height > 0, savedBounds == nil {
                     savedBounds = CodableCGRect(
@@ -1267,11 +1262,12 @@ struct ProPDFReaderEngine: View {
                         height: Double(unionBox.height / pageBounds.height)
                     )
                 }
-                let ann = PDFAnnotation(bounds: unionBox, forType: .highlight, withProperties: nil)
-                ann.color = highlightColor
-                ann.contents = text
-                ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
-                page.addAnnotation(ann)
+                for rect in validRects {
+                    let ann = PDFAnnotation(bounds: rect, forType: .highlight, withProperties: nil)
+                    ann.color = highlightColor
+                    ann.contents = text
+                    page.addAnnotation(ann)
+                }
                 didAddNative = true
                 break
             }
@@ -1330,7 +1326,7 @@ struct ProPDFReaderEngine: View {
         }
     }
 
-    private func saveNote(text: String, note: String) {
+    private func saveNote(text: String, note: String, color: PDFHighlightColor = EBookPreferences.shared.defaultHighlightColor) {
         let noteAnn = Annotation(
             pdfID: pdf.id,
             pageIndex: currentPageIndex,
@@ -1338,7 +1334,7 @@ struct ProPDFReaderEngine: View {
             kind: .note,
             createdAt: Date(),
             modifiedAt: Date(),
-            colorHex: PDFHighlightColor.yellow.rawValue,
+            colorHex: color.rawValue,
             selectedText: text,
             noteText: note
         )
@@ -1348,7 +1344,7 @@ struct ProPDFReaderEngine: View {
         }
     }
 
-    private func saveMarginalia(text: String, symbol: String) {
+    private func saveMarginalia(text: String, symbol: String, color: PDFHighlightColor = EBookPreferences.shared.defaultHighlightColor) {
         var ann = Annotation(
             pdfID: pdf.id,
             pageIndex: currentPageIndex,
@@ -1356,7 +1352,7 @@ struct ProPDFReaderEngine: View {
             kind: .highlight,
             createdAt: Date(),
             modifiedAt: Date(),
-            colorHex: PDFHighlightColor.yellow.rawValue,
+            colorHex: color.rawValue,
             selectedText: text,
             noteText: "Marginalia Symbol: \(symbol)"
         )

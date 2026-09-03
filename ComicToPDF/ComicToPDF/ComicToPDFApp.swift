@@ -112,9 +112,7 @@ struct InksyncProApp: App {
                 .preferredColorScheme(selectedTheme.colorScheme)
                 .onAppear {
                     // Inject ConversionManager into SharedImportCoordinator on app launch
-                    if let manager = ConversionManager.shared {
-                        SharedImportCoordinator.shared.conversionManager = manager
-                    }
+                    SharedImportCoordinator.shared.conversionManager = ConversionManager.shared
                     // Check for any pending imports from Share Extension on launch
                     SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
                 }

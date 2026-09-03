@@ -138,7 +138,8 @@ struct EBookReaderView: View {
                                     onCenterTap: { withAnimation(.easeInOut(duration: 0.2)) { showHUD.toggle() } },
                                     onHighlightCreated: { selectedText in
                                         guard !isApplyingHighlightDirectly else { return }
-                                        applyHighlight(text: selectedText, colorHex: "#FFD600", symbol: nil)
+                                        let defaultColor = EBookPreferences.shared.defaultHighlightColor.rawValue
+                                        applyHighlight(text: selectedText, colorHex: defaultColor, symbol: nil)
                                     },
                                     onHighlightTapped: { tappedText in
                                         guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
@@ -1026,16 +1027,18 @@ struct EBookReaderView: View {
                     selectedText: selectedText,
                     pageIndex: currentIndex,
                     onHighlight: { color in
+                        EBookPreferences.shared.defaultHighlightColor = color
                         applyHighlight(text: selectedText, colorHex: color.rawValue, symbol: nil)
                         selectedTextForHUD = nil
                     },
                     onAddNote: { note in
-                        applyHighlight(text: selectedText, colorHex: "#FFD600", note: note, symbol: nil)
+                        applyHighlight(text: selectedText, colorHex: EBookPreferences.shared.defaultHighlightColor.rawValue, note: note, symbol: nil)
                         selectedTextForHUD = nil
                     },
                     onCopy: {
                         UIPasteboard.general.string = selectedText
                         selectedTextForHUD = nil
+                        HapticEngine.selection()
                     },
                     onSpeak: { text in
                         speakText(text)
@@ -1045,7 +1048,7 @@ struct EBookReaderView: View {
                         selectedTextForHUD = nil
                     },
                     onAddMarginaliaSymbol: { symbol in
-                        applyHighlight(text: selectedText, colorHex: "#FFD600", symbol: symbol)
+                        applyHighlight(text: selectedText, colorHex: EBookPreferences.shared.defaultHighlightColor.rawValue, symbol: symbol)
                         selectedTextForHUD = nil
                     }
                 )
@@ -1847,7 +1850,13 @@ struct EBookWebReader: View {
         });
 
         // ── Highlight Engine ─────────────────────────────────────────────────
-        window.applyInksyncHighlight = function(colorHex, symbol) {
+        window.applyInksyncHighlight = function(id, colorHex, symbol) {
+            // Support both (id, colorHex, symbol) and legacy (colorHex, symbol)
+            if (typeof id === 'string' && id.indexOf('#') === 0) {
+                symbol = colorHex;
+                colorHex = id;
+                id = '';
+            }
             var sel = window.getSelection();
             if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
             var text = sel.toString().trim();
@@ -1855,7 +1864,8 @@ struct EBookWebReader: View {
             var range = sel.getRangeAt(0);
             var mark = document.createElement('mark');
             mark.className = 'inksync-highlight';
-            // Apply color directly as inline style — NOT as a class so CSS cannot override it
+            if (id) mark.setAttribute('data-id', id);
+            // Apply color directly as inline style with !important so CSS cannot override it
             mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
             mark.style.color = 'inherit';
             mark.style.borderRadius = '3px';
@@ -1879,6 +1889,7 @@ struct EBookWebReader: View {
                         if (range.intersectsNode && range.intersectsNode(textNode)) {
                             var subMark = document.createElement('mark');
                             subMark.className = 'inksync-highlight';
+                            if (id) subMark.setAttribute('data-id', id);
                             subMark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
                             subMark.style.mixBlendMode = 'multiply';
                             if (symbol) subMark.setAttribute('data-symbol', symbol);
