@@ -254,6 +254,7 @@ struct ProPDFReaderEngine: View {
             // Reset filter to original on every open so a persisted color-invert
             // filter from a previous session cannot corrupt page rendering appearance.
             activeFilterPreset = .original
+            isReflowMode = prefs.pdfReflowMode
             loadPDFDocument()
         }
         .onDisappear {
@@ -343,6 +344,11 @@ struct ProPDFReaderEngine: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleSidebar"))) { _ in
             withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
                 showingOutlineDrawer.toggle()
+            }
+        }
+        .onChange(of: prefs.pdfReflowMode) { _, enabled in
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                isReflowMode = enabled
             }
         }
         .onChange(of: prefs.defaultCropModeRaw) { _, newMode in
@@ -628,12 +634,20 @@ struct ProPDFReaderEngine: View {
                     onAddMarginaliaSymbol: { symbol in
                         saveMarginalia(text: selectedText, symbol: symbol, color: EBookPreferences.shared.defaultHighlightColor)
                         selectedTextForHUD = nil
+                    },
+                    onDismiss: {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            selectedTextForHUD = nil
+                            activeSelectionSnapshot = nil
+                        }
+                        pdfViewReference?.setCurrentSelection(nil, animate: false)
                     }
                 )
                 .padding(.bottom, chromeVisible ? 80 : 30)
                 .padding(.horizontal, 20)
             }
             .transition(.move(edge: .bottom).combined(with: .opacity))
+            .zIndex(60)
         }
     }
 
@@ -1229,12 +1243,12 @@ struct ProPDFReaderEngine: View {
             if let doc = activeDoc, let page = doc.page(at: snapshot.pageIndex) {
                 let validRects = snapshot.lines.map(\.bounds).filter { $0 != .zero && $0.width > 2 && $0.height > 2 }
                 if !validRects.isEmpty {
-                    for rect in validRects {
-                        let ann = PDFAnnotation(bounds: rect, forType: nativeType, withProperties: nil)
-                        ann.color = highlightColor
-                        ann.contents = text
-                        page.addAnnotation(ann)
-                    }
+                    let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
+                    let ann = PDFAnnotation(bounds: unionBox, forType: nativeType, withProperties: nil)
+                    ann.color = highlightColor
+                    ann.contents = text
+                    ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                    page.addAnnotation(ann)
                     didAddNative = true
                 }
             }
@@ -1261,12 +1275,11 @@ struct ProPDFReaderEngine: View {
                         height: Double(unionBox.height / pageBounds.height)
                     )
                 }
-                for rect in validRects {
-                    let ann = PDFAnnotation(bounds: rect, forType: nativeType, withProperties: nil)
-                    ann.color = highlightColor
-                    ann.contents = text
-                    page.addAnnotation(ann)
-                }
+                let ann = PDFAnnotation(bounds: unionBox, forType: nativeType, withProperties: nil)
+                ann.color = highlightColor
+                ann.contents = text
+                ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                page.addAnnotation(ann)
                 didAddNative = true
             }
         }
@@ -1290,14 +1303,32 @@ struct ProPDFReaderEngine: View {
                         height: Double(unionBox.height / pageBounds.height)
                     )
                 }
-                for rect in validRects {
-                    let ann = PDFAnnotation(bounds: rect, forType: nativeType, withProperties: nil)
-                    ann.color = highlightColor
-                    ann.contents = text
-                    page.addAnnotation(ann)
-                }
+                let ann = PDFAnnotation(bounds: unionBox, forType: nativeType, withProperties: nil)
+                ann.color = highlightColor
+                ann.contents = text
+                ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                page.addAnnotation(ann)
                 didAddNative = true
                 break
+            }
+        }
+
+        // ── Path 4: Fallback to savedBounds bounding box ─────────────────────────
+        if !didAddNative, let doc = activeDoc, let page = doc.page(at: targetPageIndex), let b = savedBounds {
+            let pageBounds = page.bounds(for: .cropBox)
+            let rect = CGRect(
+                x: pageBounds.minX + (b.x * pageBounds.width),
+                y: pageBounds.minY + (b.y * pageBounds.height),
+                width: b.width * pageBounds.width,
+                height: b.height * pageBounds.height
+            )
+            if rect.width > 2 && rect.height > 2 {
+                let ann = PDFAnnotation(bounds: rect, forType: nativeType, withProperties: nil)
+                ann.color = highlightColor
+                ann.contents = text
+                ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: rect)
+                page.addAnnotation(ann)
+                didAddNative = true
             }
         }
 
@@ -1618,7 +1649,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // text selection and trigger the highlight HUD. When markup mode or auto-draw is active,
         // Apple Pencil strokes are intercepted by PageCanvasOverlay for smooth inking.
         let glideRecognizer = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleGlideSelection(_:)))
-        glideRecognizer.minimumPressDuration = 0.3
+        glideRecognizer.minimumPressDuration = 0.18
         glideRecognizer.allowableMovement = 2000
         glideRecognizer.cancelsTouchesInView = false
         glideRecognizer.allowedTouchTypes = [

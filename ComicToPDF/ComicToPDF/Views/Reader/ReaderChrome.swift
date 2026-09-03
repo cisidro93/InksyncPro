@@ -345,14 +345,32 @@ struct ReaderChrome: View {
                     }
 
                     if isPDF {
-                        chromeButton(
-                            icon: "text.alignleft",
-                            label: "Reflow Text",
-                            active: isReflowActive,
-                            activeColor: .white
-                        ) {
+                        Button {
+                            Haptics.shared.playImpact(style: .light)
                             onReflowToggle?()
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: isReflowActive ? "doc.richtext" : "text.alignleft")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text(isReflowActive ? "Original PDF" : "Reflow Text")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundColor(isReflowActive ? .inkGreen : Color.primary.opacity(0.85))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                isReflowActive
+                                    ? Color.inkGreen.opacity(0.18)
+                                    : Color.white.opacity(0.08),
+                                in: Capsule()
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(isReflowActive ? Color.inkGreen.opacity(0.4) : Color.white.opacity(0.12), lineWidth: 0.5)
+                            )
                         }
+                        .help(isReflowActive ? "Return to Original PDF Layout" : "Toggle Text Reflow Mode")
+                        .accessibilityLabel(isReflowActive ? "Return to Original PDF Layout" : "Toggle Text Reflow Mode")
                     }
 
                     if isPDF {
@@ -415,7 +433,7 @@ struct ReaderChrome: View {
         .clipShape(Capsule())
         .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
-        .frame(maxWidth: hSizeClass == .regular ? 680 : .infinity)  // constrain on iPad
+        .frame(maxWidth: hSizeClass == .regular ? 760 : .infinity)  // constrain on iPad
         .padding(.horizontal, hSizeClass == .regular ? 32 : 16)
         .padding(.top, 8)
     }

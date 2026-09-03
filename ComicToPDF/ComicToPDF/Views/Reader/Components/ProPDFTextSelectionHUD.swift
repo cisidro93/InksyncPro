@@ -96,6 +96,7 @@ struct ProPDFTextSelectionHUD: View {
     var onSpeak: (String) -> Void
     var onCreateZettelkastenCard: (String) -> Void
     var onAddMarginaliaSymbol: ((String) -> Void)? = nil
+    var onDismiss: (() -> Void)? = nil
 
     @State private var showingNoteInput = false
     @State private var noteText = ""
@@ -115,7 +116,7 @@ struct ProPDFTextSelectionHUD: View {
         VStack(spacing: 8) {
             // Marginalia Symbol Bar Header with Active Label
             VStack(spacing: 4) {
-                HStack {
+                HStack(spacing: 8) {
                     Text("MARGINALIA (ADLER SHORTHAND)")
                         .font(.system(size: 9, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.white.opacity(0.5))
@@ -139,6 +140,20 @@ struct ProPDFTextSelectionHUD: View {
                         .popover(isPresented: $showingLegendPopover) {
                             marginaliaLegendPopover
                         }
+                    }
+
+                    if let onDismiss = onDismiss {
+                        Button {
+                            HapticEngine.light()
+                            onDismiss()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color.white.opacity(0.6))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Dismiss Selection")
+                        .accessibilityLabel("Dismiss Selection")
                     }
                 }
                 .padding(.horizontal, 14)

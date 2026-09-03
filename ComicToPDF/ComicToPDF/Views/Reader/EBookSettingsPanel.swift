@@ -32,18 +32,14 @@ struct EBookSettingsPanel: View {
     }
 
     private var visibleTabs: [PanelTab] {
-        if isPDF {
-            return [.themes, .layout]
-        } else {
-            return PanelTab.allCases
-        }
+        PanelTab.allCases
     }
 
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
                 // ── Live Preview Strip ────────────────────────────────────────
-                if !isPDF {
+                if !isPDF || prefs.pdfReflowMode {
                     livePreviewStrip
                 }
 
@@ -383,6 +379,18 @@ struct EBookSettingsPanel: View {
     // MARK: - Typography Tab
     private var typographyTab: some View {
         VStack(spacing: 20) {
+            if isPDF && !prefs.pdfReflowMode {
+                HStack(spacing: 12) {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundStyle(Color.orange)
+                    Text("Typography settings apply to Reflow Text mode. Switch to Reflow mode in Layout or Top Bar to customize fonts.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.85))
+                }
+                .padding(12)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            }
+
             // Font Selector
             ReaderSettingsSection(title: "Typeface", icon: "textformat") {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -616,6 +624,15 @@ struct EBookSettingsPanel: View {
     private var layoutTab: some View {
         VStack(spacing: 20) {
             if isPDF {
+                // PDF Reading & Reflow Mode (Prominent Top Section)
+                ReaderSettingsSection(title: "PDF Display & Reflow", icon: "doc.plaintext") {
+                    ReaderSettingsToggleRow(
+                        label: "Pro Text Reflow Mode",
+                        icon: "doc.text.magnifyingglass",
+                        isOn: $prefs.pdfReflowMode
+                    )
+                }
+
                 // PDF Margins & Crop Control
                 ReaderSettingsSection(title: "PDF Page Margins & Cropping", icon: "crop") {
                     // Mode Selector (Smart Auto / Manual Custom / Full Page)
@@ -714,15 +731,6 @@ struct EBookSettingsPanel: View {
                         .padding(.vertical, 10)
                     }
                     .buttonStyle(.plain)
-                }
-
-                // PDF Reading & Reflow Mode
-                ReaderSettingsSection(title: "PDF Display & Reflow", icon: "doc.plaintext") {
-                    ReaderSettingsToggleRow(
-                        label: "Pro Text Reflow Mode",
-                        icon: "doc.text.magnifyingglass",
-                        isOn: $prefs.pdfReflowMode
-                    )
                 }
 
                 // PDF Spreads & Orientation

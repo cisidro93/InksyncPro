@@ -81,12 +81,12 @@ final class PDFAnnotationSyncBridge: Sendable {
                         let validRects = targetLines.compactMap { $0.bounds(for: page) }.filter { $0 != .zero && $0.width > 2 && $0.height > 2 }
                         guard !validRects.isEmpty else { continue }
                         
-                        for rect in validRects {
-                            let nativeHighlight = PDFAnnotation(bounds: rect, forType: nativeType, withProperties: nil)
-                            nativeHighlight.color = highlightColor
-                            nativeHighlight.contents = text
-                            page.addAnnotation(nativeHighlight)
-                        }
+                        let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
+                        let nativeHighlight = PDFAnnotation(bounds: unionBox, forType: nativeType, withProperties: nil)
+                        nativeHighlight.color = highlightColor
+                        nativeHighlight.contents = text
+                        nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                        page.addAnnotation(nativeHighlight)
                         didAdd = true
                         break // first matching instance on page
                     }
@@ -106,9 +106,10 @@ final class PDFAnnotationSyncBridge: Sendable {
                         bounds = CGRect(x: pageBounds.minX + 20, y: pageBounds.maxY - 100, width: pageBounds.width - 40, height: 24)
                     }
                     guard bounds.width > 2, bounds.height > 2 else { continue }
-                    let nativeHighlight = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
+                    let nativeHighlight = PDFAnnotation(bounds: bounds, forType: nativeType, withProperties: nil)
                     nativeHighlight.color = highlightColor
                     nativeHighlight.contents = annotation.selectedText ?? annotation.noteText
+                    nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: bounds)
                     page.addAnnotation(nativeHighlight)
                 }
                 
@@ -210,6 +211,7 @@ final class PDFAnnotationSyncBridge: Sendable {
                     nativeHighlight.color = UIColor.systemYellow.withAlphaComponent(0.55)
                 }
                 nativeHighlight.contents = annotation.selectedText ?? annotation.noteText
+                nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: bounds)
                 page.addAnnotation(nativeHighlight)
                 
             case .note:
