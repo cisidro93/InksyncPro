@@ -1109,7 +1109,7 @@ extension EBookPageCurlReader {
             let spineHref = parent.spineItem.href.lowercased()
             let annotations = AnnotationStore.shared.annotations(for: pdfID)
                 .filter { ann in
-                    guard ann.kind == .highlight else { return false }
+                    guard ann.kind == .highlight || ann.kind == .underline || ann.kind == .strikeOut else { return false }
                     if let title = ann.chapterTitle?.lowercased(), !title.isEmpty {
                         if !spineLabel.isEmpty && (title.contains(spineLabel) || spineLabel.contains(title)) { return true }
                         if !spineHref.isEmpty && (title.contains(spineHref) || spineHref.contains(title)) { return true }
@@ -1125,7 +1125,8 @@ extension EBookPageCurlReader {
                     .replacingOccurrences(of: "\"", with: "\\\"")
                     .replacingOccurrences(of: "\n", with: " ")
                 let safeSymbol = (ann.marginaliaSymbolRaw ?? "").replacingOccurrences(of: "'", with: "\\'")
-                let js = "window.restoreInksyncHighlight('\(idStr)', `\(safeText)`, '\(color)', '\(safeSymbol)');"
+                let styleStr = ann.kind == .underline ? "underline" : (ann.kind == .strikeOut ? "strikeout" : "highlight")
+                let js = "window.restoreInksyncHighlight('\(idStr)', `\(safeText)`, '\(color)', '\(safeSymbol)', '\(styleStr)');"
                 webView.evaluateJavaScript(js)
             }
         }
@@ -1334,7 +1335,7 @@ extension EBookPageCurlReader {
             }
             div, section, article { column-count: auto !important; column-width: auto !important; }
             p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
-            p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
+            p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); \(prefs.isBoldTextEnabled ? "font-weight: 600 !important;" : "") }
             img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
             img { max-width: 100% !important; max-height: 100% !important; height: auto !important; border-radius: 4px; object-fit: contain !important; }
             img.gaiji, img[gaiji], img.inline-image { display: inline-block !important; vertical-align: middle !important; max-height: 1.2em !important; width: auto !important; margin: 0 0.1em !important; }
@@ -1508,8 +1509,9 @@ extension EBookPageCurlReader {
                 }
             }, true);
 
-            window.applyInksyncHighlight = function(id, colorHex, symbol) {
+            window.applyInksyncHighlight = function(id, colorHex, symbol, style) {
                 if (typeof id === 'string' && id.indexOf('#') === 0) {
+                    style = symbol;
                     symbol = colorHex;
                     colorHex = id;
                     id = '';
@@ -1528,10 +1530,22 @@ extension EBookPageCurlReader {
                 var mark = document.createElement('mark');
                 mark.className = 'inksync-highlight';
                 if (id) mark.setAttribute('data-id', id);
-                mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
+                if (style) mark.setAttribute('data-style', style);
+                if (style === 'underline') {
+                    mark.style.setProperty('background-color', 'transparent', 'important');
+                    mark.style.setProperty('text-decoration', 'underline', 'important');
+                    mark.style.setProperty('text-decoration-color', colorHex || '#FF9100', 'important');
+                    mark.style.setProperty('text-underline-offset', '3px', 'important');
+                } else if (style === 'strikeout') {
+                    mark.style.setProperty('background-color', 'transparent', 'important');
+                    mark.style.setProperty('text-decoration', 'line-through', 'important');
+                    mark.style.setProperty('text-decoration-color', colorHex || '#FF4081', 'important');
+                } else {
+                    mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
+                    mark.style.mixBlendMode = 'multiply';
+                }
                 mark.style.color = 'inherit';
                 mark.style.borderRadius = '3px';
-                mark.style.mixBlendMode = 'multiply';
                 if (symbol) {
                     mark.setAttribute('data-symbol', symbol);
                 }
@@ -1550,8 +1564,20 @@ extension EBookPageCurlReader {
                                 var subMark = document.createElement('mark');
                                 subMark.className = 'inksync-highlight';
                                 if (id) subMark.setAttribute('data-id', id);
-                                subMark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
-                                subMark.style.mixBlendMode = 'multiply';
+                                if (style) subMark.setAttribute('data-style', style);
+                                if (style === 'underline') {
+                                    subMark.style.setProperty('background-color', 'transparent', 'important');
+                                    subMark.style.setProperty('text-decoration', 'underline', 'important');
+                                    subMark.style.setProperty('text-decoration-color', colorHex || '#FF9100', 'important');
+                                    subMark.style.setProperty('text-underline-offset', '3px', 'important');
+                                } else if (style === 'strikeout') {
+                                    subMark.style.setProperty('background-color', 'transparent', 'important');
+                                    subMark.style.setProperty('text-decoration', 'line-through', 'important');
+                                    subMark.style.setProperty('text-decoration-color', colorHex || '#FF4081', 'important');
+                                } else {
+                                    subMark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
+                                    subMark.style.mixBlendMode = 'multiply';
+                                }
                                 if (symbol) subMark.setAttribute('data-symbol', symbol);
                                 var startOffset = (textNode === range.startContainer) ? range.startOffset : 0;
                                 var endOffset = (textNode === range.endContainer) ? range.endOffset : textNode.nodeValue.length;
@@ -1616,7 +1642,7 @@ extension EBookPageCurlReader {
                 }
             };
 
-            window.restoreInksyncHighlight = function(id, textToFind, colorHex, symbol) {
+            window.restoreInksyncHighlight = function(id, textToFind, colorHex, symbol, style) {
                 if (!textToFind) return;
                 var trimmed = textToFind.trim();
                 var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
@@ -1640,10 +1666,22 @@ extension EBookPageCurlReader {
                             var mark = document.createElement('mark');
                             mark.className = 'inksync-highlight';
                             if (id) mark.setAttribute('data-id', id);
-                            mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
+                            if (style) mark.setAttribute('data-style', style);
+                            if (style === 'underline') {
+                                mark.style.setProperty('background-color', 'transparent', 'important');
+                                mark.style.setProperty('text-decoration', 'underline', 'important');
+                                mark.style.setProperty('text-decoration-color', colorHex || '#FF9100', 'important');
+                                mark.style.setProperty('text-underline-offset', '3px', 'important');
+                            } else if (style === 'strikeout') {
+                                mark.style.setProperty('background-color', 'transparent', 'important');
+                                mark.style.setProperty('text-decoration', 'line-through', 'important');
+                                mark.style.setProperty('text-decoration-color', colorHex || '#FF4081', 'important');
+                            } else {
+                                mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
+                                mark.style.mixBlendMode = 'multiply';
+                            }
                             mark.style.color = 'inherit';
                             mark.style.borderRadius = '3px';
-                            mark.style.mixBlendMode = 'multiply';
                             if (symbol) {
                                 mark.setAttribute('data-symbol', symbol);
                             }

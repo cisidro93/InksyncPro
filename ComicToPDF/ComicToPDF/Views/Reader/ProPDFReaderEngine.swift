@@ -395,6 +395,9 @@ struct ProPDFReaderEngine: View {
                 PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc)
             }
         }
+        .onChange(of: isPencilMode) { _, enabled in
+            pdfViewReference?.isInMarkupMode = enabled
+        }
     }
 
     // MARK: - Subviews for Fast Compiler Type-Checking
@@ -469,6 +472,7 @@ struct ProPDFReaderEngine: View {
                     }
                 }
             )
+            .applyFilterPreset(activeFilterPreset)
             .ignoresSafeArea()
 
             if isPencilMode {
@@ -596,7 +600,12 @@ struct ProPDFReaderEngine: View {
                     pageIndex: currentPageIndex,
                     onHighlight: { color in
                         EBookPreferences.shared.defaultHighlightColor = color
-                        saveHighlight(text: selectedText, color: color)
+                        saveMarkup(text: selectedText, color: color, style: .highlight)
+                        selectedTextForHUD = nil
+                    },
+                    onMarkup: { color, style in
+                        EBookPreferences.shared.defaultHighlightColor = color
+                        saveMarkup(text: selectedText, color: color, style: style)
                         selectedTextForHUD = nil
                     },
                     onAddNote: { note in
@@ -1172,7 +1181,8 @@ struct ProPDFReaderEngine: View {
 
     // MARK: - Highlight Annotation Pipeline
 
-    /// Commits a highlight annotation for `text` in `color` onto the PDF page.
+    /// Commits a text markup annotation (highlight, underline, strikethrough)
+    /// to the underlying PDFPage and persists it in `AnnotationStore`.
     ///
     /// **Three-path resolution strategy** (ordered by reliability):
     /// 1. `activeSelectionSnapshot.lines` — captured at selection time; most accurate.
@@ -1182,7 +1192,7 @@ struct ProPDFReaderEngine: View {
     /// **No `quadrilateralPoints` are set.** Setting custom quad points that don't
     /// exactly match PDFKit's internal glyph-level geometry produces invisible
     /// annotations. PDFKit derives correct quad points from `bounds` automatically.
-    private func saveHighlight(text: String, color: PDFHighlightColor) {
+    private func saveMarkup(text: String, color: PDFHighlightColor, style: AnnotationMarkupStyle = .highlight) {
         // Build the RGBA UIColor directly — never via hex round-trip which can
         // silently collapse HSL saturation for colors like Emerald or Electric Blue.
         let highlightColor = color.directHighlightUIColor
@@ -1190,6 +1200,24 @@ struct ProPDFReaderEngine: View {
         var savedBounds: CodableCGRect? = nil
         var targetPageIndex = currentPageIndex
         let activeDoc = pdfViewReference?.document ?? pdfDocument
+
+        let nativeType: PDFAnnotationSubtype
+        let annotationKind: Annotation.AnnotationKind
+        let toastTitle: String
+        switch style {
+        case .underline:
+            nativeType = .underline
+            annotationKind = .underline
+            toastTitle = "Underline Added"
+        case .strikeOut:
+            nativeType = .strikeOut
+            annotationKind = .strikeOut
+            toastTitle = "Strikethrough Added"
+        case .highlight:
+            nativeType = .highlight
+            annotationKind = .highlight
+            toastTitle = "Highlight Added"
+        }
 
         // CRITICAL: Do NOT clear the selection before adding annotations.
         // PDFKit uses the active selection's glyph map to resolve annotation bounds.
@@ -1202,7 +1230,7 @@ struct ProPDFReaderEngine: View {
                 let validRects = snapshot.lines.map(\.bounds).filter { $0 != .zero && $0.width > 2 && $0.height > 2 }
                 if !validRects.isEmpty {
                     for rect in validRects {
-                        let ann = PDFAnnotation(bounds: rect, forType: .highlight, withProperties: nil)
+                        let ann = PDFAnnotation(bounds: rect, forType: nativeType, withProperties: nil)
                         ann.color = highlightColor
                         ann.contents = text
                         page.addAnnotation(ann)
@@ -1234,7 +1262,7 @@ struct ProPDFReaderEngine: View {
                     )
                 }
                 for rect in validRects {
-                    let ann = PDFAnnotation(bounds: rect, forType: .highlight, withProperties: nil)
+                    let ann = PDFAnnotation(bounds: rect, forType: nativeType, withProperties: nil)
                     ann.color = highlightColor
                     ann.contents = text
                     page.addAnnotation(ann)
@@ -1263,7 +1291,7 @@ struct ProPDFReaderEngine: View {
                     )
                 }
                 for rect in validRects {
-                    let ann = PDFAnnotation(bounds: rect, forType: .highlight, withProperties: nil)
+                    let ann = PDFAnnotation(bounds: rect, forType: nativeType, withProperties: nil)
                     ann.color = highlightColor
                     ann.contents = text
                     page.addAnnotation(ann)
@@ -1284,7 +1312,7 @@ struct ProPDFReaderEngine: View {
             pdfID: pdf.id,
             pageIndex: targetPageIndex,
             chapterTitle: "Page \(targetPageIndex + 1)",
-            kind: .highlight,
+            kind: annotationKind,
             createdAt: Date(),
             modifiedAt: Date(),
             colorHex: color.rawValue,
@@ -1296,8 +1324,12 @@ struct ProPDFReaderEngine: View {
             PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc, at: resolvedURL)
         }
         activeSelectionSnapshot = nil
-        showToastMessage("Highlight Added")
+        showToastMessage(toastTitle)
         HapticEngine.selection()
+    }
+
+    private func saveHighlight(text: String, color: PDFHighlightColor) {
+        saveMarkup(text: text, color: color, style: .highlight)
     }
 
     /// Forces PDFView to repaint annotation tiles on the target page immediately.

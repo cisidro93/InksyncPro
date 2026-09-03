@@ -506,6 +506,14 @@ struct EBookSettingsPanel: View {
                     icon: "arrow.left.and.line.vertical.and.arrow.right",
                     isOn: $prefs.hyphenation
                 )
+
+                Divider().padding(.leading, 44)
+
+                ReaderSettingsToggleRow(
+                    label: "Bold Text",
+                    icon: "bold",
+                    isOn: $prefs.isBoldTextEnabled
+                )
             }
 
             // Per-book typography lock

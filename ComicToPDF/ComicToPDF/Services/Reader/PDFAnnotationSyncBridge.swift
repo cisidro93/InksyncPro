@@ -29,10 +29,24 @@ final class PDFAnnotationSyncBridge: Sendable {
             let pageBounds = page.bounds(for: .cropBox)
             
             switch annotation.kind {
-            case .highlight:
-                // Check if this highlight is already attached to the page (prevent duplicates)
+            case .highlight, .underline, .strikeOut:
+                let nativeType: PDFAnnotationSubtype
+                let nativeTypeName: String
+                switch annotation.kind {
+                case .underline:
+                    nativeType = .underline
+                    nativeTypeName = "Underline"
+                case .strikeOut:
+                    nativeType = .strikeOut
+                    nativeTypeName = "StrikeOut"
+                default:
+                    nativeType = .highlight
+                    nativeTypeName = "Highlight"
+                }
+
+                // Check if this annotation is already attached to the page (prevent duplicates)
                 let alreadyPresent = page.annotations.contains { native in
-                    guard native.type == "Highlight" else { return false }
+                    guard native.type == nativeTypeName else { return false }
                     if let text = annotation.selectedText, let c = native.contents, !text.isEmpty && c == text {
                         return true
                     }
@@ -43,23 +57,24 @@ final class PDFAnnotationSyncBridge: Sendable {
                             width: b.width * pageBounds.width,
                             height: b.height * pageBounds.height
                         )
-                        return native.bounds.insetBy(dx: -5, dy: -5).contains(expected.origin)
+                        return native.bounds.insetBy(dx: -4, dy: -4).intersects(expected)
                     }
                     return false
                 }
-                if alreadyPresent { continue }
+                guard !alreadyPresent else { continue }
                 
                 let highlightColor: UIColor
                 if let hex = annotation.colorHex, let c = UIColor(hexString: hex) {
-                    highlightColor = c.withAlphaComponent(0.45)
+                    highlightColor = c.withAlphaComponent(annotation.kind == .highlight ? 0.60 : 0.85)
                 } else {
-                    highlightColor = UIColor.systemYellow.withAlphaComponent(0.45)
+                    highlightColor = UIColor.systemYellow.withAlphaComponent(0.55)
                 }
                 
                 var didAdd = false
-                // Try finding exact text string on page first for pixel-perfect multi-line line boxes
+                
+                // Primary: match text exactly on page
                 if let text = annotation.selectedText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    let matches = document.findString(text, withOptions: .caseInsensitive)
+                    let matches = page.document?.findString(text, withOptions: .caseInsensitive) ?? []
                     for match in matches where match.pages.contains(page) {
                         let lines = match.selectionsByLine()
                         let targetLines = lines.isEmpty ? [match] : lines
@@ -67,7 +82,7 @@ final class PDFAnnotationSyncBridge: Sendable {
                         guard !validRects.isEmpty else { continue }
                         
                         for rect in validRects {
-                            let nativeHighlight = PDFAnnotation(bounds: rect, forType: .highlight, withProperties: nil)
+                            let nativeHighlight = PDFAnnotation(bounds: rect, forType: nativeType, withProperties: nil)
                             nativeHighlight.color = highlightColor
                             nativeHighlight.contents = text
                             page.addAnnotation(nativeHighlight)
@@ -166,8 +181,15 @@ final class PDFAnnotationSyncBridge: Sendable {
             let pageBounds = page.bounds(for: .cropBox)
             
             switch annotation.kind {
-            case .highlight:
-                // Create native /Highlight annotation
+            case .highlight, .underline, .strikeOut:
+                let nativeType: PDFAnnotationSubtype
+                switch annotation.kind {
+                case .underline: nativeType = .underline
+                case .strikeOut: nativeType = .strikeOut
+                default: nativeType = .highlight
+                }
+                
+                // Create native annotation
                 let bounds: CGRect
                 if let b = annotation.bounds {
                     bounds = CGRect(
@@ -181,9 +203,9 @@ final class PDFAnnotationSyncBridge: Sendable {
                 }
                 guard bounds.width > 2, bounds.height > 2 else { continue }
                 
-                let nativeHighlight = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
+                let nativeHighlight = PDFAnnotation(bounds: bounds, forType: nativeType, withProperties: nil)
                 if let hex = annotation.colorHex, let c = UIColor(hexString: hex) {
-                    nativeHighlight.color = c.withAlphaComponent(0.60)
+                    nativeHighlight.color = c.withAlphaComponent(annotation.kind == .highlight ? 0.60 : 0.85)
                 } else {
                     nativeHighlight.color = UIColor.systemYellow.withAlphaComponent(0.55)
                 }
@@ -256,8 +278,12 @@ final class PDFAnnotationSyncBridge: Sendable {
                 // Map native annotation types
                 var kind: Annotation.AnnotationKind? = nil
                 switch type {
-                case "Highlight", "Underline", "StrikeOut":
+                case "Highlight":
                     kind = .highlight
+                case "Underline":
+                    kind = .underline
+                case "StrikeOut":
+                    kind = .strikeOut
                 case "Text", "FreeText":
                     kind = .note
                 case "Ink":

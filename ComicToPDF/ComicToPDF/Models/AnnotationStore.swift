@@ -71,6 +71,8 @@ struct Annotation: Codable, Identifiable {
 
     enum AnnotationKind: String, Codable {
         case highlight
+        case underline      // native PDF / EPUB text underline
+        case strikeOut      // native PDF / EPUB strikethrough
         case note           // text note attached to a location
         case bookmark       // page bookmark, no text selection
         case ink            // Apple Pencil freehand (PDF only)

@@ -1028,7 +1028,12 @@ struct EBookReaderView: View {
                     pageIndex: currentIndex,
                     onHighlight: { color in
                         EBookPreferences.shared.defaultHighlightColor = color
-                        applyHighlight(text: selectedText, colorHex: color.rawValue, symbol: nil)
+                        applyHighlight(text: selectedText, colorHex: color.rawValue, symbol: nil, style: .highlight)
+                        selectedTextForHUD = nil
+                    },
+                    onMarkup: { color, style in
+                        EBookPreferences.shared.defaultHighlightColor = color
+                        applyHighlight(text: selectedText, colorHex: color.rawValue, symbol: nil, style: style)
                         selectedTextForHUD = nil
                     },
                     onAddNote: { note in
@@ -1059,7 +1064,7 @@ struct EBookReaderView: View {
         }
     }
 
-    private func applyHighlight(text: String, colorHex: String, note: String? = nil, symbol: String? = nil) {
+    private func applyHighlight(text: String, colorHex: String, note: String? = nil, symbol: String? = nil, style: AnnotationMarkupStyle = .highlight) {
         guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
         let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
         let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
@@ -1071,11 +1076,22 @@ struct EBookReaderView: View {
             }
         }
         
+        let annKind: Annotation.AnnotationKind
+        if note != nil {
+            annKind = .note
+        } else {
+            switch style {
+            case .underline: annKind = .underline
+            case .strikeOut: annKind = .strikeOut
+            case .highlight: annKind = .highlight
+            }
+        }
+
         var highlight = Annotation(
             pdfID: p.id,
             pageIndex: currentIndex,
             chapterTitle: spineLabel,
-            kind: note != nil ? .note : .highlight,
+            kind: annKind,
             createdAt: Date(),
             modifiedAt: Date(),
             colorHex: colorHex,
@@ -1095,7 +1111,7 @@ struct EBookReaderView: View {
 
         let idStr = highlight.id.uuidString
         let safeSymbol = symbol?.replacingOccurrences(of: "'", with: "\\'") ?? ""
-        let js = "if (window.applyInksyncHighlight) { window.applyInksyncHighlight('\(idStr)', '\(colorHex)', '\(safeSymbol)'); }"
+        let js = "if (window.applyInksyncHighlight) { window.applyInksyncHighlight('\(idStr)', '\(colorHex)', '\(safeSymbol)', '\(style.rawValue)'); }"
         webViewReference?.evaluateJavaScript(js)
         HapticEngine.selection()
     }
@@ -1220,7 +1236,7 @@ struct EBookWebReader: View {
                 if let pdfID = self.pdfID {
                     let annotations = AnnotationStore.shared.annotations(for: pdfID)
                         .filter { ann in
-                            guard ann.kind == .highlight else { return false }
+                            guard ann.kind == .highlight || ann.kind == .underline || ann.kind == .strikeOut else { return false }
                             // Match by chapter label if available, fall back to page index
                             if let title = ann.chapterTitle, !title.isEmpty {
                                 let label = self.spineItem.label
@@ -1242,7 +1258,8 @@ struct EBookWebReader: View {
                             .replacingOccurrences(of: "\"", with: "\\\"")
                             .replacingOccurrences(of: "\n", with: " ")
                         let safeSymbol = (ann.marginaliaSymbolRaw ?? "").replacingOccurrences(of: "'", with: "\\'")
-                        let js = "window.restoreInksyncHighlight('\(idStr)', `\(safeText)`, '\(color)', '\(safeSymbol)');"
+                        let styleStr = ann.kind == .underline ? "underline" : (ann.kind == .strikeOut ? "strikeout" : "highlight")
+                        let js = "window.restoreInksyncHighlight('\(idStr)', `\(safeText)`, '\(color)', '\(safeSymbol)', '\(styleStr)');"
                         webView.evaluateJavaScript(js)
                     }
                 }
@@ -1675,7 +1692,7 @@ struct EBookWebReader: View {
             column-width: auto !important;
         }
         p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
-        p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); }
+        p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); \(prefs.isBoldTextEnabled ? "font-weight: 600 !important;" : "") }
         img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
         img { max-width: 100% !important; max-height: 100% !important; height: auto !important; border-radius: 4px; object-fit: contain !important; }
         img.gaiji, img[gaiji], img.inline-image { display: inline-block !important; vertical-align: middle !important; max-height: 1.2em !important; width: auto !important; margin: 0 0.1em !important; }
@@ -1700,13 +1717,15 @@ struct EBookWebReader: View {
         .dropcap, .drop-cap, span.first-letter {
             float: left !important;
             font-size: 3.2em !important;
-            line-height: 0.85em !important;
-            margin-top: 0.1em !important;
-            margin-right: 0.1em !important;
-            margin-bottom: -0.1em !important;
+            line-height: 0.82 !important;
+            margin-right: 0.12em !important;
+            margin-top: 0.05em !important;
+            font-family: \(fontFamily) !important;
+            color: \(textColor) !important;
             font-weight: bold !important;
         }
         """)
+        </style>
         """
     }
 
@@ -1723,8 +1742,10 @@ struct EBookWebReader: View {
         <script>
         document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('[style]').forEach(function(el) {
-                el.style.removeProperty('background-color');
-                el.style.removeProperty('color');
+                if (el.tagName !== 'MARK' && !el.classList.contains('inksync-highlight')) {
+                    el.style.removeProperty('background-color');
+                    el.style.removeProperty('color');
+                }
             });
             var liveStyle = document.getElementById('__inksync_live__');
             if (liveStyle) {
@@ -1773,30 +1794,34 @@ struct EBookWebReader: View {
             } else {
                 var pageHeight = window.innerHeight;
                 _totalPages = Math.max(1, Math.round(sv.scrollHeight / pageHeight));
-                if (_firstRun) {
-                    _firstRun = false;
-                    goToPage(_currentPage, false);
-                } else {
-                    _currentPage = Math.max(0, Math.min(Math.round(sv.scrollTop / pageHeight), _totalPages - 1));
-                }
             }
             
-            window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+            if (!_firstRun) {
+                window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
+            }
             postFraction();
         }
 
-        function goToPage(page, smooth) {
-            _currentPage = Math.max(0, Math.min(page, _totalPages - 1));
-            var behavior = 'instant';
-            
-            var sv = document.scrollingElement || document.documentElement;
+        function goToPage(page, animate) {
             var isHoriz = \(isPaged);
             if (isHoriz) {
                 var pageStep = window.innerWidth;
-                window.scrollTo({ left: _currentPage * pageStep, behavior: behavior });
+                var targetX = page * pageStep;
+                if (animate) {
+                    window.scrollTo({ left: targetX, behavior: 'smooth' });
+                } else {
+                    window.scrollTo(targetX, 0);
+                }
             } else {
-                window.scrollTo({ top: _currentPage * window.innerHeight, behavior: behavior });
+                var pageHeight = window.innerHeight;
+                var targetY = page * pageHeight;
+                if (animate) {
+                    window.scrollTo({ top: targetY, behavior: 'smooth' });
+                } else {
+                    window.scrollTo(0, targetY);
+                }
             }
+            _currentPage = page;
             
             if (!_firstRun) {
                 window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
@@ -1849,10 +1874,10 @@ struct EBookWebReader: View {
             }, 50);
         });
 
-        // ── Highlight Engine ─────────────────────────────────────────────────
-        window.applyInksyncHighlight = function(id, colorHex, symbol) {
-            // Support both (id, colorHex, symbol) and legacy (colorHex, symbol)
+        // ── Highlight & Markup Engine ─────────────────────────────────────────
+        window.applyInksyncHighlight = function(id, colorHex, symbol, style) {
             if (typeof id === 'string' && id.indexOf('#') === 0) {
+                style = symbol;
                 symbol = colorHex;
                 colorHex = id;
                 id = '';
@@ -1865,11 +1890,22 @@ struct EBookWebReader: View {
             var mark = document.createElement('mark');
             mark.className = 'inksync-highlight';
             if (id) mark.setAttribute('data-id', id);
-            // Apply color directly as inline style with !important so CSS cannot override it
-            mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
+            if (style) mark.setAttribute('data-style', style);
+            if (style === 'underline') {
+                mark.style.setProperty('background-color', 'transparent', 'important');
+                mark.style.setProperty('text-decoration', 'underline', 'important');
+                mark.style.setProperty('text-decoration-color', colorHex || '#FF9100', 'important');
+                mark.style.setProperty('text-underline-offset', '3px', 'important');
+            } else if (style === 'strikeout') {
+                mark.style.setProperty('background-color', 'transparent', 'important');
+                mark.style.setProperty('text-decoration', 'line-through', 'important');
+                mark.style.setProperty('text-decoration-color', colorHex || '#FF4081', 'important');
+            } else {
+                mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
+                mark.style.mixBlendMode = 'multiply';
+            }
             mark.style.color = 'inherit';
             mark.style.borderRadius = '3px';
-            mark.style.mixBlendMode = 'multiply';
             mark.style.padding = '0 1px';
             if (symbol) {
                 mark.setAttribute('data-symbol', symbol);
@@ -1882,7 +1918,6 @@ struct EBookWebReader: View {
                     mark.appendChild(frag);
                     range.insertNode(mark);
                 } catch(err) {
-                    // Last-resort: walk text nodes inside range and wrap individually
                     var walker = document.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT, null, false);
                     var textNode;
                     while ((textNode = walker.nextNode())) {
@@ -1890,8 +1925,20 @@ struct EBookWebReader: View {
                             var subMark = document.createElement('mark');
                             subMark.className = 'inksync-highlight';
                             if (id) subMark.setAttribute('data-id', id);
-                            subMark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
-                            subMark.style.mixBlendMode = 'multiply';
+                            if (style) subMark.setAttribute('data-style', style);
+                            if (style === 'underline') {
+                                subMark.style.setProperty('background-color', 'transparent', 'important');
+                                subMark.style.setProperty('text-decoration', 'underline', 'important');
+                                subMark.style.setProperty('text-decoration-color', colorHex || '#FF9100', 'important');
+                                subMark.style.setProperty('text-underline-offset', '3px', 'important');
+                            } else if (style === 'strikeout') {
+                                subMark.style.setProperty('background-color', 'transparent', 'important');
+                                subMark.style.setProperty('text-decoration', 'line-through', 'important');
+                                subMark.style.setProperty('text-decoration-color', colorHex || '#FF4081', 'important');
+                            } else {
+                                subMark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
+                                subMark.style.mixBlendMode = 'multiply';
+                            }
                             if (symbol) subMark.setAttribute('data-symbol', symbol);
                             var startOffset = (textNode === range.startContainer) ? range.startOffset : 0;
                             var endOffset = (textNode === range.endContainer) ? range.endOffset : textNode.nodeValue.length;
@@ -1907,12 +1954,11 @@ struct EBookWebReader: View {
             window.webkit.messageHandlers.highlight.postMessage(text);
         };
 
-        window.restoreInksyncHighlight = function(id, textToFind, colorHex, symbol) {
+        window.restoreInksyncHighlight = function(id, textToFind, colorHex, symbol, style) {
             if (!textToFind) return;
             var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
             var node;
             while ((node = walker.nextNode())) {
-                // Skip text inside an already-restored highlight
                 if (node.parentElement && node.parentElement.closest && node.parentElement.closest('mark.inksync-highlight')) continue;
                 var idx = node.nodeValue.indexOf(textToFind);
                 if (idx !== -1) {
@@ -1923,10 +1969,22 @@ struct EBookWebReader: View {
                         var mark = document.createElement('mark');
                         mark.className = 'inksync-highlight';
                         if (id) mark.setAttribute('data-id', id);
-                        mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
+                        if (style) mark.setAttribute('data-style', style);
+                        if (style === 'underline') {
+                            mark.style.setProperty('background-color', 'transparent', 'important');
+                            mark.style.setProperty('text-decoration', 'underline', 'important');
+                            mark.style.setProperty('text-decoration-color', colorHex || '#FF9100', 'important');
+                            mark.style.setProperty('text-underline-offset', '3px', 'important');
+                        } else if (style === 'strikeout') {
+                            mark.style.setProperty('background-color', 'transparent', 'important');
+                            mark.style.setProperty('text-decoration', 'line-through', 'important');
+                            mark.style.setProperty('text-decoration-color', colorHex || '#FF4081', 'important');
+                        } else {
+                            mark.style.setProperty('background-color', colorHex || '#FFD600', 'important');
+                            mark.style.mixBlendMode = 'multiply';
+                        }
                         mark.style.color = 'inherit';
                         mark.style.borderRadius = '3px';
-                        mark.style.mixBlendMode = 'multiply';
                         mark.style.padding = '0 1px';
                         if (symbol) mark.setAttribute('data-symbol', symbol);
                         range.surroundContents(mark);

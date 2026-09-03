@@ -47,6 +47,9 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_wordSpacing")    var wordSpacing: Double   = 0.0   // em
     @AppStorage("ebook_textAlign")      var textAlign: String   = EBookTextAlign.justify.rawValue
     @AppStorage("ebook_hyphenation")    var hyphenation: Bool   = true
+    @AppStorage("ebook_isBoldTextEnabled") var isBoldTextEnabled: Bool = false {
+        didSet { objectWillChange.send() }
+    }
 
     // Per-book typography lock: [bookID: JSON-encoded BookTypographyProfile]
     @AppStorage("ebook_bookTypography") private var bookTypographyData: Data = Data()
@@ -172,6 +175,7 @@ class EBookPreferences: ObservableObject {
         wordSpacing     = profile.wordSpacing
         textAlign       = profile.textAlign
         hyphenation     = profile.hyphenation
+        if let bold = profile.isBoldTextEnabled { isBoldTextEnabled = bold }
         textMargin      = profile.textMargin
         paragraphIndent = profile.paragraphIndent
         paragraphSpacing = profile.paragraphSpacing
@@ -182,17 +186,18 @@ class EBookPreferences: ObservableObject {
     func lockTypographyForBook(_ bookID: String) {
         var profiles = bookTypographyProfiles
         profiles[bookID] = BookTypographyProfile(
-            fontFamily:       fontFamily,
-            fontSize:         fontSize,
-            lineHeight:       lineHeight,
-            letterSpacing:    letterSpacing,
-            wordSpacing:      wordSpacing,
-            textAlign:        textAlign,
-            hyphenation:      hyphenation,
-            textMargin:       textMargin,
-            paragraphIndent:  paragraphIndent,
-            paragraphSpacing: paragraphSpacing,
-            columnCount:      columnCount
+            fontFamily:        fontFamily,
+            fontSize:          fontSize,
+            lineHeight:        lineHeight,
+            letterSpacing:     letterSpacing,
+            wordSpacing:       wordSpacing,
+            textAlign:         textAlign,
+            hyphenation:       hyphenation,
+            isBoldTextEnabled: isBoldTextEnabled,
+            textMargin:        textMargin,
+            paragraphIndent:   paragraphIndent,
+            paragraphSpacing:  paragraphSpacing,
+            columnCount:       columnCount
         )
         bookTypographyProfiles = profiles
     }
@@ -240,6 +245,7 @@ struct BookTypographyProfile: Codable {
     var wordSpacing: Double
     var textAlign: String
     var hyphenation: Bool
+    var isBoldTextEnabled: Bool?
     var textMargin: Double
     var paragraphIndent: Double
     var paragraphSpacing: Double
@@ -360,6 +366,7 @@ enum EBookFontFamily: String, CaseIterable, Identifiable {
     case helvetica      = "-apple-system, Helvetica, sans-serif"
     case openDyslexic   = "\"OpenDyslexic\", sans-serif"
     case atkinson       = "\"Atkinson Hyperlegible\", sans-serif"
+    case sfMono         = "\"SF Mono\", ui-monospace, Menlo, Monaco, Courier, monospace"
 
     var id: String { rawValue }
 
@@ -374,6 +381,7 @@ enum EBookFontFamily: String, CaseIterable, Identifiable {
         case .helvetica:    return "System"
         case .openDyslexic: return "OpenDyslexic"
         case .atkinson:     return "Atkinson"
+        case .sfMono:       return "Monospace"
         }
     }
 
@@ -389,6 +397,7 @@ enum EBookFontFamily: String, CaseIterable, Identifiable {
         case .helvetica:    return .system(size: 15)
         case .openDyslexic: return Font(UIFont(name: "OpenDyslexic-Regular", size: 14) ?? .systemFont(ofSize: 14))
         case .atkinson:     return Font(UIFont(name: "AtkinsonHyperlegible-Regular", size: 15) ?? .systemFont(ofSize: 15))
+        case .sfMono:       return .system(size: 14, design: .monospaced)
         }
     }
 }
