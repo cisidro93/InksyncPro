@@ -49,27 +49,30 @@ struct ReflowTextView: UIViewRepresentable {
         
         // Resolve custom fonts from EBookFontFamily
         let fontSize = CGFloat(prefs.fontSize)
-        var uiFont: UIFont = .systemFont(ofSize: fontSize)
+        let fontWeight: UIFont.Weight = prefs.isBoldTextEnabled ? .semibold : .regular
+        var uiFont: UIFont = .systemFont(ofSize: fontSize, weight: fontWeight)
         if let family = EBookFontFamily(rawValue: prefs.fontFamily) {
             switch family {
             case .newYork:
-                uiFont = UIFont(name: "NewYorkSmall-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize)
+                uiFont = UIFont(name: "NewYorkSmall-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize, weight: fontWeight)
             case .georgia:
-                uiFont = UIFont(name: "Georgia", size: fontSize) ?? .systemFont(ofSize: fontSize)
+                uiFont = UIFont(name: "Georgia", size: fontSize) ?? .systemFont(ofSize: fontSize, weight: fontWeight)
             case .athelas:
-                uiFont = UIFont(name: "Athelas-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize)
+                uiFont = UIFont(name: "Athelas-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize, weight: fontWeight)
             case .literata:
-                uiFont = UIFont(name: "Literata-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize)
+                uiFont = UIFont(name: "Literata-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize, weight: fontWeight)
             case .merriweather:
-                uiFont = UIFont(name: "Merriweather-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize)
+                uiFont = UIFont(name: "Merriweather-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize, weight: fontWeight)
             case .sourceSerif:
-                uiFont = UIFont(name: "SourceSerif4-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize)
+                uiFont = UIFont(name: "SourceSerif4-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize, weight: fontWeight)
             case .helvetica:
-                uiFont = UIFont.systemFont(ofSize: fontSize)
+                uiFont = UIFont.systemFont(ofSize: fontSize, weight: fontWeight)
             case .openDyslexic:
-                uiFont = UIFont(name: "OpenDyslexic-Regular", size: fontSize - 1) ?? .systemFont(ofSize: fontSize - 1)
+                uiFont = UIFont(name: "OpenDyslexic-Regular", size: fontSize - 1) ?? .systemFont(ofSize: fontSize - 1, weight: fontWeight)
             case .atkinson:
-                uiFont = UIFont(name: "AtkinsonHyperlegible-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize)
+                uiFont = UIFont(name: "AtkinsonHyperlegible-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize, weight: fontWeight)
+            case .sfMono:
+                uiFont = UIFont.monospacedSystemFont(ofSize: fontSize, weight: fontWeight)
             }
         }
         
