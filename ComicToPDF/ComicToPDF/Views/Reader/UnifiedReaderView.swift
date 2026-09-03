@@ -173,7 +173,7 @@ struct UnifiedReaderView: View {
                 let newType: ContentType = result ? .hybrid : .book
                 if pdfCopy.contentType != newType {
                     Logger.shared.log("UnifiedReaderView: Updating contentType from \(pdfCopy.contentType) to \(newType) for '\(pdfCopy.name)'", category: "Reader", type: .success)
-                    ConversionManager.shared?.updateContentType(for: pdfCopy.id, to: newType)
+                    ConversionManager.shared.updateContentType(for: pdfCopy.id, to: newType)
                 }
             }
         }

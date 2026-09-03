@@ -110,14 +110,13 @@ final class SharedImportCoordinator: ObservableObject {
                     for (idx, name) in ingestedNames.enumerated() {
                         let fileURL = inboxDir.appendingPathComponent(name)
                         let shouldOpen = (name == targetFilename) || (targetFilename == nil && idx == 0)
-                        if let pdf = manager?.registerDirectFile(at: fileURL, autoOpen: shouldOpen) {
-                            if shouldOpen && firstPDF == nil {
-                                firstPDF = pdf
-                            }
+                        let pdf = manager.registerDirectFile(at: fileURL, autoOpen: shouldOpen)
+                        if shouldOpen && firstPDF == nil {
+                            firstPDF = pdf
                         }
                     }
 
-                    manager?.scanLibrary()
+                    manager.scanLibrary()
 
                     NotificationCenter.default.post(
                         name: NSNotification.Name("InksyncPro.ShareImportReceived"),
@@ -147,7 +146,8 @@ final class SharedImportCoordinator: ObservableObject {
             ).first ?? FileManager.default.temporaryDirectory
             let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
             let dest = inboxDir.appendingPathComponent(url.lastPathComponent)
-            if autoOpen, let manager = conversionManager ?? ConversionManager.shared {
+            if autoOpen {
+                let manager = conversionManager ?? ConversionManager.shared
                 manager.registerDirectFile(at: dest, autoOpen: true)
             }
             return dest
@@ -169,9 +169,8 @@ final class SharedImportCoordinator: ObservableObject {
         // If file is already at destination and valid, register and autoOpen
         if dest.path == url.path && FileManager.default.fileExists(atPath: dest.path) {
             registerDirectlyOpenedFile(at: dest)
-            if let manager = conversionManager ?? ConversionManager.shared {
-                manager.registerDirectFile(at: dest, autoOpen: autoOpen)
-            }
+            let manager = conversionManager ?? ConversionManager.shared
+            manager.registerDirectFile(at: dest, autoOpen: autoOpen)
             NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
             return dest
         }

@@ -98,8 +98,8 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
             // Step 3: Flip sourceMode in the library record → .local
             let finalURL = destination
             _ = await MainActor.run {
-                if let mgr = manager ?? ConversionManager.shared,
-                   let idx = mgr.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                let mgr = manager ?? ConversionManager.shared
+                if let idx = mgr.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                     mgr.convertedPDFs[idx].url = finalURL
                     mgr.convertedPDFs[idx].sourceMode = .local
                     mgr.saveLibrary()
