@@ -5,24 +5,29 @@
 Whenever conducting code reviews, bug fixes, feature additions, or architectural refactoring across InksyncPro:
 
 ### 1. Point-Free Swift 6 State Architecture
+
 - Enforce single source of truth state management (`ReaderProgressTracker.shared`, `EBookPreferences.shared`).
 - Maintain strict `@MainActor` and `Actor` isolation with `Sendable` value semantics to eliminate race conditions.
 - Prevent invalid intermediate state transitions (e.g. `safeSetViewControllers` in `EBookPageCurlReader`).
 
 ### 2. Kavsoft UI/UX & ProMotion 120Hz Excellence
+
 - Deliver spectacular, modern aesthetics using glassmorphic containers (`.ultraThinMaterial`, `Capsule()`, `RoundedRectangle`), curated dark/sepia/light color systems, and Google Fonts typography.
 - Guarantee zero UI jank, 120Hz ProMotion touch responsiveness, custom gesture prioritization, and rich tactile `HapticEngine` feedback.
 
 ### 3. Paul Hudson Native Framework Mastery
+
 - Deep integration of Apple native APIs: PDFKit (Smart Margin Cropping & Fit-Width expansion), WebKit (Full-bleed dual-page median layout), PencilKit (Non-blocking drawing layers), and Metal graphics.
 - Fail-safe state restoration across orientation switches, app backgrounding, and memory pressure.
 
 ### 4. ThePrimeagen Low-Level Performance & Zero-Leak Memory Safety
+
 - **Empirical Diagnostics First:** Always read full `.ips` crash logs and stack traces before diagnosing or modifying code.
 - **Resource Cleanliness:** Guarantee complete teardown of notification observers (`dismantleUIView`, `deinit`) and background tasks to prevent memory leaks and dangling listeners.
 - **Zero Main-Thread Blocking:** Offload document parsing, image extraction, and crop calculations to background `Task.detached` threads.
 
 ### 5. Visual Kernel Mental Models & Study Systems
+
 - Provide immediate visual feedback for all reader modes (Smart Crop, Pencil Ink, Dual Page).
 - Support deep study workflows: Cornell 3-Zone note paper, Zettelkasten auto-linked nodes (`ZettelkastenAutoLinker`), and Executive Summary HUD layers.
 
