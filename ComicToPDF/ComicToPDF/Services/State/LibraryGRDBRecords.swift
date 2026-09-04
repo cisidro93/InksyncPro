@@ -91,8 +91,18 @@ struct LibraryFileRecord: Codable, Equatable {
     }
 
     static func resolveSandboxURL(_ originalURLString: String) -> URL {
-        guard let originalURL = URL(string: originalURLString) else {
-            return URL(fileURLWithPath: originalURLString)
+        let originalURL: URL
+        if let direct = URL(string: originalURLString), direct.scheme != nil {
+            originalURL = direct
+        } else if let encoded = originalURLString.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+                  let direct = URL(string: encoded), direct.scheme != nil {
+            originalURL = direct
+        } else if originalURLString.hasPrefix("file://") {
+            let path = String(originalURLString.dropFirst(7))
+            let decoded = path.removingPercentEncoding ?? path
+            originalURL = URL(fileURLWithPath: decoded)
+        } else {
+            originalURL = URL(fileURLWithPath: originalURLString)
         }
         
         guard originalURL.isFileURL else {
@@ -124,6 +134,24 @@ struct LibraryFileRecord: Codable, Equatable {
                         resolvedURL = resolvedURL.appendingPathComponent(component)
                     }
                     return resolvedURL
+                }
+            }
+        }
+        
+        // Handle App Group containers: Containers/Shared/AppGroup/<UUID>/...
+        if let sharedIdx = pathComponents.firstIndex(of: "Shared"),
+           sharedIdx + 2 < pathComponents.count,
+           pathComponents[sharedIdx + 1] == "AppGroup" {
+            let relativeComponents = pathComponents[(sharedIdx + 3)...]
+            for groupID in ["group.com.antigravity.InksyncPro", "group.com.antigravity.ComicToPDF", "group.com.antigravity.inksync"] {
+                if let currentContainer = fileManager.containerURL(forSecurityApplicationGroupIdentifier: groupID) {
+                    var candidate = currentContainer
+                    for comp in relativeComponents {
+                        candidate = candidate.appendingPathComponent(comp)
+                    }
+                    if fileManager.fileExists(atPath: candidate.path) {
+                        return candidate
+                    }
                 }
             }
         }

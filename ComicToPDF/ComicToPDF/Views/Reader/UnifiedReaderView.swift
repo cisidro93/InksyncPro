@@ -36,22 +36,52 @@ struct UnifiedReaderView: View {
     /// In-reader engine switcher state (allows switching between ProPDF, Comic, and EBook engines on the fly)
     @State private var activeEngineOverride: ContentType? = nil
 
-    /// Deep inspection helper to verify if the file is a PDF (extension or %PDF binary header)
+    /// Deep inspection helper to verify if the file is a PDF (extension, title, bookmark, or %PDF binary header)
     private var isPDFDocument: Bool {
         let ext = pdf.url.pathExtension.lowercased()
-        if ext == "pdf" || pdf.name.lowercased().hasSuffix(".pdf") {
+        if ext == "pdf" || pdf.name.lowercased().hasSuffix(".pdf") || pdf.metadata.title.lowercased().hasSuffix(".pdf") {
             return true
         }
-        let resolvedURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
-        let didAccess = resolvedURL.startAccessingSecurityScopedResource()
-        defer { if didAccess { resolvedURL.stopAccessingSecurityScopedResource() } }
+        
+        let resolvedURL: URL
+        var accessedURL: URL? = nil
+        if case .linked(let bm) = pdf.sourceMode,
+           let url = try? BookmarkResolver.shared.resolve(bm) {
+            let didAccess = url.startAccessingSecurityScopedResource()
+            resolvedURL = url
+            if didAccess { accessedURL = url }
+        } else {
+            let sandboxURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
+            let didAccess = sandboxURL.startAccessingSecurityScopedResource()
+            resolvedURL = sandboxURL
+            if didAccess { accessedURL = sandboxURL }
+        }
+        defer { accessedURL?.stopAccessingSecurityScopedResource() }
+        
+        if resolvedURL.pathExtension.lowercased() == "pdf" || resolvedURL.lastPathComponent.lowercased().hasSuffix(".pdf") {
+            return true
+        }
+        
         if let handle = try? FileHandle(forReadingFrom: resolvedURL) {
             defer { try? handle.close() }
-            let header = handle.readData(ofLength: 5)
-            if let str = String(data: header, encoding: .ascii), str.hasPrefix("%PDF") {
+            if let data = try? handle.read(upToCount: 5),
+               let str = String(data: data, encoding: .ascii), str.hasPrefix("%PDF") {
                 return true
             }
         }
+        
+        // Memory-mapped byte buffer fallback (bypasses sandbox filehandle lockouts)
+        if let data = try? Data(contentsOf: resolvedURL, options: .alwaysMapped), data.count >= 4 {
+            if data.prefix(4) == Data([0x25, 0x50, 0x44, 0x46]) {
+                return true
+            }
+        }
+        
+        // If content type is explicitly .book and file is not an EPUB archive, it is a PDF book
+        if pdf.contentType == .book && ext != "epub" && !pdf.name.lowercased().hasSuffix(".epub") {
+            return true
+        }
+        
         return false
     }
 
@@ -86,6 +116,12 @@ struct UnifiedReaderView: View {
                 return ("ComicReaderEngine", "Manual engine override active: comic mode requested for EPUB.")
             } else {
                 return ("EBookReaderView", "Standard reflowable EPUB document.")
+            }
+        } else if pdf.contentType == .book {
+            if activeEngineOverride == .comic {
+                return ("ComicReaderEngine", "Manual engine override active: comic mode requested for book.")
+            } else {
+                return ("ProPDFReaderEngine", "Identified as .book content type. Native PDF engine active.")
             }
         } else {
             if activeEngineOverride == .book {
@@ -197,6 +233,12 @@ struct UnifiedReaderView: View {
                             ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                         } else {
                             EBookReaderView(fileURL: pdf.url, title: pdf.name, pdf: pdf, onExit: { dismiss() }, allBooks: allBooks)
+                        }
+                    } else if pdf.contentType == .book {
+                        if activeEngineOverride == .comic {
+                            ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                        } else {
+                            ProPDFReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                         }
                     } else {
                         if activeEngineOverride == .book {
