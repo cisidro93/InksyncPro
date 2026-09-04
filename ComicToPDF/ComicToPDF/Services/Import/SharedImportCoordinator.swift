@@ -51,14 +51,16 @@ final class SharedImportCoordinator: ObservableObject {
 
     /// Consolidated entry point for ALL external URL handling (custom schemes and file URLs).
     func handleIncomingURL(_ url: URL) async {
-        Logger.shared.log("SharedImportCoordinator: handleIncomingURL '\(url.absoluteString)'", category: "Import", type: .info)
+        Logger.shared.log("SharedImportCoordinator: handleIncomingURL '\(url.absoluteString)' (scheme: \(url.scheme ?? "none"), isFileURL: \(url.isFileURL))", category: "ShareImport", type: .info)
         if url.scheme == "inksyncpro" || url.scheme == "inksync" {
             var targetFile: String? = nil
             if let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
                 targetFile = components.queryItems?.first(where: { $0.name == "file" })?.value
             }
+            Logger.shared.log("SharedImportCoordinator: Handover received from Share Extension deep link. Target: '\(targetFile ?? "all pending")'", category: "ShareImport", type: .info)
             coordinateImport(targetFilename: targetFile, retryCount: 5, retryDelaySeconds: 0.3)
         } else if url.isFileURL {
+            Logger.shared.log("SharedImportCoordinator: Direct external file URL received from external app/AirDrop: '\(url.lastPathComponent)'", category: "ShareImport", type: .info)
             await handleDirectFileOpen(url: url, autoOpen: true)
         }
     }
@@ -75,7 +77,7 @@ final class SharedImportCoordinator: ObservableObject {
             Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
             Logger.shared.log(
                 "SharedImportCoordinator: Direct imported \(ingestedNames.count) file(s)",
-                category: "Import", type: .success
+                category: "ShareImport", type: .success
             )
         }
     }
@@ -97,8 +99,8 @@ final class SharedImportCoordinator: ObservableObject {
                 if !ingestedNames.isEmpty {
                     Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
                     Logger.shared.log(
-                        "SharedImportCoordinator: Completed import of \(ingestedNames.count) file(s)",
-                        category: "Import", type: .success
+                        "SharedImportCoordinator: Completed import of \(ingestedNames.count) file(s): \(ingestedNames.joined(separator: ", "))",
+                        category: "ShareImport", type: .success
                     )
 
                     let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
@@ -126,7 +128,7 @@ final class SharedImportCoordinator: ObservableObject {
                 } else {
                     Logger.shared.log(
                         "SharedImportCoordinator: No files ingested — leaving flags set for next foreground retry.",
-                        category: "Import", type: .warning
+                        category: "ShareImport", type: .warning
                     )
                 }
                 self.isIngesting = false

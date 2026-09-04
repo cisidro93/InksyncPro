@@ -890,7 +890,7 @@ struct ImportHistoryView: View {
     
     var logEntries: [LogEntry] {
         Logger.shared.parsedLogs
-            .filter { $0.category == "Import" || $0.category == "SmartList" || $0.category == "Library" }
+            .filter { $0.category == "Import" || $0.category == "ShareImport" || $0.category == "ReaderRouting" || $0.category == "ContentType" || $0.category == "SmartList" || $0.category == "Library" }
     }
     
     var body: some View {
@@ -922,7 +922,7 @@ struct ImportHistoryView: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(entry.message)
                                     .font(.system(size: 13))
-                                    .lineLimit(3)
+                                    .lineLimit(4)
                                 
                                 Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
                                     .font(.system(size: 10))
@@ -946,6 +946,9 @@ struct ImportHistoryView: View {
     private func iconFor(category: String) -> String {
         switch category {
         case "Import": return "arrow.down.doc.fill"
+        case "ShareImport": return "square.and.arrow.down.fill"
+        case "ReaderRouting": return "arrow.triangle.branch"
+        case "ContentType": return "doc.text.magnifyingglass"
         case "SmartList": return "list.bullet.clipboard.fill"
         case "Library": return "books.vertical.fill"
         default: return "doc.fill"
@@ -955,6 +958,9 @@ struct ImportHistoryView: View {
     private func colorFor(category: String) -> Color {
         switch category {
         case "Import": return .blue
+        case "ShareImport": return .cyan
+        case "ReaderRouting": return .purple
+        case "ContentType": return .indigo
         case "SmartList": return .orange
         case "Library": return .green
         default: return .gray

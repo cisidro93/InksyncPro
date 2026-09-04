@@ -146,8 +146,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
            oldParent.prefs.isBoldTextEnabled != self.prefs.isBoldTextEnabled ||
            oldParent.prefs.columnCount != self.prefs.columnCount ||
            oldParent.prefs.autoLandscapeDualPage != self.prefs.autoLandscapeDualPage ||
-           oldParent.prefs.fullBleedSpreads != self.prefs.fullBleedSpreads ||
-           oldParent.prefs.readingThemeContrastBooster != self.prefs.readingThemeContrastBooster {
+           oldParent.prefs.fullBleedSpreads != self.prefs.fullBleedSpreads {
             context.coordinator.updateLiveStyles()
         }
 

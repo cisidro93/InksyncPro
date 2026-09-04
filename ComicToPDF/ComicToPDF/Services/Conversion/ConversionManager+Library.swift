@@ -22,6 +22,7 @@ extension ConversionManager {
             $0.url.resolvingSymlinksInPath().path.lowercased() == canonicalPath ||
             $0.url.lastPathComponent.lowercased() == filename
         }) {
+            Logger.shared.log("ConversionManager.registerDirectFile: File already registered in library: '\(existing.name)' (ContentType: .\(existing.contentType.rawValue)). AutoOpen=\(autoOpen)", category: "Library", type: .info)
             if autoOpen {
                 Task { @MainActor in
                     AppRouter.shared.selectedTab = 0
@@ -59,6 +60,12 @@ extension ConversionManager {
 
         convertedPDFs.insert(newPDF, at: 0)
         saveLibrary()
+
+        Logger.shared.log(
+            "ConversionManager.registerDirectFile: Registered '\(displayName)' | File: '\(fileURL.lastPathComponent)' | Size: \(ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)) | Evaluated Type: .\(contentType.rawValue) | Pages: \(pageCount) | AutoOpen: \(autoOpen)",
+            category: "Library",
+            type: .success
+        )
 
         NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
 

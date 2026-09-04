@@ -1043,7 +1043,6 @@ struct EBookReaderView: View {
             // Update ConversionManager library item metadata so shelves & stats immediately reflect reading state
             if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == p.id }) {
                 conversionManager.convertedPDFs[idx].metadata.lastReadPage = currentIndex
-                conversionManager.convertedPDFs[idx].metadata.lastReadDate = Date()
             }
         }
     }

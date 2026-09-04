@@ -75,6 +75,7 @@ struct PDFImporter: Sendable {
         defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
 
         guard let pdf = PDFDocument(url: url), pdf.pageCount > 0 else {
+            Logger.shared.log("PDFImporter.hasTextContent: Could not open PDF or document is empty for '\(url.lastPathComponent)'", category: "ContentType", type: .warning)
             return false
         }
         
@@ -109,10 +110,12 @@ struct PDFImporter: Sendable {
                 .filter { $0.count > 2 }
             
             if words.count > 10 {
+                Logger.shared.log("PDFImporter.hasTextContent: Text layer confirmed for '\(url.lastPathComponent)' on page \(pageIndex + 1)/\(total) with \(words.count) valid words.", category: "ContentType", type: .info)
                 return true
             }
         }
         
+        Logger.shared.log("PDFImporter.hasTextContent: No text layer detected for '\(url.lastPathComponent)' across sampled pages \(indicesToCheck.map { $0 + 1 }).", category: "ContentType", type: .info)
         return false
     }
     

@@ -64,6 +64,73 @@ struct UnifiedReaderView: View {
         return ext == "epub" && pdf.metadata.hasFormatOverride != true && epubComicCheckResult == nil
     }
     
+    // MARK: - Reader Engine Diagnostics & Routing Resolution
+    
+    private var resolvedEngineInfo: (engineName: String, rationale: String) {
+        if isPDFDocument {
+            if activeEngineOverride == .comic {
+                return ("ComicReaderEngine", "Manual engine override active: comic mode requested for PDF.")
+            } else {
+                return ("ProPDFReaderEngine", "Native vector PDF document detected (%PDF binary signature or .pdf extension). Full text reflow, highlighting, and Apple Pencil active.")
+            }
+        } else if needsEPUBComicCheck {
+            return ("Pending (ProgressView)", "EPUB comic/text check in flight.")
+        } else if let isComic = epubComicCheckResult {
+            if isComic && activeEngineOverride != .book {
+                return ("ComicReaderEngine", "Fixed-layout/comic EPUB detected from container analysis or high image density.")
+            } else {
+                return ("EBookReaderView", "Reflowable text EPUB detected. WebKit dual-page median layout and typography active.")
+            }
+        } else if pdf.url.pathExtension.lowercased() == "epub" || pdf.name.lowercased().hasSuffix(".epub") {
+            if activeEngineOverride == .comic {
+                return ("ComicReaderEngine", "Manual engine override active: comic mode requested for EPUB.")
+            } else {
+                return ("EBookReaderView", "Standard reflowable EPUB document.")
+            }
+        } else {
+            if activeEngineOverride == .book {
+                return ("ProPDFReaderEngine", "Manual engine override active: book mode requested for archive.")
+            } else {
+                return ("ComicReaderEngine", "Comic archive format (CBZ/CBR/CB7/ZIP/RAR). Continuous vertical/spread canvas active.")
+            }
+        }
+    }
+    
+    private func logReaderRouting(trigger: String) {
+        let (engineName, rationale) = resolvedEngineInfo
+        let ext = pdf.url.pathExtension.lowercased()
+        let fileSizeStr = ByteCountFormatter.string(fromByteCount: pdf.fileSize, countStyle: .file)
+        
+        var headerPreview = "unknown"
+        let resolvedURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
+        let didAccess = resolvedURL.startAccessingSecurityScopedResource()
+        defer { if didAccess { resolvedURL.stopAccessingSecurityScopedResource() } }
+        if let handle = try? FileHandle(forReadingFrom: resolvedURL) {
+            defer { try? handle.close() }
+            if let data = try? handle.read(upToCount: 8), !data.isEmpty {
+                let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
+                let ascii = String(data: data, encoding: .ascii)?.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ") ?? ""
+                headerPreview = "Hex: [\(hex)] ASCII: '\(ascii)'"
+            }
+        }
+        
+        let report = """
+        [ReaderRouting] [\(trigger)]
+          • Document: '\(pdf.name)'
+          • Extension: .\(ext.isEmpty ? "none" : ext)
+          • File Size: \(fileSizeStr) (\(pdf.fileSize) bytes)
+          • Header Bytes: \(headerPreview)
+          • Evaluated ContentType: .\(pdf.contentType.rawValue) (hasFormatOverride: \(pdf.metadata.hasFormatOverride ?? false))
+          • Binary IsPDF: \(isPDFDocument)
+          • Active Engine Override: \(activeEngineOverride?.rawValue ?? "none")
+          • MOUNTED READER: \(engineName)
+          • Decision Rationale: \(rationale)
+        """
+        
+        let isMismatch = (isPDFDocument && engineName == "ComicReaderEngine" && activeEngineOverride == nil)
+        Logger.shared.log(report, category: "ReaderRouting", type: isMismatch ? .warning : .info)
+    }
+
     var body: some View {
         GeometryReader { geo in
             HStack(spacing: 0) {
@@ -198,6 +265,7 @@ struct UnifiedReaderView: View {
                 await MainActor.run {
                     Logger.shared.log("UnifiedReaderView: Background EPUB check completed with result=\(result)", category: "Reader", type: .info)
                     epubComicCheckResult = result
+                    logReaderRouting(trigger: "EPUB check completed")
                 }
                 // Sync the scanned type to the database if it differs
                 let newType: ContentType = result ? .hybrid : .book
@@ -242,13 +310,14 @@ struct UnifiedReaderView: View {
                     ConversionManager.shared.updateContentType(for: pdf.id, to: .comic)
                 }
             }
+            logReaderRouting(trigger: "Live Engine Switch -> \(targetEngine)")
         }
         .onAppear {
-            Logger.shared.log("UnifiedReaderView presented for '\(pdf.name)'. isPDF=\(isPDFDocument), contentType=\(pdf.contentType)", category: "Reader", type: .info)
             // Auto-heal misclassified PDF books that were mistakenly tagged as comic without explicit user choice
             if isPDFDocument && pdf.contentType == .comic && pdf.metadata.hasFormatOverride != true {
                 ConversionManager.shared.updateContentType(for: pdf.id, to: .book)
             }
+            logReaderRouting(trigger: "onAppear")
         }
         .readerKeyboardShortcuts(
             onNextPage: {

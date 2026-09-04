@@ -68,9 +68,22 @@ struct MetadataHeuristics {
         return nil
     }
 
+    /// Read first 8 bytes of file for diagnostic signature inspection
+    private static func inspectFileHeader(url: URL) -> String {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return "unreadable" }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 8), !data.isEmpty else { return "empty" }
+        let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
+        let ascii = String(data: data, encoding: .ascii)?.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ") ?? ""
+        return "[\(hex)] '\(ascii)'"
+    }
+
     /// Intelligently routes manga vs western comics based on heuristic file names and path structures
     static func detectAsymmetricContentType(url: URL) -> ContentType {
         let ext = url.pathExtension.lowercased()
+        let headerStr = inspectFileHeader(url: url)
         
         let pathLower = url.path.lowercased()
         let nameLower = url.lastPathComponent.lowercased()
@@ -79,40 +92,52 @@ struct MetadataHeuristics {
         let mangaKeywords = ["manga", "tankobon", "volume", "chapter", "inuyasha", "shonen", "shoujo", "seinen", "josei", "[raw]", "[ch.", "ch.", "manhwa", "manhua", "scanlation", "oneshot", "doujin"]
         let comicKeywords = ["comic", "graphic novel", "omnibus", "trade paperback", "tpb", "issue", "annual", "deluxe"]
         
-        let isManga = mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
-                      pathLower.contains("/manga/") ||
-                      pathLower.contains("/manga") ||
-                      url.pathComponents.map({ $0.lowercased() }).contains("manga")
-                      
-        let isComic = comicKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
-                      pathLower.contains("/comic/") ||
-                      pathLower.contains("/comic") ||
+        let matchedManga = mangaKeywords.filter { nameLower.contains($0) || parentLower.contains($0) || pathLower.contains("/\($0)/") || pathLower.contains("/\($0)") }
+        let matchedComic = comicKeywords.filter { nameLower.contains($0) || parentLower.contains($0) || pathLower.contains("/\($0)/") || pathLower.contains("/\($0)") }
+        
+        let isManga = !matchedManga.isEmpty || url.pathComponents.map({ $0.lowercased() }).contains("manga")
+        let isComic = !matchedComic.isEmpty ||
                       pathLower.contains("/merged/") ||
                       nameLower.contains("_converted") ||
                       nameLower.contains("go merge") ||
                       url.pathComponents.map({ $0.lowercased() }).contains("comic")
         
+        var decidedType: ContentType = .book
+        var rationale: String = ""
+        
         if ext == "pdf" {
-            if isManga { return .manga }
-            if isComic { return .comic }
-            
-            // Text-bearing PDFs and standard documents are books
-            let importer = PDFImporter()
-            if importer.hasTextContent(url: url) {
-                return .book
+            if isManga {
+                decidedType = .manga
+                rationale = "PDF matched manga keywords: \(matchedManga)"
+            } else if isComic {
+                decidedType = .comic
+                rationale = "PDF matched comic keywords: \(matchedComic)"
+            } else {
+                // Text-bearing PDFs and standard documents are books
+                let importer = PDFImporter()
+                if importer.hasTextContent(url: url) {
+                    decidedType = .book
+                    rationale = "PDF verified with text layer -> .book"
+                } else {
+                    decidedType = .book
+                    rationale = "PDF has no comic keywords, default text book -> .book"
+                }
             }
-            // Scanned documents without comic keywords remain books by default
-            return .book
-        }
-        if ext == "epub" {
+        } else if ext == "epub" {
             // Check if it's fixed layout/comic
             let didAccess = url.startAccessingSecurityScopedResource()
             defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
             
+            var isEPUBComic = false
+            var epubRationale = "Reflowable text EPUB"
+            
             do {
-                guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return .book }
-                
-                var isComic = false
+                guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else {
+                    decidedType = .book
+                    rationale = "Could not read EPUB archive -> default .book"
+                    Logger.shared.log("MetadataHeuristics: Evaluated '\(url.lastPathComponent)' -> .\(decidedType.rawValue) | Ext: .\(ext) | Header: \(headerStr) | Rationale: \(rationale)", category: "ContentType", type: .info)
+                    return .book
+                }
                 
                 if let containerEntry = archive["META-INF/container.xml"] {
                     var containerData = Data()
@@ -132,7 +157,8 @@ struct MetadataHeuristics {
                                lowerOPF.contains("fixed-layout") || 
                                lowerOPF.contains("image-based") ||
                                lowerOPF.contains("manga") {
-                                isComic = true
+                                isEPUBComic = true
+                                epubRationale = "Fixed-layout/comic OPF metadata detected"
                             }
                         }
                     }
@@ -140,7 +166,7 @@ struct MetadataHeuristics {
                 
                 // Fallback strategy: check for dedicated image-comic EPUBs (e.g. Manga/CBZ converted to EPUB)
                 // Requires a high volume of images (>= 25) that match or exceed HTML page count
-                if !isComic {
+                if !isEPUBComic {
                     let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
                     var imageCount = 0
                     var htmlCount = 0
@@ -156,32 +182,43 @@ struct MetadataHeuristics {
                         }
                     }
                     if imageCount >= 25 && htmlCount > 0 && Double(imageCount) >= Double(htmlCount) * 0.85 {
-                        isComic = true
+                        isEPUBComic = true
+                        epubRationale = "High image-to-HTML density (\(imageCount) images vs \(htmlCount) pages)"
                     }
                 }
                 
-                if isComic {
-                    // Determine manga vs western comic based on path keywords
-                    if mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
-                       pathLower.contains("/manga/") ||
-                       pathLower.contains("/manga") ||
-                       url.pathComponents.map({ $0.lowercased() }).contains("manga") {
-                        return .manga
+                if isEPUBComic {
+                    if isManga {
+                        decidedType = .manga
+                        rationale = "EPUB comic (\(epubRationale)) with manga keywords: \(matchedManga)"
+                    } else {
+                        decidedType = .comic
+                        rationale = "EPUB comic (\(epubRationale))"
                     }
-                    return .comic
+                } else {
+                    decidedType = .book
+                    rationale = epubRationale
                 }
-            } catch {}
-            return .book
+            } catch {
+                decidedType = .book
+                rationale = "Archive inspection error: \(error.localizedDescription) -> default .book"
+            }
+        } else {
+            if isManga {
+                decidedType = .manga
+                rationale = "Archive format matched manga keywords: \(matchedManga)"
+            } else {
+                decidedType = .comic
+                rationale = "Standard comic archive (CBZ/CBR/CB7/ZIP) -> .comic"
+            }
         }
         
-        if mangaKeywords.contains(where: { nameLower.contains($0) || parentLower.contains($0) }) ||
-           pathLower.contains("/manga/") ||
-           pathLower.contains("/manga") ||
-           url.pathComponents.map({ $0.lowercased() }).contains("manga") {
-            return .manga
-        }
-        
-        return .comic
+        Logger.shared.log(
+            "MetadataHeuristics: Evaluated '\(url.lastPathComponent)' -> .\(decidedType.rawValue) | Ext: .\(ext) | Header: \(headerStr) | MangaKeywords: \(matchedManga) | ComicKeywords: \(matchedComic) | Rationale: \(rationale)",
+            category: "ContentType",
+            type: .info
+        )
+        return decidedType
     }
 }
 

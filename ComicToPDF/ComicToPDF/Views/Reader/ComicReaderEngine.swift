@@ -2328,6 +2328,7 @@ struct ComicReaderEngine: View {
                 jumpToPageText = ""
                 showJumpToPage = true
             },
+            isPDF: cache.isPDF,
             isAutoCropEnabled: isAutoCropEnabled,
             onCropToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -2338,6 +2339,14 @@ struct ComicReaderEngine: View {
             onManualCropToggle: {
                 showCropAdjustmentSheet = true
             },
+            onReflowToggle: cache.isPDF ? {
+                HapticEngine.medium()
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("InksyncPro.switchReaderEngine"),
+                    object: nil,
+                    userInfo: ["engine": "proPDF"]
+                )
+            } : nil,
             isEnhanced: activeFilterPreset != .original,
             onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
             isSettingsActive: readingMode != .pageHorizontal,
@@ -2353,16 +2362,7 @@ struct ComicReaderEngine: View {
                 }
             },
             sessionStartTime: sessionStartTime,
-            onSwipeDown: saveProgressAndDismiss,
-            isPDF: cache.isPDF,
-            onReflowToggle: cache.isPDF ? {
-                HapticEngine.medium()
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("InksyncPro.switchReaderEngine"),
-                    object: nil,
-                    userInfo: ["engine": "proPDF"]
-                )
-            } : nil
+            onSwipeDown: saveProgressAndDismiss
         )
     }
 
