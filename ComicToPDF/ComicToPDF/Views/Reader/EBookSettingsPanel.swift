@@ -54,6 +54,18 @@ struct EBookSettingsPanel: View {
                         case .typography: typographyTab
                         case .layout:     layoutTab
                         }
+
+                        // Live Engine Confirmation Footer
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color.inkGreen)
+                                .frame(width: 6, height: 6)
+                                .shadow(color: Color.inkGreen.opacity(0.8), radius: 3)
+                            Text("InkSync Pro v1.1  •  Pro PDF & Live Reflow Active")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.inkTextSecondary)
+                        }
+                        .padding(.top, 12)
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 20)

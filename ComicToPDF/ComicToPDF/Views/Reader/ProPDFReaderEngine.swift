@@ -1369,15 +1369,10 @@ struct ProPDFReaderEngine: View {
     private func forcePageRedraw(_ pdfView: PDFView, pageIndex: Int) {
         pdfView.layoutDocumentView()
         pdfView.setNeedsDisplay()
-        pdfView.documentView?.setNeedsDisplay()
-        for sv in pdfView.subviews {
-            sv.setNeedsDisplay()
-            for inner in sv.subviews {
-                inner.setNeedsDisplay()
-                inner.layer.setNeedsDisplay()
-            }
-        }
         if let docView = pdfView.documentView {
+            docView.setNeedsLayout()
+            docView.layoutIfNeeded()
+            docView.setNeedsDisplay()
             for pageView in docView.subviews {
                 pageView.setNeedsDisplay()
                 pageView.layer.setNeedsDisplay()
@@ -1385,6 +1380,13 @@ struct ProPDFReaderEngine: View {
                     tile.setNeedsDisplay()
                     tile.layer.setNeedsDisplay()
                 }
+            }
+        }
+        for sv in pdfView.subviews {
+            sv.setNeedsDisplay()
+            for inner in sv.subviews {
+                inner.setNeedsDisplay()
+                inner.layer.setNeedsDisplay()
             }
         }
     }
@@ -1658,6 +1660,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         ]
         glideRecognizer.delegate = context.coordinator
         pdfView.addGestureRecognizer(glideRecognizer)
+        // CRITICAL: Single-tap must wait for glide selection to fail.
+        // Without this, lifting a finger from a word selection recognizes a tap
+        // and immediately clears the selection before the user can tap Highlight.
+        tapGesture.require(toFail: glideRecognizer)
 
         NotificationCenter.default.addObserver(
             context.coordinator,
@@ -1801,6 +1807,33 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             self.parent = parent
         }
 
+        /// Proximity-assisted word snapping so finger and Apple Pencil touches
+        /// snap cleanly to words even when landing slightly between lines or on margins.
+        private func findWordSelection(at point: CGPoint, on page: PDFPage) -> (word: PDFSelection, point: CGPoint)? {
+            if let word = page.selectionForWord(at: point),
+               let str = word.string, !str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return (word, point)
+            }
+            if let charSel = page.selection(from: point, to: point),
+               let str = charSel.string, !str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return (charSel, point)
+            }
+            
+            let yDeltas: [CGFloat] = [-8, 8, -16, 16, -24, 24]
+            let xDeltas: [CGFloat] = [0, -12, 12, -24, 24]
+            
+            for dy in yDeltas {
+                for dx in xDeltas {
+                    let probe = CGPoint(x: point.x + dx, y: point.y + dy)
+                    if let word = page.selectionForWord(at: probe),
+                       let str = word.string, !str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        return (word, probe)
+                    }
+                }
+            }
+            return nil
+        }
+
         // MARK: - Fluid Word-Snapping Glide Selection
         @MainActor @objc func handleGlideSelection(_ gesture: UILongPressGestureRecognizer) {
             guard let pdfView = gesture.view as? PDFView else { return }
@@ -1811,12 +1844,12 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 guard let page = pdfView.page(for: locationInView, nearest: true) else { return }
                 let locationInPage = pdfView.convert(locationInView, to: page)
                 
-                if let initialWord = page.selectionForWord(at: locationInPage) ?? page.selection(from: locationInPage, to: locationInPage) {
-                    glideStartPoint = locationInPage
+                if let match = findWordSelection(at: locationInPage, on: page) {
+                    glideStartPoint = match.point
                     glideStartPage = page
-                    glideStartWord = initialWord
+                    glideStartWord = match.word
                     lastGlideWordCount = 1
-                    pdfView.setCurrentSelection(initialWord, animate: false)
+                    pdfView.setCurrentSelection(match.word, animate: false)
                     HapticEngine.selection()
                 } else {
                     glideStartPoint = nil
@@ -1830,7 +1863,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                       let currentTargetPage = pdfView.page(for: locationInView, nearest: true),
                       currentTargetPage == startPage else { return }
                 
-                let currentPointInPage = pdfView.convert(locationInView, to: startPage)
+                let rawPointInPage = pdfView.convert(locationInView, to: startPage)
+                let currentPointInPage = findWordSelection(at: rawPointInPage, on: startPage)?.point ?? rawPointInPage
                 
                 if let rangeSelection = startPage.selection(from: startPoint, to: currentPointInPage) {
                     if let endWord = startPage.selectionForWord(at: currentPointInPage) {
@@ -1890,8 +1924,17 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         @MainActor @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let view = gesture.view as? PDFView else { return }
 
-            // If text is currently selected in PDFView, clear selection on single tap instead of turning page
+            // If text is currently selected in PDFView, clear selection on single tap OUTSIDE the selection
             if let selection = view.currentSelection, let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let tapLocation = gesture.location(in: view)
+                if let page = view.page(for: tapLocation, nearest: false) {
+                    let pagePoint = view.convert(tapLocation, to: page)
+                    let selectionBounds = selection.bounds(for: page)
+                    // If tap is inside or directly adjoining the active selection, do not clear it
+                    if selectionBounds.insetBy(dx: -16, dy: -16).contains(pagePoint) {
+                        return
+                    }
+                }
                 view.clearSelection()
                 parent.onTextSelectionChanged(nil, nil)
                 return
