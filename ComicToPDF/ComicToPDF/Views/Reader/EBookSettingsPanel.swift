@@ -61,7 +61,7 @@ struct EBookSettingsPanel: View {
                                 .fill(Color.inkGreen)
                                 .frame(width: 6, height: 6)
                                 .shadow(color: Color.inkGreen.opacity(0.8), radius: 3)
-                            Text("InkSync Pro v1.1  •  Pro PDF & Live Reflow Active")
+                            Text(isPDF ? "InkSync Pro v1.1  •  Pro PDF & Live Reflow Active" : "InkSync Pro v1.1  •  EPUB Typography & Themes Active")
                                 .font(.system(size: 11, weight: .medium, design: .rounded))
                                 .foregroundStyle(Color.inkTextSecondary)
                         }
@@ -643,6 +643,41 @@ struct EBookSettingsPanel: View {
                         icon: "doc.text.magnifyingglass",
                         isOn: $prefs.pdfReflowMode
                     )
+                }
+
+                // Reader Engine Mode (Switch to Comic/Manga reading engine)
+                ReaderSettingsSection(title: "Reader Engine Mode", icon: "book.closed") {
+                    Button {
+                        HapticEngine.selection()
+                        dismiss()
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("InksyncPro.switchReaderEngine"),
+                            object: nil,
+                            userInfo: ["engine": "comic"]
+                        )
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "book.closed.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(Color.orange)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Read as Comic / Manga")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(Color.inkTextPrimary)
+                                Text("Continuous webtoon scroll, right-to-left manga, and dialogue lens")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.inkTextSecondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.inkTextSecondary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 // PDF Margins & Crop Control

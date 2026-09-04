@@ -18,6 +18,8 @@ struct EBookReaderView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @ObservedObject private var prefs = EBookPreferences.shared
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @ObservedObject private var narrationEngine = EPUBNarrationEngine.shared
     @State private var showingSettingsPanel = false
     
     // Utilities
@@ -261,10 +263,30 @@ struct EBookReaderView: View {
         .overlay {
             textSelectionHUDOverlay
         }
+        .overlay(alignment: .bottom) {
+            if narrationEngine.isPlaying {
+                narrationFloatingHUD
+                    .padding(.bottom, showHUD ? 90 : 24)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         // Settings sheet lives here only — NOT duplicated inside chapterDrawer
         .sheet(isPresented: $showingSettingsPanel) {
             EBookSettingsPanel(bookID: pdf?.id.uuidString)
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showAnnotations) {
+            if let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) {
+                StudyNotebookView(
+                    bookID: p.id.uuidString,
+                    bookTitle: p.name,
+                    fileURL: p.url,
+                    showBackButton: true
+                )
+                .presentationDetents([.medium, .fraction(0.88)])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(28)
+            }
         }
         .sheet(isPresented: $showSleepTimerPicker) {
             SleepTimerPickerSheet()
@@ -306,7 +328,11 @@ struct EBookReaderView: View {
         }
 
         .task { await loadBook() }
-        .onDisappear { cleanup(); saveProgress() }
+        .onDisappear { 
+            narrationEngine.stop()
+            cleanup()
+            saveProgress() 
+        }
         // FIX 4: Save scroll fraction whenever the chapter page changes
         .onChange(of: chapterPage) { _, _ in saveProgress() }
         // Also save position when the app goes to the background
@@ -500,6 +526,21 @@ struct EBookReaderView: View {
             
             Spacer()
             
+            // Narration playing badge
+            if narrationEngine.isPlaying {
+                Button { toggleNarration() } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: narrationEngine.isPaused ? "pause.fill" : "speaker.wave.2.fill")
+                            .font(.system(size: 10))
+                        Text(narrationEngine.isPaused ? "Paused" : "Playing")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(Color.green)
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                }
+            }
+
             // Sleep timer badge
             if sleepTimer.isActive {
                 Button { showSleepTimerPicker = true } label: {
@@ -530,6 +571,20 @@ struct EBookReaderView: View {
                     .frame(width: 34, height: 34)
                     .background(.ultraThinMaterial, in: Circle())
             }
+
+            // Dedicated Typography / Settings (aA) Button
+            Button {
+                HapticEngine.selection()
+                showingSettingsPanel.toggle()
+            } label: {
+                Image(systemName: "textformat.size")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(showingSettingsPanel ? Color.orange : .white)
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .help("Typography, Font, Themes & Layout")
+            .accessibilityLabel("Typography and Reader Settings")
             
             Menu {
                 Section("Appearance") {
@@ -549,8 +604,20 @@ struct EBookReaderView: View {
                 }
                 Section("Tools") {
                     // Gap A: Annotations + highlights panel
-                    Button { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) } label: {
+                    Button {
+                        if sizeClass == .regular {
+                            NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
+                        } else {
+                            showAnnotations = true
+                        }
+                    } label: {
                         Label("Highlights & Notes", systemImage: "highlighter")
+                    }
+                    Button { toggleNarration() } label: {
+                        Label(
+                            narrationEngine.isPlaying ? "Stop Read Aloud" : "Read Aloud (TTS)",
+                            systemImage: narrationEngine.isPlaying ? "speaker.slash.fill" : "speaker.wave.3"
+                        )
                     }
                     Button { showShareSheet = true } label: {
                         Label("Share Book", systemImage: "square.and.arrow.up")
@@ -855,8 +922,16 @@ struct EBookReaderView: View {
         Logger.shared.log("EBookReader: opening \(fileURL.lastPathComponent)", category: "EBook")
         
         // Restore saved progress
-        let saved = UserDefaults.standard.integer(forKey: progressKey)
+        var saved = UserDefaults.standard.integer(forKey: progressKey)
         let savedPage = UserDefaults.standard.integer(forKey: pageKey)
+        
+        // iCloud Sync Fallback: if local UserDefaults is 0, check ReaderProgressTracker (which syncs via NSUbiquitousKeyValueStore)
+        let resolvedPDF = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent })
+        if saved == 0, let p = resolvedPDF,
+           let trackerProg = ReaderProgressTracker.shared.progress(for: p.id),
+           let ch = trackerProg.currentChapterIndex, ch > 0 {
+            saved = ch
+        }
         
         // Linked Library: resolve security-scoped URL.
         var targetURL: URL = fileURL
@@ -923,6 +998,12 @@ struct EBookReaderView: View {
             } else {
                 self.chapterPage = 0
             }
+            if let p = resolvedPDF,
+               let trackerProg = ReaderProgressTracker.shared.progress(for: p.id),
+               let offset = trackerProg.currentChapterOffset, offset > 0.0,
+               UserDefaults.standard.double(forKey: fractionKey) == 0.0 {
+                self.chapterScrollFraction = offset
+            }
             // Apply per-book theme + typography profiles if saved
             if let bookID = pdf?.id.uuidString {
                 prefs.applyBookTheme(bookID: bookID)
@@ -958,6 +1039,12 @@ struct EBookReaderView: View {
             // Advance totalPagesRead to reflect chapters visited
             progress.totalPagesRead = max(progress.totalPagesRead, currentIndex + 1)
             ReaderProgressTracker.shared.update(progress)
+
+            // Update ConversionManager library item metadata so shelves & stats immediately reflect reading state
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == p.id }) {
+                conversionManager.convertedPDFs[idx].metadata.lastReadPage = currentIndex
+                conversionManager.convertedPDFs[idx].metadata.lastReadDate = Date()
+            }
         }
     }
     
@@ -1128,9 +1215,154 @@ struct EBookReaderView: View {
     }
 
     private func speakText(_ text: String) {
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        AVSpeechSynthesizer().speak(utterance)
+        HapticEngine.selection()
+        narrationEngine.startReading(
+            chapterText: text,
+            onSentenceHighlight: { _, _ in }
+        )
+    }
+
+    private func toggleNarration() {
+        if narrationEngine.isPlaying {
+            narrationEngine.stop()
+        } else {
+            startNarration()
+        }
+    }
+
+    private func startNarration() {
+        HapticEngine.selection()
+        if let wv = webViewReference {
+            wv.evaluateJavaScript("document.body.innerText") { (result, error) in
+                if let text = result as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    narrationEngine.startReading(
+                        chapterText: text,
+                        onSentenceHighlight: { _, _ in },
+                        onChapterFinished: {
+                            nextChapter()
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: - Narration Floating HUD
+    @ViewBuilder private var narrationFloatingHUD: some View {
+        HStack(spacing: 12) {
+            Image(systemName: narrationEngine.isPaused ? "waveform.badge.pause" : "waveform")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.orange)
+                .symbolEffect(.variableColor.iterative, isActive: !narrationEngine.isPaused)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(narrationEngine.isPaused ? "Narration Paused" : "Reading Aloud")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.white)
+                Text(narrationEngine.totalSentences > 0
+                     ? "Sentence \(narrationEngine.currentSentenceIndex + 1) of \(narrationEngine.totalSentences)"
+                     : "Preparing…")
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.7))
+            }
+            .frame(minWidth: 90, alignment: .leading)
+
+            Spacer()
+
+            // Previous Sentence
+            Button {
+                HapticEngine.selection()
+                narrationEngine.previousSentence()
+            } label: {
+                Image(systemName: "backward.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.white.opacity(0.9))
+                    .frame(width: 30, height: 30)
+                    .background(Color.white.opacity(0.12), in: Circle())
+            }
+
+            // Play / Pause
+            Button {
+                HapticEngine.selection()
+                if narrationEngine.isPaused {
+                    narrationEngine.resume()
+                } else {
+                    narrationEngine.pause()
+                }
+            } label: {
+                Image(systemName: narrationEngine.isPaused ? "play.fill" : "pause.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.orange)
+                    .frame(width: 34, height: 34)
+                    .background(Color.orange.opacity(0.2), in: Circle())
+            }
+
+            // Next Sentence
+            Button {
+                HapticEngine.selection()
+                narrationEngine.nextSentence()
+            } label: {
+                Image(systemName: "forward.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.white.opacity(0.9))
+                    .frame(width: 30, height: 30)
+                    .background(Color.white.opacity(0.12), in: Circle())
+            }
+
+            // Speech Rate Toggle
+            Button {
+                HapticEngine.light()
+                cycleSpeechRate()
+            } label: {
+                Text(speechRateLabel)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.orange)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.15), in: Capsule())
+            }
+
+            // Close / Stop
+            Button {
+                HapticEngine.selection()
+                narrationEngine.stop()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(Color.white.opacity(0.6))
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: Color.black.opacity(0.4), radius: 12, y: 5)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+    }
+
+    private var speechRateLabel: String {
+        let base = AVSpeechUtteranceDefaultSpeechRate
+        let ratio = narrationEngine.speechRate / base
+        if abs(ratio - 1.0) < 0.05 { return "1.0x" }
+        return String(format: "%.1fx", ratio)
+    }
+
+    private func cycleSpeechRate() {
+        let base = AVSpeechUtteranceDefaultSpeechRate
+        let currentRatio = narrationEngine.speechRate / base
+        let rates: [Float] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+        if let idx = rates.firstIndex(where: { abs($0 - currentRatio) < 0.1 }) {
+            let nextIdx = (idx + 1) % rates.count
+            narrationEngine.speechRate = base * rates[nextIdx]
+        } else {
+            narrationEngine.speechRate = base
+        }
     }
 }
 
@@ -2004,10 +2236,10 @@ struct EBookWebReader: View {
             }
         };
 
-        window.removeInksyncHighlight = function(textToFind) {
+        window.removeInksyncHighlight = function(idOrText) {
             var marks = document.querySelectorAll('mark.inksync-highlight');
             for (var i = 0; i < marks.length; i++) {
-                if (marks[i].textContent.trim() === textToFind.trim()) {
+                if (marks[i].getAttribute('data-id') === idOrText || marks[i].textContent.trim() === idOrText.trim()) {
                     var parent = marks[i].parentNode;
                     while (marks[i].firstChild) {
                         parent.insertBefore(marks[i].firstChild, marks[i]);

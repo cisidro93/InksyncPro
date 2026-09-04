@@ -133,6 +133,8 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         if oldParent.prefs.fontSize != self.prefs.fontSize ||
            oldParent.prefs.fontFamily != self.prefs.fontFamily ||
            oldParent.prefs.activeTheme.id != self.prefs.activeTheme.id ||
+           oldParent.prefs.customThemeBg != self.prefs.customThemeBg ||
+           oldParent.prefs.customThemeText != self.prefs.customThemeText ||
            oldParent.prefs.lineHeight != self.prefs.lineHeight ||
            oldParent.prefs.letterSpacing != self.prefs.letterSpacing ||
            oldParent.prefs.wordSpacing != self.prefs.wordSpacing ||
@@ -140,7 +142,12 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
            oldParent.prefs.textMargin != self.prefs.textMargin ||
            oldParent.prefs.paragraphSpacing != self.prefs.paragraphSpacing ||
            oldParent.prefs.paragraphIndent != self.prefs.paragraphIndent ||
-           oldParent.prefs.hyphenation != self.prefs.hyphenation {
+           oldParent.prefs.hyphenation != self.prefs.hyphenation ||
+           oldParent.prefs.isBoldTextEnabled != self.prefs.isBoldTextEnabled ||
+           oldParent.prefs.columnCount != self.prefs.columnCount ||
+           oldParent.prefs.autoLandscapeDualPage != self.prefs.autoLandscapeDualPage ||
+           oldParent.prefs.fullBleedSpreads != self.prefs.fullBleedSpreads ||
+           oldParent.prefs.readingThemeContrastBooster != self.prefs.readingThemeContrastBooster {
             context.coordinator.updateLiveStyles()
         }
 
@@ -1032,6 +1039,9 @@ extension EBookPageCurlReader {
             })();
             """
             wv.evaluateJavaScript(js)
+            if let pvc = pageViewController, let view = pvc.view {
+                view.backgroundColor = UIColor(hex: parent.prefs.activeTheme.cssBackground) ?? .black
+            }
             pageSnapshots.removeAll()
             takePageSnapshot(for: currentPageIndex)
         }

@@ -10,6 +10,8 @@ struct ReaderSettingsHUD: View {
     @Binding var activeFilterPreset: ReadingFilterPreset
     @Binding var prefersTwoUpSpreads: Bool
     var onOpenVisualCrop: (() -> Void)? = nil
+    var isPDF: Bool = false
+    var onSwitchToProPDF: (() -> Void)? = nil
     var onDismiss: () -> Void
     
     @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled = false
@@ -24,6 +26,53 @@ struct ReaderSettingsHUD: View {
                     .frame(width: 36, height: 4)
                     .padding(.top, 12)
                     .padding(.bottom, 18)
+
+                // ── Reader Engine Switcher (When PDF is loaded in Comic engine) ─────
+                if isPDF || onSwitchToProPDF != nil {
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionHeader("Reader Engine")
+                        
+                        Button {
+                            HapticEngine.selection()
+                            onDismiss()
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("InksyncPro.switchReaderEngine"),
+                                object: nil,
+                                userInfo: ["engine": "proPDF"]
+                            )
+                            onSwitchToProPDF?()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "doc.richtext.fill")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(.inkGreen)
+                                    .frame(width: 32, height: 32)
+                                    .background(Color.inkGreen.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Switch to Pro PDF Reader")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                        .foregroundColor(.white)
+                                    Text("Native text selection, highlighting, typography, & live reflow")
+                                        .font(.system(size: 11, weight: .regular))
+                                        .foregroundColor(.white.opacity(0.65))
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.inkGreen)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.inkGreen.opacity(0.35), lineWidth: 0.8))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 16)
+                    }
+                }
 
                 // ── Reading Mode ────────────────────────────────────────────────────
                 sectionHeader("Reading Mode")

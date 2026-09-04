@@ -33,6 +33,28 @@ struct UnifiedReaderView: View {
         self._epubComicCheckResult = State(initialValue: initialCheck)
     }
     
+    /// In-reader engine switcher state (allows switching between ProPDF, Comic, and EBook engines on the fly)
+    @State private var activeEngineOverride: ContentType? = nil
+
+    /// Deep inspection helper to verify if the file is a PDF (extension or %PDF binary header)
+    private var isPDFDocument: Bool {
+        let ext = pdf.url.pathExtension.lowercased()
+        if ext == "pdf" || pdf.name.lowercased().hasSuffix(".pdf") {
+            return true
+        }
+        let resolvedURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
+        let didAccess = resolvedURL.startAccessingSecurityScopedResource()
+        defer { if didAccess { resolvedURL.stopAccessingSecurityScopedResource() } }
+        if let handle = try? FileHandle(forReadingFrom: resolvedURL) {
+            defer { try? handle.close() }
+            let header = handle.readData(ofLength: 5)
+            if let str = String(data: header, encoding: .ascii), str.hasPrefix("%PDF") {
+                return true
+            }
+        }
+        return false
+    }
+
     /// Tri-state: nil = still checking, true = comic EPUB, false = text EPUB
     @State private var epubComicCheckResult: Bool?
     
@@ -88,8 +110,8 @@ struct UnifiedReaderView: View {
                 ZStack {
                     prefs.activeTheme.background.edgesIgnoringSafeArea(.all)
                     
-                    if pdf.url.pathExtension.lowercased() == "pdf" || pdf.name.lowercased().hasSuffix(".pdf") {
-                        if pdf.contentType == .comic && pdf.metadata.hasFormatOverride == true {
+                    if isPDFDocument {
+                        if activeEngineOverride == .comic {
                             ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                         } else {
                             ProPDFReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
@@ -98,15 +120,23 @@ struct UnifiedReaderView: View {
                         ProgressView("Loading…")
                             .foregroundColor(.white)
                     } else if let isComic = epubComicCheckResult {
-                        if isComic {
+                        if isComic && activeEngineOverride != .book {
                             ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
                         } else {
                             EBookReaderView(fileURL: pdf.url, title: pdf.name, pdf: pdf, onExit: { dismiss() }, allBooks: allBooks)
                         }
                     } else if pdf.url.pathExtension.lowercased() == "epub" || pdf.name.lowercased().hasSuffix(".epub") {
-                        EBookReaderView(fileURL: pdf.url, title: pdf.name, pdf: pdf, onExit: { dismiss() }, allBooks: allBooks)
+                        if activeEngineOverride == .comic {
+                            ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                        } else {
+                            EBookReaderView(fileURL: pdf.url, title: pdf.name, pdf: pdf, onExit: { dismiss() }, allBooks: allBooks)
+                        }
                     } else {
-                        ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                        if activeEngineOverride == .book {
+                            ProPDFReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                        } else {
+                            ComicReaderEngine(pdf: pdf, onDismiss: { dismiss() }, allBooks: allBooks)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -201,8 +231,24 @@ struct UnifiedReaderView: View {
                 showNotebookPanel = false
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.switchReaderEngine"))) { notification in
+            let targetEngine = notification.userInfo?["engine"] as? String ?? ""
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                if targetEngine == "proPDF" {
+                    activeEngineOverride = .book
+                    ConversionManager.shared.updateContentType(for: pdf.id, to: .book)
+                } else if targetEngine == "comic" {
+                    activeEngineOverride = .comic
+                    ConversionManager.shared.updateContentType(for: pdf.id, to: .comic)
+                }
+            }
+        }
         .onAppear {
-            Logger.shared.log("UnifiedReaderView presented for '\(pdf.name)'. contentType=\(pdf.contentType)", category: "Reader", type: .info)
+            Logger.shared.log("UnifiedReaderView presented for '\(pdf.name)'. isPDF=\(isPDFDocument), contentType=\(pdf.contentType)", category: "Reader", type: .info)
+            // Auto-heal misclassified PDF books that were mistakenly tagged as comic without explicit user choice
+            if isPDFDocument && pdf.contentType == .comic && pdf.metadata.hasFormatOverride != true {
+                ConversionManager.shared.updateContentType(for: pdf.id, to: .book)
+            }
         }
         .readerKeyboardShortcuts(
             onNextPage: {

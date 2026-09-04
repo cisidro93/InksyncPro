@@ -70,15 +70,34 @@ struct PDFImporter: Sendable {
     }
     
     /// Detect if PDF has text layer (for books vs scanned images)
-    func hasTextContent(url: URL, samplePageCount: Int = 5) -> Bool {
-        guard let pdf = PDFDocument(url: url) else {
+    func hasTextContent(url: URL, samplePageCount: Int = 8) -> Bool {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+
+        guard let pdf = PDFDocument(url: url), pdf.pageCount > 0 else {
             return false
         }
         
-        let pagesToCheck = min(samplePageCount, pdf.pageCount)
-        var textFound = false
+        let total = pdf.pageCount
+        var indicesToCheck: [Int] = []
         
-        for pageIndex in 0..<pagesToCheck {
+        if total <= samplePageCount {
+            indicesToCheck = Array(0..<total)
+        } else {
+            // Intelligent spread: check front matter, middle chapters, and body pages
+            let steps = [0.05, 0.10, 0.20, 0.35, 0.50, 0.65, 0.80, 0.90]
+            for step in steps {
+                let idx = min(Int(Double(total) * step), total - 1)
+                if !indicesToCheck.contains(idx) {
+                    indicesToCheck.append(idx)
+                }
+            }
+            // Always include page 5 or 10 if available
+            if total > 5 && !indicesToCheck.contains(5) { indicesToCheck.append(5) }
+            if total > 15 && !indicesToCheck.contains(15) { indicesToCheck.append(15) }
+        }
+        
+        for pageIndex in indicesToCheck {
             guard let page = pdf.page(at: pageIndex),
                   let text = page.string,
                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -90,12 +109,11 @@ struct PDFImporter: Sendable {
                 .filter { $0.count > 2 }
             
             if words.count > 10 {
-                textFound = true
-                break
+                return true
             }
         }
         
-        return textFound
+        return false
     }
     
     // MARK: - Private Helpers

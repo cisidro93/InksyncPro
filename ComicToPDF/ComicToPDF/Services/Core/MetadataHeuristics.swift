@@ -96,11 +96,12 @@ struct MetadataHeuristics {
             if isManga { return .manga }
             if isComic { return .comic }
             
-            // Check if the PDF has text content (image-only scans are comics/manga)
+            // Text-bearing PDFs and standard documents are books
             let importer = PDFImporter()
-            if !importer.hasTextContent(url: url) {
-                return .comic
+            if importer.hasTextContent(url: url) {
+                return .book
             }
+            // Scanned documents without comic keywords remain books by default
             return .book
         }
         if ext == "epub" {
@@ -137,7 +138,8 @@ struct MetadataHeuristics {
                     }
                 }
                 
-                // Fallback strategy: check image-to-html ratio
+                // Fallback strategy: check for dedicated image-comic EPUBs (e.g. Manga/CBZ converted to EPUB)
+                // Requires a high volume of images (>= 25) that match or exceed HTML page count
                 if !isComic {
                     let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "gif", "heic"]
                     var imageCount = 0
@@ -146,14 +148,14 @@ struct MetadataHeuristics {
                         let entryPathLower = entry.path.lowercased()
                         let name = (entryPathLower as NSString).lastPathComponent
                         guard !entryPathLower.contains("__macosx"), !name.hasPrefix("._"), name != ".ds_store", !entryPathLower.hasSuffix("/") else { continue }
-                        let ext = (name as NSString).pathExtension
-                        if imageExtensions.contains(ext) {
+                        let entryExt = (name as NSString).pathExtension.lowercased()
+                        if imageExtensions.contains(entryExt) {
                             imageCount += 1
-                        } else if ["xhtml", "html", "htm"].contains(ext) {
+                        } else if ["xhtml", "html", "htm"].contains(entryExt) {
                             htmlCount += 1
                         }
                     }
-                    if imageCount > 5 && imageCount >= htmlCount - 5 {
+                    if imageCount >= 25 && htmlCount > 0 && Double(imageCount) >= Double(htmlCount) * 0.85 {
                         isComic = true
                     }
                 }

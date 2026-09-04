@@ -2353,7 +2353,16 @@ struct ComicReaderEngine: View {
                 }
             },
             sessionStartTime: sessionStartTime,
-            onSwipeDown: saveProgressAndDismiss
+            onSwipeDown: saveProgressAndDismiss,
+            isPDF: cache.isPDF,
+            onReflowToggle: cache.isPDF ? {
+                HapticEngine.medium()
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("InksyncPro.switchReaderEngine"),
+                    object: nil,
+                    userInfo: ["engine": "proPDF"]
+                )
+            } : nil
         )
     }
 
@@ -2393,6 +2402,12 @@ struct ComicReaderEngine: View {
                         }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                             showCropAdjustmentSheet = true
+                        }
+                    },
+                    isPDF: cache.isPDF,
+                    onSwitchToProPDF: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            showingSettingsHUD = false
                         }
                     },
                     onDismiss: {
