@@ -1082,22 +1082,17 @@ extension EBookPageCurlReader {
             let js = """
             (function() {
                 var sel = window.getSelection();
-                if (!sel || sel.isCollapsed || sel.rangeCount === 0) return "";
-                var text = sel.toString();
-                if (!text || text.trim().length === 0) return "";
+                var range = null;
+                if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+                    range = sel.getRangeAt(0);
+                } else if (window.__lastSelectedRange) {
+                    range = window.__lastSelectedRange;
+                }
+                var text = (sel && !sel.isCollapsed) ? sel.toString().trim() : (range && range.toString ? range.toString().trim() : "");
+                if (!text && window.__lastSelectedText) text = window.__lastSelectedText.trim();
+                if (!text || text.length === 0) return "";
                 if (window.applyInksyncHighlight) {
-                    window.applyInksyncHighlight('', '#FFD600', '');
-                } else {
-                    try {
-                        var range = sel.getRangeAt(0);
-                        var mark = document.createElement('mark');
-                        mark.className = 'inksync-highlight';
-                        mark.style.setProperty('background-color', '#FFD600', 'important');
-                        mark.style.color = 'inherit';
-                        mark.style.borderRadius = '3px';
-                        range.surroundContents(mark);
-                        sel.removeAllRanges();
-                    } catch(e) {}
+                    window.applyInksyncHighlight('', '#FFD600', '', 'highlight');
                 }
                 return text;
             })();
@@ -1460,11 +1455,22 @@ extension EBookPageCurlReader {
             document.addEventListener('selectionchange', function() {
                 var sel = window.getSelection();
                 if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-                    if (window.__lastSelectedText) {
-                        window.__lastSelectedText = "";
-                        try { window.webkit.messageHandlers.onSelectionDismissed.postMessage({}); } catch(e) {}
+                    if (window.__selectionDismissTimeout) {
+                        clearTimeout(window.__selectionDismissTimeout);
                     }
+                    window.__selectionDismissTimeout = setTimeout(function() {
+                        var currentSel = window.getSelection();
+                        if (!currentSel || currentSel.isCollapsed || currentSel.rangeCount === 0) {
+                            window.__lastSelectedRange = null;
+                            window.__lastSelectedText = "";
+                            try { window.webkit.messageHandlers.onSelectionDismissed.postMessage({}); } catch(e) {}
+                        }
+                    }, 500);
                     return;
+                }
+                if (window.__selectionDismissTimeout) {
+                    clearTimeout(window.__selectionDismissTimeout);
+                    window.__selectionDismissTimeout = null;
                 }
                 var text = sel.toString().trim();
                 if (text.length > 0) {

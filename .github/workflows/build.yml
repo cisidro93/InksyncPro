@@ -66,9 +66,11 @@ jobs:
         # Stamp the unique build number into project.yml Info properties
         # so xcodegen writes the dynamic build number into the target build settings.
         sed -i '' "s/CFBundleVersion: \"2\"/CFBundleVersion: \"$BUILD_NUMBER\"/g" project.yml
+        sed -i '' "s/GitCommitSHA: \"local\"/GitCommitSHA: \"$SHORT_SHA\"/g" project.yml
         # Stamp Info.plist as fallback
         /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" ComicToPDF/Info.plist
-        echo "Stamped CFBundleVersion = $BUILD_NUMBER in project.yml and Info.plist"
+        /usr/libexec/PlistBuddy -c "Add :GitCommitSHA string $SHORT_SHA" ComicToPDF/Info.plist 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :GitCommitSHA $SHORT_SHA" ComicToPDF/Info.plist
+        echo "Stamped CFBundleVersion = $BUILD_NUMBER and GitCommitSHA = $SHORT_SHA in project.yml and Info.plist"
         xcodegen generate
 
     - name: Build App

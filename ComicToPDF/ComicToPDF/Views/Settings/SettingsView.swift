@@ -32,6 +32,7 @@ struct SettingsView: View {
     @ObservedObject private var ebookPrefs = EBookPreferences.shared
 
     @State private var showingSystemLogs = false
+    @State private var showingWhatsNewSheet = false
     
     // Preset & AI Export State
     @State private var showingPresetAlert = false
@@ -165,26 +166,203 @@ struct SettingsView: View {
             .cornerRadius(6)
     }
 
+    private var heroHeaderSection: some View {
+        Section {
+            VStack(spacing: 12) {
+                Image("AppLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 58, height: 58)
+                    .clipShape(RoundedRectangle(cornerRadius: 13))
+                    .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
+                
+                VStack(spacing: 4) {
+                    Text("InkSync Pro")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                    
+                    Button {
+                        UIPasteboard.general.string = AppBuildInfo.formattedBadge
+                        HapticEngine.success()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 6, height: 6)
+                            Text(AppBuildInfo.formattedBadge)
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary.opacity(0.7))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.inkSurface.opacity(0.8)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .listRowBackground(Color.clear)
+        }
+    }
+
+    private var quickPreferencesSection: some View {
+        Section("Quick Preferences") {
+            HStack {
+                settingsIcon("paintpalette.fill", color: .purple)
+                Picker("Appearance Theme", selection: $selectedTheme) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+            
+            HStack {
+                settingsIcon("bolt.fill", color: .orange)
+                Picker("App Mode", selection: $appUIMode) {
+                    Text("Go Mode  (Quick Convert)").tag(AppUIMode.go)
+                    Text("Pro Mode (Full Library)").tag(AppUIMode.pro)
+                }
+                .pickerStyle(.menu)
+            }
+            
+            HStack {
+                settingsIcon("waveform.path.ecg", color: .orange)
+                Toggle("Haptic Feedback", isOn: $isHapticsEnabled)
+            }
+        }
+    }
+
+    private var categoriesSection: some View {
+        Section("Settings & Customization") {
+            NavigationLink {
+                appearanceSubpage
+            } label: {
+                HStack(spacing: 12) {
+                    settingsIcon("paintbrush.fill", color: .purple)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Appearance & Interface")
+                            .font(.body)
+                        Text("Themes, badges, text size, and layout")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            NavigationLink {
+                readerControlsSubpage
+            } label: {
+                HStack(spacing: 12) {
+                    settingsIcon("book.pages.fill", color: .orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Reader Performance & Tools")
+                            .font(.body)
+                        Text("Speed mode, Apple Pencil, and gestures")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            NavigationLink {
+                eInkExportSubpage
+            } label: {
+                HStack(spacing: 12) {
+                    settingsIcon("arrow.up.forward.app.fill", color: .blue)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("E-Ink & Device Export")
+                            .font(.body)
+                        Text("Send to Kindle, target profiles, dithering")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            NavigationLink {
+                cloudIntegrationsSubpage
+            } label: {
+                HStack(spacing: 12) {
+                    settingsIcon("network", color: .teal)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cloud & Metadata Services")
+                            .font(.body)
+                        Text("ComicVine, AniList, MangaUpdates, iCloud")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            NavigationLink {
+                systemDiagnosticsSubpage
+            } label: {
+                HStack(spacing: 12) {
+                    settingsIcon("gearshape.2.fill", color: .gray)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Storage, Backups & Diagnostics")
+                            .font(.body)
+                        Text("Logs, database backup, cleanup, reset")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var aboutSection: some View {
+        Section("About & Information") {
+            Button {
+                showingWhatsNewSheet = true
+            } label: {
+                HStack {
+                    settingsIcon("sparkles", color: .yellow)
+                    Text("What's New in this Build")
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            NavigationLink(destination: HelpCenterView()) {
+                HStack {
+                    settingsIcon("questionmark.circle.fill", color: .blue)
+                    Text("Help & Documentation")
+                }
+            }
+            
+            Link(destination: URL(string: "https://inksyncpro.app/privacy.html") ?? URL(fileURLWithPath: "/")) {
+                HStack {
+                    settingsIcon("hand.raised.fill", color: .green)
+                    Text("Privacy Policy")
+                }
+            }
+        }
+    }
+
     var body: some View {
         Form {
-            generalUISection
-            readerPerformanceSection
-            sendToKindleSection
-            exportDefaultsSection
-            omnibusSection
-            processingEngineSection
-            
-            imageFiltersSection
-            aiSection
-            integrationsSection
-            systemSection
-            legalSection
+            heroHeaderSection
+            quickPreferencesSection
+            categoriesSection
+            aboutSection
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color.inkBackground.ignoresSafeArea())
         .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Preferences")
+        .sheet(isPresented: $showingWhatsNewSheet) {
+            WhatsNewInBuildSheet()
+        }
         .background(
             Group {
                 Button("") {
@@ -238,6 +416,68 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+    
+    // MARK: - Dedicated Modular Subpages
+    
+    private var appearanceSubpage: some View {
+        Form {
+            generalUISection
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color.inkBackground.ignoresSafeArea())
+        .listRowBackground(Color.inkSurface.opacity(0.4))
+        .navigationTitle("Appearance")
+    }
+
+    private var readerControlsSubpage: some View {
+        Form {
+            readerPerformanceSection
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color.inkBackground.ignoresSafeArea())
+        .listRowBackground(Color.inkSurface.opacity(0.4))
+        .navigationTitle("Reader & Controls")
+    }
+
+    private var eInkExportSubpage: some View {
+        Form {
+            sendToKindleSection
+            exportDefaultsSection
+            omnibusSection
+            processingEngineSection
+            imageFiltersSection
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color.inkBackground.ignoresSafeArea())
+        .listRowBackground(Color.inkSurface.opacity(0.4))
+        .navigationTitle("E-Ink & Export")
+    }
+
+    private var cloudIntegrationsSubpage: some View {
+        Form {
+            integrationsSection
+            aiSection
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color.inkBackground.ignoresSafeArea())
+        .listRowBackground(Color.inkSurface.opacity(0.4))
+        .navigationTitle("Cloud & Metadata")
+    }
+
+    private var systemDiagnosticsSubpage: some View {
+        Form {
+            systemSection
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color.inkBackground.ignoresSafeArea())
+        .listRowBackground(Color.inkSurface.opacity(0.4))
+        .navigationTitle("Storage & Diagnostics")
     }
     
     // MARK: - Extracted Sections

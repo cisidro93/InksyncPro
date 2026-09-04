@@ -69,6 +69,7 @@ targets:
       properties:
         CFBundleVersion: "2"
         CFBundleShortVersionString: "1.0.1"
+        GitCommitSHA: "local"
         UILaunchStoryboardName: LaunchScreen
         UIRequiresFullScreen: false
         UIFileSharingEnabled: true

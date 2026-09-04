@@ -59,6 +59,28 @@ struct AppLoadingScreenView: View {
                     .offset(y: textOffset)
                     
                     Spacer()
+                    
+                    // Build identification badge for instant test verification
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 6, height: 6)
+                        Text(AppBuildInfo.formattedBadge)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            )
+                    )
+                    .opacity(textOpacity)
+                    .padding(.bottom, 28)
                 }
                 .transition(.opacity)
             }

@@ -1383,6 +1383,15 @@ struct ProPDFReaderEngine: View {
     private func forcePageRedraw(_ pdfView: PDFView, pageIndex: Int) {
         pdfView.layoutDocumentView()
         pdfView.setNeedsDisplay()
+        
+        // Micro-jitter on scaleFactor forces PDFKit's background tile rendering engine
+        // to invalidate cached bitmap tiles and re-rasterize the page with new annotations.
+        let currentScale = pdfView.scaleFactor
+        if currentScale > 0.01 {
+            pdfView.scaleFactor = currentScale + 0.0001
+            pdfView.scaleFactor = currentScale
+        }
+
         if let docView = pdfView.documentView {
             docView.setNeedsLayout()
             docView.layoutIfNeeded()

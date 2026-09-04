@@ -49,6 +49,7 @@ struct ContentView: View {
     @State private var activeToast: ToastMessage? = nil
     
     @State private var isAppLoading = true
+    @State private var showingWhatsNew = false
     @State private var isLogoBreathing = false
     @State private var isLogoMorphComplete = false
 
@@ -432,6 +433,16 @@ struct ContentView: View {
             .presentationDetents([.large])
             .presentationCornerRadius(32)
             .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingWhatsNew) {
+            WhatsNewInBuildSheet()
+        }
+        .onChange(of: isAppLoading) { _, loading in
+            if !loading && AppBuildInfo.isNewBuildAfterUpdate {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    showingWhatsNew = true
+                }
+            }
         }
         .environmentObject(router)
     }
