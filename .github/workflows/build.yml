@@ -123,72 +123,61 @@ jobs:
         # Crucial Fix: Use 'zip -ry' instead of 'zip -r' to preserve symlinks
         zip -ry InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa Payload
 
-    - name: Upload Unsigned IPA to File Host and Post Commit Comment
+    - name: Publish GitHub Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/heads/')
+      with:
+        tag_name: build-${{ env.BUILD_NUMBER }}-${{ env.SHORT_SHA }}
+        name: "InksyncPro Build ${{ env.BUILD_NUMBER }} (${{ env.SHORT_SHA }})"
+        body: |
+          ### InksyncPro Automated Unsigned Build
+          - **Commit**: `${{ env.SHORT_SHA }}`
+          - **Build Number**: `${{ env.BUILD_NUMBER }}`
+          - **Branch**: `${{ github.ref_name }}`
+        files: ComicToPDF/InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Post Commit Comment with Direct Download Links
       run: |
         cd ComicToPDF
         IPA_FILE="InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa"
-        DOWNLOAD_URL=""
+        RELEASE_URL="https://github.com/${{ github.repository }}/releases/download/build-${{ env.BUILD_NUMBER }}-${{ env.SHORT_SHA }}/$IPA_FILE"
+        MIRROR_URL=""
 
-        echo "Uploading to litterbox.catbox.moe..."
+        echo "Attempting mirror upload to litterbox.catbox.moe..."
         CATBOX_RESP=$(curl -s -F "reqtype=fileupload" -F "time=72h" -F "fileToUpload=@$IPA_FILE" https://litterbox.catbox.moe/resources/internals/api.php || true)
         if [[ "$CATBOX_RESP" =~ ^https://.* ]]; then
-          DOWNLOAD_URL=$(echo "$CATBOX_RESP" | tr -d '\r\n')
+          MIRROR_URL=$(echo "$CATBOX_RESP" | tr -d '\r\n')
         fi
 
-        if [ -z "$DOWNLOAD_URL" ]; then
-          echo "Catbox failed, trying tmpfiles.org..."
+        if [ -z "$MIRROR_URL" ]; then
+          echo "Catbox mirror failed, trying tmpfiles.org..."
           TMP_RESP=$(curl -s -F "file=@$IPA_FILE" https://tmpfiles.org/api/v1/upload || true)
           TMP_URL=$(echo "$TMP_RESP" | grep -o -E '"url":"https://tmpfiles.org/[0-9]+/[^"]+' | cut -d'"' -f4 | sed 's|tmpfiles.org/|tmpfiles.org/dl/|' || true)
           if [[ "$TMP_URL" =~ ^https://.* ]]; then
-            DOWNLOAD_URL="$TMP_URL"
+            MIRROR_URL="$TMP_URL"
           fi
         fi
 
-        if [ -z "$DOWNLOAD_URL" ]; then
-          echo "Trying uguu.se..."
-          UGUU_RESP=$(curl -s -F "files[]=@$IPA_FILE" https://uguu.se/upload.php || true)
-          UGUU_URL=$(echo "$UGUU_RESP" | grep -o -E '"url":"https://a.uguu.se/[^"]+' | cut -d'"' -f4 || true)
-          if [[ "$UGUU_URL" =~ ^https://.* ]]; then
-            DOWNLOAD_URL="$UGUU_URL"
-          fi
-        fi
-
-        if [ -z "$DOWNLOAD_URL" ]; then
-          echo "Trying 0x0.st..."
-          NULL_RESP=$(curl -s -F "file=@$IPA_FILE" https://0x0.st || true)
-          if [[ "$NULL_RESP" =~ ^https://.* ]]; then
-            DOWNLOAD_URL=$(echo "$NULL_RESP" | tr -d '\r\n')
-          fi
-        fi
-
-        if [ -z "$DOWNLOAD_URL" ]; then
-          echo "Trying pixeldrain..."
-          PIXEL_RESP=$(curl -s -u : -F "file=@$IPA_FILE" https://pixeldrain.com/api/file || true)
-          FILE_ID=$(echo "$PIXEL_RESP" | grep -o -E '"id":"[a-zA-Z0-9]+"' | cut -d'"' -f4 || true)
-          if [ -n "$FILE_ID" ]; then
-            DOWNLOAD_URL="https://pixeldrain.com/api/file/$FILE_ID"
-          fi
-        fi
-
-        if [ -n "$DOWNLOAD_URL" ]; then
-          echo "Direct download URL: $DOWNLOAD_URL"
-          echo "### Unsigned Build Complete 🚀" > comment.txt
+        echo "### Unsigned Build Complete 🚀" > comment.txt
+        echo "" >> comment.txt
+        echo "Download the raw \`.ipa\` file directly on your iPad using this link (no extraction or external accounts required):" >> comment.txt
+        echo "" >> comment.txt
+        echo "👉 **[Direct Download: InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa]($RELEASE_URL)**" >> comment.txt
+        
+        if [ -n "$MIRROR_URL" ]; then
           echo "" >> comment.txt
-          echo "Download the raw \`.ipa\` file directly on your iPad using this link (no extraction or GitHub login required):" >> comment.txt
-          echo "" >> comment.txt
-          echo "👉 **[Download InksyncPro_Unsigned_${{ env.SHORT_SHA }}.ipa]($DOWNLOAD_URL)**" >> comment.txt
-          
-          jq -n --arg body "$(cat comment.txt)" '{"body": $body}' > comment.json
-          
-          curl -s -X POST \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -d @comment.json \
-            "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/comments"
-        else
-          echo "Warning: All upload hosts failed."
+          echo "Alternate Mirror: [Mirror Download]($MIRROR_URL)" >> comment.txt
         fi
 
+        jq -n --arg body "$(cat comment.txt)" '{"body": $body}' > comment.json
+        
+        curl -s -X POST \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          -d @comment.json \
+          "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/comments"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4

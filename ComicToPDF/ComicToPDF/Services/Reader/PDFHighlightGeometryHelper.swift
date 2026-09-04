@@ -14,17 +14,19 @@ import UIKit
 ///
 /// ### Coordinate Space Architecture:
 /// In ISO 32000-1 and Apple's PDFKit:
-/// 1. An annotation has an overall bounding box (`annotation.bounds`) in page coordinates.
-/// 2. The `quadrilateralPoints` property defines the exact quad shapes of the highlighted text glyphs.
+/// 1. An annotation has an overall bounding box (`annotation.bounds`) in PDF page coordinates
+///    (origin (0, 0) at the bottom-left corner of the page).
+/// 2. The `quadrilateralPoints` property defines the exact quad shapes of the marked-up text glyphs.
 /// 3. In Apple's PDFKit implementation, the `CGPoint` coordinates stored inside `quadrilateralPoints`
-///    **MUST be in coordinate space relative to `annotation.bounds.origin`**. Passing absolute page
-///    coordinates shifts the rendered highlight by `(bounds.origin.x, bounds.origin.y)`, projecting it
-///    outside the annotation bounds and causing PDFKit to discard or clip the rendering.
+///    **MUST be in absolute PDF page coordinates** (the same coordinate space as `annotation.bounds`).
+///    Subtracting the bounds origin causes PDFKit to project the quadrilaterals down to (0, 0) at the
+///    bottom margin of the page, completely outside the annotation bounds, which causes PDFKit to
+///    clip the markup to zero visible pixels (rendering it invisible).
 /// 4. Each quadrilateral is specified by 4 points ordered in Apple's standard Z-pattern:
-///    - Point 1: Top-Left  (relMinX, relMaxY)
-///    - Point 2: Top-Right (relMaxX, relMaxY)
-///    - Point 3: Bottom-Left (relMinX, relMinY)
-///    - Point 4: Bottom-Right (relMaxX, relMinY)
+///    - Point 1: Top-Left     (minX, maxY)
+///    - Point 2: Top-Right    (maxX, maxY)
+///    - Point 3: Bottom-Left  (minX, minY)
+///    - Point 4: Bottom-Right (maxX, minY)
 public enum PDFHighlightGeometryHelper: Sendable {
 
     /// Computes the union bounding box across multiple line rects in page coordinates.
@@ -35,36 +37,40 @@ public enum PDFHighlightGeometryHelper: Sendable {
     }
 
     /// Converts line bounds in page space into an array of `NSValue(cgPoint:)`
-    /// relative to `overallBounds.origin`, formatted in Apple PDFKit Z-pattern order.
-    public static func createQuadPoints(for lineBounds: [CGRect], relativeTo overallBounds: CGRect) -> [NSValue] {
+    /// formatted in Apple PDFKit Z-pattern order in native PDF page space coordinates.
+    public static func createQuadPoints(for lineBounds: [CGRect]) -> [NSValue] {
         var quadValues: [NSValue] = []
         for line in lineBounds {
             guard !line.isNull, !line.isInfinite, line.width > 0, line.height > 0 else { continue }
-            let relMinX = line.minX - overallBounds.minX
-            let relMaxX = line.maxX - overallBounds.minX
-            let relMinY = line.minY - overallBounds.minY
-            let relMaxY = line.maxY - overallBounds.minY
 
+            // Standard Apple PDFKit Z-pattern in PDF page space:
             // 1. Top-Left
-            quadValues.append(NSValue(cgPoint: CGPoint(x: relMinX, y: relMaxY)))
+            quadValues.append(NSValue(cgPoint: CGPoint(x: line.minX, y: line.maxY)))
             // 2. Top-Right
-            quadValues.append(NSValue(cgPoint: CGPoint(x: relMaxX, y: relMaxY)))
+            quadValues.append(NSValue(cgPoint: CGPoint(x: line.maxX, y: line.maxY)))
             // 3. Bottom-Left
-            quadValues.append(NSValue(cgPoint: CGPoint(x: relMinX, y: relMinY)))
+            quadValues.append(NSValue(cgPoint: CGPoint(x: line.minX, y: line.minY)))
             // 4. Bottom-Right
-            quadValues.append(NSValue(cgPoint: CGPoint(x: relMaxX, y: relMinY)))
+            quadValues.append(NSValue(cgPoint: CGPoint(x: line.maxX, y: line.minY)))
         }
         return quadValues
     }
 
-    /// Creates quad points for a single bounding box relative to its own origin.
+    /// Backwards-compatible overload for callers passing `relativeTo:`.
+    /// Note: Apple PDFKit requires page-space quad points; `overallBounds` is preserved
+    /// for API compatibility while guaranteeing accurate page-space coordinate rendering.
+    public static func createQuadPoints(for lineBounds: [CGRect], relativeTo overallBounds: CGRect) -> [NSValue] {
+        return createQuadPoints(for: lineBounds)
+    }
+
+    /// Creates quad points for a single bounding box in PDF page space.
     public static func createQuadPoints(for bounds: CGRect) -> [NSValue] {
         guard !bounds.isNull, !bounds.isInfinite, bounds.width > 0, bounds.height > 0 else { return [] }
         return [
-            NSValue(cgPoint: CGPoint(x: 0, y: bounds.height)),            // Top-Left
-            NSValue(cgPoint: CGPoint(x: bounds.width, y: bounds.height)), // Top-Right
-            NSValue(cgPoint: CGPoint(x: 0, y: 0)),                        // Bottom-Left
-            NSValue(cgPoint: CGPoint(x: bounds.width, y: 0))             // Bottom-Right
+            NSValue(cgPoint: CGPoint(x: bounds.minX, y: bounds.maxY)), // Top-Left
+            NSValue(cgPoint: CGPoint(x: bounds.maxX, y: bounds.maxY)), // Top-Right
+            NSValue(cgPoint: CGPoint(x: bounds.minX, y: bounds.minY)), // Bottom-Left
+            NSValue(cgPoint: CGPoint(x: bounds.maxX, y: bounds.minY))  // Bottom-Right
         ]
     }
 }

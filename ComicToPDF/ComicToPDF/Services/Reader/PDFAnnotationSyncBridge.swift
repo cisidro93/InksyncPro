@@ -46,7 +46,7 @@ final class PDFAnnotationSyncBridge: Sendable {
 
                 // Check if this annotation is already attached to the page (prevent duplicates)
                 let alreadyPresent = page.annotations.contains { native in
-                    guard native.type == nativeTypeName else { return false }
+                    guard native.type == nativeTypeName || native.type == "/\(nativeTypeName)" || native.type == nativeType.rawValue else { return false }
                     if let text = annotation.selectedText, let c = native.contents, !text.isEmpty && c == text {
                         return true
                     }
@@ -85,7 +85,9 @@ final class PDFAnnotationSyncBridge: Sendable {
                         let nativeHighlight = PDFAnnotation(bounds: unionBox, forType: nativeType, withProperties: nil)
                         nativeHighlight.color = highlightColor
                         nativeHighlight.contents = text
-                        nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                        nativeHighlight.shouldDisplay = true
+                        nativeHighlight.shouldPrint = true
+                        nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects)
                         page.addAnnotation(nativeHighlight)
                         didAdd = true
                         break // first matching instance on page
@@ -109,6 +111,8 @@ final class PDFAnnotationSyncBridge: Sendable {
                     let nativeHighlight = PDFAnnotation(bounds: bounds, forType: nativeType, withProperties: nil)
                     nativeHighlight.color = highlightColor
                     nativeHighlight.contents = annotation.selectedText ?? annotation.noteText
+                    nativeHighlight.shouldDisplay = true
+                    nativeHighlight.shouldPrint = true
                     nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: bounds)
                     page.addAnnotation(nativeHighlight)
                 }
@@ -211,6 +215,8 @@ final class PDFAnnotationSyncBridge: Sendable {
                     nativeHighlight.color = UIColor.systemYellow.withAlphaComponent(0.55)
                 }
                 nativeHighlight.contents = annotation.selectedText ?? annotation.noteText
+                nativeHighlight.shouldDisplay = true
+                nativeHighlight.shouldPrint = true
                 nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: bounds)
                 page.addAnnotation(nativeHighlight)
                 
@@ -277,18 +283,18 @@ final class PDFAnnotationSyncBridge: Sendable {
             for nativeAnn in page.annotations {
                 guard let type = nativeAnn.type else { continue }
                 
-                // Map native annotation types
+                // Map native annotation types (handling both standard and slash-prefixed strings)
                 var kind: Annotation.AnnotationKind? = nil
                 switch type {
-                case "Highlight":
+                case "Highlight", "/Highlight":
                     kind = .highlight
-                case "Underline":
+                case "Underline", "/Underline":
                     kind = .underline
-                case "StrikeOut":
+                case "StrikeOut", "/StrikeOut":
                     kind = .strikeOut
-                case "Text", "FreeText":
+                case "Text", "/Text", "FreeText", "/FreeText":
                     kind = .note
-                case "Ink":
+                case "Ink", "/Ink":
                     kind = .ink
                 default:
                     break

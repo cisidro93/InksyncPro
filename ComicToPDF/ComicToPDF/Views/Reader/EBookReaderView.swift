@@ -2103,6 +2103,14 @@ struct EBookWebReader: View {
             _scrollTimeout = setTimeout(function() {
                 updateMetrics();
             }, 50);
+        document.addEventListener('selectionchange', function() {
+            var sel = window.getSelection();
+            if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+                try {
+                    window.__lastSelectedRange = sel.getRangeAt(0).cloneRange();
+                    window.__lastSelectedText = sel.toString().trim();
+                } catch(e) {}
+            }
         });
 
         // ── Highlight & Markup Engine ─────────────────────────────────────────
@@ -2114,10 +2122,15 @@ struct EBookWebReader: View {
                 id = '';
             }
             var sel = window.getSelection();
-            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-            var text = sel.toString().trim();
+            var range = null;
+            if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+                range = sel.getRangeAt(0);
+            } else if (window.__lastSelectedRange) {
+                range = window.__lastSelectedRange;
+            }
+            if (!range) return;
+            var text = (sel && !sel.isCollapsed) ? sel.toString().trim() : (window.__lastSelectedText || (range.toString ? range.toString().trim() : ''));
             if (!text) return;
-            var range = sel.getRangeAt(0);
             var mark = document.createElement('mark');
             mark.className = 'inksync-highlight';
             if (id) mark.setAttribute('data-id', id);
@@ -2181,7 +2194,9 @@ struct EBookWebReader: View {
                     }
                 }
             }
-            sel.removeAllRanges();
+            try { sel.removeAllRanges(); } catch(e) {}
+            window.__lastSelectedRange = null;
+            window.__lastSelectedText = null;
             window.webkit.messageHandlers.highlight.postMessage(text);
         };
 

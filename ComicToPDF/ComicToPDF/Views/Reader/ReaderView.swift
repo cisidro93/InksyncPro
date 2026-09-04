@@ -1585,7 +1585,9 @@ struct PDFKitView: UIViewRepresentable {
                 let annotation = PDFAnnotation(bounds: unionBox, forType: .highlight, withProperties: nil)
                 annotation.color = UIColor.systemYellow.withAlphaComponent(0.45)
                 annotation.contents = selectedText
-                annotation.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                annotation.shouldDisplay = true
+                annotation.shouldPrint = true
+                annotation.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects)
                 page.addAnnotation(annotation)
             }
 

@@ -456,6 +456,13 @@ struct ProPDFReaderEngine: View {
                         activeSelectionSnapshot = snapshot
                     }
                 },
+                onHighlightRequested: {
+                    if let text = selectedTextForHUD ?? pdfViewReference?.currentSelection?.string,
+                       !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        saveMarkup(text: text, color: EBookPreferences.shared.defaultHighlightColor, style: .highlight)
+                        selectedTextForHUD = nil
+                    }
+                },
                 onScaleChanged: { scale in
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         activeZoomScale = scale
@@ -1202,10 +1209,9 @@ struct ProPDFReaderEngine: View {
     /// 1. `activeSelectionSnapshot.lines` — captured at selection time; most accurate.
     /// 2. `pdfView.currentSelection.selectionsByLine()` — fallback if snapshot is nil.
     /// 3. `doc.findString(text)` — last resort text search.
-    ///
-    /// **No `quadrilateralPoints` are set.** Setting custom quad points that don't
-    /// exactly match PDFKit's internal glyph-level geometry produces invisible
-    /// annotations. PDFKit derives correct quad points from `bounds` automatically.
+    /// CRITICAL: Point-Free Swift 6 & Apple PDFKit ISO 32000-1 coordinate standard.
+    /// Quadrilateral points are computed in native PDF page space in standard Z-pattern
+    /// (Top-Left, Top-Right, Bottom-Left, Bottom-Right) matching glyph geometry.
     private func saveMarkup(text: String, color: PDFHighlightColor, style: AnnotationMarkupStyle = .highlight) {
         // Build the RGBA UIColor directly — never via hex round-trip which can
         // silently collapse HSL saturation for colors like Emerald or Electric Blue.
@@ -1247,7 +1253,9 @@ struct ProPDFReaderEngine: View {
                     let ann = PDFAnnotation(bounds: unionBox, forType: nativeType, withProperties: nil)
                     ann.color = highlightColor
                     ann.contents = text
-                    ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                    ann.shouldDisplay = true
+                    ann.shouldPrint = true
+                    ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects)
                     page.addAnnotation(ann)
                     didAddNative = true
                 }
@@ -1278,7 +1286,9 @@ struct ProPDFReaderEngine: View {
                 let ann = PDFAnnotation(bounds: unionBox, forType: nativeType, withProperties: nil)
                 ann.color = highlightColor
                 ann.contents = text
-                ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                ann.shouldDisplay = true
+                ann.shouldPrint = true
+                ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects)
                 page.addAnnotation(ann)
                 didAddNative = true
             }
@@ -1306,7 +1316,9 @@ struct ProPDFReaderEngine: View {
                 let ann = PDFAnnotation(bounds: unionBox, forType: nativeType, withProperties: nil)
                 ann.color = highlightColor
                 ann.contents = text
-                ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                ann.shouldDisplay = true
+                ann.shouldPrint = true
+                ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects)
                 page.addAnnotation(ann)
                 didAddNative = true
                 break
@@ -1326,6 +1338,8 @@ struct ProPDFReaderEngine: View {
                 let ann = PDFAnnotation(bounds: rect, forType: nativeType, withProperties: nil)
                 ann.color = highlightColor
                 ann.contents = text
+                ann.shouldDisplay = true
+                ann.shouldPrint = true
                 ann.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: rect)
                 page.addAnnotation(ann)
                 didAddNative = true
@@ -1586,6 +1600,31 @@ struct PDFSelectionSnapshot: Sendable {
     let normalizedBounds: CodableCGRect?
 }
 
+// MARK: - Native iOS Contextual Menu Integration
+/// ProPDFHighlightableView injects native "Highlight" into the iOS text-selection UIEditMenu
+/// so users selecting text on iPad see "Highlight" right above their selection in addition to the HUD.
+class ProPDFHighlightableView: PDFView {
+    var onHighlightRequested: (() -> Void)?
+
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        let highlightCmd = UICommand(title: "Highlight", action: #selector(applyHighlightFromMenu(_:)))
+        let menu = UIMenu(title: "Inksync", options: .displayInline, children: [highlightCmd])
+        builder.insertSibling(menu, afterMenu: .standardEdit)
+    }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(applyHighlightFromMenu(_:)) {
+            return currentSelection != nil
+        }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    @objc func applyHighlightFromMenu(_ sender: Any?) {
+        onHighlightRequested?()
+    }
+}
+
 // MARK: - UIViewRepresentable for Vector PDFKit View
 struct ProPDFViewRepresentable: UIViewRepresentable {
     let pdf: ConvertedPDF
@@ -1598,11 +1637,15 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     var onNextPage: () -> Void
     var onTapCenter: () -> Void
     var onTextSelectionChanged: (String?, PDFSelectionSnapshot?) -> Void
+    var onHighlightRequested: (() -> Void)? = nil
     var onScaleChanged: ((CGFloat) -> Void)? = nil
     var onHyperlinkSelected: ((Int, PDFPage) -> Void)? = nil
 
     func makeUIView(context: Context) -> PDFView {
-        let pdfView = PDFView()
+        let pdfView = ProPDFHighlightableView()
+        pdfView.onHighlightRequested = { [weak coordinator = context.coordinator] in
+            coordinator?.handleNativeHighlightAction()
+        }
         pdfView.delegate = context.coordinator
         // Horizontal paging feels most natural for a reader app on iOS
         pdfView.displayDirection = .horizontal
@@ -1805,6 +1848,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         init(_ parent: ProPDFViewRepresentable) {
             self.parent = parent
+        }
+
+        @MainActor func handleNativeHighlightAction() {
+            parent.onHighlightRequested?()
         }
 
         /// Proximity-assisted word snapping so finger and Apple Pencil touches
