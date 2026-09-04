@@ -48,20 +48,25 @@ public struct AppBuildInfo: Sendable {
     
     // MARK: - Update Lifecycle Tracking
     
-    private static let lastSeenBuildKey = "Inksync_LastSeenBuildNumber_v1"
+    private static let lastSeenBuildKey = "Inksync_LastSeenBuildKey_v2"
+    
+    /// Unique identifier for this exact build deployment
+    public static var uniqueBuildFingerprint: String {
+        "\(version).\(buildNumber).\(shortCommitSHA)"
+    }
     
     /// Checks if this is the first launch after installing a new build
     @MainActor
     public static var isNewBuildAfterUpdate: Bool {
         let lastSeen = UserDefaults.standard.string(forKey: lastSeenBuildKey)
-        // If never set or different, it is a new build
+        // If never set or different from current build fingerprint, it is a new build
         guard let lastSeen = lastSeen else { return true }
-        return lastSeen != buildNumber && buildNumber != "Dev"
+        return lastSeen != uniqueBuildFingerprint
     }
     
     /// Marks the current build as acknowledged by the user
     @MainActor
     public static func markCurrentBuildAsSeen() {
-        UserDefaults.standard.set(buildNumber, forKey: lastSeenBuildKey)
+        UserDefaults.standard.set(uniqueBuildFingerprint, forKey: lastSeenBuildKey)
     }
 }

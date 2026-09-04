@@ -807,6 +807,10 @@ struct ModernLibraryView: View {
                     }
                 }
             }
+        case .whatsNew:
+            WhatsNewInBuildSheet {
+                AppRouter.shared.dismissSheet()
+            }
         }
     }
     

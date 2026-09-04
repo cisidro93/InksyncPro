@@ -23,6 +23,7 @@ enum LibrarySheetDestination: Identifiable {
     case metadataSpreadsheet([ConvertedPDF])
     case virtualOmnibusEditor(VirtualOmnibus?, initialFileIDs: [UUID] = [], suggestedName: String = "", parentSeriesID: String? = nil)
     case controlCenter
+    case whatsNew
     
     var id: String {
         switch self {
@@ -48,6 +49,7 @@ enum LibrarySheetDestination: Identifiable {
         case .metadataSpreadsheet: return "metadataSpreadsheet"
         case .virtualOmnibusEditor(let o, let ids, let name, let parentId): return "virtualOmnibusEditor_\(o?.id.uuidString ?? "new")_\(ids.count)_\(name)_\(parentId ?? "none")"
         case .controlCenter: return "controlCenter"
+        case .whatsNew: return "whatsNew"
         }
     }
 }

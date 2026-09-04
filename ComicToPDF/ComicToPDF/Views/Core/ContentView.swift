@@ -49,7 +49,6 @@ struct ContentView: View {
     @State private var activeToast: ToastMessage? = nil
     
     @State private var isAppLoading = true
-    @State private var showingWhatsNew = false
     @State private var isLogoBreathing = false
     @State private var isLogoMorphComplete = false
 
@@ -227,6 +226,10 @@ struct ContentView: View {
                     try? await Task.sleep(for: .seconds(0.85))
                     withAnimation(.easeOut(duration: 0.25)) {
                         isLogoMorphComplete = true
+                    }
+                    if AppBuildInfo.isNewBuildAfterUpdate {
+                        Logger.shared.log("Startup: auto-presenting What's New sheet for build \(AppBuildInfo.formattedBadge)", category: "Lifecycle", type: .info)
+                        AppRouter.shared.presentSheet(.whatsNew)
                     }
                 }
             }
@@ -433,16 +436,6 @@ struct ContentView: View {
             .presentationDetents([.large])
             .presentationCornerRadius(32)
             .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $showingWhatsNew) {
-            WhatsNewInBuildSheet()
-        }
-        .onChange(of: isAppLoading) { _, loading in
-            if !loading && AppBuildInfo.isNewBuildAfterUpdate {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    showingWhatsNew = true
-                }
-            }
         }
         .environmentObject(router)
     }
