@@ -1319,9 +1319,7 @@ private func computeColumnCount(for size: CGSize) -> Int {
                                         self.activeHighlightToEdit = sdAnnotation
                                     },
                                     onHighlightTapped: { tappedText in
-                                        let storeAnns = AnnotationStore.shared.annotations(for: pdf.id)
-                                        if let match = storeAnns.first(where: { $0.id.uuidString == tappedText || ($0.selectedText ?? "").contains(tappedText) || tappedText.contains($0.selectedText ?? "") }),
-                                           let sdMatch = try? modelContext.fetch(FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.id == match.id })).first {
+                                        if let sdMatch = findMatchingAnnotation(tappedText: tappedText) {
                                             withAnimation(.easeInOut(duration: 0.18)) {
                                                 activeHighlightToEdit = sdMatch
                                             }
@@ -1761,6 +1759,18 @@ private func computeColumnCount(for size: CGSize) -> Int {
         }
     }
 
+    private func findMatchingAnnotation(tappedText: String) -> SDAnnotation? {
+        let storeAnns = AnnotationStore.shared.annotations(for: pdf.id)
+        guard let match = storeAnns.first(where: { ann in
+            if ann.id.uuidString == tappedText { return true }
+            guard let text = ann.selectedText, !text.isEmpty else { return false }
+            return text.contains(tappedText) || tappedText.contains(text)
+        }) else { return nil }
+        
+        let matchID = match.id
+        let descriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.id == matchID })
+        return try? modelContext.fetch(descriptor).first
+    }
 
     // MARK: - Navigation helpers
 
