@@ -1433,46 +1433,7 @@ private func computeColumnCount(for size: CGSize) -> Int {
                     }
                 }
             
-            ReaderChrome(
-                title: pdf.name,
-                pageText: {
-                    let label = vm.tocItems[safe: vm.currentChapterIndex]?.label.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    let displayLabel = !label.isEmpty ? label : "Section \(vm.currentChapterIndex + 1)"
-                    return "Page \(chapterPage + 1) of \(max(1, chapterTotalPages))  •  \(displayLabel)"
-                }(),
-                isVisible: $chromeVisible,
-                onBack: onDismiss,
-                onBookmark: {
-                    let rawLabel = vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
-                    let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
-                    let bookmark = Annotation(pdfID: pdf.id, pageIndex: vm.currentChapterIndex, chapterTitle: spineLabel, kind: .bookmark, createdAt: Date(), modifiedAt: Date())
-                    AnnotationStore.shared.add(bookmark)
-                },
-                onSettingsToggle: {
-                    withAnimation { showTypographyHUD = true }
-                },
-                isSettingsActive: showTypographyHUD,
-                onTOCToggle: { showTOC = true },
-                onAnnotationsToggle: { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) },
-                onSearchToggle: { showTOC = true },
-                currentProgress: currentProgressBinding,
-                totalPages: vm.chapterHtmlFiles.count,
-                onJumpToPage: {
-                    jumpToPageText = ""
-                    showJumpToPage = true
-                },
-                hasCopyAction: true,
-                onCopyToggle: {
-                    webViewReference?.evaluateJavaScript("document.body.innerText") { result, _ in
-                        if let text = result as? String, !text.isEmpty {
-                            UIPasteboard.general.string = text
-                            showToastMessage("Chapter copied to clipboard")
-                            Haptics.shared.playImpact(style: .light)
-                        }
-                    }
-                },
-                sessionStartTime: sessionStartTime
-            )
+            readerChromeView
 
             if !chromeVisible {
                 KindleProgressFooterView(
@@ -1770,6 +1731,53 @@ private func computeColumnCount(for size: CGSize) -> Int {
         let matchID = match.id
         let descriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.id == matchID })
         return try? modelContext.fetch(descriptor).first
+    }
+
+    private var bookPageStatusText: String {
+        let label = vm.tocItems[safe: vm.currentChapterIndex]?.label.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let displayLabel = !label.isEmpty ? label : "Section \(vm.currentChapterIndex + 1)"
+        let total = max(1, chapterTotalPages)
+        return "Page \(chapterPage + 1) of \(total)  •  \(displayLabel)"
+    }
+
+    @ViewBuilder
+    private var readerChromeView: some View {
+        ReaderChrome(
+            title: pdf.name,
+            pageText: bookPageStatusText,
+            isVisible: $chromeVisible,
+            onBack: onDismiss,
+            onBookmark: {
+                let rawLabel = vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
+                let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
+                let bookmark = Annotation(pdfID: pdf.id, pageIndex: vm.currentChapterIndex, chapterTitle: spineLabel, kind: .bookmark, createdAt: Date(), modifiedAt: Date())
+                AnnotationStore.shared.add(bookmark)
+            },
+            onSettingsToggle: {
+                withAnimation { showTypographyHUD = true }
+            },
+            isSettingsActive: showTypographyHUD,
+            onTOCToggle: { showTOC = true },
+            onAnnotationsToggle: { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) },
+            onSearchToggle: { showTOC = true },
+            currentProgress: currentProgressBinding,
+            totalPages: vm.chapterHtmlFiles.count,
+            onJumpToPage: {
+                jumpToPageText = ""
+                showJumpToPage = true
+            },
+            hasCopyAction: true,
+            onCopyToggle: {
+                webViewReference?.evaluateJavaScript("document.body.innerText") { result, _ in
+                    if let text = result as? String, !text.isEmpty {
+                        UIPasteboard.general.string = text
+                        showToastMessage("Chapter copied to clipboard")
+                        Haptics.shared.playImpact(style: .light)
+                    }
+                }
+            },
+            sessionStartTime: sessionStartTime
+        )
     }
 
     // MARK: - Navigation helpers
