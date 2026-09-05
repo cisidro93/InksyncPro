@@ -1756,7 +1756,6 @@ private func computeColumnCount(for size: CGSize) -> Int {
             onSettingsToggle: {
                 withAnimation { showTypographyHUD = true }
             },
-            isSettingsActive: showTypographyHUD,
             onTOCToggle: { showTOC = true },
             onAnnotationsToggle: { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) },
             onSearchToggle: { showTOC = true },
@@ -1776,6 +1775,7 @@ private func computeColumnCount(for size: CGSize) -> Int {
                     }
                 }
             },
+            isSettingsActive: showTypographyHUD,
             sessionStartTime: sessionStartTime
         )
     }
