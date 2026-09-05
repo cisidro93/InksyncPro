@@ -287,6 +287,8 @@ struct ProPDFReaderEngine: View {
                     showingOutlineDrawer = false
                 }
             )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingInspector) {
             ProDocumentInspectorView(
@@ -300,6 +302,8 @@ struct ProPDFReaderEngine: View {
                     showingInspector = false
                 }
             )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingPageManager) {
             PDFPageManagerGridView(
@@ -312,9 +316,13 @@ struct ProPDFReaderEngine: View {
                     showingPageManager = false
                 }
             )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingSettings) {
             EBookSettingsPanel(bookID: pdf.id.uuidString, isPDF: true)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showCropAdjustmentSheet) {
             ProCropAdjustmentSheet(
@@ -326,6 +334,8 @@ struct ProPDFReaderEngine: View {
                 },
                 onDismiss: { showCropAdjustmentSheet = false }
             )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openManualCropEditor)) { _ in
             showCropAdjustmentSheet = true

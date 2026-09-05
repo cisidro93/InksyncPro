@@ -36,7 +36,7 @@ struct EBookSettingsPanel: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 // ── Live Preview Strip ────────────────────────────────────────
                 if !isPDF || prefs.pdfReflowMode {
@@ -1173,7 +1173,7 @@ private struct ColorPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 32) {
                 ColorPicker(title, selection: Binding(
                     get: { Color(hex: hex) },

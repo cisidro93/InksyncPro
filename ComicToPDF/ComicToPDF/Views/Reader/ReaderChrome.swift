@@ -417,9 +417,19 @@ struct ReaderChrome: View {
                         )
                     }
 
+                    if let onCharacterMap = onCharacterMapToggle {
+                        chromeButton(
+                            icon: "square.stack.3d.up.badge.a",
+                            label: "Character Map & Study",
+                            active: false,
+                            activeColor: .white,
+                            action: onCharacterMap
+                        )
+                    }
+
                     chromeButton(
-                        icon: isSettingsActive ? "slider.horizontal.3" : "ellipsis",
-                        label: "Reader Settings",
+                        icon: isSettingsActive ? "slider.horizontal.3" : "textformat.size",
+                        label: "Appearance & Layout",
                         active: isSettingsActive,
                         activeColor: .white,
                         badgeText: isSettingsActive ? currentModeLabel : nil,
@@ -433,7 +443,7 @@ struct ReaderChrome: View {
         .clipShape(Capsule())
         .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
-        .frame(maxWidth: hSizeClass == .regular ? 760 : .infinity)  // constrain on iPad
+        .frame(maxWidth: hSizeClass == .regular ? 860 : .infinity)  // constrain on iPad
         .padding(.horizontal, hSizeClass == .regular ? 32 : 16)
         .padding(.top, 8)
     }

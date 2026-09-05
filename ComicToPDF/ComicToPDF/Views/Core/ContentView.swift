@@ -51,6 +51,7 @@ struct ContentView: View {
     @State private var isAppLoading = true
     @State private var isLogoBreathing = false
     @State private var isLogoMorphComplete = false
+    @State private var showingWhatsNewSheet = false
 
     var body: some View {
         GeometryReader { geo in
@@ -229,10 +230,20 @@ struct ContentView: View {
                     }
                     if AppBuildInfo.isNewBuildAfterUpdate {
                         Logger.shared.log("Startup: auto-presenting What's New sheet for build \(AppBuildInfo.formattedBadge)", category: "Lifecycle", type: .info)
-                        AppRouter.shared.presentSheet(.whatsNew)
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            showingWhatsNewSheet = true
+                        }
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showingWhatsNewSheet) {
+            WhatsNewInBuildSheet {
+                showingWhatsNewSheet = false
+                AppRouter.shared.dismissSheet()
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(item: $conversionManager.pendingSeriesGroup) { group in
             SeriesGroupingSheet(
