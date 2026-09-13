@@ -504,7 +504,7 @@ struct ReaderView: View {
                                             )
                                             AnnotationStore.shared.add(highlight)
                                             if let doc = loadedPDFDocument {
-                                                PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdfID, in: doc, at: fileURL)
+                                                PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdfID, in: doc, at: fileURL, force: true)
                                             }
                                         }
                                     }

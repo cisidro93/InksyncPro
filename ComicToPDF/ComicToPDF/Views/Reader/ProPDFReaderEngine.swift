@@ -433,7 +433,7 @@ struct ProPDFReaderEngine: View {
     private func handleDisappear() {
         saveReadingProgress()
         if let doc = pdfDocument {
-            PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc)
+            PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc, at: resolvedURL)
         }
         loadTask?.cancel()
         zoomPillTask?.cancel()
@@ -633,7 +633,7 @@ struct ProPDFReaderEngine: View {
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
                 saveReadingProgress()
                 if let doc = pdfDocument {
-                    PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc)
+                    PDFAnnotationSyncBridge.shared.syncStoreToDocument(for: pdf.id, in: doc, at: resolvedURL)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .readerJumpToPage)) { notification in

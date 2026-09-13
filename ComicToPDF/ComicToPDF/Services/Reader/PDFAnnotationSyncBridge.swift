@@ -2,6 +2,7 @@ import Foundation
 import PDFKit
 import PencilKit
 import SwiftUI
+import UIKit
 
 // MARK: - Native PDF Annotation Interoperability Bridge
 
@@ -12,8 +13,19 @@ final class PDFAnnotationSyncBridge {
     
     static let shared = PDFAnnotationSyncBridge()
     private var pendingDebounceTasks: [UUID: Task<Void, Never>] = [:]
+    private var dirtyPDFs: Set<UUID> = []
     
     init() {}
+    
+    /// Marks a document dirty so its annotations will be serialized to disk on save.
+    func markDirty(_ pdfID: UUID) {
+        dirtyPDFs.insert(pdfID)
+    }
+
+    /// Checks if a document has unsaved annotation mutations.
+    func isDirty(_ pdfID: UUID) -> Bool {
+        return dirtyPDFs.contains(pdfID)
+    }
     
     // MARK: - Apply Inksync Annotations to Live PDFDocument
     
@@ -214,15 +226,16 @@ final class PDFAnnotationSyncBridge {
     /// Defers PDF binary serialization to a trailing background task after user interactions cease.
     func scheduleDebouncedDiskSync(for pdfID: UUID, in document: PDFDocument, at destinationURL: URL? = nil) {
         guard let targetURL = destinationURL ?? document.documentURL else { return }
+        markDirty(pdfID)
         
         pendingDebounceTasks[pdfID]?.cancel()
         pendingDebounceTasks[pdfID] = Task { @MainActor [weak self, weak document] in
             do {
                 try await Task.sleep(nanoseconds: 3_000_000_000)
                 guard !Task.isCancelled else { return }
-                self?.pendingDebounceTasks.removeValue(forKey: pdfID)
-                guard let doc = document else { return }
-                Self.serializeAndWrite(document: doc, targetURL: targetURL)
+                guard let self = self, let doc = document else { return }
+                self.pendingDebounceTasks.removeValue(forKey: pdfID)
+                self.syncStoreToDocument(for: pdfID, in: doc, at: targetURL)
             } catch {
                 // Task cancelled
             }
@@ -230,22 +243,32 @@ final class PDFAnnotationSyncBridge {
     }
     
     /// Synchronizes all in-memory and SwiftData annotations from `AnnotationStore` directly into the live `PDFDocument`
-    /// and writes the updated document back to disk immediately.
-    func syncStoreToDocument(for pdfID: UUID, in document: PDFDocument, at destinationURL: URL? = nil) {
+    /// and offloads writing the updated document back to disk to a background utility queue without freezing the MainActor.
+    func syncStoreToDocument(for pdfID: UUID, in document: PDFDocument, at destinationURL: URL? = nil, force: Bool = false) {
         pendingDebounceTasks[pdfID]?.cancel()
         pendingDebounceTasks.removeValue(forKey: pdfID)
         
+        guard force || dirtyPDFs.contains(pdfID) else {
+            Logger.shared.log("PDFAnnotationSync: Document \(pdfID) has no unsaved changes. Skipping redundant disk write.", category: "PDF")
+            return
+        }
+        dirtyPDFs.remove(pdfID)
+        
         applyStoreAnnotations(for: pdfID, to: document)
         guard let targetURL = destinationURL ?? document.documentURL else { return }
-        Self.serializeAndWrite(document: document, targetURL: targetURL)
+        Self.serializeAndWriteAsync(document: document, targetURL: targetURL, pdfID: pdfID)
     }
 
     @MainActor
-    private static func serializeAndWrite(document: PDFDocument, targetURL: URL) {
+    private static func serializeAndWriteAsync(document: PDFDocument, targetURL: URL, pdfID: UUID) {
         let didAccess = targetURL.startAccessingSecurityScopedResource()
-        defer { if didAccess { targetURL.stopAccessingSecurityScopedResource() } }
-        document.write(to: targetURL)
-        Logger.shared.log("PDFAnnotationSync: Persisted PDF with annotations to disk at \(targetURL.lastPathComponent)", category: "PDF", type: .success)
+        let op = BackgroundWriteOperation(
+            document: document,
+            targetURL: targetURL,
+            pdfID: pdfID,
+            didAccessSecurityScope: didAccess
+        )
+        op.start()
     }
 
     // MARK: - Export Inksync Annotations to Native PDFDocument
@@ -471,6 +494,56 @@ final class PDFAnnotationSyncBridge {
         
         Logger.shared.log("PDFAnnotationSync: Successfully wrote annotated PDF to \(destinationURL.path)", category: "PDF", type: .success)
         return destinationURL
+    }
+}
+
+// MARK: - Asynchronous Background Disk Writer
+
+private final class BackgroundWriteOperation: @unchecked Sendable {
+    private static let serialQueue = DispatchQueue(label: "com.antigravity.InksyncPro.pdfDiskWriteQueue", qos: .utility)
+    
+    let document: PDFDocument
+    let targetURL: URL
+    let pdfID: UUID
+    let didAccessSecurityScope: Bool
+    var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+
+    init(document: PDFDocument, targetURL: URL, pdfID: UUID, didAccessSecurityScope: Bool) {
+        self.document = document
+        self.targetURL = targetURL
+        self.pdfID = pdfID
+        self.didAccessSecurityScope = didAccessSecurityScope
+    }
+
+    func start() {
+        self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "InksyncPDFSync_\(pdfID.uuidString)") { [weak self] in
+            self?.end()
+        }
+
+        Self.serialQueue.async { [weak self] in
+            guard let self = self else { return }
+            defer {
+                if self.didAccessSecurityScope {
+                    self.targetURL.stopAccessingSecurityScopedResource()
+                }
+                self.end()
+            }
+
+            let writeSuccess = self.document.write(to: self.targetURL)
+            if writeSuccess {
+                Logger.shared.log("PDFAnnotationSync: Persisted PDF with annotations to disk at \(self.targetURL.lastPathComponent)", category: "PDF", type: .success)
+            } else {
+                Logger.shared.log("PDFAnnotationSync: Background write failed for \(self.targetURL.lastPathComponent)", category: "PDF", type: .warning)
+            }
+        }
+    }
+
+    private func end() {
+        DispatchQueue.main.async {
+            guard self.backgroundTaskID != .invalid else { return }
+            UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
+            self.backgroundTaskID = .invalid
+        }
     }
 }
 
