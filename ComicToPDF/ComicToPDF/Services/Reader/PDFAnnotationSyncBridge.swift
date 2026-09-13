@@ -95,25 +95,27 @@ final class PDFAnnotationSyncBridge {
                     }
                 }
                 
-                // Fallback only if bounds missing: search text scoped to this single page
+                // Fallback only if bounds missing: search text scoped strictly to this single page (never full document)
                 if let text = annotation.selectedText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    let matches = page.document?.findString(text, withOptions: .caseInsensitive) ?? []
-                    for match in matches where match.pages.contains(page) {
-                        let lines = match.selectionsByLine()
-                        let targetLines = lines.isEmpty ? [match] : lines
-                        let validRects = targetLines.compactMap { $0.bounds(for: page) }.filter { $0 != .zero && $0.width > 2 && $0.height > 2 }
-                        guard !validRects.isEmpty else { continue }
-                        
-                        let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
-                        let nativeHighlight = PDFAnnotation(bounds: unionBox, forType: nativeType, withProperties: nil)
-                        nativeHighlight.userName = annotation.id.uuidString
-                        nativeHighlight.color = highlightColor
-                        nativeHighlight.contents = text
-                        nativeHighlight.shouldDisplay = true
-                        nativeHighlight.shouldPrint = true
-                        nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
-                        page.addAnnotation(nativeHighlight)
-                        break // first matching instance on page
+                    let pageText = page.string ?? ""
+                    if let range = pageText.range(of: text, options: .caseInsensitive) {
+                        let nsRange = NSRange(range, in: pageText)
+                        if let pageSel = page.selection(for: nsRange) {
+                            let lines = pageSel.selectionsByLine()
+                            let targetLines = lines.isEmpty ? [pageSel] : lines
+                            let validRects = targetLines.compactMap { $0.bounds(for: page) }.filter { $0 != .zero && $0.width > 2 && $0.height > 2 }
+                            if !validRects.isEmpty {
+                                let unionBox = PDFHighlightGeometryHelper.unionBounds(for: validRects)
+                                let nativeHighlight = PDFAnnotation(bounds: unionBox, forType: nativeType, withProperties: nil)
+                                nativeHighlight.userName = annotation.id.uuidString
+                                nativeHighlight.color = highlightColor
+                                nativeHighlight.contents = text
+                                nativeHighlight.shouldDisplay = true
+                                nativeHighlight.shouldPrint = true
+                                nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
+                                page.addAnnotation(nativeHighlight)
+                            }
+                        }
                     }
                 }
                 
@@ -228,35 +230,20 @@ final class PDFAnnotationSyncBridge {
     }
     
     /// Synchronizes all in-memory and SwiftData annotations from `AnnotationStore` directly into the live `PDFDocument`
-    /// and writes the updated document back to disk immediately (e.g. on view exit or document export).
+    /// and writes the updated document back to disk immediately without blocking the MainActor.
     func syncStoreToDocument(for pdfID: UUID, in document: PDFDocument, at destinationURL: URL? = nil) {
         pendingDebounceTasks[pdfID]?.cancel()
         pendingDebounceTasks.removeValue(forKey: pdfID)
         
         applyStoreAnnotations(for: pdfID, to: document)
         guard let targetURL = destinationURL ?? document.documentURL else { return }
-        Self.serializeAndWrite(document: document, targetURL: targetURL)
-    }
-    
-    @MainActor
-    private static func serializeAndWrite(document: PDFDocument, targetURL: URL) {
-        // Serialize PDF to Sendable Data on MainActor when system is idle, then offload disk I/O to background Task
-        guard let pdfData = document.dataRepresentation() else {
+        
+        // Background write so UI dismiss / return to library is instantaneous (<1ms)
+        DispatchQueue.global(qos: .utility).async {
             let didAccess = targetURL.startAccessingSecurityScopedResource()
             defer { if didAccess { targetURL.stopAccessingSecurityScopedResource() } }
             document.write(to: targetURL)
-            return
-        }
-        
-        Task.detached(priority: .utility) {
-            let didAccess = targetURL.startAccessingSecurityScopedResource()
-            defer { if didAccess { targetURL.stopAccessingSecurityScopedResource() } }
-            do {
-                try pdfData.write(to: targetURL, options: .atomic)
-                Logger.shared.log("PDFAnnotationSync: Persisted PDF with annotations to disk at \(targetURL.lastPathComponent)", category: "PDF", type: .success)
-            } catch {
-                Logger.shared.log("PDFAnnotationSync: Failed writing to disk at \(targetURL.lastPathComponent): \(error.localizedDescription)", category: "PDF", type: .error)
-            }
+            Logger.shared.log("PDFAnnotationSync: Persisted PDF with annotations to disk at \(targetURL.lastPathComponent)", category: "PDF", type: .success)
         }
     }
 
@@ -373,12 +360,28 @@ final class PDFAnnotationSyncBridge {
     /// Scans a `PDFDocument` for third-party native annotations (Acrobat, Preview, Edge)
     /// and imports them into InkSync Pro's `AnnotationStore`.
     @MainActor
-    func importNativeAnnotations(from document: PDFDocument, for pdfID: UUID) -> [Annotation] {
+    func importNativeAnnotations(from document: PDFDocument, for pdfID: UUID, preferredPageIndex: Int? = nil) async -> [Annotation] {
         var imported: [Annotation] = []
         let existingIDs = Set(AnnotationStore.shared.annotations(for: pdfID).map { $0.id })
+        let totalPages = document.pageCount
+        guard totalPages > 0 else { return [] }
         
-        for pageIndex in 0..<document.pageCount {
+        // Prioritize active page and immediate neighbors first so reader opens in <50ms
+        var pagesToProcess: [Int] = []
+        if let preferred = preferredPageIndex, preferred >= 0, preferred < totalPages {
+            pagesToProcess.append(preferred)
+            if preferred > 0 { pagesToProcess.append(preferred - 1) }
+            if preferred + 1 < totalPages { pagesToProcess.append(preferred + 1) }
+        }
+        let remaining = (0..<totalPages).filter { !pagesToProcess.contains($0) }
+        pagesToProcess.append(contentsOf: remaining)
+        
+        for (step, pageIndex) in pagesToProcess.enumerated() {
+            if step > 0 && step % 15 == 0 {
+                await Task.yield()
+            }
             guard let page = document.page(at: pageIndex) else { continue }
+            guard !page.annotations.isEmpty else { continue }
             let pageBounds = page.bounds(for: .cropBox)
             
             for nativeAnn in page.annotations {

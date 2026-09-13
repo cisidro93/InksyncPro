@@ -40,6 +40,7 @@ struct FloatingReaderClockOverlay: View {
             .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
             .padding(.top, 6)
             .onAppear {
+                UIDevice.current.isBatteryMonitoringEnabled = true
                 updateTimeAndBattery()
             }
             .onReceive(timer) { _ in
@@ -48,12 +49,15 @@ struct FloatingReaderClockOverlay: View {
         }
     }
     
-    private func updateTimeAndBattery() {
+    private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
-        currentTimeString = formatter.string(from: Date())
+        return formatter
+    }()
+    
+    private func updateTimeAndBattery() {
+        currentTimeString = Self.timeFormatter.string(from: Date())
         
-        UIDevice.current.isBatteryMonitoringEnabled = true
         let batteryLevel = UIDevice.current.batteryLevel
         if batteryLevel >= 0 {
             batteryPercentageString = "\(Int(batteryLevel * 100))%"

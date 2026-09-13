@@ -1282,12 +1282,10 @@ struct EBookReaderView: View {
                         onHighlight: { color in
                             EBookPreferences.shared.defaultHighlightColor = color
                             applyHighlight(text: selectedText, colorHex: color.rawValue, symbol: nil, style: .highlight)
-                            selectedTextForHUD = nil
                         },
                         onMarkup: { color, style in
                             EBookPreferences.shared.defaultHighlightColor = color
                             applyHighlight(text: selectedText, colorHex: color.rawValue, symbol: nil, style: style)
-                            selectedTextForHUD = nil
                         },
                         onUnhighlight: {
                             unhighlightInEPUB(text: selectedText)

@@ -53,49 +53,26 @@ struct UnifiedReaderView: View {
     /// In-reader engine switcher state (allows switching between ProPDF, Comic, and EBook engines on the fly)
     @State private var activeEngineOverride: ContentType? = nil
 
-    /// Deep inspection helper to verify if the file is a PDF (extension, title, bookmark, or %PDF binary header)
+    /// Fast, non-blocking check to verify if the file is a PDF (extension, title, or book content type)
     private var isPDFDocument: Bool {
         let ext = pdf.url.pathExtension.lowercased()
         if ext == "pdf" || pdf.name.lowercased().hasSuffix(".pdf") || pdf.metadata.title.lowercased().hasSuffix(".pdf") {
             return true
         }
         
-        let resolvedURL: URL
-        var accessedURL: URL? = nil
-        if case .linked(let bm) = pdf.sourceMode,
-           let url = try? BookmarkResolver.shared.resolve(bm) {
-            let didAccess = url.startAccessingSecurityScopedResource()
-            resolvedURL = url
-            if didAccess { accessedURL = url }
-        } else {
-            let sandboxURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
-            let didAccess = sandboxURL.startAccessingSecurityScopedResource()
-            resolvedURL = sandboxURL
-            if didAccess { accessedURL = sandboxURL }
-        }
-        defer { accessedURL?.stopAccessingSecurityScopedResource() }
-        
-        if resolvedURL.pathExtension.lowercased() == "pdf" || resolvedURL.lastPathComponent.lowercased().hasSuffix(".pdf") {
-            return true
-        }
-        
-        if let handle = try? FileHandle(forReadingFrom: resolvedURL) {
-            defer { try? handle.close() }
-            if let data = try? handle.read(upToCount: 5),
-               let str = String(data: data, encoding: .ascii), str.hasPrefix("%PDF") {
-                return true
-            }
-        }
-        
-        // Memory-mapped byte buffer fallback (bypasses sandbox filehandle lockouts)
-        if let data = try? Data(contentsOf: resolvedURL, options: .alwaysMapped), data.count >= 4 {
-            if data.prefix(4) == Data([0x25, 0x50, 0x44, 0x46]) {
-                return true
-            }
+        // Fast-path exclusion for non-PDF archive types
+        if ext == "epub" || ext == "cbz" || ext == "cbr" || ext == "cb7" || ext == "zip" || ext == "rar" {
+            return false
         }
         
         // If content type is explicitly .book and file is not an EPUB archive, it is a PDF book
         if pdf.contentType == .book && ext != "epub" && !pdf.name.lowercased().hasSuffix(".epub") {
+            return true
+        }
+        
+        // URL path extension check on sanitized path
+        let resolvedPath = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString).pathExtension.lowercased()
+        if resolvedPath == "pdf" {
             return true
         }
         

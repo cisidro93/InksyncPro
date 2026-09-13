@@ -30,8 +30,14 @@ final class PassthroughPKCanvasView: PKCanvasView {
         guard isMarkupActive else { return nil }
         guard let view = super.hitTest(point, with: event) else { return nil }
         
-        // Always allow touch when in eraser mode so fingers can erase strokes
-        if InksyncInkingState.shared.activeToolMode == .eraser {
+        let currentMode = InksyncInkingState.shared.activeToolMode
+        // When in highlight glide or read mode, touches pass down to PDFView for fluid text selection & reading
+        if currentMode == .textHighlight || currentMode == .read {
+            return nil
+        }
+
+        // Always allow touch when in eraser mode so fingers or pencil can erase strokes
+        if currentMode == .eraser {
             return view
         }
         
@@ -39,15 +45,10 @@ final class PassthroughPKCanvasView: PKCanvasView {
             return view
         }
         
-        // If touches are present in the event:
+        // When finger drawing is off (pencil-only mode on iPad):
         if let touches = event?.allTouches, !touches.isEmpty {
             let hasStylus = touches.contains { $0.type == .pencil || $0.type == .stylus }
-            if hasStylus {
-                return view
-            } else {
-                // Direct finger touches pass directly through to PDFView below
-                return nil
-            }
+            return hasStylus ? view : nil
         }
         
         return view

@@ -1,36 +1,23 @@
 import SwiftUI
 import QuartzCore
 
+/// ProMotion support modifier.
+///
+/// Native 120Hz ProMotion responsiveness for gestures, scrolling, PencilKit inking,
+/// and animations is natively unlocked via `CADisableMinimumFrameDurationOnPhone` in Info.plist.
+/// We intentionally avoid running a continuous background `CADisplayLink` with `minimum: 80`
+/// because doing so prevents Apple Silicon GPUs from downclocking the display to 10Hz/24Hz
+/// when viewing static content, which leads to severe thermal heating and rapid battery drain.
 public struct ProMotionFrameRateModifier: ViewModifier {
-    @State private var displayLink: CADisplayLink?
-
     public init() {}
 
     public func body(content: Content) -> some View {
         content
-            .onAppear {
-                // Invalidate existing display link if onAppear is called repeatedly to prevent memory leaks
-                displayLink?.invalidate()
-                
-                let link = CADisplayLink(target: FrameRateTracker(), selector: #selector(FrameRateTracker.dummy))
-                if #available(iOS 15.0, *) {
-                    link.preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
-                }
-                link.add(to: .main, forMode: .common)
-                self.displayLink = link
-            }
-            .onDisappear {
-                displayLink?.invalidate()
-                displayLink = nil
-            }
-    }
-
-    private class FrameRateTracker: NSObject {
-        @objc func dummy() {}
     }
 }
 
 extension View {
+    /// Enables adaptive 120Hz ProMotion interaction while allowing Apple Silicon to downclock to 10Hz/24Hz when idle.
     public func forceProMotion() -> some View {
         self.modifier(ProMotionFrameRateModifier())
     }

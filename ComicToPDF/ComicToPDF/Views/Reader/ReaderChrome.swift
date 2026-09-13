@@ -200,7 +200,7 @@ struct ReaderChrome: View {
             // ── Divider ────────────────────────────────────────────────────────
             chromeDivider
 
-            if let startTime = sessionStartTime {
+            if isVisible, let startTime = sessionStartTime {
                 SessionTimerView(startTime: startTime)
                 
                 chromeDivider

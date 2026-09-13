@@ -69,6 +69,9 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         guard pageIdx >= 0 else { return nil }
 
         let canvas = PassthroughPKCanvasView()
+        let pageBounds = page.bounds(for: .cropBox)
+        canvas.frame = pageBounds
+        canvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         canvas.overrideUserInterfaceStyle = .light
         canvas.pageIndex = pageIdx
         canvas.associatedPage = page
@@ -142,13 +145,16 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
     private func configureCanvasPolicy(_ canvas: PassthroughPKCanvasView) {
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let pencilOnly = isPad && AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
-        let isEraser = InksyncInkingState.shared.activeToolMode == .eraser
+        let currentMode = InksyncInkingState.shared.activeToolMode
+        let isWriting = currentMode == .write
+        let isEraser = currentMode == .eraser
+        let shouldBeActive = isMarkupActive || isWriting || isEraser
 
         canvas.overrideUserInterfaceStyle = .light
-        canvas.isMarkupActive = isMarkupActive
-        canvas.allowFingerDrawing = isMarkupActive && (!pencilOnly || isEraser)
+        canvas.isMarkupActive = shouldBeActive
+        canvas.allowFingerDrawing = shouldBeActive && (!pencilOnly || isEraser)
         canvas.drawingPolicy = (pencilOnly && !isEraser) ? .pencilOnly : .anyInput
-        canvas.isUserInteractionEnabled = isMarkupActive
+        canvas.isUserInteractionEnabled = shouldBeActive
         canvas.drawingGestureRecognizer.cancelsTouchesInView = false
         if pencilOnly && !isEraser {
             canvas.panGestureRecognizer.isEnabled = false

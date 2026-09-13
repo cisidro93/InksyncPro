@@ -133,9 +133,9 @@ struct ProPDFTextSelectionHUD: View {
 
     @State private var showingNoteInput = false
     @State private var noteText = ""
-    @State private var hoveredSymbolLabel: String? = nil
-    @State private var showingLegendPopover = false
+    @State private var showingMorePopover = false
     @State private var selectedMarkupStyle: AnnotationMarkupStyle = .highlight
+    @State private var activeColor: PDFHighlightColor = EBookPreferences.shared.defaultHighlightColor
 
     private let marginaliaSymbols = [
         (symbol: "?", label: "Question / Needs Clarification", shortLabel: "Question"),
@@ -147,59 +147,292 @@ struct ProPDFTextSelectionHUD: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            // Marginalia Symbol Bar Header with Active Label
-            VStack(spacing: 4) {
-                HStack(spacing: 8) {
-                    Text("MARGINALIA (ADLER SHORTHAND)")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.white.opacity(0.5))
-                        .tracking(0.8)
-                    Spacer()
-                    
-                    if let label = hoveredSymbolLabel {
-                        Text(label)
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.inkOrange)
-                            .transition(.opacity)
-                    } else {
+            // Main Kindle-inspired Floating Capsule Bar
+            HStack(spacing: 8) {
+                // Color swatches (Kindle direct color picker)
+                HStack(spacing: 5) {
+                    ForEach(PDFHighlightColor.allCases) { color in
                         Button {
-                            showingLegendPopover.toggle()
+                            HapticEngine.selection()
+                            activeColor = color
+                            EBookPreferences.shared.defaultHighlightColor = color
+                            if let onMarkup = onMarkup {
+                                onMarkup(color, selectedMarkupStyle)
+                            } else {
+                                onHighlight(color)
+                            }
                         } label: {
-                            Image(systemName: "questionmark.circle.fill")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color.white.opacity(0.6))
+                            ZStack {
+                                Circle()
+                                    .fill(color.color)
+                                    .frame(width: 20, height: 20)
+                                    .shadow(color: color.color.opacity(0.45), radius: 2)
+
+                                if activeColor == color {
+                                    Circle()
+                                        .stroke(Color.white, lineWidth: 2)
+                                        .frame(width: 25, height: 25)
+                                }
+                            }
+                            .frame(width: 28, height: 28)
+                            .contentShape(Circle())
                         }
                         .buttonStyle(.plain)
-                        .popover(isPresented: $showingLegendPopover) {
-                            marginaliaLegendPopover
+                        .accessibilityLabel("Highlight \(color.displayName)")
+                    }
+                }
+                .padding(.leading, 6)
+
+                Divider()
+                    .frame(height: 18)
+                    .background(Color.white.opacity(0.25))
+                    .padding(.horizontal, 2)
+
+                // Action Icons
+                HStack(spacing: 6) {
+                    // Note
+                    Button {
+                        HapticEngine.light()
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                            showingNoteInput.toggle()
                         }
+                    } label: {
+                        Image(systemName: showingNoteInput ? "note.text.badge.plus" : "note.text")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(showingNoteInput ? Color.inkOrange : Color.white)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add Note")
+                    .help("Add Note")
+
+                    // Delete / Unhighlight
+                    if let onUnhighlight = onUnhighlight {
+                        Button {
+                            HapticEngine.medium()
+                            onUnhighlight()
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color.red.opacity(0.9))
+                                .frame(width: 32, height: 32)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove Highlight")
+                        .help("Remove Highlight")
+                    }
+
+                    // Copy
+                    Button {
+                        HapticEngine.light()
+                        UIPasteboard.general.string = selectedText
+                        onCopy()
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Copy")
+                    .help("Copy text")
+
+                    // Define (Dictionary)
+                    Button {
+                        HapticEngine.light()
+                        SystemDictionaryPresenter.shared.presentDefinition(for: selectedText)
+                    } label: {
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Define")
+                    .help("Define Word")
+
+                    // More Options (•••)
+                    Button {
+                        HapticEngine.light()
+                        showingMorePopover.toggle()
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("More Options")
+                    .help("More Options")
+                    .popover(isPresented: $showingMorePopover) {
+                        moreOptionsPopover
                     }
 
                     if let onDismiss = onDismiss {
+                        Divider()
+                            .frame(height: 18)
+                            .background(Color.white.opacity(0.25))
+
                         Button {
                             HapticEngine.light()
                             onDismiss()
                         } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Color.white.opacity(0.6))
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.7))
+                                .frame(width: 28, height: 32)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .help("Dismiss Selection")
-                        .accessibilityLabel("Dismiss Selection")
+                        .accessibilityLabel("Dismiss")
                     }
                 }
-                .padding(.horizontal, 14)
+                .padding(.trailing, 6)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .fill(Color.black.opacity(0.65))
+                    )
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(0.35), radius: 10, y: 5)
+            )
 
-                HStack(spacing: 12) {
+            // Expandable Inline Note Input
+            if showingNoteInput {
+                HStack(spacing: 8) {
+                    TextField("Add a note to this highlight...", text: $noteText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, weight: .medium))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(Color.white.opacity(0.15), lineWidth: 0.8)
+                        )
+                        .foregroundColor(.white)
+
+                    Button {
+                        let trimmed = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            onAddNote(trimmed)
+                        }
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            showingNoteInput = false
+                            noteText = ""
+                        }
+                    } label: {
+                        Text("Save")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundColor(.inkGreen)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Color.inkGreen.opacity(0.2), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            showingNoteInput = false
+                            noteText = ""
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white.opacity(0.6))
+                            .padding(7)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(Color.black.opacity(0.7))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                )
+                .transition(.asymmetric(
+                    insertion: .scale(scale: 0.95).combined(with: .opacity).combined(with: .move(edge: .top)),
+                    removal: .opacity.combined(with: .scale(scale: 0.95))
+                ))
+            }
+        }
+    }
+
+    private var moreOptionsPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Style Picker (Highlight, Underline, Strikethrough)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("STYLE")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .tracking(0.8)
+
+                HStack(spacing: 8) {
+                    ForEach(AnnotationMarkupStyle.allCases) { style in
+                        Button {
+                            HapticEngine.selection()
+                            selectedMarkupStyle = style
+                            onMarkup?(activeColor, style)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: style.icon)
+                                    .font(.system(size: 11, weight: selectedMarkupStyle == style ? .bold : .medium))
+                                Text(style.displayName)
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                            }
+                            .foregroundColor(selectedMarkupStyle == style ? .inkOrange : .white.opacity(0.75))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(
+                                selectedMarkupStyle == style
+                                    ? Color.inkOrange.opacity(0.2)
+                                    : Color.white.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Divider()
+                .background(Color.white.opacity(0.15))
+
+            // Adlerian Marginalia Shorthand Symbols
+            VStack(alignment: .leading, spacing: 6) {
+                Text("MARGINALIA (ADLER SHORTHAND)")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .tracking(0.8)
+
+                HStack(spacing: 8) {
                     ForEach(marginaliaSymbols, id: \.symbol) { item in
                         Button {
                             HapticEngine.light()
-                            hoveredSymbolLabel = item.shortLabel
                             onAddMarginaliaSymbol?(item.symbol)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                withAnimation { hoveredSymbolLabel = nil }
-                            }
+                            showingMorePopover = false
                         } label: {
                             VStack(spacing: 2) {
                                 Text(item.symbol)
@@ -207,7 +440,7 @@ struct ProPDFTextSelectionHUD: View {
                                     .foregroundColor(.white)
                                     .frame(width: 26, height: 26)
                                     .background(Color.white.opacity(0.12), in: Circle())
-                                
+
                                 Text(item.shortLabel)
                                     .font(.system(size: 8, weight: .semibold, design: .rounded))
                                     .foregroundColor(Color.white.opacity(0.6))
@@ -216,337 +449,48 @@ struct ProPDFTextSelectionHUD: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(item.label)
-                        .help(item.label)
                     }
                 }
             }
-            .padding(.top, 8)
 
-            // Range Adjustment Bar: Shrink/Expand Start and End Points
-            if onAdjustStart != nil || onAdjustEnd != nil {
-                HStack(spacing: 12) {
-                    // Start Point Stepper
-                    HStack(spacing: 3) {
-                        Text("START")
-                            .font(.system(size: 8, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.5))
-                            .padding(.trailing, 2)
-                        
-                        Button {
-                            HapticEngine.selection()
-                            onAdjustStart?(-1) // shrink start
-                        } label: {
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 20, height: 18)
-                                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Shrink Start")
-                        .help("Shrink selection start")
-
-                        Button {
-                            HapticEngine.selection()
-                            onAdjustStart?(1) // expand start
-                        } label: {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 20, height: 18)
-                                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Expand Start")
-                        .help("Expand selection start")
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.06), in: Capsule())
-
-                    Text(selectedText.prefix(28) + (selectedText.count > 28 ? "…" : ""))
-                        .font(.system(size: 10, weight: .medium, design: .serif))
-                        .foregroundStyle(Color.white.opacity(0.85))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: 140)
-
-                    // End Point Stepper
-                    HStack(spacing: 3) {
-                        Text("END")
-                            .font(.system(size: 8, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.5))
-                            .padding(.trailing, 2)
-                        
-                        Button {
-                            HapticEngine.selection()
-                            onAdjustEnd?(-1) // shrink end
-                        } label: {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 20, height: 18)
-                                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Shrink End")
-                        .help("Shrink selection end")
-
-                        Button {
-                            HapticEngine.selection()
-                            onAdjustEnd?(1) // expand end
-                        } label: {
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 20, height: 18)
-                                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Expand End")
-                        .help("Expand selection end")
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.06), in: Capsule())
-                }
-                .padding(.vertical, 2)
-            }
-
-            if showingNoteInput {
-                HStack(spacing: 8) {
-                    TextField("Add a note to this selection...", text: $noteText)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.black.opacity(0.4))
-                        .cornerRadius(8)
-                        .foregroundColor(.white)
-
-                    Button(action: {
-                        let trimmed = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmed.isEmpty {
-                            onAddNote(trimmed)
-                        }
-                        showingNoteInput = false
-                        noteText = ""
-                    }) {
-                        Text("Save")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.inkGreen)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.inkGreen.opacity(0.15))
-                            .cornerRadius(8)
-                    }
-
-                    Button(action: {
-                        showingNoteInput = false
-                        noteText = ""
-                    }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.white.opacity(0.6))
-                            .padding(8)
-                    }
-                }
-                .padding(8)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else {
-                HStack(spacing: 10) {
-                    // Markup Style Selector (Highlight, Underline, Strikethrough)
-                    HStack(spacing: 4) {
-                        ForEach(AnnotationMarkupStyle.allCases) { style in
-                            Button(action: {
-                                HapticEngine.selection()
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                                    selectedMarkupStyle = style
-                                }
-                            }) {
-                                Image(systemName: style.icon)
-                                    .font(.system(size: 11, weight: selectedMarkupStyle == style ? .bold : .medium))
-                                    .foregroundColor(selectedMarkupStyle == style ? .inkOrange : .white.opacity(0.65))
-                                    .frame(width: 24, height: 24)
-                                    .background(
-                                        selectedMarkupStyle == style
-                                            ? Color.inkOrange.opacity(0.2)
-                                            : Color.white.opacity(0.08),
-                                        in: RoundedRectangle(cornerRadius: 6)
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(style.displayName)
-                        }
-                    }
-                    .padding(2)
-                    .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-
-                    Divider()
-                        .frame(height: 18)
-                        .background(Color.white.opacity(0.2))
-
-                    // Color Pickers
-                    HStack(spacing: 6) {
-                        ForEach(PDFHighlightColor.allCases) { highlightColor in
-                            Button(action: {
-                                HapticEngine.selection()
-                                if let onMarkup = onMarkup {
-                                    onMarkup(highlightColor, selectedMarkupStyle)
-                                } else {
-                                    onHighlight(highlightColor)
-                                }
-                            }) {
-                                ZStack {
-                                    Circle()
-                                        .fill(highlightColor.color)
-                                        .frame(width: 22, height: 22)
-                                        .shadow(color: highlightColor.color.opacity(0.5), radius: 3)
-                                        .overlay(
-                                            Circle()
-                                                .stroke(Color.white.opacity(0.85), lineWidth: 1.5)
-                                        )
-                                }
-                                .frame(width: 32, height: 32)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    Divider()
-                        .frame(height: 18)
-                        .background(Color.white.opacity(0.2))
-
-                    if let onUnhighlight = onUnhighlight {
-                        Button(action: {
-                            HapticEngine.medium()
-                            onUnhighlight()
-                        }) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.red.opacity(0.18))
-                                    .frame(width: 24, height: 24)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color.red.opacity(0.6), lineWidth: 1)
-                                    )
-                                Image(systemName: "eraser.fill")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(.red)
-                            }
-                            .frame(width: 32, height: 32)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Unhighlight")
-                        .help("Unhighlight / Remove Highlight")
-
-                        Divider()
-                            .frame(height: 18)
-                            .background(Color.white.opacity(0.2))
-                    }
-
-                    // Action Buttons
-                    HStack(spacing: 10) {
-                        Button(action: {
-                            HapticEngine.light()
-                            showingNoteInput = true
-                        }) {
-                            Label("Note", systemImage: "note.text")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-
-                        Button(action: {
-                            HapticEngine.light()
-                            SystemDictionaryPresenter.shared.presentDefinition(for: selectedText)
-                        }) {
-                            Label("Define", systemImage: "book.closed")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-
-                        Button(action: {
-                            HapticEngine.light()
-                            UIPasteboard.general.string = selectedText
-                            onCopy()
-                        }) {
-                            Image(systemName: "doc.on.doc")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-
-                        Button(action: {
-                            HapticEngine.light()
-                            onSpeak(selectedText)
-                        }) {
-                            Image(systemName: "speaker.wave.2.fill")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-
-                        Button(action: {
-                            HapticEngine.medium()
-                            onCreateZettelkastenCard(selectedText)
-                        }) {
-                            Label("Zettel", systemImage: "brain.head.profile")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.inkGreen)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.inkGreen.opacity(0.2))
-                                .cornerRadius(6)
-                        }
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-            }
-        }
-
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
-        )
-    }
-
-    private var marginaliaLegendPopover: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("Adlerian Marginalia Symbols", systemImage: "book.pages")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.inkOrange)
-                Spacer()
-            }
             Divider()
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(marginaliaSymbols, id: \.symbol) { item in
-                    HStack(spacing: 8) {
-                        Text(item.symbol)
-                            .font(.system(size: 14, weight: .bold))
+                .background(Color.white.opacity(0.15))
+
+            // Actions: Speak & Zettelkasten
+            VStack(spacing: 6) {
+                Button {
+                    HapticEngine.light()
+                    showingMorePopover = false
+                    onSpeak(selectedText)
+                } label: {
+                    HStack {
+                        Label("Read Aloud", systemImage: "speaker.wave.2.fill")
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.white)
-                            .frame(width: 24, height: 24)
-                            .background(Color.white.opacity(0.15), in: Circle())
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(item.shortLabel)
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white)
-                            Text(item.label)
-                                .font(.caption2)
-                                .foregroundColor(.white.opacity(0.7))
-                        }
+                        Spacer()
                     }
+                    .padding(.vertical, 4)
                 }
+                .buttonStyle(.plain)
+
+                Button {
+                    HapticEngine.medium()
+                    showingMorePopover = false
+                    onCreateZettelkastenCard(selectedText)
+                } label: {
+                    HStack {
+                        Label("Create Zettelkasten Card", systemImage: "brain.head.profile")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.inkGreen)
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(14)
-        .frame(width: 260)
+        .frame(width: 280)
         .background(Color(hex: "#1A1A24"))
     }
 }

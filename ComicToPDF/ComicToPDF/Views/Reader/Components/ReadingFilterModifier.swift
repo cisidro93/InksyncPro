@@ -124,62 +124,43 @@ struct PDFThemeAndFilterModifier: ViewModifier {
             content
 
         case .parchment:
-            // High-grade warm book paper (#FBF7EF)
+            // High-grade warm book paper (#FBF7EF) - non-destructive
             content
                 .colorMultiply(Color(hex: "#FBF7EF"))
 
         case .sepia:
-            // Calming warm sepia reading tone (#F8F0E3)
+            // Calming warm sepia reading tone (#F8F0E3) - non-destructive
             content
                 .colorMultiply(Color(hex: "#F8F0E3"))
 
         case .slate:
-            // Dark navy slate mode
-            if !isPencilMode {
-                content
-                    .colorInvert()
-                    .hueRotation(.degrees(180))
-                    .colorMultiply(Color(hex: "#C5D8EA"))
-            } else {
-                // In pencil mode, restore true document colors to guarantee accurate inking
-                content
-            }
+            // Cool calming slate paper tone (#E2EAF2) - non-destructive, soothing on the eyes
+            content
+                .colorMultiply(Color(hex: "#E2EAF2"))
 
         case .night:
-            // Comfortable dark mode
-            if !isPencilMode {
-                content
-                    .colorInvert()
-                    .hueRotation(.degrees(180))
-                    .contrast(0.95)
-                    .brightness(-0.04)
-            } else {
-                content
-            }
+            // Comfortable dark mode - persistent across reading and markup mode
+            content
+                .colorInvert()
+                .hueRotation(.degrees(180))
+                .contrast(0.95)
+                .brightness(-0.04)
 
         case .oled:
-            // Pure black OLED mode
-            if !isPencilMode {
-                content
-                    .colorInvert()
-                    .hueRotation(.degrees(180))
-                    .contrast(1.1)
-            } else {
-                content
-            }
+            // Pure black OLED mode - persistent across reading and markup mode
+            content
+                .colorInvert()
+                .hueRotation(.degrees(180))
+                .contrast(1.1)
 
         case .custom:
             let bgHex = EBookPreferences.shared.customThemeBg
             let isDarkCustom = theme.isDark
             if isDarkCustom {
-                if !isPencilMode {
-                    content
-                        .colorInvert()
-                        .hueRotation(.degrees(180))
-                        .colorMultiply(Color(hex: bgHex))
-                } else {
-                    content
-                }
+                content
+                    .colorInvert()
+                    .hueRotation(.degrees(180))
+                    .colorMultiply(Color(hex: bgHex))
             } else {
                 content
                     .colorMultiply(Color(hex: bgHex))
