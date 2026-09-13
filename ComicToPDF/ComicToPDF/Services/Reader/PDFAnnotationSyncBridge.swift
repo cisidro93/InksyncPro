@@ -230,21 +230,22 @@ final class PDFAnnotationSyncBridge {
     }
     
     /// Synchronizes all in-memory and SwiftData annotations from `AnnotationStore` directly into the live `PDFDocument`
-    /// and writes the updated document back to disk immediately without blocking the MainActor.
+    /// and writes the updated document back to disk immediately.
     func syncStoreToDocument(for pdfID: UUID, in document: PDFDocument, at destinationURL: URL? = nil) {
         pendingDebounceTasks[pdfID]?.cancel()
         pendingDebounceTasks.removeValue(forKey: pdfID)
         
         applyStoreAnnotations(for: pdfID, to: document)
         guard let targetURL = destinationURL ?? document.documentURL else { return }
-        
-        // Background write so UI dismiss / return to library is instantaneous (<1ms)
-        DispatchQueue.global(qos: .utility).async {
-            let didAccess = targetURL.startAccessingSecurityScopedResource()
-            defer { if didAccess { targetURL.stopAccessingSecurityScopedResource() } }
-            document.write(to: targetURL)
-            Logger.shared.log("PDFAnnotationSync: Persisted PDF with annotations to disk at \(targetURL.lastPathComponent)", category: "PDF", type: .success)
-        }
+        Self.serializeAndWrite(document: document, targetURL: targetURL)
+    }
+
+    @MainActor
+    private static func serializeAndWrite(document: PDFDocument, targetURL: URL) {
+        let didAccess = targetURL.startAccessingSecurityScopedResource()
+        defer { if didAccess { targetURL.stopAccessingSecurityScopedResource() } }
+        document.write(to: targetURL)
+        Logger.shared.log("PDFAnnotationSync: Persisted PDF with annotations to disk at \(targetURL.lastPathComponent)", category: "PDF", type: .success)
     }
 
     // MARK: - Export Inksync Annotations to Native PDFDocument

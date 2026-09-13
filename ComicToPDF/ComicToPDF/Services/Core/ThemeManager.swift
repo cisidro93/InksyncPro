@@ -17,15 +17,16 @@ enum AppearanceMode: String, CaseIterable, Identifiable, Codable {
 }
 
 // MARK: - Reader Canvas Theme Tokens
-public struct ReaderCanvasThemeTokens: Sendable {
-    public let pageTint: Color?
-    public let canvasBackground: Color
-    public let gutterColor: Color
-    public let isDark: Bool
+struct ReaderCanvasThemeTokens: Sendable {
+    let pageTint: Color?
+    let canvasBackground: Color
+    let gutterColor: Color
+    let isDark: Bool
 }
 
-public enum ReaderCanvasTheme {
-    public static func tokens(for theme: EBookTheme) -> ReaderCanvasThemeTokens {
+@MainActor
+enum ReaderCanvasTheme {
+    static func tokens(for theme: EBookTheme) -> ReaderCanvasThemeTokens {
         switch theme {
         case .paper:
             return ReaderCanvasThemeTokens(
@@ -81,8 +82,9 @@ public enum ReaderCanvasTheme {
     }
 }
 
-class ThemeManager: ObservableObject {
-    public static let shared = ThemeManager()
+@MainActor
+final class ThemeManager: ObservableObject {
+    static let shared = ThemeManager()
     @AppStorage("selectedTheme") var selectedTheme: AppearanceMode = .system
 }
 

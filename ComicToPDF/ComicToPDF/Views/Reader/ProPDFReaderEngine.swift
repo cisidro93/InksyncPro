@@ -2756,13 +2756,6 @@ class ProPDFHighlightableView: PDFView {
         return super.canPerformAction(action, withSender: sender)
     }
 
-    @available(iOS 16.0, *)
-    override func editMenu(for textRange: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
-        if InksyncInkingState.shared.activeToolMode == .textHighlight {
-            return nil
-        }
-        return super.editMenu(for: textRange, suggestedActions: suggestedActions)
-    }
 
     @objc func applyHighlightFromMenu(_ sender: Any?) {
         onHighlightRequested?()
