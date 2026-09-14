@@ -1023,14 +1023,15 @@ extension EBookPageCurlReader {
             let currentMode = InksyncInkingState.shared.activeToolMode
             let isWriting = currentMode == .write
             let isEraser = currentMode == .eraser
-            let autoPenActive = !isPencilMode && isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
-            let shouldBeActive = (isPencilMode && (isWriting || isEraser)) || autoPenActive
+            let isColoring = InksyncInkingState.shared.isColoringModeActive
+            let autoPenActive = isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
+            let shouldBeActive = isWriting || isEraser || isColoring || isPencilMode || autoPenActive
 
             canvas.overrideUserInterfaceStyle = .light
             canvas.isMarkupActive = shouldBeActive
-            let allowFinger = (isPencilMode && !pencilOnlySetting) || isEraser
+            let allowFinger = !pencilOnlySetting || isEraser
             canvas.allowFingerDrawing = allowFinger
-            canvas.drawingPolicy = (isPad && !allowFinger) ? .pencilOnly : .anyInput
+            canvas.drawingPolicy = (isPad && pencilOnlySetting && !allowFinger) ? .pencilOnly : .anyInput
             canvas.isUserInteractionEnabled = shouldBeActive
             canvas.drawingGestureRecognizer.cancelsTouchesInView = false
             canvas.isScrollEnabled = false
@@ -1529,32 +1530,64 @@ extension EBookPageCurlReader {
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 guard let self = self, let bgWV = bgWV, !Task.isCancelled else { return }
 
-                let maxPages = min(totalPages, 12)
-                for page in 1..<maxPages {
+                let isDual = self.isDualPageMode
+                let step = isDual ? 2 : 1
+                let maxPages = min(totalPages, 16)
+                var page = step
+
+                while page < maxPages {
                     guard !Task.isCancelled, !self.isTransitioning else { break }
-                    if self.pageSnapshots[page] != nil { continue }
+                    let targetPage = page
+                    let leftIdx = page
+                    let rightIdx = page + 1
 
-                    await withCheckedContinuation { continuation in
-                        bgWV.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(page), false);") { _, _ in
-                            continuation.resume()
-                        }
-                    }
-
-                    try? await Task.sleep(nanoseconds: 60_000_000)
-                    guard !Task.isCancelled, !self.isTransitioning else { break }
-
-                    let snapshotConfig = WKSnapshotConfiguration()
-                    snapshotConfig.rect = bgWV.bounds
-                    snapshotConfig.afterScreenUpdates = true
-
-                    await withCheckedContinuation { continuation in
-                        bgWV.takeSnapshot(with: snapshotConfig) { [weak self] image, _ in
-                            if let img = image, let self = self {
-                                self.pageSnapshots[page] = img
+                    if self.pageSnapshots[leftIdx] == nil || (isDual && rightIdx < totalPages && self.pageSnapshots[rightIdx] == nil) {
+                        await withCheckedContinuation { continuation in
+                            bgWV.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage), false);") { _, _ in
+                                continuation.resume()
                             }
-                            continuation.resume()
+                        }
+
+                        try? await Task.sleep(nanoseconds: 60_000_000)
+                        guard !Task.isCancelled, !self.isTransitioning else { break }
+
+                        let snapshotConfig = WKSnapshotConfiguration()
+                        snapshotConfig.rect = bgWV.bounds
+                        snapshotConfig.afterScreenUpdates = true
+
+                        await withCheckedContinuation { continuation in
+                            bgWV.takeSnapshot(with: snapshotConfig) { [weak self] image, _ in
+                                guard let image = image, let self = self else {
+                                    continuation.resume()
+                                    return
+                                }
+                                if isDual, let cgImg = image.cgImage {
+                                    let scale = image.scale
+                                    let width = CGFloat(cgImg.width)
+                                    let height = CGFloat(cgImg.height)
+                                    let halfWidth = width / 2.0
+
+                                    let leftRect = CGRect(x: 0, y: 0, width: halfWidth, height: height)
+                                    let rightRect = CGRect(x: halfWidth, y: 0, width: halfWidth, height: height)
+
+                                    if let leftCg = cgImg.cropping(to: leftRect),
+                                       let rightCg = cgImg.cropping(to: rightRect) {
+                                        let leftImg = UIImage(cgImage: leftCg, scale: scale, orientation: image.imageOrientation)
+                                        let rightImg = UIImage(cgImage: rightCg, scale: scale, orientation: image.imageOrientation)
+                                        self.pageSnapshots[leftIdx] = leftImg
+                                        self.pageSnapshots[rightIdx] = rightImg
+                                    } else {
+                                        self.pageSnapshots[leftIdx] = image
+                                    }
+                                } else {
+                                    self.pageSnapshots[leftIdx] = image
+                                }
+                                continuation.resume()
+                            }
                         }
                     }
+
+                    page += step
                 }
 
                 bgWV.removeFromSuperview()
@@ -1804,8 +1837,7 @@ extension EBookPageCurlReader {
                 scroll-behavior: auto !important;
                 scroll-snap-type: none !important;
                 background-color: \(bgColor) !important;
-                overflow-x: scroll !important;
-                overflow-y: hidden !important;
+                overflow: hidden !important;
                 -webkit-overflow-scrolling: auto !important;
             }
             html::-webkit-scrollbar, body::-webkit-scrollbar {
@@ -1824,9 +1856,10 @@ extension EBookPageCurlReader {
                 line-height: \(lineHeight) !important;
                 text-align: \(textAlign) !important;
                 margin: 0 !important;
+                padding: 0 !important;
                 width: 100% !important;
                 height: 100% !important;
-                overflow: visible !important;
+                overflow: hidden !important;
                 background-color: transparent !important;
                 word-wrap: break-word;
                 -webkit-text-size-adjust: none;
@@ -1846,21 +1879,20 @@ extension EBookPageCurlReader {
                 margin: 0 !important;
                 box-sizing: border-box !important;
                 display: block !important;
-                position: relative !important;
+                position: absolute !important;
                 top: 0 !important; left: 0 !important;
                 padding-top: \(paddingTop)px !important;
                 padding-bottom: \(paddingBottom)px !important;
                 padding-left: \(m)px !important;
                 padding-right: \(m)px !important;
-                width: auto !important;
-                max-width: none !important;
+                width: 100% !important;
                 height: 100% !important;
                 max-height: 100% !important;
                 overflow: visible !important;
                 -webkit-user-select: text !important;
                 user-select: text !important;
                 \(pagedCSS)
-                /* No CSS transition — column jumps are instantaneous; animation belongs to UIPageViewController curl. */
+                will-change: transform;
             }
             #inksync-viewport div, #inksync-viewport section, #inksync-viewport article, #inksync-viewport main {
                 height: auto !important;
@@ -1945,6 +1977,7 @@ extension EBookPageCurlReader {
             var _totalPages = 1;
             var _isMultiCol = \(isMultiCol ? "true" : "false");
             var _isDarkTheme = \(isDarkTheme ? "true" : "false");
+            var _currentShift = 0;
 
             function getPageStep() {
                 var w = window.innerWidth || (document.documentElement ? document.documentElement.clientWidth : 0);
@@ -1956,29 +1989,20 @@ extension EBookPageCurlReader {
                 if (pageStep <= 0) return;
                 if (_targetPage >= 99999) return; // Wait for computeMetrics to resolve true total pages!
                 var spreadIndex = _isMultiCol ? Math.floor(_targetPage / 2) : _targetPage;
-                var targetX = spreadIndex * pageStep;
+                var shift = spreadIndex * pageStep;
+                _currentShift = shift;
 
-                if (animated === true) {
-                    window.scrollTo({ left: targetX, top: 0, behavior: 'smooth' });
-                } else {
-                    window.scrollTo(targetX, 0);
-                }
-                if (document.scrollingElement) {
-                    document.scrollingElement.scrollLeft = targetX;
-                    document.scrollingElement.scrollTop = 0;
-                }
-                if (document.documentElement) {
-                    document.documentElement.scrollLeft = targetX;
-                    document.documentElement.scrollTop = 0;
-                }
-                if (document.body) {
-                    document.body.scrollLeft = targetX;
-                    document.body.scrollTop = 0;
-                }
-                var vp = document.getElementById('inksync-viewport');
+                var vp = document.getElementById('inksync-viewport') || document.body;
                 if (vp) {
-                    vp.style.transform = 'none';
-                    vp.style.webkitTransform = 'none';
+                    if (animated === true) {
+                        vp.style.transition = 'transform 0.22s cubic-bezier(0.25, 1, 0.5, 1)';
+                        vp.style.webkitTransition = '-webkit-transform 0.22s cubic-bezier(0.25, 1, 0.5, 1)';
+                    } else {
+                        vp.style.transition = 'none';
+                        vp.style.webkitTransition = 'none';
+                    }
+                    vp.style.transform = 'translate3d(-' + shift + 'px, 0, 0)';
+                    vp.style.webkitTransform = 'translate3d(-' + shift + 'px, 0, 0)';
                 }
             }
 
@@ -2002,8 +2026,7 @@ extension EBookPageCurlReader {
                 var pageStep = getPageStep();
                 if (pageStep <= 0) return 1;
                 var vp = document.getElementById('inksync-viewport') || document.body;
-                var sv = document.scrollingElement || document.documentElement || document.body;
-                var scrollW = Math.max(vp ? vp.scrollWidth : 0, sv ? sv.scrollWidth : 0, document.body ? document.body.scrollWidth : 0);
+                var scrollW = vp ? vp.scrollWidth : 0;
 
                 // Precise document extent measurement across CSS columns in WebKit:
                 try {
@@ -2011,7 +2034,7 @@ extension EBookPageCurlReader {
                     range.selectNodeContents(vp);
                     var rects = range.getClientRects();
                     if (rects && rects.length > 0) {
-                        var currentShift = sv ? (sv.scrollLeft || window.pageXOffset || 0) : 0;
+                        var currentShift = _currentShift || 0;
                         var rightmost = 0;
                         for (var i = 0; i < rects.length; i++) {
                             var r = rects[i].right + currentShift;

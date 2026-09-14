@@ -139,6 +139,29 @@ public struct InksyncPenDockView: View {
             .padding(3)
             .background(Color.primary.opacity(0.06), in: Capsule())
 
+            // Digital Coloring Studio Toggle Button
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                    inkingState.isColoringModeActive.toggle()
+                    if inkingState.isColoringModeActive {
+                        inkingState.activeToolMode = .write
+                        showColorPalette = true
+                    }
+                }
+                HapticEngine.selection()
+            } label: {
+                Image(systemName: "paintpalette.fill")
+                    .font(.system(size: 13, weight: inkingState.isColoringModeActive ? .bold : .medium))
+                    .foregroundStyle(inkingState.isColoringModeActive ? Color.white : Color.secondary)
+                    .padding(6)
+                    .background(
+                        inkingState.isColoringModeActive ? Color.inkOrange : Color.clear,
+                        in: Circle()
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("Digital Coloring Studio (Preserve Lineart)")
+
             Divider()
                 .frame(height: 24)
                 .background(Color.secondary.opacity(0.3))
@@ -370,40 +393,43 @@ public struct InksyncPenDockView: View {
         .help("\(preset.name) (\(preset.color.displayName))")
     }
 
-    // MARK: - Calibrated 9-Color Palette Bar
+    // MARK: - Calibrated & Vibrant Artist Palette Bar
 
     private var colorPaletteBar: some View {
-        HStack(spacing: 10) {
-            ForEach(InksyncInkColor.allCases, id: \.self) { color in
-                let isSelected = inkingState.activePreset.color == color
-                Button {
-                    inkingState.updateActiveColor(color)
-                    HapticEngine.selection()
-                    withAnimation {
-                        showColorPalette = false
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(InksyncInkColor.allCases, id: \.self) { color in
+                    let isSelected = inkingState.activePreset.color == color
+                    Button {
+                        inkingState.updateActiveColor(color)
+                        HapticEngine.selection()
+                        withAnimation {
+                            showColorPalette = false
+                        }
+                    } label: {
+                        Circle()
+                            .fill(color.color)
+                            .frame(width: isSelected ? 28 : 22, height: isSelected ? 28 : 22)
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        color == .obsidian || color == .pureWhite
+                                            ? Color.primary.opacity(isSelected ? 0.9 : 0.4)
+                                            : Color.primary.opacity(isSelected ? 0.9 : 0.15),
+                                        lineWidth: isSelected ? 2.5 : 1
+                                    )
+                            )
+                            .shadow(color: color.color.opacity(isSelected ? 0.4 : 0.1), radius: 4, y: 2)
                     }
-                } label: {
-                    Circle()
-                        .fill(color.color)
-                        .frame(width: isSelected ? 28 : 22, height: isSelected ? 28 : 22)
-                        .overlay(
-                            Circle()
-                                .stroke(
-                                    color == .obsidian
-                                        ? Color.primary.opacity(isSelected ? 0.9 : 0.4)
-                                        : Color.primary.opacity(isSelected ? 0.9 : 0.15),
-                                    lineWidth: isSelected ? 2.5 : 1
-                                )
-                        )
-                        .shadow(color: color.color.opacity(isSelected ? 0.4 : 0.1), radius: 4, y: 2)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(color.displayName)
+                    .help(color.displayName)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(color.displayName)
-                .help(color.displayName)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .frame(maxWidth: 420)
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
@@ -415,7 +441,8 @@ public struct InksyncPenDockView: View {
     // MARK: - Width Slider Bar
 
     private var widthSliderBar: some View {
-        HStack(spacing: 14) {
+        let isWideTool = inkingState.activePreset.kind == .highlighter || inkingState.activePreset.kind == .watercolor || inkingState.activePreset.kind == .crayon
+        return HStack(spacing: 14) {
             Text("Fine")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
@@ -425,7 +452,7 @@ public struct InksyncPenDockView: View {
                     get: { Double(inkingState.activePreset.width) },
                     set: { inkingState.updateActiveWidth(CGFloat($0)) }
                 ),
-                in: inkingState.activePreset.kind == .highlighter ? 8.0...36.0 : 0.5...12.0,
+                in: isWideTool ? 4.0...36.0 : 0.5...16.0,
                 step: 0.5
             )
             .frame(width: 160)

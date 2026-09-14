@@ -3122,8 +3122,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let autoPencilActive = isPad && prefs.applePencilAutoDraw
 
-        let isCanvasMarkupActive = (isPencilMode && (currentToolMode == .write || currentToolMode == .eraser)) ||
-                                   (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
+        let isDrawing = (currentToolMode == .write || currentToolMode == .eraser || isPencilMode || inkingState.isColoringModeActive)
+        let isCanvasMarkupActive = isDrawing || (autoPencilActive && prefs.applePencilDefaultTool == "pen")
         if context.coordinator.canvasProvider.isMarkupActive != isCanvasMarkupActive {
             context.coordinator.canvasProvider.isMarkupActive = isCanvasMarkupActive
         }
@@ -3131,10 +3131,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             context.coordinator.canvasProvider.pdfID = pdf.id
         }
 
-        let isTextHighlightGlide = (isPencilMode && (currentToolMode == .textHighlight)) ||
-                                  (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "highlighter")
+        let isTextHighlightGlide = !isDrawing && (currentToolMode == .textHighlight || (autoPencilActive && prefs.applePencilDefaultTool == "highlighter"))
         let targetPencilGlide = isTextHighlightGlide
-        let targetFingerGlide = (isPencilMode && currentToolMode == .textHighlight) || (!isPencilMode)
+        let targetFingerGlide = isTextHighlightGlide
 
         if context.coordinator.pencilGlide?.isEnabled != targetPencilGlide {
             context.coordinator.pencilGlide?.isEnabled = targetPencilGlide
@@ -3322,18 +3321,18 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         }
 
         func updateInkingGestures(for mode: ReaderToolMode) {
-            let isDrawing = parent.isPencilMode && (mode == .write || mode == .eraser)
+            let inkingState = InksyncInkingState.shared
+            let isDrawing = (mode == .write || mode == .eraser || inkingState.isColoringModeActive)
             let prefs = EBookPreferences.shared
             let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let autoPenActive = !parent.isPencilMode && isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
+            let autoPenActive = isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
             let shouldBeActive = isDrawing || autoPenActive
 
             canvasProvider.isMarkupActive = shouldBeActive
 
-            let isPencilHighlight = (parent.isPencilMode && mode == .textHighlight) ||
-                                   (!parent.isPencilMode && isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "highlighter")
-            pencilGlide?.isEnabled = isPencilHighlight
-            fingerGlide?.isEnabled = (parent.isPencilMode && mode == .textHighlight) || (!parent.isPencilMode)
+            let isTextHighlightGlide = !isDrawing && mode == .textHighlight
+            pencilGlide?.isEnabled = isTextHighlightGlide
+            fingerGlide?.isEnabled = isTextHighlightGlide
         }
 
         deinit {

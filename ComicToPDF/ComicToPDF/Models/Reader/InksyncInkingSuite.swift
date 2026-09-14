@@ -8,6 +8,9 @@ public enum InkingToolKind: String, Codable, CaseIterable, Sendable {
     case fineliner   = "fineliner"
     case highlighter = "highlighter"
     case calligraphy = "calligraphy"
+    case watercolor  = "watercolor"
+    case crayon      = "crayon"
+    case pencil      = "pencil"
     case eraser      = "eraser"
 
     public var displayName: String {
@@ -16,6 +19,9 @@ public enum InkingToolKind: String, Codable, CaseIterable, Sendable {
         case .fineliner:   return "Fineliner"
         case .highlighter: return "Smart Highlighter"
         case .calligraphy: return "Calligraphy Brush"
+        case .watercolor:  return "Watercolor"
+        case .crayon:      return "Crayon"
+        case .pencil:      return "Colored Pencil"
         case .eraser:      return "Precision Eraser"
         }
     }
@@ -26,12 +32,15 @@ public enum InkingToolKind: String, Codable, CaseIterable, Sendable {
         case .fineliner:   return "pencil.line"
         case .highlighter: return "highlighter"
         case .calligraphy: return "paintbrush.pointed"
+        case .watercolor:  return "drop.fill"
+        case .crayon:      return "paintbrush"
+        case .pencil:      return "pencil"
         case .eraser:      return "eraser.fill"
         }
     }
 }
 
-// MARK: - Calibrated 9-Color Palette (reMarkable Inspired)
+// MARK: - Calibrated Palette & Digital Coloring Studio 20-Color Array
 
 public enum InksyncInkColor: String, Codable, CaseIterable, Sendable {
     case obsidian    = "#000000"
@@ -44,6 +53,19 @@ public enum InksyncInkColor: String, Codable, CaseIterable, Sendable {
     case violet      = "#BF5AF2"
     case sepia       = "#AC8E68"
 
+    // Digital Coloring Studio Vibrant Additions
+    case tangerine   = "#FF9500"
+    case coral       = "#FF6B6B"
+    case bubblegum   = "#FF2D55"
+    case lilac       = "#AF52DE"
+    case skyBlue     = "#5AC8FA"
+    case oceanTeal   = "#30B0C7"
+    case mint        = "#00C7BE"
+    case lime        = "#34C759"
+    case peach       = "#FFD1B3"
+    case warmBrown   = "#8B572A"
+    case pureWhite   = "#FFFFFF"
+
     public var displayName: String {
         switch self {
         case .obsidian:    return "Black"
@@ -55,6 +77,17 @@ public enum InksyncInkColor: String, Codable, CaseIterable, Sendable {
         case .honeyYellow: return "Honey Yellow"
         case .violet:      return "Violet"
         case .sepia:       return "Sepia"
+        case .tangerine:   return "Tangerine"
+        case .coral:       return "Coral"
+        case .bubblegum:   return "Bubblegum"
+        case .lilac:       return "Lilac"
+        case .skyBlue:     return "Sky Blue"
+        case .oceanTeal:   return "Ocean Teal"
+        case .mint:        return "Mint"
+        case .lime:        return "Lime"
+        case .peach:       return "Peach"
+        case .warmBrown:   return "Brown"
+        case .pureWhite:   return "White"
         }
     }
 
@@ -73,6 +106,17 @@ public enum InksyncInkColor: String, Codable, CaseIterable, Sendable {
         case .honeyYellow: return UIColor(red: 1.0, green: 0.839, blue: 0.039, alpha: 1.0)
         case .violet:      return UIColor(red: 0.749, green: 0.353, blue: 0.949, alpha: 1.0)
         case .sepia:       return UIColor(red: 0.675, green: 0.557, blue: 0.408, alpha: 1.0)
+        case .tangerine:   return UIColor(red: 1.0, green: 0.584, blue: 0.0, alpha: 1.0)
+        case .coral:       return UIColor(red: 1.0, green: 0.420, blue: 0.420, alpha: 1.0)
+        case .bubblegum:   return UIColor(red: 1.0, green: 0.176, blue: 0.333, alpha: 1.0)
+        case .lilac:       return UIColor(red: 0.686, green: 0.322, blue: 0.871, alpha: 1.0)
+        case .skyBlue:     return UIColor(red: 0.353, green: 0.784, blue: 0.980, alpha: 1.0)
+        case .oceanTeal:   return UIColor(red: 0.188, green: 0.690, blue: 0.780, alpha: 1.0)
+        case .mint:        return UIColor(red: 0.0, green: 0.780, blue: 0.745, alpha: 1.0)
+        case .lime:        return UIColor(red: 0.204, green: 0.780, blue: 0.349, alpha: 1.0)
+        case .peach:       return UIColor(red: 1.0, green: 0.820, blue: 0.702, alpha: 1.0)
+        case .warmBrown:   return UIColor(red: 0.545, green: 0.341, blue: 0.165, alpha: 1.0)
+        case .pureWhite:   return UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
         }
     }
 }
@@ -153,6 +197,15 @@ public final class InksyncInkingState: ObservableObject {
     @Published public var dockEdge: InksyncDockEdge = .bottom
     @Published public var eraserType: PKEraserTool.EraserType = .vector
 
+    /// Digital Coloring Studio Mode: activates transparent lineart preservation
+    /// and expands the inking toolbar to full artist palette + artist inking tools.
+    @Published public var isColoringModeActive: Bool = false {
+        didSet {
+            saveSettings()
+            NotificationCenter.default.post(name: NSNotification.Name("InksyncColoringModeChanged"), object: isColoringModeActive)
+        }
+    }
+
     public enum InksyncDockEdge: String, Codable, Sendable {
         case top, bottom, leading, trailing
     }
@@ -193,7 +246,13 @@ public final class InksyncInkingState: ObservableObject {
         activePreset.kind = newKind
         if newKind == .highlighter && activePreset.width < 10.0 {
             activePreset.width = 18.0
-        } else if newKind != .highlighter && activePreset.width > 8.0 {
+        } else if newKind == .watercolor && activePreset.width < 12.0 {
+            activePreset.width = 20.0
+        } else if newKind == .crayon && activePreset.width < 8.0 {
+            activePreset.width = 14.0
+        } else if newKind == .pencil && activePreset.width > 6.0 {
+            activePreset.width = 2.5
+        } else if newKind != .highlighter && newKind != .watercolor && newKind != .crayon && activePreset.width > 8.0 {
             activePreset.width = 2.0
         }
         if newKind == .eraser {
@@ -235,6 +294,20 @@ public final class InksyncInkingState: ObservableObject {
             return PKInkingTool(.marker, color: activePreset.color.uiColor, width: activePreset.width)
         case .calligraphy:
             return PKInkingTool(.pen, color: activePreset.color.uiColor, width: activePreset.width)
+        case .watercolor:
+            if #available(iOS 17.0, *) {
+                return PKInkingTool(.watercolor, color: activePreset.color.uiColor, width: activePreset.width)
+            } else {
+                return PKInkingTool(.marker, color: activePreset.color.uiColor.withAlphaComponent(0.6), width: activePreset.width)
+            }
+        case .crayon:
+            if #available(iOS 17.0, *) {
+                return PKInkingTool(.crayon, color: activePreset.color.uiColor, width: activePreset.width)
+            } else {
+                return PKInkingTool(.pencil, color: activePreset.color.uiColor, width: activePreset.width)
+            }
+        case .pencil:
+            return PKInkingTool(.pencil, color: activePreset.color.uiColor, width: activePreset.width)
         case .eraser:
             return PKEraserTool(eraserType)
         }
@@ -250,6 +323,7 @@ public final class InksyncInkingState: ObservableObject {
             UserDefaults.standard.set(activeData, forKey: "Inksync_ActiveInkingPreset_v1")
         }
         UserDefaults.standard.set(dockEdge.rawValue, forKey: "Inksync_DockEdge_v1")
+        UserDefaults.standard.set(isColoringModeActive, forKey: "Inksync_ColoringMode_v1")
     }
 
     private func loadSettings() {
@@ -275,5 +349,6 @@ public final class InksyncInkingState: ObservableObject {
            let edge = InksyncDockEdge(rawValue: edgeRaw) {
             self.dockEdge = edge
         }
+        self.isColoringModeActive = UserDefaults.standard.bool(forKey: "Inksync_ColoringMode_v1")
     }
 }

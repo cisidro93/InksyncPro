@@ -23,6 +23,7 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
     }
 
     private var pageCanvases: [ObjectIdentifier: PassthroughPKCanvasView] = [:]
+    private var pageOverlays: [ObjectIdentifier: ColoringPageOverlayView] = [:]
     private var loadedPages: Set<ObjectIdentifier> = []
     private var debounceSaveTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var cancellables = Set<AnyCancellable>()
@@ -54,13 +55,20 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
                 self?.updateAllCanvasTools()
             }
             .store(in: &cancellables)
+
+        InksyncInkingState.shared.$isColoringModeActive
+            .receive(on: RunLoop.main)
+            .sink { [weak self] isColoring in
+                self?.updateColoringMode(isColoring)
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Overlay View Provider Methods (MainActor)
 
     public func overlayView(for page: PDFPage) -> UIView? {
         let key = ObjectIdentifier(page)
-        if let existing = pageCanvases[key] {
+        if let existing = pageOverlays[key] {
             return existing
         }
 
@@ -68,9 +76,9 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         let pageIdx = doc.index(for: page)
         guard pageIdx >= 0 else { return nil }
 
-        let canvas = PassthroughPKCanvasView()
         let pageSize = page.bounds(for: .cropBox).size
-        canvas.frame = CGRect(origin: .zero, size: pageSize)
+        let frame = CGRect(origin: .zero, size: pageSize)
+        let canvas = PassthroughPKCanvasView(frame: frame)
         canvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         canvas.overrideUserInterfaceStyle = .light
         canvas.pageIndex = pageIdx
@@ -87,12 +95,32 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         canvas.tool = InksyncInkingState.shared.makePKTool()
 
         pageCanvases[key] = canvas
-        return canvas
+
+        let overlay = ColoringPageOverlayView(frame: frame, canvasView: canvas)
+        overlay.isColoringMode = InksyncInkingState.shared.isColoringModeActive
+        pageOverlays[key] = overlay
+        return overlay
     }
 
     public func willDisplay(overlayView: UIView, for page: PDFPage) {
-        guard let canvas = overlayView as? PassthroughPKCanvasView else { return }
         let key = ObjectIdentifier(page)
+        let canvas: PassthroughPKCanvasView
+        if let coloringOverlay = overlayView as? ColoringPageOverlayView {
+            canvas = coloringOverlay.canvasView
+            coloringOverlay.isColoringMode = InksyncInkingState.shared.isColoringModeActive
+            if InksyncInkingState.shared.isColoringModeActive {
+                Task { @MainActor in
+                    if let mask = await ColoringLineartEngine.shared.lineartMask(for: page) {
+                        coloringOverlay.setLineartMask(mask)
+                    }
+                }
+            }
+        } else if let directCanvas = overlayView as? PassthroughPKCanvasView {
+            canvas = directCanvas
+        } else {
+            return
+        }
+
         configureCanvasPolicy(canvas)
         canvas.tool = InksyncInkingState.shared.makePKTool()
         guard !loadedPages.contains(key) else { return }
@@ -102,7 +130,8 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
     }
 
     public func willEndDisplaying(overlayView: UIView, for page: PDFPage) {
-        guard let canvas = overlayView as? PassthroughPKCanvasView else { return }
+        let canvas: PassthroughPKCanvasView? = (overlayView as? ColoringPageOverlayView)?.canvasView ?? (overlayView as? PassthroughPKCanvasView)
+        guard let canvas = canvas else { return }
         let key = ObjectIdentifier(page)
 
         // Cancel debounce and force an immediate disk write
@@ -137,6 +166,20 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         }
     }
 
+    public func updateColoringMode(_ isColoring: Bool) {
+        for (pageKey, overlay) in pageOverlays {
+            overlay.isColoringMode = isColoring
+            if isColoring, let page = overlay.canvasView.associatedPage {
+                Task { @MainActor in
+                    if let mask = await ColoringLineartEngine.shared.lineartMask(for: page) {
+                        overlay.setLineartMask(mask)
+                    }
+                }
+            }
+        }
+        updateCanvasInteractivity()
+    }
+
     public func updateAllCanvasTools() {
         let currentTool = InksyncInkingState.shared.makePKTool()
         for canvas in pageCanvases.values {
@@ -151,12 +194,13 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         let currentMode = InksyncInkingState.shared.activeToolMode
         let isWriting = currentMode == .write
         let isEraser = currentMode == .eraser
-        let autoPenActive = !isMarkupActive && isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
-        let shouldBeActive = (isMarkupActive && (isWriting || isEraser)) || autoPenActive
+        let isColoring = InksyncInkingState.shared.isColoringModeActive
+        let autoPenActive = isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
+        let shouldBeActive = isWriting || isEraser || isColoring || isMarkupActive || autoPenActive
 
         canvas.overrideUserInterfaceStyle = .light
         canvas.isMarkupActive = shouldBeActive
-        let allowFinger = (isMarkupActive && !pencilOnlyDrawingSetting) || isEraser
+        let allowFinger = !pencilOnlyDrawingSetting || isEraser
         canvas.allowFingerDrawing = allowFinger
         canvas.drawingPolicy = (pencilOnlyDrawingSetting && !allowFinger) ? .pencilOnly : .anyInput
         canvas.isUserInteractionEnabled = shouldBeActive
