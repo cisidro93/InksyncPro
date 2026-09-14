@@ -2888,6 +2888,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     var onNextPage: () -> Void
     var onTapCenter: () -> Void
     var onTextSelectionChanged: (String?, PDFSelectionSnapshot?) -> Void
+    var onHighlightTapped: ((UUID?, String) -> Void)? = nil
     var onHighlightRequested: (() -> Void)? = nil
     var onHighlightSelectionDirect: ((PDFSelection, PDFPage, PDFHighlightColor) -> Void)? = nil
     var onScaleChanged: ((CGFloat) -> Void)? = nil
@@ -2895,7 +2896,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     var onScannedPageDetected: (() -> Void)? = nil
     var onUndoRequested: ((Int) -> Void)? = nil
     var onRedoRequested: ((Int) -> Void)? = nil
-    var onHighlightTapped: ((UUID?, String) -> Void)? = nil
 
     func makeUIView(context: Context) -> PDFView {
         let pdfView = ProPDFHighlightableView()
@@ -3335,7 +3335,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let pageIdx = doc.flatMap { $0.index(for: page) } ?? parent.currentPageIndex
             
             for ann in storeAnnotations where ann.pageIndex == pageIdx {
-                guard ann.type == .highlight || ann.type == .underline || ann.type == .strikethrough else { continue }
+                guard ann.kind == .highlight || ann.kind == .underline || ann.kind == .strikeOut else { continue }
                 if let b = ann.bounds {
                     let rect = CGRect(
                         x: pageCrop.minX + CGFloat(b.x) * pageCrop.width,
@@ -3345,7 +3345,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     )
                     if rect.insetBy(dx: -14, dy: -10).contains(point) {
                         let sel = page.selection(for: rect)
-                        return HighlightMatch(id: ann.id, text: ann.selectedText, bounds: rect, selection: sel)
+                        return HighlightMatch(id: ann.id, text: ann.selectedText ?? "", bounds: rect, selection: sel)
                     }
                 }
             }
