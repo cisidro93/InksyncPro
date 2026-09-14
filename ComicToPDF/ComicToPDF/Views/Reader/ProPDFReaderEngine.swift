@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Foundation
+import Combine
 @preconcurrency import PDFKit
 import PencilKit
 import AVFoundation
@@ -2656,8 +2657,6 @@ struct ProPDFReaderEngine: View {
             page.displaysAnnotations = false
             page.displaysAnnotations = true
         }
-        pdfView.displaysAnnotations = false
-        pdfView.displaysAnnotations = true
         pdfView.clearSelection()
         pdfView.layoutDocumentView()
         pdfView.setNeedsDisplay()

@@ -33,7 +33,7 @@ class PhysicalFileSystemRouter {
 
     // MARK: - Directory Reaper (Automatic Empty Folder Deletion)
 
-    private static let protectedDirectoryNames: Set<String> = [
+    nonisolated private static let protectedDirectoryNames: Set<String> = [
         "documents", "inbox", "tmp", "caches", "application support",
         "file provider storage", "downloads", "inksyncstaging_", "folder_spider_",
         "folderspider_", "inksyncvault", "libraryvault", "recovered_vault",

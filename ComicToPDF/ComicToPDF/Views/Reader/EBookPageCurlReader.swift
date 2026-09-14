@@ -253,6 +253,9 @@ extension EBookPageCurlReader {
         private var debounceSaveDrawingTask: Task<Void, Never>? = nil
         // Pre-rendered column snapshots — used for instant, zero-lag 3D page curling
         private var pageSnapshots: [Int: UIImage] = [:]
+        // Background pre-cache WKWebView for silent offscreen snapshot generation
+        private var backgroundPrecacheWebView: WKWebView?
+        private var precacheTask: Task<Void, Never>?
         // Tokens for block-based NotificationCenter observers to prevent memory leaks
         nonisolated(unsafe) private var observerTokens: [NSObjectProtocol] = []
 
@@ -462,6 +465,11 @@ extension EBookPageCurlReader {
 
             debounceSaveDrawingTask?.cancel()
             debounceSaveDrawingTask = nil
+            precacheTask?.cancel()
+            precacheTask = nil
+            backgroundPrecacheWebView?.stopLoading()
+            backgroundPrecacheWebView?.removeFromSuperview()
+            backgroundPrecacheWebView = nil
             saveCurrentDrawing()
             inkingCancellables.removeAll()
             pencilCanvas?.removeFromSuperview()
@@ -791,7 +799,6 @@ extension EBookPageCurlReader {
             if let vcs = pageViewController.viewControllers {
                 captureSnapshot(for: vcs)
             }
-            captureSnapshot(for: pendingViewControllers)
             saveCurrentDrawingImmediate()
             pencilCanvas?.removeFromSuperview()
             primaryWebView?.removeFromSuperview()
@@ -1439,6 +1446,9 @@ extension EBookPageCurlReader {
 
             // Pre-render column snapshots for current chapter
             generateAllColumnSnapshots()
+            if clampedTotal > 1 {
+                startBackgroundSnapshotPrecaching(totalPages: clampedTotal)
+            }
         }
 
         func updateLiveStyles() {
@@ -1488,6 +1498,68 @@ extension EBookPageCurlReader {
             wv.takeSnapshot(with: config) { [weak self] image, _ in
                 if let img = image {
                     self?.pageSnapshots[activePage] = img
+                }
+            }
+        }
+
+        private func startBackgroundSnapshotPrecaching(totalPages: Int) {
+            precacheTask?.cancel()
+            backgroundPrecacheWebView?.stopLoading()
+            backgroundPrecacheWebView?.removeFromSuperview()
+            backgroundPrecacheWebView = nil
+
+            guard totalPages > 1, let pvc = pageViewController, let pv = pvc.view else { return }
+            let frame = primaryWebView?.bounds ?? pv.bounds
+            guard frame.width > 1, frame.height > 1 else { return }
+
+            let config = WKWebViewConfiguration()
+            config.suppressesIncrementalRendering = false
+            let bgWV = WKWebView(frame: frame, configuration: config)
+            bgWV.isOpaque = false
+            bgWV.backgroundColor = .clear
+            bgWV.scrollView.isScrollEnabled = false
+            bgWV.alpha = 0.01
+            pv.insertSubview(bgWV, at: 0)
+            self.backgroundPrecacheWebView = bgWV
+
+            let fullHTML = self.buildPageHTML(for: 0)
+            bgWV.loadHTMLString(fullHTML, baseURL: self.chapterBaseURL)
+
+            precacheTask = Task { @MainActor [weak self, weak bgWV] in
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                guard let self = self, let bgWV = bgWV, !Task.isCancelled else { return }
+
+                let maxPages = min(totalPages, 12)
+                for page in 1..<maxPages {
+                    guard !Task.isCancelled, !self.isTransitioning else { break }
+                    if self.pageSnapshots[page] != nil { continue }
+
+                    await withCheckedContinuation { continuation in
+                        bgWV.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(page), false);") { _, _ in
+                            continuation.resume()
+                        }
+                    }
+
+                    try? await Task.sleep(nanoseconds: 60_000_000)
+                    guard !Task.isCancelled, !self.isTransitioning else { break }
+
+                    let snapshotConfig = WKSnapshotConfiguration()
+                    snapshotConfig.rect = bgWV.bounds
+                    snapshotConfig.afterScreenUpdates = true
+
+                    await withCheckedContinuation { continuation in
+                        bgWV.takeSnapshot(with: snapshotConfig) { [weak self] image, _ in
+                            if let img = image, let self = self {
+                                self.pageSnapshots[page] = img
+                            }
+                            continuation.resume()
+                        }
+                    }
+                }
+
+                bgWV.removeFromSuperview()
+                if self.backgroundPrecacheWebView === bgWV {
+                    self.backgroundPrecacheWebView = nil
                 }
             }
         }
@@ -1732,7 +1804,18 @@ extension EBookPageCurlReader {
                 scroll-behavior: auto !important;
                 scroll-snap-type: none !important;
                 background-color: \(bgColor) !important;
-                overflow: hidden !important;
+                overflow-x: scroll !important;
+                overflow-y: hidden !important;
+                -webkit-overflow-scrolling: auto !important;
+            }
+            html::-webkit-scrollbar, body::-webkit-scrollbar {
+                display: none !important;
+                width: 0 !important;
+                height: 0 !important;
+            }
+            html, body {
+                scrollbar-width: none !important;
+                -ms-overflow-style: none !important;
             }
             body {
                 color: \(textColor) !important;
@@ -1767,8 +1850,8 @@ extension EBookPageCurlReader {
                 top: 0 !important; left: 0 !important;
                 padding-top: \(paddingTop)px !important;
                 padding-bottom: \(paddingBottom)px !important;
-                padding-left: \(paddingLeft)px !important;
-                padding-right: \(paddingRight)px !important;
+                padding-left: \(m)px !important;
+                padding-right: \(m)px !important;
                 width: auto !important;
                 max-width: none !important;
                 height: 100% !important;
@@ -1776,19 +1859,26 @@ extension EBookPageCurlReader {
                 overflow: visible !important;
                 -webkit-user-select: text !important;
                 user-select: text !important;
-                will-change: transform;
-                -webkit-backface-visibility: hidden;
-                backface-visibility: hidden;
-                transform: translate3d(0, 0, 0);
-                -webkit-transform: translate3d(0, 0, 0);
                 \(pagedCSS)
                 /* No CSS transition — column jumps are instantaneous; animation belongs to UIPageViewController curl. */
             }
-            #inksync-viewport p, #inksync-viewport div, #inksync-viewport section, #inksync-viewport article, #inksync-viewport blockquote, #inksync-viewport li {
-                break-inside: avoid !important;
-                page-break-inside: avoid !important;
+            #inksync-viewport div, #inksync-viewport section, #inksync-viewport article, #inksync-viewport main {
+                height: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
+                break-inside: auto !important;
+                page-break-inside: auto !important;
+                display: block !important;
+                position: static !important;
+                float: none !important;
+            }
+            #inksync-viewport p, #inksync-viewport li, #inksync-viewport blockquote {
                 orphans: 2 !important;
                 widows: 2 !important;
+            }
+            img, svg, .page, .chunk-container, figure, table, pre, code {
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
             }
             #inksync-viewport *, body * {
                 max-width: 100% !important;
@@ -1820,7 +1910,6 @@ extension EBookPageCurlReader {
                 position: static !important;
                 float: none !important;
             }
-            div, section, article { column-count: auto !important; column-width: auto !important; }
             p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
             p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); \(prefs.isBoldTextEnabled ? "font-weight: 600 !important;" : "") }
             img, svg, .page, .chunk-container, figure { display: block !important; margin-left: auto !important; margin-right: auto !important; break-inside: avoid !important; page-break-inside: avoid !important; }
@@ -1858,7 +1947,7 @@ extension EBookPageCurlReader {
             var _isDarkTheme = \(isDarkTheme ? "true" : "false");
 
             function getPageStep() {
-                var w = window.innerWidth;
+                var w = window.innerWidth || (document.documentElement ? document.documentElement.clientWidth : 0);
                 return w > 0 ? w : 1;
             }
 
@@ -1867,26 +1956,30 @@ extension EBookPageCurlReader {
                 if (pageStep <= 0) return;
                 if (_targetPage >= 99999) return; // Wait for computeMetrics to resolve true total pages!
                 var spreadIndex = _isMultiCol ? Math.floor(_targetPage / 2) : _targetPage;
-                var shift = spreadIndex * pageStep;
+                var targetX = spreadIndex * pageStep;
 
-                var vp = document.getElementById('inksync-viewport') || document.body;
-                if (vp) {
-                    if (animated === true) {
-                        vp.style.transition = 'transform 0.16s cubic-bezier(0.15, 1, 0.3, 1)';
-                        vp.style.webkitTransition = '-webkit-transform 0.16s cubic-bezier(0.15, 1, 0.3, 1)';
-                    } else {
-                        vp.style.transition = 'none';
-                        vp.style.webkitTransition = 'none';
-                    }
-                    vp.style.transform = 'translate3d(-' + shift + 'px, 0, 0)';
-                    vp.style.webkitTransform = 'translate3d(-' + shift + 'px, 0, 0)';
+                if (animated === true) {
+                    window.scrollTo({ left: targetX, top: 0, behavior: 'smooth' });
+                } else {
+                    window.scrollTo(targetX, 0);
                 }
-                try {
-                    if (document.scrollingElement) {
-                        document.scrollingElement.scrollLeft = 0;
-                        document.scrollingElement.scrollTop = 0;
-                    }
-                } catch(e) {}
+                if (document.scrollingElement) {
+                    document.scrollingElement.scrollLeft = targetX;
+                    document.scrollingElement.scrollTop = 0;
+                }
+                if (document.documentElement) {
+                    document.documentElement.scrollLeft = targetX;
+                    document.documentElement.scrollTop = 0;
+                }
+                if (document.body) {
+                    document.body.scrollLeft = targetX;
+                    document.body.scrollTop = 0;
+                }
+                var vp = document.getElementById('inksync-viewport');
+                if (vp) {
+                    vp.style.transform = 'none';
+                    vp.style.webkitTransform = 'none';
+                }
             }
 
             applyPagePosition(false);
@@ -1909,8 +2002,8 @@ extension EBookPageCurlReader {
                 var pageStep = getPageStep();
                 if (pageStep <= 0) return 1;
                 var vp = document.getElementById('inksync-viewport') || document.body;
-                var sv = document.scrollingElement || document.documentElement;
-                var scrollW = Math.max(vp ? vp.scrollWidth : 0, sv ? sv.scrollWidth : 0, document.body.scrollWidth);
+                var sv = document.scrollingElement || document.documentElement || document.body;
+                var scrollW = Math.max(vp ? vp.scrollWidth : 0, sv ? sv.scrollWidth : 0, document.body ? document.body.scrollWidth : 0);
 
                 // Precise document extent measurement across CSS columns in WebKit:
                 try {
@@ -1918,8 +2011,7 @@ extension EBookPageCurlReader {
                     range.selectNodeContents(vp);
                     var rects = range.getClientRects();
                     if (rects && rects.length > 0) {
-                        var spreadIndex = _isMultiCol ? Math.floor(_targetPage / 2) : _targetPage;
-                        var currentShift = spreadIndex * pageStep;
+                        var currentShift = sv ? (sv.scrollLeft || window.pageXOffset || 0) : 0;
                         var rightmost = 0;
                         for (var i = 0; i < rects.length; i++) {
                             var r = rects[i].right + currentShift;
