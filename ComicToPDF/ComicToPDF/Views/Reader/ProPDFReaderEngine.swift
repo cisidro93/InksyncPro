@@ -394,6 +394,7 @@ struct ProPDFReaderEngine: View {
             mainContentView
 
             EdgeBrightnessGestureZone()
+                .allowsHitTesting(!isPencilMode)
 
             // Floating Time & Battery Header
             VStack {
@@ -2259,7 +2260,9 @@ struct ProPDFReaderEngine: View {
         recentMarkupHistory.append(MarkupHistoryItem(id: annotationID, pageIndex: targetPageIndex, text: text, color: color, style: style))
         undoneMarkupHistory.removeAll()
         activeSelectionSnapshot = nil
-        selectedTextForHUD = text
+        if !(isPencilMode && InksyncInkingState.shared.activeToolMode == .textHighlight) {
+            selectedTextForHUD = text
+        }
         showToastMessage(toastTitle)
         HapticEngine.selection()
     }
@@ -2525,6 +2528,7 @@ struct ProPDFReaderEngine: View {
         pdfView.layoutDocumentView()
         pdfView.setNeedsDisplay()
         pdfView.documentView?.setNeedsDisplay()
+        pdfView.documentView?.subviews.forEach { $0.setNeedsDisplay() }
     }
 
     private func saveNote(text: String, note: String, color: PDFHighlightColor = EBookPreferences.shared.defaultHighlightColor) {
@@ -2729,33 +2733,68 @@ struct PDFSelectionSnapshot: Sendable {
 }
 
 // MARK: - Native iOS Contextual Menu Integration
-/// ProPDFHighlightableView injects native "Highlight" into the iOS text-selection UIEditMenu
-/// so users selecting text on iPad see "Highlight" right above their selection in addition to the HUD.
-class ProPDFHighlightableView: PDFView {
+/// ProPDFHighlightableView suppresses native iOS callout menus so InkSync Pro's
+/// Kindle-style HUD and fluid automatic highlighting operate without obstruction.
+class ProPDFHighlightableView: PDFView, UIEditMenuInteractionDelegate {
     var onHighlightRequested: (() -> Void)?
 
-    override func buildMenu(with builder: UIMenuBuilder) {
-        if InksyncInkingState.shared.activeToolMode == .textHighlight {
-            // Suppress contextual menu completely in highlight mode for fluid uninterrupted highlighting
-            return
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupEditMenuSuppression()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupEditMenuSuppression()
+    }
+
+    private func setupEditMenuSuppression() {
+        disableEditMenuInteractions(in: self)
+    }
+
+    func disableEditMenuInteractions(in view: UIView) {
+        for interaction in view.interactions {
+            if let editMenu = interaction as? UIEditMenuInteraction {
+                editMenu.delegate = self
+                editMenu.dismissMenu()
+            }
         }
-        super.buildMenu(with: builder)
-        let highlightCmd = UICommand(title: "Highlight", action: #selector(applyHighlightFromMenu(_:)))
-        let menu = UIMenu(title: "Inksync", options: .displayInline, children: [highlightCmd])
-        builder.insertSibling(menu, afterMenu: .standardEdit)
+        for sub in view.subviews {
+            disableEditMenuInteractions(in: sub)
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        disableEditMenuInteractions(in: self)
+    }
+
+    override func didAddSubview(_ subview: UIView) {
+        super.didAddSubview(subview)
+        disableEditMenuInteractions(in: subview)
+    }
+
+    // MARK: - UIEditMenuInteractionDelegate
+    // Returning nil completely prevents iOS 16+ UIEditMenu from appearing
+    func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration, suggestedActions: [UIMenuElement]) -> UIMenu? {
+        return nil
+    }
+
+    override func buildMenu(with builder: UIMenuBuilder) {
+        // Strip all default system menus so no native popups can be built
+        builder.remove(menu: .standardEdit)
+        builder.remove(menu: .lookup)
+        builder.remove(menu: .learn)
+        builder.remove(menu: .share)
+        builder.remove(menu: .services)
+        builder.remove(menu: .format)
+        builder.remove(menu: .substitutions)
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        if InksyncInkingState.shared.activeToolMode == .textHighlight {
-            // Suppress copy/edit popup so text highlighting feels fluid and uninterrupted
-            return false
-        }
-        if action == #selector(applyHighlightFromMenu(_:)) {
-            return currentSelection != nil
-        }
-        return super.canPerformAction(action, withSender: sender)
+        // Suppress all standard edit actions so system callout menus never appear
+        return false
     }
-
 
     @objc func applyHighlightFromMenu(_ sender: Any?) {
         onHighlightRequested?()
@@ -2927,9 +2966,14 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: PDFView, context: Context) {
+        context.coordinator.parent = self
+        (uiView as? ProPDFHighlightableView)?.disableEditMenuInteractions(in: uiView)
         if uiView.document != document {
             uiView.document = document
             uiView.autoScales = true
+        }
+        if uiView.pageOverlayViewProvider == nil {
+            uiView.pageOverlayViewProvider = context.coordinator.canvasProvider
         }
 
         let inkingState = InksyncInkingState.shared
@@ -3303,14 +3347,18 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 activeDragTarget = .none
                 autoHighlightDebounceTask?.cancel()
                 if let selection = pdfView.currentSelection, let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    if parent.isPencilMode && InksyncInkingState.shared.activeToolMode == .textHighlight {
-                        if let targetPage = selection.pages.first ?? pdfView.currentPage {
-                            let color = EBookPreferences.shared.defaultHighlightColor
-                            parent.onHighlightSelectionDirect?(selection, targetPage, color)
-                            HapticEngine.selection()
-                        }
+                    if let targetPage = selection.pages.first ?? pdfView.currentPage {
+                        let color = EBookPreferences.shared.defaultHighlightColor
+                        parent.onHighlightSelectionDirect?(selection, targetPage, color)
+                        HapticEngine.selection()
                     }
-                    selectionChanged(Notification(name: .PDFViewSelectionChanged, object: pdfView))
+                    if parent.isPencilMode && InksyncInkingState.shared.activeToolMode == .textHighlight {
+                        // In dedicated highlighter pen mode, clear selection immediately so user sees clean highlight without selection box
+                        pdfView.setCurrentSelection(nil, animate: false)
+                        parent.onTextSelectionChanged(nil, nil)
+                    } else {
+                        selectionChanged(Notification(name: .PDFViewSelectionChanged, object: pdfView))
+                    }
                     HapticEngine.light()
                 }
                 glideStartPoint = nil
@@ -3563,19 +3611,25 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         @MainActor @objc func selectionChanged(_ notification: Notification) {
             guard let pdfView = notification.object as? PDFView else { return }
+            (pdfView as? ProPDFHighlightableView)?.disableEditMenuInteractions(in: pdfView)
+            UIMenuController.shared.hideMenu()
+
             if let selection = pdfView.currentSelection, let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                if parent.isPencilMode && InksyncInkingState.shared.activeToolMode == .textHighlight {
-                    autoHighlightDebounceTask?.cancel()
-                    autoHighlightDebounceTask = Task { @MainActor [weak self, weak pdfView] in
-                        try? await Task.sleep(nanoseconds: 140_000_000)
-                        guard !Task.isCancelled, let self = self, let pv = pdfView else { return }
-                        guard let currentSel = pv.currentSelection,
-                              let currentText = currentSel.string,
-                              !currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                        guard let targetPage = currentSel.pages.first ?? pv.currentPage else { return }
-                        let color = EBookPreferences.shared.defaultHighlightColor
-                        self.parent.onHighlightSelectionDirect?(currentSel, targetPage, color)
-                        HapticEngine.selection()
+                autoHighlightDebounceTask?.cancel()
+                autoHighlightDebounceTask = Task { @MainActor [weak self, weak pdfView] in
+                    try? await Task.sleep(nanoseconds: 140_000_000)
+                    guard !Task.isCancelled, let self = self, let pv = pdfView else { return }
+                    guard let currentSel = pv.currentSelection,
+                          let currentText = currentSel.string,
+                          !currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                    guard let targetPage = currentSel.pages.first ?? pv.currentPage else { return }
+                    let color = EBookPreferences.shared.defaultHighlightColor
+                    self.parent.onHighlightSelectionDirect?(currentSel, targetPage, color)
+                    HapticEngine.selection()
+
+                    if self.parent.isPencilMode && InksyncInkingState.shared.activeToolMode == .textHighlight {
+                        pv.setCurrentSelection(nil, animate: false)
+                        self.parent.onTextSelectionChanged(nil, nil)
                     }
                 }
 

@@ -28,7 +28,7 @@ final class PassthroughPKCanvasView: PKCanvasView {
     
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard isMarkupActive else { return nil }
-        guard let view = super.hitTest(point, with: event) else { return nil }
+        guard bounds.contains(point) else { return nil }
         
         let currentMode = InksyncInkingState.shared.activeToolMode
         // When in highlight glide or read mode, touches pass down to PDFView for fluid text selection & reading
@@ -36,19 +36,17 @@ final class PassthroughPKCanvasView: PKCanvasView {
             return nil
         }
 
-        // Always allow touch when in eraser mode so fingers or pencil can erase strokes
-        if currentMode == .eraser {
-            return view
-        }
-        
-        if allowFingerDrawing {
-            return view
-        }
-        
-        // When finger drawing is off (pencil-only mode on iPad):
-        if let touches = event?.allTouches, !touches.isEmpty {
-            let hasStylus = touches.contains { $0.type == .pencil || $0.type == .stylus }
-            return hasStylus ? view : nil
+        // In write or eraser mode, hit test superview to get the canvas or internal tiled view
+        guard let view = super.hitTest(point, with: event) else { return nil }
+
+        // If pencil-only drawing is explicitly enabled in settings, only allow pencil touches
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        let pencilOnly = isPad && AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
+        if pencilOnly && currentMode != .eraser {
+            if let touches = event?.allTouches, !touches.isEmpty {
+                let hasPencil = touches.contains { $0.type == .pencil }
+                return hasPencil ? view : nil
+            }
         }
         
         return view
