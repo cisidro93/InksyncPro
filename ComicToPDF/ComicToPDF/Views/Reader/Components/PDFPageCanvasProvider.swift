@@ -93,6 +93,8 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
     public func willDisplay(overlayView: UIView, for page: PDFPage) {
         guard let canvas = overlayView as? PassthroughPKCanvasView else { return }
         let key = ObjectIdentifier(page)
+        configureCanvasPolicy(canvas)
+        canvas.tool = InksyncInkingState.shared.makePKTool()
         guard !loadedPages.contains(key) else { return }
 
         loadDrawing(into: canvas, for: page)
@@ -146,7 +148,6 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let prefs = EBookPreferences.shared
         let pencilOnlyDrawingSetting = AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
-        let pencilOnly = isPad && (pencilOnlyDrawingSetting || prefs.applePencilAutoDraw)
         let currentMode = InksyncInkingState.shared.activeToolMode
         let isWriting = currentMode == .write
         let isEraser = currentMode == .eraser
@@ -157,16 +158,12 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         canvas.isMarkupActive = shouldBeActive
         let allowFinger = (isMarkupActive && !pencilOnlyDrawingSetting) || isEraser
         canvas.allowFingerDrawing = allowFinger
-        canvas.drawingPolicy = (pencilOnly && !allowFinger) ? .pencilOnly : .anyInput
+        canvas.drawingPolicy = (pencilOnlyDrawingSetting && !allowFinger) ? .pencilOnly : .anyInput
         canvas.isUserInteractionEnabled = shouldBeActive
         canvas.drawingGestureRecognizer.cancelsTouchesInView = false
         canvas.isScrollEnabled = false
         canvas.bounces = false
-        if pencilOnly && !allowFinger {
-            canvas.panGestureRecognizer.isEnabled = false
-        } else {
-            canvas.panGestureRecognizer.isEnabled = true
-        }
+        canvas.panGestureRecognizer.isEnabled = !pencilOnlyDrawingSetting
     }
 
     // MARK: - Persistence & OCR Synchronization

@@ -52,6 +52,8 @@ final class LibraryService: ObservableObject {
             let manager = ConversionManager.shared
             manager.convertedPDFs = self.items
             manager.collections = self.collections
+            manager.pruneEmptyCollections()
+            self.collections = manager.collections
             
             Logger.shared.log("LibraryService: loaded \(self.items.count) items, \(loadedCollections.count) collections, \(loadedOmnibuses.count) virtual omnibuses.", category: "Library")
             self.syncAllRemoteVirtualOmnibuses()
@@ -99,6 +101,9 @@ final class LibraryService: ObservableObject {
             
             // Organize flat library files under series subdirectories retroactively
             await PhysicalFileSystemRouter.shared.migrateFlatFilesToSeriesDirectories(manager: ConversionManager.shared)
+            Task.detached(priority: .background) {
+                PhysicalFileSystemRouter.reapAllEmptySeriesDirectoriesInDocuments()
+            }
         } catch {
             Logger.shared.log("LibraryService: smart grouping failed: \(error.localizedDescription)", category: "Library", type: .error)
         }

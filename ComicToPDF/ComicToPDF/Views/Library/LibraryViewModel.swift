@@ -334,8 +334,8 @@ class LibraryViewModel: ObservableObject {
         for (_, group) in groups {
             guard !Task.isCancelled else { return [] }
             var mutableGroup = group
-            // ── SHELF FILTER: Drop series that have zero visible issues ─────
-            if shelf != .all && mutableGroup.issues.isEmpty { continue }
+            // ── SHELF FILTER: Never render an empty series/folder card if it has zero visible issues ─────
+            if mutableGroup.issues.isEmpty { continue }
 
             // ✅ PHASE 4: Internal Sorting & Cover Assigner
             let hasVols = mutableGroup.issues.contains { Double($0.metadata.volume ?? "") != nil }

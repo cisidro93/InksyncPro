@@ -181,11 +181,20 @@ final class PDFAnnotationSyncBridge {
 
     // MARK: - Remove Annotation from Live PDFDocument
     
-    /// Removes a specific annotation from the live `PDFDocument` (matching by userName UUID or matching contents/bounds),
+    /// Removes a specific annotation from the live `PDFDocument` (matching by exact reference, userName UUID, bounds, or matching contents),
     /// schedules debounced disk persistence, and returns true if an annotation was found and removed.
     @discardableResult
     @MainActor
-    func removeAnnotation(id: UUID, from document: PDFDocument, on pageIndex: Int? = nil, text: String? = nil, destinationURL: URL? = nil, pdfID: UUID? = nil) -> Bool {
+    func removeAnnotation(
+        id: UUID,
+        from document: PDFDocument,
+        on pageIndex: Int? = nil,
+        text: String? = nil,
+        destinationURL: URL? = nil,
+        pdfID: UUID? = nil,
+        targetAnnotation: PDFAnnotation? = nil,
+        bounds: CGRect? = nil
+    ) -> Bool {
         var didRemove = false
         let idString = id.uuidString
         
@@ -198,8 +207,15 @@ final class PDFAnnotationSyncBridge {
         
         for page in targetPages {
             let matching = page.annotations.filter { ann in
+                if let target = targetAnnotation, ann === target { return true }
                 if ann.userName == idString { return true }
-                if let t = text, !t.isEmpty, let c = ann.contents, c == t {
+                if let b = bounds, ann.bounds.intersects(b.insetBy(dx: -4, dy: -4)) {
+                    let typeName = ann.type ?? ""
+                    if typeName.contains("Highlight") || typeName.contains("Underline") || typeName.contains("StrikeOut") || typeName.contains("Text") {
+                        return true
+                    }
+                }
+                if let t = text, !t.isEmpty, let c = ann.contents, (c == t || c.contains(t) || t.contains(c)) {
                     let typeName = ann.type ?? ""
                     if typeName.contains("Highlight") || typeName.contains("Underline") || typeName.contains("StrikeOut") || typeName.contains("Text") {
                         return true
@@ -210,6 +226,10 @@ final class PDFAnnotationSyncBridge {
             for ann in matching {
                 page.removeAnnotation(ann)
                 didRemove = true
+            }
+            if didRemove {
+                page.displaysAnnotations = false
+                page.displaysAnnotations = true
             }
         }
         

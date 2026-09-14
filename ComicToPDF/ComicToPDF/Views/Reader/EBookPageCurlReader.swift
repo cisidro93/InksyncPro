@@ -1908,38 +1908,36 @@ extension EBookPageCurlReader {
             function computeMetrics() {
                 var pageStep = getPageStep();
                 if (pageStep <= 0) return 1;
-                var vp = document.getElementById('inksync-viewport');
+                var vp = document.getElementById('inksync-viewport') || document.body;
                 var sv = document.scrollingElement || document.documentElement;
                 var scrollW = Math.max(vp ? vp.scrollWidth : 0, sv ? sv.scrollWidth : 0, document.body.scrollWidth);
 
-                // Fallback: If scrollWidth was clipped, use bounding rect of deepest elements
-                if (scrollW <= pageStep && vp && vp.lastElementChild) {
-                    try {
-                        var range = document.createRange();
-                        range.selectNodeContents(vp.lastElementChild);
-                        var rects = range.getClientRects();
-                        if (rects.length > 0) {
-                            var spreadIndex = _isMultiCol ? Math.floor(_targetPage / 2) : _targetPage;
-                            var currentShift = spreadIndex * pageStep;
-                            var rightmost = 0;
-                            for (var i = 0; i < rects.length; i++) {
-                                var r = rects[i].right + currentShift;
-                                if (r > rightmost) rightmost = r;
-                            }
-                            if (rightmost > scrollW) {
-                                scrollW = rightmost;
-                            }
+                // Precise document extent measurement across CSS columns in WebKit:
+                try {
+                    var range = document.createRange();
+                    range.selectNodeContents(vp);
+                    var rects = range.getClientRects();
+                    if (rects && rects.length > 0) {
+                        var spreadIndex = _isMultiCol ? Math.floor(_targetPage / 2) : _targetPage;
+                        var currentShift = spreadIndex * pageStep;
+                        var rightmost = 0;
+                        for (var i = 0; i < rects.length; i++) {
+                            var r = rects[i].right + currentShift;
+                            if (r > rightmost) rightmost = r;
                         }
-                    } catch(e) {}
-                }
+                        if (rightmost > scrollW) {
+                            scrollW = rightmost;
+                        }
+                    }
+                } catch(e) {}
 
                 var colWidth = _isMultiCol ? (pageStep / 2) : pageStep;
                 var total = Math.max(1, Math.ceil((scrollW - 10) / colWidth));
                 if (total === 1 && scrollW > colWidth + 20) {
                     total = 2;
                 }
-                _totalPages = Math.max(1, total);
-                if (_targetPage >= 99999 || _targetPage >= _totalPages) {
+                _totalPages = Math.max(1, total, _targetPage + 1);
+                if (_targetPage >= 99999) {
                     _targetPage = Math.max(0, _totalPages - 1);
                 }
                 applyPagePosition(false);
@@ -1947,7 +1945,15 @@ extension EBookPageCurlReader {
             }
 
             function goToPage(page, animated) {
-                _targetPage = Math.max(0, Math.min(page, _totalPages - 1));
+                if (typeof page === 'number' && !isNaN(page)) {
+                    if (_totalPages > 1 && page < _totalPages) {
+                        _targetPage = Math.max(0, page);
+                    } else {
+                        // Allow navigation to requested page and expand total if needed
+                        _targetPage = Math.max(0, page);
+                        _totalPages = Math.max(_totalPages, _targetPage + 1);
+                    }
+                }
                 applyPagePosition(animated);
             }
             window.goToInksyncPage = goToPage;

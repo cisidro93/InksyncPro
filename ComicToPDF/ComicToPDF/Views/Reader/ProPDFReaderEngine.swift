@@ -33,10 +33,13 @@ struct ProPDFReaderEngine: View {
     @State private var selectedTextForHUD: String? = nil
     @State private var activeSelectionSnapshot: PDFSelectionSnapshot? = nil
     @State private var activeTappedAnnotationID: UUID? = nil
+    @State private var activeTappedAnnotation: PDFAnnotation? = nil
+    @State private var activeTappedAnnotationBounds: CGRect? = nil
     @State private var speechSynthesizer = AVSpeechSynthesizer()
 
     // Environment & Preferences
     @ObservedObject private var prefs = EBookPreferences.shared
+    @ObservedObject private var inkingState = InksyncInkingState.shared
     @AppStorage("activeFilterPreset") private var activeFilterPreset: ReadingFilterPreset = .original
     @Environment(\.modelContext) private var modelContext
     @FocusState private var isReaderFocused: Bool
@@ -776,6 +779,16 @@ struct ProPDFReaderEngine: View {
                     }
                     HapticEngine.selection()
                 },
+                onHighlightTappedWithAnnotation: { ann, id, text, bounds in
+                    activeTappedAnnotation = ann
+                    activeTappedAnnotationID = id
+                    activeTappedAnnotationBounds = bounds
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selectedTextForHUD = text
+                        activeSelectionSnapshot = nil
+                    }
+                    HapticEngine.selection()
+                },
                 onHighlightRequested: {
                     if let sel = pdfViewReference?.currentSelection, let pg = sel.pages.first ?? pdfViewReference?.currentPage {
                         saveMarkupFromSelection(selection: sel, page: pg, color: EBookPreferences.shared.defaultHighlightColor, style: .highlight)
@@ -1190,13 +1203,36 @@ struct ProPDFReaderEngine: View {
                     },
                     onUnhighlight: {
                         if let id = activeTappedAnnotationID {
-                            removeAnnotation(id: id, pageIndex: currentPageIndex)
+                            removeAnnotation(id: id, pageIndex: currentPageIndex, annotation: activeTappedAnnotation, bounds: activeTappedAnnotationBounds)
                             activeTappedAnnotationID = nil
+                            activeTappedAnnotation = nil
+                            activeTappedAnnotationBounds = nil
                             selectedTextForHUD = nil
                             pdfViewReference?.setCurrentSelection(nil, animate: false)
+                        } else if let ann = activeTappedAnnotation {
+                            if let page = (pdfViewReference?.document ?? pdfDocument)?.page(at: currentPageIndex) {
+                                page.removeAnnotation(ann)
+                                page.displaysAnnotations = false
+                                page.displaysAnnotations = true
+                            }
+                            if let pv = pdfViewReference {
+                                forcePageRedraw(pv, pageIndex: currentPageIndex)
+                            }
+                            if let doc = pdfViewReference?.document ?? pdfDocument {
+                                PDFAnnotationSyncBridge.shared.scheduleDebouncedDiskSync(for: pdf.id, in: doc, at: resolvedURL)
+                            }
+                            activeTappedAnnotation = nil
+                            activeTappedAnnotationBounds = nil
+                            selectedTextForHUD = nil
+                            pdfViewReference?.setCurrentSelection(nil, animate: false)
+                            showToastMessage("Highlight Removed")
+                            HapticEngine.selection()
                         } else {
                             unhighlightSelection(text: selectedText)
                             selectedTextForHUD = nil
+                            activeTappedAnnotationID = nil
+                            activeTappedAnnotation = nil
+                            activeTappedAnnotationBounds = nil
                         }
                     },
                     onAddNote: { note in
@@ -2413,27 +2449,36 @@ struct ProPDFReaderEngine: View {
     // MARK: - Remove / Unhighlight Pipeline
 
     /// Removes a highlight/markup annotation from the active PDF document and AnnotationStore.
-    private func removeAnnotation(id: UUID, pageIndex: Int? = nil) {
+    private func removeAnnotation(id: UUID, pageIndex: Int? = nil, annotation: PDFAnnotation? = nil, bounds: CGRect? = nil) {
         guard let doc = pdfViewReference?.document ?? pdfDocument else { return }
         let store = AnnotationStore.shared
         let existing = store.annotations(for: pdf.id).first(where: { $0.id == id })
         let text = existing?.selectedText
         let targetPage = pageIndex ?? existing?.pageIndex ?? currentPageIndex
         
-        // 1. Remove native annotation from PDFPage
+        // 1. Direct removal if live annotation reference is provided
+        if let liveAnn = annotation, let page = doc.page(at: targetPage) {
+            page.removeAnnotation(liveAnn)
+            page.displaysAnnotations = false
+            page.displaysAnnotations = true
+        }
+        
+        // 2. Remove native annotation from PDFPage via SyncBridge
         _ = PDFAnnotationSyncBridge.shared.removeAnnotation(
             id: id,
             from: doc,
             on: targetPage,
             text: text,
             destinationURL: resolvedURL,
-            pdfID: pdf.id
+            pdfID: pdf.id,
+            targetAnnotation: annotation,
+            bounds: bounds
         )
         
-        // 2. Remove from AnnotationStore and SwiftData
+        // 3. Remove from AnnotationStore and SwiftData
         store.delete(id: id, pdfID: pdf.id)
         
-        // 3. Force page redraw
+        // 4. Force page redraw
         if let pv = pdfViewReference {
             forcePageRedraw(pv, pageIndex: targetPage)
         }
@@ -2569,21 +2614,28 @@ struct ProPDFReaderEngine: View {
         }
         
         if removedCount == 0, let page = doc.page(at: targetPage) {
+            let selectionBounds = pdfViewReference?.currentSelection?.bounds(for: page)
             let matching = page.annotations.filter { ann in
+                let t = ann.type ?? ""
+                guard t.contains("Highlight") || t.contains("Underline") || t.contains("StrikeOut") else { return false }
                 if let c = ann.contents, c == text || text.contains(c) || c.contains(text) {
-                    let t = ann.type ?? ""
-                    return t.contains("Highlight") || t.contains("Underline") || t.contains("StrikeOut")
+                    return true
+                }
+                if let sb = selectionBounds, sb != .zero, ann.bounds.intersects(sb.insetBy(dx: -4, dy: -4)) {
+                    return true
                 }
                 return false
             }
             for ann in matching {
                 if let idStr = ann.userName, let uid = UUID(uuidString: idStr) {
-                    removeAnnotation(id: uid, pageIndex: targetPage)
+                    removeAnnotation(id: uid, pageIndex: targetPage, annotation: ann, bounds: ann.bounds)
                 } else {
                     page.removeAnnotation(ann)
                 }
                 removedCount += 1
             }
+            page.displaysAnnotations = false
+            page.displaysAnnotations = true
             if let pv = pdfViewReference {
                 forcePageRedraw(pv, pageIndex: targetPage)
             }
@@ -2601,12 +2653,19 @@ struct ProPDFReaderEngine: View {
     /// Repaints PDFView to display new annotation graphics smoothly without thrashing CATiledLayer.
     private func forcePageRedraw(_ pdfView: PDFView, pageIndex: Int) {
         if let page = pdfView.document?.page(at: pageIndex) {
+            page.displaysAnnotations = false
             page.displaysAnnotations = true
         }
+        pdfView.displaysAnnotations = false
+        pdfView.displaysAnnotations = true
+        pdfView.clearSelection()
         pdfView.layoutDocumentView()
         pdfView.setNeedsDisplay()
         pdfView.documentView?.setNeedsDisplay()
-        pdfView.documentView?.subviews.forEach { $0.setNeedsDisplay() }
+        pdfView.documentView?.subviews.forEach { subview in
+            subview.setNeedsDisplay()
+            subview.layer.setNeedsDisplay()
+        }
     }
 
     private func saveNote(text: String, note: String, color: PDFHighlightColor = EBookPreferences.shared.defaultHighlightColor) {
@@ -2889,6 +2948,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     var onTapCenter: () -> Void
     var onTextSelectionChanged: (String?, PDFSelectionSnapshot?) -> Void
     var onHighlightTapped: ((UUID?, String) -> Void)? = nil
+    var onHighlightTappedWithAnnotation: ((PDFAnnotation?, UUID?, String, CGRect?) -> Void)? = nil
     var onHighlightRequested: (() -> Void)? = nil
     var onHighlightSelectionDirect: ((PDFSelection, PDFPage, PDFHighlightColor) -> Void)? = nil
     var onScaleChanged: ((CGFloat) -> Void)? = nil
@@ -3240,15 +3300,41 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         private var glideTouchDownOnHighlight: HighlightMatch? = nil
 
         struct HighlightMatch {
+            let annotation: PDFAnnotation?
             let id: UUID?
             let text: String
             let bounds: CGRect
             let selection: PDFSelection?
         }
 
+        private var cancellables = Set<AnyCancellable>()
+
         init(_ parent: ProPDFViewRepresentable) {
             self.parent = parent
             self.canvasProvider = PDFPageCanvasProvider(pdfID: parent.pdf.id, isMarkupActive: parent.isPencilMode)
+            super.init()
+
+            InksyncInkingState.shared.$activeToolMode
+                .receive(on: RunLoop.main)
+                .sink { [weak self] mode in
+                    self?.updateInkingGestures(for: mode)
+                }
+                .store(in: &cancellables)
+        }
+
+        func updateInkingGestures(for mode: ReaderToolMode) {
+            let isDrawing = parent.isPencilMode && (mode == .write || mode == .eraser)
+            let prefs = EBookPreferences.shared
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let autoPenActive = !parent.isPencilMode && isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
+            let shouldBeActive = isDrawing || autoPenActive
+
+            canvasProvider.isMarkupActive = shouldBeActive
+
+            let isPencilHighlight = (parent.isPencilMode && mode == .textHighlight) ||
+                                   (!parent.isPencilMode && isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "highlighter")
+            pencilGlide?.isEnabled = isPencilHighlight
+            fingerGlide?.isEnabled = (parent.isPencilMode && mode == .textHighlight) || (!parent.isPencilMode)
         }
 
         deinit {
@@ -3320,9 +3406,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 let hitArea = ann.bounds.insetBy(dx: -14, dy: -10)
                 if hitArea.contains(point) {
                     let annID = ann.userName.flatMap { UUID(uuidString: $0) }
-                    let text = ann.contents ?? ""
+                    let text = ann.contents ?? page.selection(for: ann.bounds)?.string ?? ""
                     let sel = page.selection(for: ann.bounds)
-                    return HighlightMatch(id: annID, text: text, bounds: ann.bounds, selection: sel)
+                    return HighlightMatch(annotation: ann, id: annID, text: text, bounds: ann.bounds, selection: sel)
                 }
             }
             
@@ -3345,7 +3431,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     )
                     if rect.insetBy(dx: -14, dy: -10).contains(point) {
                         let sel = page.selection(for: rect)
-                        return HighlightMatch(id: ann.id, text: ann.selectedText ?? "", bounds: rect, selection: sel)
+                        return HighlightMatch(annotation: nil, id: ann.id, text: ann.selectedText ?? "", bounds: rect, selection: sel)
                     }
                 }
             }
@@ -3360,6 +3446,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 pdfView.setCurrentSelection(nil, animate: false)
             }
             HapticEngine.selection()
+            parent.onHighlightTappedWithAnnotation?(match.annotation, match.id, match.text, match.bounds)
             parent.onHighlightTapped?(match.id, match.text)
         }
 
@@ -3535,18 +3622,19 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 glideTouchDownOnHighlight = nil
 
                 if let selection = pdfView.currentSelection, let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    if let targetPage = selection.pages.first ?? pdfView.currentPage {
-                        let color = EBookPreferences.shared.defaultHighlightColor
-                        parent.onHighlightSelectionDirect?(selection, targetPage, color)
-                        HapticEngine.selection()
-                    }
                     let isHighlighterMode = (parent.isPencilMode && InksyncInkingState.shared.activeToolMode == .textHighlight) ||
                                             (!parent.isPencilMode && EBookPreferences.shared.applePencilAutoDraw && EBookPreferences.shared.applePencilDefaultTool == "highlighter" && gesture == pencilGlide)
                     if isHighlighterMode {
+                        if let targetPage = selection.pages.first ?? pdfView.currentPage {
+                            let color = EBookPreferences.shared.defaultHighlightColor
+                            parent.onHighlightSelectionDirect?(selection, targetPage, color)
+                            HapticEngine.selection()
+                        }
                         // In dedicated highlighter pen mode, clear selection immediately so user sees clean highlight without selection box
                         pdfView.setCurrentSelection(nil, animate: false)
                         parent.onTextSelectionChanged(nil, nil)
                     } else {
+                        // Normal text selection in reader: DO NOT auto-commit a highlight! Present HUD for user choice (Highlight, Copy, Note)
                         selectionChanged(Notification(name: .PDFViewSelectionChanged, object: pdfView))
                     }
                     HapticEngine.light()

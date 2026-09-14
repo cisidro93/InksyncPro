@@ -30,6 +30,67 @@ class PhysicalFileSystemRouter {
     nonisolated static func getCoversDirectory() -> URL {
         return _globalCoversDirectory
     }
+
+    // MARK: - Directory Reaper (Automatic Empty Folder Deletion)
+
+    private static let protectedDirectoryNames: Set<String> = [
+        "documents", "inbox", "tmp", "caches", "application support",
+        "file provider storage", "downloads", "inksyncstaging_", "folder_spider_",
+        "folderspider_", "inksyncvault", "libraryvault", "recovered_vault",
+        "covers", "backups", "snapshots"
+    ]
+
+    /// Safely reaps an array of candidate directory URLs if they are subdirectories inside Documents
+    /// and contain zero readable files/subdirectories.
+    nonisolated static func reapEmptyDirectories(at candidateURLs: [URL]) {
+        let fm = FileManager.default
+        guard let docDir = fm.urls(for: .documentDirectory, in: .userDomainMask).first?.resolvingSymlinksInPath() else { return }
+
+        for dir in candidateURLs {
+            let canonicalDir = dir.resolvingSymlinksInPath()
+            
+            // Invariant 1: Must be strictly located inside Documents directory, but NOT Documents itself
+            guard canonicalDir.path.hasPrefix(docDir.path), canonicalDir.path != docDir.path else { continue }
+            
+            // Invariant 2: Folder name must not match protected system/vault roots
+            let folderName = canonicalDir.lastPathComponent.lowercased()
+            guard !protectedDirectoryNames.contains(folderName) else { continue }
+            
+            // Invariant 3: Check contents (excluding hidden files like .DS_Store)
+            do {
+                let items = try fm.contentsOfDirectory(at: canonicalDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+                if items.isEmpty {
+                    // Also purge any hidden leftover files (.DS_Store) before removing directory
+                    let allItems = (try? fm.contentsOfDirectory(at: canonicalDir, includingPropertiesForKeys: nil)) ?? []
+                    for hidden in allItems {
+                        try? fm.removeItem(at: hidden)
+                    }
+                    try fm.removeItem(at: canonicalDir)
+                    Logger.shared.log("Directory Reaper: Automatically deleted empty folder '\(dir.lastPathComponent)'", category: "FileSystem", type: .info)
+                }
+            } catch {
+                // Directory may already be deleted or not accessible
+            }
+        }
+    }
+
+    /// Recursively sweeps the Documents directory and reaps any empty series or staging folders.
+    nonisolated static func reapAllEmptySeriesDirectoriesInDocuments() {
+        let fm = FileManager.default
+        guard let docDir = fm.urls(for: .documentDirectory, in: .userDomainMask).first?.resolvingSymlinksInPath() else { return }
+
+        guard let subdirs = try? fm.contentsOfDirectory(at: docDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return }
+
+        var candidateDirs: [URL] = []
+        for url in subdirs {
+            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            if isDir {
+                candidateDirs.append(url)
+            }
+        }
+
+        reapEmptyDirectories(at: candidateDirs)
+    }
     
     func getCoverURL(for pdf: ConvertedPDF) -> URL? {
         if let selectedID = pdf.metadata.selectedCoverID,
@@ -278,16 +339,22 @@ class PhysicalFileSystemRouter {
         Task.detached(priority: .background) {
             let fm = FileManager.default
             var deletedCount = 0
+            var parentDirsToCheck = Set<URL>()
             for item in targets {
                 if fm.fileExists(atPath: item.fileURL.path) {
+                    let parent = item.fileURL.deletingLastPathComponent()
                     try? fm.removeItem(at: item.fileURL)
                     deletedCount += 1
+                    parentDirsToCheck.insert(parent)
                 }
                 if let coverURL = item.coverURL, fm.fileExists(atPath: coverURL.path) {
                     try? fm.removeItem(at: coverURL)
                 }
             }
             Logger.shared.log("Batch deleted \(deletedCount) files & covers in background", category: "Library", type: .info)
+
+            // Enterprise Directory Reaper: Delete any series directory that is now completely empty
+            Self.reapEmptyDirectories(at: Array(parentDirsToCheck))
         }
     }
     

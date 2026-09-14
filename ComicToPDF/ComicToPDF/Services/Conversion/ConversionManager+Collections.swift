@@ -92,5 +92,10 @@ extension ConversionManager {
             Logger.shared.log("Pruning: Eradicated \(initialCount - collections.count) empty collections.", category: "Library", type: .warning)
             saveLibrary()
         }
+
+        // Enterprise Directory Reaper: Sweep and purge any orphaned empty series directories on disk
+        Task.detached(priority: .background) {
+            PhysicalFileSystemRouter.reapAllEmptySeriesDirectoriesInDocuments()
+        }
     }
 }
