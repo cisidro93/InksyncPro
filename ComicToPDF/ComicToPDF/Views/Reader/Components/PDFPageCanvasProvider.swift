@@ -23,7 +23,6 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
     }
 
     private var pageCanvases: [ObjectIdentifier: PassthroughPKCanvasView] = [:]
-    private var pageOverlays: [ObjectIdentifier: ColoringPageOverlayView] = [:]
     private var loadedPages: Set<ObjectIdentifier> = []
     private var debounceSaveTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var cancellables = Set<AnyCancellable>()
@@ -68,7 +67,7 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
 
     public func overlayView(for page: PDFPage) -> UIView? {
         let key = ObjectIdentifier(page)
-        if let existing = pageOverlays[key] {
+        if let existing = pageCanvases[key] {
             return existing
         }
 
@@ -90,39 +89,32 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         canvas.showsVerticalScrollIndicator = false
         canvas.showsHorizontalScrollIndicator = false
         canvas.delegate = self
+        canvas.isColoringMode = InksyncInkingState.shared.isColoringModeActive
 
         configureCanvasPolicy(canvas)
         canvas.tool = InksyncInkingState.shared.makePKTool()
 
         pageCanvases[key] = canvas
-
-        let overlay = ColoringPageOverlayView(frame: frame, canvasView: canvas)
-        overlay.isColoringMode = InksyncInkingState.shared.isColoringModeActive
-        pageOverlays[key] = overlay
-        return overlay
+        return canvas
     }
 
     public func willDisplay(overlayView: UIView, for page: PDFPage) {
         let key = ObjectIdentifier(page)
-        let canvas: PassthroughPKCanvasView
-        if let coloringOverlay = overlayView as? ColoringPageOverlayView {
-            canvas = coloringOverlay.canvasView
-            coloringOverlay.isColoringMode = InksyncInkingState.shared.isColoringModeActive
-            if InksyncInkingState.shared.isColoringModeActive {
-                Task { @MainActor in
-                    if let mask = await ColoringLineartEngine.shared.lineartMask(for: page) {
-                        coloringOverlay.setLineartMask(mask)
-                    }
-                }
-            }
-        } else if let directCanvas = overlayView as? PassthroughPKCanvasView {
-            canvas = directCanvas
-        } else {
-            return
-        }
+        guard let canvas = overlayView as? PassthroughPKCanvasView else { return }
 
         configureCanvasPolicy(canvas)
         canvas.tool = InksyncInkingState.shared.makePKTool()
+        canvas.isColoringMode = InksyncInkingState.shared.isColoringModeActive
+        if InksyncInkingState.shared.isColoringModeActive {
+            Task { @MainActor in
+                if let mask = await ColoringLineartEngine.shared.lineartMask(for: page) {
+                    canvas.setLineartMask(mask)
+                }
+            }
+        } else {
+            canvas.updateLineartVisibility()
+        }
+
         guard !loadedPages.contains(key) else { return }
 
         loadDrawing(into: canvas, for: page)
@@ -130,8 +122,7 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
     }
 
     public func willEndDisplaying(overlayView: UIView, for page: PDFPage) {
-        let canvas: PassthroughPKCanvasView? = (overlayView as? ColoringPageOverlayView)?.canvasView ?? (overlayView as? PassthroughPKCanvasView)
-        guard let canvas = canvas else { return }
+        guard let canvas = overlayView as? PassthroughPKCanvasView else { return }
         let key = ObjectIdentifier(page)
 
         // Cancel debounce and force an immediate disk write
@@ -167,14 +158,16 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
     }
 
     public func updateColoringMode(_ isColoring: Bool) {
-        for (pageKey, overlay) in pageOverlays {
-            overlay.isColoringMode = isColoring
-            if isColoring, let page = overlay.canvasView.associatedPage {
+        for canvas in pageCanvases.values {
+            canvas.isColoringMode = isColoring
+            if isColoring, let page = canvas.associatedPage {
                 Task { @MainActor in
                     if let mask = await ColoringLineartEngine.shared.lineartMask(for: page) {
-                        overlay.setLineartMask(mask)
+                        canvas.setLineartMask(mask)
                     }
                 }
+            } else {
+                canvas.updateLineartVisibility()
             }
         }
         updateCanvasInteractivity()
@@ -369,6 +362,7 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
                 let key = ObjectIdentifier(page)
                 debounceSaveTasks[key]?.cancel()
                 debounceSaveTasks.removeValue(forKey: key)
+                saveDrawing(from: canvas, for: page)
             }
         }
     }

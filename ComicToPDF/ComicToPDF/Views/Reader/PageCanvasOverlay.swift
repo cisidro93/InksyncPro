@@ -11,6 +11,47 @@ final class PassthroughPKCanvasView: PKCanvasView {
     var pageIndex: Int = 0
     weak var associatedPage: PDFPage? = nil
     
+    // MARK: - Digital Coloring Studio Lineart Overlay
+    private let lineartView = UIImageView()
+
+    var isColoringMode: Bool = false {
+        didSet {
+            lineartView.isHidden = !isColoringMode || lineartView.image == nil
+        }
+    }
+
+    private func setupLineartViewIfNeeded() {
+        if lineartView.superview == nil {
+            lineartView.frame = bounds
+            lineartView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            lineartView.contentMode = .scaleToFill
+            lineartView.clipsToBounds = true
+            lineartView.isUserInteractionEnabled = false // Passes all touches down to canvas
+            lineartView.layer.zPosition = 999 // Floats over canvas strokes
+            lineartView.isHidden = !isColoringMode || lineartView.image == nil
+            addSubview(lineartView)
+        }
+    }
+
+    func setLineartMask(_ image: UIImage?) {
+        lineartView.image = image
+        setupLineartViewIfNeeded()
+        lineartView.isHidden = !isColoringMode || image == nil
+        bringSubviewToFront(lineartView)
+    }
+
+    func updateLineartVisibility() {
+        lineartView.isHidden = !isColoringMode || lineartView.image == nil
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        lineartView.frame = bounds
+        if lineartView.superview != nil {
+            bringSubviewToFront(lineartView)
+        }
+    }
+
     private let internalUndoManager = UndoManager()
     override var undoManager: UndoManager? {
         return internalUndoManager

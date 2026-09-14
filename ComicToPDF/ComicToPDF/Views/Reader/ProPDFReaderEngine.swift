@@ -2657,7 +2657,8 @@ struct ProPDFReaderEngine: View {
             page.displaysAnnotations = false
             page.displaysAnnotations = true
         }
-        pdfView.clearSelection()
+        pdfView.displaysAnnotations = false
+        pdfView.displaysAnnotations = true
         pdfView.layoutDocumentView()
         pdfView.setNeedsDisplay()
         pdfView.documentView?.setNeedsDisplay()
@@ -2683,7 +2684,22 @@ struct ProPDFReaderEngine: View {
         let sdAnnotation = SDAnnotation(from: noteAnn)
         modelContext.insert(sdAnnotation)
         try? modelContext.save()
-        if let doc = pdfDocument {
+        if let doc = pdfViewReference?.document ?? pdfDocument,
+           let page = doc.page(at: currentPageIndex) {
+            let pageBounds = page.bounds(for: .cropBox)
+            let noteOrigin = CGPoint(x: pageBounds.minX + 30, y: pageBounds.maxY - 80)
+            let noteRect = CGRect(origin: noteOrigin, size: CGSize(width: 28, height: 28))
+            let nativeText = PDFAnnotation(bounds: noteRect, forType: .text, withProperties: nil)
+            nativeText.userName = noteAnn.id.uuidString
+            nativeText.color = color.uiColor
+            nativeText.contents = note
+            nativeText.iconType = .note
+            nativeText.shouldDisplay = true
+            nativeText.shouldPrint = true
+            page.addAnnotation(nativeText)
+            if let pv = pdfViewReference {
+                forcePageRedraw(pv, pageIndex: currentPageIndex)
+            }
             PDFAnnotationSyncBridge.shared.scheduleDebouncedDiskSync(for: pdf.id, in: doc, at: resolvedURL)
         }
     }
@@ -2705,7 +2721,22 @@ struct ProPDFReaderEngine: View {
         let sdAnnotation = SDAnnotation(from: ann)
         modelContext.insert(sdAnnotation)
         try? modelContext.save()
-        if let doc = pdfDocument {
+        if let doc = pdfViewReference?.document ?? pdfDocument,
+           let page = doc.page(at: currentPageIndex) {
+            let pageBounds = page.bounds(for: .cropBox)
+            let noteOrigin = CGPoint(x: pageBounds.minX + 30, y: pageBounds.maxY - 80)
+            let noteRect = CGRect(origin: noteOrigin, size: CGSize(width: 28, height: 28))
+            let nativeText = PDFAnnotation(bounds: noteRect, forType: .text, withProperties: nil)
+            nativeText.userName = ann.id.uuidString
+            nativeText.color = color.uiColor
+            nativeText.contents = "\(symbol): \(text)"
+            nativeText.iconType = .comment
+            nativeText.shouldDisplay = true
+            nativeText.shouldPrint = true
+            page.addAnnotation(nativeText)
+            if let pv = pdfViewReference {
+                forcePageRedraw(pv, pageIndex: currentPageIndex)
+            }
             PDFAnnotationSyncBridge.shared.scheduleDebouncedDiskSync(for: pdf.id, in: doc, at: resolvedURL)
         }
     }
@@ -3050,13 +3081,13 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // 180ms minimum press duration when in normal reading allows scrolling/swiping.
         let fingerGlide = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleGlideSelection(_:)))
         let inkingState = InksyncInkingState.shared
-        let isTextHighlightGlide = isPencilMode && (inkingState.activeToolMode == .textHighlight)
-        fingerGlide.minimumPressDuration = isTextHighlightGlide ? 0.04 : 0.18
+        let isDedicatedHighlighter = isPencilMode && (inkingState.activeToolMode == .textHighlight)
+        fingerGlide.minimumPressDuration = isDedicatedHighlighter ? 0.04 : 0.18
         fingerGlide.allowableMovement = 2000
         fingerGlide.cancelsTouchesInView = false
         fingerGlide.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         fingerGlide.delegate = context.coordinator
-        fingerGlide.isEnabled = isTextHighlightGlide || (!isPencilMode)
+        fingerGlide.isEnabled = isDedicatedHighlighter || (!isPencilMode)
         pdfView.addGestureRecognizer(fingerGlide)
         context.coordinator.fingerGlide = fingerGlide
         // Single-tap only needs to wait for finger glide to fail
@@ -3066,7 +3097,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // 20ms ultra-low latency allows Apple Pencil to immediately snap and select text on touch.
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let autoPencilActive = isPad && prefs.applePencilAutoDraw
-        let isPencilHighlightGlide = (isPencilMode && (inkingState.activeToolMode == .textHighlight)) ||
+        let isPencilHighlightGlide = isDedicatedHighlighter ||
                                      (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "highlighter")
         let pencilGlide = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleGlideSelection(_:)))
         pencilGlide.minimumPressDuration = 0.02
@@ -3122,8 +3153,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let autoPencilActive = isPad && prefs.applePencilAutoDraw
 
-        let isDrawing = (currentToolMode == .write || currentToolMode == .eraser || isPencilMode || inkingState.isColoringModeActive)
-        let isCanvasMarkupActive = isDrawing || (autoPencilActive && prefs.applePencilDefaultTool == "pen")
+        let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
+        let isCanvasMarkupActive = (isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
         if context.coordinator.canvasProvider.isMarkupActive != isCanvasMarkupActive {
             context.coordinator.canvasProvider.isMarkupActive = isCanvasMarkupActive
         }
@@ -3131,9 +3162,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             context.coordinator.canvasProvider.pdfID = pdf.id
         }
 
-        let isTextHighlightGlide = !isDrawing && (currentToolMode == .textHighlight || (autoPencilActive && prefs.applePencilDefaultTool == "highlighter"))
-        let targetPencilGlide = isTextHighlightGlide
-        let targetFingerGlide = isTextHighlightGlide
+        let isDedicatedHighlighter = isPencilMode && currentToolMode == .textHighlight
+        let targetPencilGlide = isDedicatedHighlighter || (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "highlighter")
+        let targetFingerGlide = isDedicatedHighlighter || (!isPencilMode)
 
         if context.coordinator.pencilGlide?.isEnabled != targetPencilGlide {
             context.coordinator.pencilGlide?.isEnabled = targetPencilGlide
@@ -3141,7 +3172,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if context.coordinator.fingerGlide?.isEnabled != targetFingerGlide {
             context.coordinator.fingerGlide?.isEnabled = targetFingerGlide
         }
-        let targetPressDuration: TimeInterval = isTextHighlightGlide ? 0.04 : 0.18
+        let targetPressDuration: TimeInterval = isDedicatedHighlighter ? 0.04 : 0.18
         if context.coordinator.fingerGlide?.minimumPressDuration != targetPressDuration {
             context.coordinator.fingerGlide?.minimumPressDuration = targetPressDuration
         }
@@ -3322,17 +3353,22 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         func updateInkingGestures(for mode: ReaderToolMode) {
             let inkingState = InksyncInkingState.shared
-            let isDrawing = (mode == .write || mode == .eraser || inkingState.isColoringModeActive)
             let prefs = EBookPreferences.shared
             let isPad = UIDevice.current.userInterfaceIdiom == .pad
             let autoPenActive = isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
-            let shouldBeActive = isDrawing || autoPenActive
+            let autoHighlighterActive = isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "highlighter"
 
-            canvasProvider.isMarkupActive = shouldBeActive
+            let isPenDrawingTool = mode == .write || mode == .eraser
+            let isCanvasMarkupActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!parent.isPencilMode && autoPenActive)
+            canvasProvider.isMarkupActive = isCanvasMarkupActive
 
-            let isTextHighlightGlide = !isDrawing && mode == .textHighlight
-            pencilGlide?.isEnabled = isTextHighlightGlide
-            fingerGlide?.isEnabled = isTextHighlightGlide
+            let isDedicatedHighlighter = parent.isPencilMode && mode == .textHighlight
+            let isPencilGlide = isDedicatedHighlighter || (!parent.isPencilMode && autoHighlighterActive)
+            let isFingerGlide = isDedicatedHighlighter || (!parent.isPencilMode)
+
+            pencilGlide?.isEnabled = isPencilGlide
+            fingerGlide?.isEnabled = isFingerGlide
+            fingerGlide?.minimumPressDuration = isDedicatedHighlighter ? 0.04 : 0.18
         }
 
         deinit {
