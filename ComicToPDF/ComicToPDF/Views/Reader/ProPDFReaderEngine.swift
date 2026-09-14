@@ -2735,7 +2735,8 @@ struct PDFSelectionSnapshot: Sendable {
 // MARK: - Native iOS Contextual Menu Integration
 /// ProPDFHighlightableView suppresses native iOS callout menus so InkSync Pro's
 /// Kindle-style HUD and fluid automatic highlighting operate without obstruction.
-class ProPDFHighlightableView: PDFView, UIEditMenuInteractionDelegate {
+@MainActor
+class ProPDFHighlightableView: PDFView {
     var onHighlightRequested: (() -> Void)?
 
     override init(frame: CGRect) {
@@ -2753,11 +2754,10 @@ class ProPDFHighlightableView: PDFView, UIEditMenuInteractionDelegate {
     }
 
     func disableEditMenuInteractions(in view: UIView) {
-        for interaction in view.interactions {
-            if let editMenu = interaction as? UIEditMenuInteraction {
-                editMenu.delegate = self
-                editMenu.dismissMenu()
-            }
+        let editInteractions = view.interactions.compactMap { $0 as? UIEditMenuInteraction }
+        for editMenu in editInteractions {
+            editMenu.dismissMenu()
+            view.removeInteraction(editMenu)
         }
         for sub in view.subviews {
             disableEditMenuInteractions(in: sub)
@@ -2774,13 +2774,8 @@ class ProPDFHighlightableView: PDFView, UIEditMenuInteractionDelegate {
         disableEditMenuInteractions(in: subview)
     }
 
-    // MARK: - UIEditMenuInteractionDelegate
-    // Returning nil completely prevents iOS 16+ UIEditMenu from appearing
-    func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration, suggestedActions: [UIMenuElement]) -> UIMenu? {
-        return nil
-    }
-
     override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
         // Strip all default system menus so no native popups can be built
         builder.remove(menu: .standardEdit)
         builder.remove(menu: .lookup)
@@ -3612,7 +3607,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         @MainActor @objc func selectionChanged(_ notification: Notification) {
             guard let pdfView = notification.object as? PDFView else { return }
             (pdfView as? ProPDFHighlightableView)?.disableEditMenuInteractions(in: pdfView)
-            UIMenuController.shared.hideMenu()
 
             if let selection = pdfView.currentSelection, let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 autoHighlightDebounceTask?.cancel()
