@@ -1019,13 +1019,13 @@ extension EBookPageCurlReader {
             guard let canvas = pencilCanvas else { return }
             let prefs = EBookPreferences.shared
             let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let pencilOnlySetting = AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
             let currentMode = InksyncInkingState.shared.activeToolMode
-            let isWriting = currentMode == .write
             let isEraser = currentMode == .eraser
+            let isPenDrawingTool = currentMode == .write || isEraser
             let isColoring = InksyncInkingState.shared.isColoringModeActive
             let autoPenActive = isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
-            let shouldBeActive = isWriting || isEraser || isColoring || isPencilMode || autoPenActive
+            let shouldBeActive = (isPencilMode && isPenDrawingTool) || isColoring || autoPenActive
+            let pencilOnlySetting = AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
 
             canvas.overrideUserInterfaceStyle = .light
             canvas.isMarkupActive = shouldBeActive
