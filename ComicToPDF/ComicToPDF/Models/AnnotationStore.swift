@@ -317,6 +317,9 @@ class AnnotationStore: ObservableObject {
     private init() {}
     
     func initialize(with context: ModelContext) {
+        if self.modelContext === context && !self.store.isEmpty {
+            return
+        }
         self.modelContext = context
         Logger.shared.log("AnnotationStore initialized with ModelContext", category: "Annotations", type: .info)
         loadAll()
@@ -406,6 +409,46 @@ class AnnotationStore: ObservableObject {
                     }
                 }
             }
+        }
+    }
+    
+    /// Inserts a batch of annotations efficiently in a single SwiftData transaction without spawning per-item notifications or NLP storms.
+    func addBatch(_ annotations: [Annotation]) {
+        guard !annotations.isEmpty else { return }
+        
+        var addedAny = false
+        var targetPDFID: UUID? = nil
+
+        for annotation in annotations {
+            // Deduplication guard
+            guard store[annotation.pdfID]?.contains(where: { $0.id == annotation.id }) != true else { continue }
+            
+            store[annotation.pdfID, default: []].append(annotation)
+            idIndex[annotation.id] = annotation
+            targetPDFID = annotation.pdfID
+            addedAny = true
+
+            if let context = modelContext {
+                context.insert(SDAnnotation(from: annotation))
+            }
+        }
+
+        guard addedAny else { return }
+
+        if let context = modelContext {
+            do {
+                try context.save()
+            } catch {
+                Logger.shared.log("Annotation batch insert save FAILED: \(error.localizedDescription)", category: "Annotations", type: .error)
+            }
+        }
+
+        if let pid = targetPDFID {
+            NotificationCenter.default.post(
+                name: .annotationsDidChange,
+                object: nil,
+                userInfo: ["pdfID": pid, "isBatchImport": true]
+            )
         }
     }
     
@@ -517,10 +560,31 @@ class AnnotationStore: ObservableObject {
             
             var loadedStore: [UUID: [Annotation]] = [:]
             var loadedIndex: [UUID: Annotation] = [:]
+            var seenSignatures = Set<String>()
+            var duplicatesToDelete: [SDAnnotation] = []
+
             for sd in allAnnotations {
                 let dto = sd.toDTO()
+                let textKey = (dto.selectedText ?? dto.noteText ?? "\(dto.drawingData?.count ?? 0)")
+                    .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let sig = "\(dto.pdfID.uuidString)_\(dto.pageIndex)_\(dto.kind.rawValue)_\(textKey)"
+                
+                if !textKey.isEmpty && seenSignatures.contains(sig) {
+                    duplicatesToDelete.append(sd)
+                    continue
+                }
+                seenSignatures.insert(sig)
+                
                 loadedStore[dto.pdfID, default: []].append(dto)
                 loadedIndex[dto.id] = dto
+            }
+            
+            if !duplicatesToDelete.isEmpty {
+                for dup in duplicatesToDelete {
+                    context.delete(dup)
+                }
+                try? context.save()
+                Logger.shared.log("AnnotationStore pruned \(duplicatesToDelete.count) duplicate annotations from database", category: "Annotations", type: .warning)
             }
             
             self.store = loadedStore

@@ -386,7 +386,20 @@ final class PDFAnnotationSyncBridge {
     @MainActor
     func importNativeAnnotations(from document: PDFDocument, for pdfID: UUID, preferredPageIndex: Int? = nil) async -> [Annotation] {
         var imported: [Annotation] = []
-        let existingIDs = Set(AnnotationStore.shared.annotations(for: pdfID).map { $0.id })
+        let existingAnnotations = AnnotationStore.shared.annotations(for: pdfID)
+        let existingIDs = Set(existingAnnotations.map { $0.id })
+        
+        // Build set of existing signatures (pageIndex_kindRaw_text) to prevent duplicate imports
+        var existingSignatures = Set(existingAnnotations.compactMap { ann -> String? in
+            let textKey = (ann.selectedText ?? ann.noteText ?? "\(ann.drawingData?.count ?? 0)")
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !textKey.isEmpty else { return nil }
+            return "\(ann.pageIndex)_\(ann.kind.rawValue)_\(textKey)"
+        })
+        
+        // Track pages that already have ink annotations so we don't import duplicate ink
+        let existingInkPages = Set(existingAnnotations.filter { $0.kind == .ink }.map { $0.pageIndex })
+
         let totalPages = document.pageCount
         guard totalPages > 0 else { return [] }
         
@@ -430,6 +443,29 @@ final class PDFAnnotationSyncBridge {
                 
                 guard let mappedKind = kind else { continue }
                 
+                // If this annotation was created by InkSync Pro, nativeAnn.userName holds its UUID
+                if let userName = nativeAnn.userName, let existingUUID = UUID(uuidString: userName) {
+                    if existingIDs.contains(existingUUID) {
+                        continue
+                    }
+                }
+                
+                let contentText = nativeAnn.contents ?? ""
+                let textKey = contentText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                
+                // Check signature deduplication
+                if mappedKind != .ink && !textKey.isEmpty {
+                    let sig = "\(pageIndex)_\(mappedKind.rawValue)_\(textKey)"
+                    if existingSignatures.contains(sig) {
+                        continue
+                    }
+                    existingSignatures.insert(sig)
+                } else if mappedKind == .ink {
+                    if existingInkPages.contains(pageIndex) {
+                        continue
+                    }
+                }
+                
                 let boundsNorm = CodableCGRect(
                     x: Double((nativeAnn.bounds.minX - pageBounds.minX) / max(1, pageBounds.width)),
                     y: Double((nativeAnn.bounds.minY - pageBounds.minY) / max(1, pageBounds.height)),
@@ -438,9 +474,15 @@ final class PDFAnnotationSyncBridge {
                 )
                 
                 let colorHex = nativeAnn.color.toHexString()
-                let contentText = nativeAnn.contents ?? ""
+                let targetID: UUID
+                if let userName = nativeAnn.userName, let parsedUUID = UUID(uuidString: userName) {
+                    targetID = parsedUUID
+                } else {
+                    targetID = UUID()
+                }
                 
                 var newAnnotation = Annotation(
+                    id: targetID,
                     pdfID: pdfID,
                     pageIndex: pageIndex,
                     chapterTitle: "Page \(pageIndex + 1)",
@@ -448,8 +490,8 @@ final class PDFAnnotationSyncBridge {
                     createdAt: nativeAnn.modificationDate ?? Date(),
                     modifiedAt: Date(),
                     colorHex: colorHex,
-                    selectedText: mappedKind == .highlight ? contentText : nil,
-                    noteText: mappedKind == .note ? contentText : nil,
+                    selectedText: (mappedKind == .highlight || mappedKind == .underline || mappedKind == .strikeOut) ? (contentText.isEmpty ? nil : contentText) : nil,
+                    noteText: mappedKind == .note ? (contentText.isEmpty ? nil : contentText) : nil,
                     bounds: boundsNorm
                 )
                 
@@ -460,14 +502,14 @@ final class PDFAnnotationSyncBridge {
                     }
                 }
                 
-                if !existingIDs.contains(newAnnotation.id) {
-                    AnnotationStore.shared.add(newAnnotation)
-                    imported.append(newAnnotation)
-                }
+                imported.append(newAnnotation)
             }
         }
         
-        Logger.shared.log("PDFAnnotationSync: Imported \(imported.count) third-party annotations from PDF", category: "PDF")
+        if !imported.isEmpty {
+            AnnotationStore.shared.addBatch(imported)
+            Logger.shared.log("PDFAnnotationSync: Batch-imported \(imported.count) third-party annotations from PDF", category: "PDF")
+        }
         return imported
     }
     

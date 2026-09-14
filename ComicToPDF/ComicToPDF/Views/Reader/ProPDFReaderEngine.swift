@@ -448,6 +448,8 @@ struct ProPDFReaderEngine: View {
 
     private func handleAnnotationsDidChange(_ notif: Notification) {
         guard let targetPDFID = notif.userInfo?["pdfID"] as? UUID, targetPDFID == pdf.id else { return }
+        // Batch import from native PDF annotations shouldn't trigger re-application of annotations to the PDFDocument (they are already in the document!)
+        if let isBatch = notif.userInfo?["isBatchImport"] as? Bool, isBatch { return }
         if let deletedID = notif.userInfo?["deletedID"] as? UUID {
             // Safely detach from native PDF document without re-invoking store.delete
             if let doc = pdfDocument {
@@ -1475,6 +1477,7 @@ struct ProPDFReaderEngine: View {
 
     // MARK: - Actions & Persistence
     private func loadPDFDocument() {
+        guard pdfDocument == nil else { return }
         loadTask?.cancel()
         loadTask = Task.detached(priority: .userInitiated) {
             let sourcePDF = self.pdf
@@ -1575,12 +1578,9 @@ struct ProPDFReaderEngine: View {
                     // Ingest and render all existing InkSync Pro highlights, notes, and ink from AnnotationStore onto the live document
                     PDFAnnotationSyncBridge.shared.applyStoreAnnotations(for: sourcePDF.id, to: doc)
 
-                    // Ingest native third-party PDF annotations asynchronously so document opens in <50ms
-                    Task { @MainActor in
-                        let imported = await PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: doc, for: sourcePDF.id, preferredPageIndex: self.currentPageIndex)
-                        if !imported.isEmpty {
-                            PDFAnnotationSyncBridge.shared.applyStoreAnnotations(for: sourcePDF.id, to: doc)
-                        }
+                    // Ingest native third-party PDF annotations asynchronously in background so document opens in <50ms
+                    Task(priority: .background) {
+                        _ = await PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: doc, for: sourcePDF.id, preferredPageIndex: savedIndex)
                     }
                 }
             } else {
