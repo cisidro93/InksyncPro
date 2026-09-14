@@ -46,6 +46,7 @@ struct EBookReaderView: View {
     @State private var isLoading = true
     @State private var showChapterList = false
     @State private var showHUD = true
+    @State private var isPencilMode = false
     @State private var hudIdleTask: Task<Void, Never>? = nil
 
     private func startHUDIdleTimer(delay: UInt64 = 3_500_000_000) {
@@ -200,6 +201,8 @@ struct EBookReaderView: View {
                                 initialPage: chapterPage,
                                 totalPages:  $chapterTotalPages,
                                 startAtEndOfChapter: startAtEndOfChapter,
+                                spineIndex:  currentIndex,
+                                isPencilMode: isPencilMode,
                                 onNext:      nextChapter,
                                 onPrev:      prevChapter,
                                 onCenterTap: toggleHUD,
@@ -233,6 +236,7 @@ struct EBookReaderView: View {
                                     }
                                 },
                                 onSelectionDismissed: {
+                                    guard !isApplyingHighlightDirectly else { return }
                                     withAnimation(.easeInOut(duration: 0.18)) {
                                         selectedTextForHUD = nil
                                     }
@@ -1380,12 +1384,70 @@ struct EBookReaderView: View {
                 .ignoresSafeArea(edges: .bottom)
             }
             
+            if isPencilMode {
+                VStack {
+                    Spacer()
+                    InksyncPenDockView(
+                        onUndo: {
+                            NotificationCenter.default.post(name: NSNotification.Name("EPUBReaderUndoDrawing"), object: nil)
+                        },
+                        onRedo: {
+                            NotificationCenter.default.post(name: NSNotification.Name("EPUBReaderRedoDrawing"), object: nil)
+                        },
+                        onClearPage: {
+                            NotificationCenter.default.post(name: NSNotification.Name("EPUBReaderClearDrawing"), object: nil)
+                        },
+                        onClose: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                isPencilMode = false
+                            }
+                        }
+                    )
+                    .padding(.bottom, 36)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .ignoresSafeArea(.keyboard)
+            } else if !showHUD && selectedTextForHUD == nil {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                isPencilMode = true
+                                InksyncInkingState.shared.activeToolMode = .write
+                            }
+                            HapticEngine.medium()
+                        } label: {
+                            Image(systemName: "pencil.tip.crop.circle")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                                .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 3)
+                        }
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 28)
+                    }
+                }
+                .transition(.opacity)
+            }
+
             textSelectionHUDOverlay
             ReadingJumpToastOverlay()
             toastAlertOverlay
             
             if prefs.showReadingRuler {
                 ReadingRulerOverlay()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleMarkupMode"))) { _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                isPencilMode.toggle()
+                if isPencilMode {
+                    InksyncInkingState.shared.activeToolMode = .write
+                }
             }
         }
     }
@@ -1594,7 +1656,9 @@ struct EBookReaderView: View {
         AnnotationStore.shared.add(highlight)
         let sdAnnotation = SDAnnotation(from: highlight)
         modelContext.insert(sdAnnotation)
-        try? modelContext.save()
+        Task { @MainActor in
+            try? InksyncProApp.sharedModelContainer.mainContext.save()
+        }
         HapticEngine.selection()
     }
 
@@ -1663,7 +1727,9 @@ struct EBookReaderView: View {
         AnnotationStore.shared.add(highlight)
         let sdAnnotation = SDAnnotation(from: highlight)
         modelContext.insert(sdAnnotation)
-        try? modelContext.save()
+        Task { @MainActor in
+            try? InksyncProApp.sharedModelContainer.mainContext.save()
+        }
 
         let idStr = highlight.id.uuidString
         let safeSymbol = symbol?.replacingOccurrences(of: "'", with: "\\'") ?? ""

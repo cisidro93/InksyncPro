@@ -220,14 +220,9 @@ open class HighlightableWebView: WKWebView {
         if action == #selector(customHighlightAction(_:)) {
             return true
         }
-        let actionStr = NSStringFromSelector(action)
-        let allowedNativeFunctions = ["copy:", "_lookup:", "_translate:", "share:", "_define:", "speak:"]
-        
-        if allowedNativeFunctions.contains(actionStr) {
-            return true
-        }
-        
-        return super.canPerformAction(action, withSender: sender)
+        // Suppress native iOS popup menus (Look Up, Translate, Share, Define)
+        // so Inksync Pro's capsule HUD remains the exclusive interaction surface.
+        return false
     }
     
     @objc open func customHighlightAction(_ sender: Any?) {
@@ -236,6 +231,14 @@ open class HighlightableWebView: WKWebView {
     
     open override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
+        // Strip system menus so native popups never compete with Inksync HUD
+        builder.remove(menu: .standardEdit)
+        builder.remove(menu: .lookup)
+        builder.remove(menu: .learn)
+        builder.remove(menu: .share)
+        builder.remove(menu: .services)
+        builder.remove(menu: .format)
+        builder.remove(menu: .substitutions)
         
         let highlightCommand = UICommand(title: "Highlight", action: #selector(customHighlightAction(_:)))
         let highlightMenu = UIMenu(title: "Inksync", options: .displayInline, children: [highlightCommand])

@@ -2924,13 +2924,18 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         // ── Apple Pencil Glide (instant word-snap) highlight gesture (stylus only) ──
         // 20ms ultra-low latency allows Apple Pencil to immediately snap and select text on touch.
+        let prefs = EBookPreferences.shared
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        let autoPencilActive = isPad && prefs.applePencilAutoDraw
+        let isPencilHighlightGlide = (isPencilMode && (inkingState.activeToolMode == .textHighlight)) ||
+                                     (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "highlighter")
         let pencilGlide = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleGlideSelection(_:)))
         pencilGlide.minimumPressDuration = 0.02
         pencilGlide.allowableMovement = 2000
         pencilGlide.cancelsTouchesInView = false
         pencilGlide.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
         pencilGlide.delegate = context.coordinator
-        pencilGlide.isEnabled = isTextHighlightGlide
+        pencilGlide.isEnabled = isPencilHighlightGlide
         pdfView.addGestureRecognizer(pencilGlide)
         context.coordinator.pencilGlide = pencilGlide
 
@@ -2973,8 +2978,12 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         let inkingState = InksyncInkingState.shared
         let currentToolMode = inkingState.activeToolMode
+        let prefs = EBookPreferences.shared
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        let autoPencilActive = isPad && prefs.applePencilAutoDraw
 
-        let isCanvasMarkupActive = isPencilMode && (currentToolMode == .write || currentToolMode == .eraser)
+        let isCanvasMarkupActive = (isPencilMode && (currentToolMode == .write || currentToolMode == .eraser)) ||
+                                   (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
         if context.coordinator.canvasProvider.isMarkupActive != isCanvasMarkupActive {
             context.coordinator.canvasProvider.isMarkupActive = isCanvasMarkupActive
         }
@@ -2982,9 +2991,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             context.coordinator.canvasProvider.pdfID = pdf.id
         }
 
-        let isTextHighlightGlide = isPencilMode && (currentToolMode == .textHighlight)
+        let isTextHighlightGlide = (isPencilMode && (currentToolMode == .textHighlight)) ||
+                                  (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "highlighter")
         let targetPencilGlide = isTextHighlightGlide
-        let targetFingerGlide = isTextHighlightGlide || (!isPencilMode)
+        let targetFingerGlide = (isPencilMode && currentToolMode == .textHighlight) || (!isPencilMode)
 
         if context.coordinator.pencilGlide?.isEnabled != targetPencilGlide {
             context.coordinator.pencilGlide?.isEnabled = targetPencilGlide
@@ -2996,8 +3006,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if context.coordinator.fingerGlide?.minimumPressDuration != targetPressDuration {
             context.coordinator.fingerGlide?.minimumPressDuration = targetPressDuration
         }
-
-        let prefs = EBookPreferences.shared
         let isLandscape = uiView.bounds.width > uiView.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
         let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
@@ -3347,7 +3355,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                         parent.onHighlightSelectionDirect?(selection, targetPage, color)
                         HapticEngine.selection()
                     }
-                    if parent.isPencilMode && InksyncInkingState.shared.activeToolMode == .textHighlight {
+                    let isHighlighterMode = (parent.isPencilMode && InksyncInkingState.shared.activeToolMode == .textHighlight) ||
+                                            (!parent.isPencilMode && EBookPreferences.shared.applePencilAutoDraw && EBookPreferences.shared.applePencilDefaultTool == "highlighter" && gesture == pencilGlide)
+                    if isHighlighterMode {
                         // In dedicated highlighter pen mode, clear selection immediately so user sees clean highlight without selection box
                         pdfView.setCurrentSelection(nil, animate: false)
                         parent.onTextSelectionChanged(nil, nil)
@@ -3621,7 +3631,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     self.parent.onHighlightSelectionDirect?(currentSel, targetPage, color)
                     HapticEngine.selection()
 
-                    if self.parent.isPencilMode && InksyncInkingState.shared.activeToolMode == .textHighlight {
+                    let isHighlighterMode = (self.parent.isPencilMode && InksyncInkingState.shared.activeToolMode == .textHighlight) ||
+                                            (!self.parent.isPencilMode && EBookPreferences.shared.applePencilAutoDraw && EBookPreferences.shared.applePencilDefaultTool == "highlighter")
+                    if isHighlighterMode {
                         pv.setCurrentSelection(nil, animate: false)
                         self.parent.onTextSelectionChanged(nil, nil)
                     }

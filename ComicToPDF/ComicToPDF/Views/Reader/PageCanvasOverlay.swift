@@ -36,20 +36,18 @@ final class PassthroughPKCanvasView: PKCanvasView {
             return nil
         }
 
-        // In write or eraser mode, hit test superview to get the canvas or internal tiled view
-        guard let view = super.hitTest(point, with: event) else { return nil }
-
-        // If pencil-only drawing is explicitly enabled in settings, only allow pencil touches
-        let isPad = UIDevice.current.userInterfaceIdiom == .pad
-        let pencilOnly = isPad && AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
-        if pencilOnly && currentMode != .eraser {
+        // When finger drawing is disabled (pencil-only mode), direct finger touches pass down to PDFView for scrolling & page navigation
+        if !allowFingerDrawing && currentMode != .eraser {
             if let touches = event?.allTouches, !touches.isEmpty {
-                let hasPencil = touches.contains { $0.type == .pencil }
-                return hasPencil ? view : nil
+                let hasPencilTouch = touches.contains(where: { $0.type == .pencil })
+                if !hasPencilTouch {
+                    return nil
+                }
             }
         }
-        
-        return view
+
+        // In write or eraser mode, capture touch directly for PKCanvasView
+        return super.hitTest(point, with: event)
     }
 }
 

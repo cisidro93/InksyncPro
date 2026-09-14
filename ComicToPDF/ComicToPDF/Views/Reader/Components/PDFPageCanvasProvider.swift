@@ -144,18 +144,25 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
 
     private func configureCanvasPolicy(_ canvas: PassthroughPKCanvasView) {
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
-        let pencilOnly = isPad && AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
+        let prefs = EBookPreferences.shared
+        let pencilOnlyDrawingSetting = AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
+        let pencilOnly = isPad && (pencilOnlyDrawingSetting || prefs.applePencilAutoDraw)
         let currentMode = InksyncInkingState.shared.activeToolMode
         let isWriting = currentMode == .write
         let isEraser = currentMode == .eraser
-        let shouldBeActive = isMarkupActive && (isWriting || isEraser)
+        let autoPenActive = !isMarkupActive && isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
+        let shouldBeActive = (isMarkupActive && (isWriting || isEraser)) || autoPenActive
 
         canvas.overrideUserInterfaceStyle = .light
         canvas.isMarkupActive = shouldBeActive
-        canvas.allowFingerDrawing = shouldBeActive && (!pencilOnly || isEraser)
-        canvas.drawingPolicy = (pencilOnly && !isEraser) ? .pencilOnly : .anyInput
+        let allowFinger = (isMarkupActive && !pencilOnlyDrawingSetting) || isEraser
+        canvas.allowFingerDrawing = allowFinger
+        canvas.drawingPolicy = (pencilOnly && !allowFinger) ? .pencilOnly : .anyInput
         canvas.isUserInteractionEnabled = shouldBeActive
-        if pencilOnly && !isEraser {
+        canvas.drawingGestureRecognizer.cancelsTouchesInView = false
+        canvas.isScrollEnabled = false
+        canvas.bounces = false
+        if pencilOnly && !allowFinger {
             canvas.panGestureRecognizer.isEnabled = false
         } else {
             canvas.panGestureRecognizer.isEnabled = true
@@ -330,19 +337,22 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
 
 extension PDFPageCanvasProvider: PDFPageOverlayViewProvider {
 
-    public nonisolated func pdfView(_ view: PDFView, overlayViewFor page: PDFPage) -> UIView? {
+    @objc(pdfView:overlayViewForPage:)
+    public nonisolated func pdfView(_ pdfView: PDFView, overlayViewFor page: PDFPage) -> UIView? {
         MainActor.assumeIsolated {
             self.overlayView(for: page)
         }
     }
 
-    public nonisolated func pdfView(_ view: PDFView, willDisplayOverlayView overlayView: UIView, for page: PDFPage) {
+    @objc(pdfView:willDisplayOverlayView:forPage:)
+    public nonisolated func pdfView(_ pdfView: PDFView, willDisplayOverlayView overlayView: UIView, for page: PDFPage) {
         MainActor.assumeIsolated {
             self.willDisplay(overlayView: overlayView, for: page)
         }
     }
 
-    public nonisolated func pdfView(_ view: PDFView, willEndDisplayingOverlayView overlayView: UIView, for page: PDFPage) {
+    @objc(pdfView:willEndDisplayingOverlayView:forPage:)
+    public nonisolated func pdfView(_ pdfView: PDFView, willEndDisplayingOverlayView overlayView: UIView, for page: PDFPage) {
         MainActor.assumeIsolated {
             self.willEndDisplaying(overlayView: overlayView, for: page)
         }

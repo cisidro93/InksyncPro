@@ -1,5 +1,8 @@
 import SwiftUI
 import WebKit
+import PencilKit
+import SwiftData
+import Combine
 
 // ============================================================
 // MARK: - EBookPageCurlReader
@@ -11,13 +14,14 @@ import WebKit
 struct EBookPageCurlReader: UIViewControllerRepresentable {
     let spineItem: EBookMetadata.SpineItem
     let unzipDir: URL?
-    @ObservedObject var prefs: EBookPreferences
+    let prefs: EBookPreferences
     let colorScheme: ColorScheme
-
     @Binding var currentPage: Int
     var initialPage: Int
     @Binding var totalPages: Int
     var startAtEndOfChapter: Bool = false
+    var spineIndex: Int = 0
+    var isPencilMode: Bool = false
 
     var onNext: () -> Void
     var onPrev: () -> Void
@@ -119,6 +123,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIPageViewController, context: Context) {
         let oldParent = context.coordinator.parent
         context.coordinator.parent = self
+        context.coordinator.updatePencilInteractivity(isPencilMode: self.isPencilMode)
 
         if self.webViewRef == nil && context.coordinator.primaryWebView != nil {
             DispatchQueue.main.async {
@@ -209,7 +214,7 @@ extension EBookPageCurlReader {
     // MARK: - Coordinator
     // ============================================================
     @MainActor
-    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate, WKNavigationDelegate, WKScriptMessageHandler, UIGestureRecognizerDelegate {
+    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate, WKNavigationDelegate, WKScriptMessageHandler, UIGestureRecognizerDelegate, PKCanvasViewDelegate {
         var parent: EBookPageCurlReader
         weak var pageViewController: UIPageViewController?
         var isTransitioning: Bool = false {
@@ -242,6 +247,10 @@ extension EBookPageCurlReader {
 
         // Primary master WKWebView — used for text layout, metrics & live interactions
         private(set) var primaryWebView: WKWebView?
+        // Apple Pencil Inking Overlay Engine
+        private(set) var pencilCanvas: PassthroughPKCanvasView?
+        private var inkingCancellables = Set<AnyCancellable>()
+        private var debounceSaveDrawingTask: Task<Void, Never>? = nil
         // Pre-rendered column snapshots — used for instant, zero-lag 3D page curling
         private var pageSnapshots: [Int: UIImage] = [:]
         // Tokens for block-based NotificationCenter observers to prevent memory leaks
@@ -251,6 +260,74 @@ extension EBookPageCurlReader {
             self.parent = parent
             super.init()
             setupPrimaryWebView()
+
+            // Initialize Apple Pencil inking canvas overlay
+            let canvas = PassthroughPKCanvasView()
+            canvas.overrideUserInterfaceStyle = .light
+            canvas.backgroundColor = .clear
+            canvas.isOpaque = false
+            canvas.bounces = false
+            canvas.isScrollEnabled = false
+            canvas.delegate = self
+            canvas.tool = InksyncInkingState.shared.makePKTool()
+            self.pencilCanvas = canvas
+            self.updatePencilInteractivity(isPencilMode: parent.isPencilMode)
+
+            InksyncInkingState.shared.$activePreset
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in
+                    self?.pencilCanvas?.tool = InksyncInkingState.shared.makePKTool()
+                }
+                .store(in: &inkingCancellables)
+
+            InksyncInkingState.shared.$activeToolMode
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in
+                    guard let self = self else { return }
+                    self.pencilCanvas?.tool = InksyncInkingState.shared.makePKTool()
+                    self.updatePencilInteractivity(isPencilMode: self.parent.isPencilMode)
+                }
+                .store(in: &inkingCancellables)
+
+            InksyncInkingState.shared.$eraserType
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in
+                    self?.pencilCanvas?.tool = InksyncInkingState.shared.makePKTool()
+                }
+                .store(in: &inkingCancellables)
+
+            let undoToken = NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("EPUBReaderUndoDrawing"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.pencilCanvas?.undoManager?.undo()
+                }
+            }
+            observerTokens.append(undoToken)
+
+            let redoToken = NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("EPUBReaderRedoDrawing"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.pencilCanvas?.undoManager?.redo()
+                }
+            }
+            observerTokens.append(redoToken)
+
+            let clearToken = NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("EPUBReaderClearDrawing"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.clearCurrentPageDrawing()
+                }
+            }
+            observerTokens.append(clearToken)
 
             let forwardToken = NotificationCenter.default.addObserver(
                 forName: NSNotification.Name("EBookTurnPageForward"),
@@ -383,6 +460,13 @@ extension EBookPageCurlReader {
             observerTokens.removeAll()
             NotificationCenter.default.removeObserver(self)
 
+            debounceSaveDrawingTask?.cancel()
+            debounceSaveDrawingTask = nil
+            saveCurrentDrawing()
+            inkingCancellables.removeAll()
+            pencilCanvas?.removeFromSuperview()
+            pencilCanvas = nil
+
             guard let wv = primaryWebView else { return }
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "metrics")
             wv.configuration.userContentController.removeScriptMessageHandler(forName: "highlight")
@@ -496,6 +580,7 @@ extension EBookPageCurlReader {
 
                 // Mount primaryWebView on root so WebKit processes layout, metrics and JS immediately
                 self.mountPrimaryWebViewOnRoot()
+                self.loadDrawingForCurrentPage()
 
                 if self.parent.startAtEndOfChapter || self.parent.initialScrollFraction >= 0.99 {
                     self.needsJumpToEnd = true
@@ -707,6 +792,8 @@ extension EBookPageCurlReader {
                 captureSnapshot(for: vcs)
             }
             captureSnapshot(for: pendingViewControllers)
+            saveCurrentDrawingImmediate()
+            pencilCanvas?.removeFromSuperview()
             primaryWebView?.removeFromSuperview()
         }
 
@@ -746,12 +833,15 @@ extension EBookPageCurlReader {
             let targetPage = completed ? newPageIndex : currentPageIndex
             pruneSnapshotCache(around: targetPage)
             primaryWebView?.isHidden = true
+            pencilCanvas?.isHidden = true
             mountPrimaryWebViewOnRoot()
+            loadDrawingForCurrentPage()
             // Reveal the WebView only after the JS column-position commit completes,
             // preventing any momentary flash of the wrong column position.
             primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));") { [weak self, weak pageViewController] _, _ in
                 DispatchQueue.main.async {
                     self?.primaryWebView?.isHidden = false
+                    self?.pencilCanvas?.isHidden = false
                     if let activeVCs = pageViewController?.viewControllers {
                         self?.captureSnapshot(for: activeVCs)
                     }
@@ -782,9 +872,16 @@ extension EBookPageCurlReader {
             if wv.frame != bounds {
                 wv.frame = bounds
             }
+            if let canvas = pencilCanvas, canvas.frame != bounds {
+                canvas.frame = bounds
+            }
 
             if !isTransitioning {
                 pvc.view.bringSubviewToFront(wv)
+                if let canvas = pencilCanvas {
+                    pvc.view.bringSubviewToFront(canvas)
+                    canvas.isHidden = false
+                }
                 wv.isHidden = false
             }
 
@@ -812,6 +909,130 @@ extension EBookPageCurlReader {
             }
             pvc.view.bringSubviewToFront(wv)
             wv.isHidden = false
+
+            if let canvas = pencilCanvas {
+                canvas.frame = targetBounds
+                canvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                if canvas.superview != pvc.view {
+                    canvas.removeFromSuperview()
+                    pvc.view.addSubview(canvas)
+                }
+                pvc.view.bringSubviewToFront(canvas)
+                canvas.isHidden = false
+            }
+        }
+
+        // MARK: - Apple Pencil Inking & Drawing Engine
+
+        func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+            debounceSaveDrawingTask?.cancel()
+            debounceSaveDrawingTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                guard !Task.isCancelled, let self = self else { return }
+                self.saveCurrentDrawing()
+            }
+        }
+
+        func saveCurrentDrawingImmediate() {
+            debounceSaveDrawingTask?.cancel()
+            debounceSaveDrawingTask = nil
+            saveCurrentDrawing()
+        }
+
+        func saveCurrentDrawing() {
+            guard let pdfID = parent.pdfID, let canvas = pencilCanvas else { return }
+            let drawing = canvas.drawing
+            let drawingData = drawing.dataRepresentation()
+            let pageIdx = parent.spineIndex * 10_000 + currentPageIndex
+            let ctx = InksyncProApp.sharedModelContainer.mainContext
+
+            let descriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate {
+                $0.pdfID == pdfID && $0.pageIndex == pageIdx && $0.kindRaw == "ink"
+            })
+
+            let existing = try? ctx.fetch(descriptor).first
+            if drawing.bounds.isEmpty && existing == nil { return }
+
+            if let annotation = existing {
+                annotation.drawingData = drawingData
+                annotation.modifiedAt = Date()
+                Task { @MainActor in
+                    try? InksyncProApp.sharedModelContainer.mainContext.save()
+                }
+                var storeDto = annotation.toDTO()
+                storeDto.drawingData = drawingData
+                AnnotationStore.shared.update(storeDto)
+            } else {
+                var dto = Annotation(
+                    id: UUID(),
+                    pdfID: pdfID,
+                    pageIndex: pageIdx,
+                    chapterTitle: parent.spineItem.label,
+                    kind: .ink,
+                    createdAt: Date(),
+                    modifiedAt: Date()
+                )
+                dto.drawingData = drawingData
+                let newInk = SDAnnotation(from: dto)
+                ctx.insert(newInk)
+                Task { @MainActor in
+                    try? InksyncProApp.sharedModelContainer.mainContext.save()
+                }
+                AnnotationStore.shared.add(dto)
+            }
+        }
+
+        func loadDrawingForCurrentPage() {
+            guard let pdfID = parent.pdfID, let canvas = pencilCanvas else { return }
+            let pageIdx = parent.spineIndex * 10_000 + currentPageIndex
+            let ctx = InksyncProApp.sharedModelContainer.mainContext
+            let descriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate {
+                $0.pdfID == pdfID && $0.pageIndex == pageIdx && $0.kindRaw == "ink"
+            })
+
+            if let existing = try? ctx.fetch(descriptor).first,
+               let data = existing.drawingData,
+               let drawing = try? PKDrawing(data: data) {
+                canvas.drawing = drawing
+            } else if let storeAnn = AnnotationStore.shared.annotations(for: pdfID).first(where: {
+                $0.pageIndex == pageIdx && $0.kind == .ink
+            }), let data = storeAnn.drawingData, let drawing = try? PKDrawing(data: data) {
+                canvas.drawing = drawing
+            } else {
+                canvas.drawing = PKDrawing()
+            }
+        }
+
+        func clearCurrentPageDrawing() {
+            pencilCanvas?.drawing = PKDrawing()
+            saveCurrentDrawing()
+        }
+
+        func updatePencilInteractivity(isPencilMode: Bool) {
+            guard let canvas = pencilCanvas else { return }
+            let prefs = EBookPreferences.shared
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let pencilOnlySetting = AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
+            let currentMode = InksyncInkingState.shared.activeToolMode
+            let isWriting = currentMode == .write
+            let isEraser = currentMode == .eraser
+            let autoPenActive = !isPencilMode && isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
+            let shouldBeActive = (isPencilMode && (isWriting || isEraser)) || autoPenActive
+
+            canvas.overrideUserInterfaceStyle = .light
+            canvas.isMarkupActive = shouldBeActive
+            let allowFinger = (isPencilMode && !pencilOnlySetting) || isEraser
+            canvas.allowFingerDrawing = allowFinger
+            canvas.drawingPolicy = (isPad && !allowFinger) ? .pencilOnly : .anyInput
+            canvas.isUserInteractionEnabled = shouldBeActive
+            canvas.drawingGestureRecognizer.cancelsTouchesInView = false
+            canvas.isScrollEnabled = false
+            canvas.bounces = false
+            if isPad && !allowFinger {
+                canvas.panGestureRecognizer.isEnabled = false
+            } else {
+                canvas.panGestureRecognizer.isEnabled = true
+            }
         }
 
 
@@ -1358,7 +1579,7 @@ extension EBookPageCurlReader {
                         if !spineLabel.isEmpty && (title.contains(spineLabel) || spineLabel.contains(title)) { return true }
                         if !spineHref.isEmpty && (title.contains(spineHref) || spineHref.contains(title)) { return true }
                     }
-                    return true
+                    return ann.pageIndex == parent.spineIndex
                 }
             for ann in annotations {
                 guard let text = ann.selectedText, let color = ann.colorHex else { continue }
