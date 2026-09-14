@@ -2924,7 +2924,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         // ── Apple Pencil Glide (instant word-snap) highlight gesture (stylus only) ──
         // 20ms ultra-low latency allows Apple Pencil to immediately snap and select text on touch.
-        let prefs = EBookPreferences.shared
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let autoPencilActive = isPad && prefs.applePencilAutoDraw
         let isPencilHighlightGlide = (isPencilMode && (inkingState.activeToolMode == .textHighlight)) ||
