@@ -2657,8 +2657,6 @@ struct ProPDFReaderEngine: View {
             page.displaysAnnotations = false
             page.displaysAnnotations = true
         }
-        pdfView.displaysAnnotations = false
-        pdfView.displaysAnnotations = true
         pdfView.layoutDocumentView()
         pdfView.setNeedsDisplay()
         pdfView.documentView?.setNeedsDisplay()
