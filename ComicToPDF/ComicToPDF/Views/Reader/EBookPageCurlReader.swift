@@ -1364,7 +1364,11 @@ extension EBookPageCurlReader {
                             if (colWidth > 0) {
                                 var targetPage = Math.max(0, Math.min(Math.floor(offsetLeft / colWidth), _totalPages - 1));
                                 goToPage(targetPage);
-                                window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
+                                 try {
+                                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.metrics) {
+                                         window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
+                                     }
+                                 } catch(e) {}
                             }
                         }
                     })();
@@ -1478,7 +1482,11 @@ extension EBookPageCurlReader {
                         _targetPage = Math.max(0, Math.min(Math.round(currentFrac * (newTotal - 1)), newTotal - 1));
                     }
                     applyPagePosition();
-                    window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: newTotal });
+                    try {
+                        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.metrics) {
+                            window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: newTotal });
+                        }
+                    } catch(e) {}
                 }
             })();
             """
@@ -1491,16 +1499,7 @@ extension EBookPageCurlReader {
         }
 
         private func generateAllColumnSnapshots() {
-            guard let wv = primaryWebView, wv.bounds.width > 1, wv.bounds.height > 1 else { return }
-            let activePage = currentPageIndex
-            let config = WKSnapshotConfiguration()
-            config.rect = wv.bounds
-            config.afterScreenUpdates = true
-            wv.takeSnapshot(with: config) { [weak self] image, _ in
-                if let img = image {
-                    self?.pageSnapshots[activePage] = img
-                }
-            }
+            takePageSnapshot(for: currentPageIndex)
         }
 
         private func startBackgroundSnapshotPrecaching(totalPages: Int) {
@@ -1519,20 +1518,30 @@ extension EBookPageCurlReader {
             bgWV.isOpaque = false
             bgWV.backgroundColor = .clear
             bgWV.scrollView.isScrollEnabled = false
-            bgWV.alpha = 0.01
-            pv.insertSubview(bgWV, at: 0)
+            bgWV.alpha = 1.0 // Full opacity guarantees sharp, legible snapshots
+            pv.insertSubview(bgWV, at: 0) // Occluded behind root page view controllers
             self.backgroundPrecacheWebView = bgWV
 
             let fullHTML = self.buildPageHTML(for: 0)
             bgWV.loadHTMLString(fullHTML, baseURL: self.chapterBaseURL)
 
             precacheTask = Task { @MainActor [weak self, weak bgWV] in
-                try? await Task.sleep(nanoseconds: 350_000_000)
-                guard let self = self, let bgWV = bgWV, !Task.isCancelled else { return }
+                // Verify DOM readiness before snapshotting
+                var ready = false
+                for _ in 0..<15 {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    guard let bgWV = bgWV, !Task.isCancelled else { return }
+                    if let state = try? await bgWV.evaluateJavaScript("document.readyState") as? String,
+                       state == "complete" || state == "interactive" {
+                        ready = true
+                        break
+                    }
+                }
+                guard ready, let self = self, let bgWV = bgWV, !Task.isCancelled else { return }
 
                 let isDual = self.isDualPageMode
                 let step = isDual ? 2 : 1
-                let maxPages = min(totalPages, 16)
+                let maxPages = min(totalPages, 24)
                 var page = step
 
                 while page < maxPages {
@@ -1548,7 +1557,7 @@ extension EBookPageCurlReader {
                             }
                         }
 
-                        try? await Task.sleep(nanoseconds: 60_000_000)
+                        try? await Task.sleep(nanoseconds: 80_000_000)
                         guard !Task.isCancelled, !self.isTransitioning else { break }
 
                         let snapshotConfig = WKSnapshotConfiguration()
@@ -1604,6 +1613,34 @@ extension EBookPageCurlReader {
             config.afterScreenUpdates = true
             wv.takeSnapshot(with: config) { [weak self] image, _ in
                 guard let self = self, let img = image else { return }
+                if self.isDualPageMode, let cgImg = img.cgImage {
+                    let scale = img.scale
+                    let width = CGFloat(cgImg.width)
+                    let height = CGFloat(cgImg.height)
+                    let halfWidth = width / 2.0
+
+                    let leftRect = CGRect(x: 0, y: 0, width: halfWidth, height: height)
+                    let rightRect = CGRect(x: halfWidth, y: 0, width: halfWidth, height: height)
+
+                    let leftIdx = pageIndex % 2 == 0 ? pageIndex : pageIndex - 1
+                    let rightIdx = leftIdx + 1
+
+                    if let leftCg = cgImg.cropping(to: leftRect),
+                       let rightCg = cgImg.cropping(to: rightRect) {
+                        let leftImg = UIImage(cgImage: leftCg, scale: scale, orientation: img.imageOrientation)
+                        let rightImg = UIImage(cgImage: rightCg, scale: scale, orientation: img.imageOrientation)
+                        self.pageSnapshots[leftIdx] = leftImg
+                        self.pageSnapshots[rightIdx] = rightImg
+                        if let vcs = self.pageViewController?.viewControllers as? [EBookPageContentViewController] {
+                            for vc in vcs {
+                                if vc.pageIndex == leftIdx { vc.updateSnapshot(leftImg) }
+                                else if vc.pageIndex == rightIdx { vc.updateSnapshot(rightImg) }
+                            }
+                        }
+                        return
+                    }
+                }
+
                 self.pageSnapshots[pageIndex] = img
                 if let vcs = self.pageViewController?.viewControllers as? [EBookPageContentViewController] {
                     for vc in vcs where vc.pageIndex == pageIndex {
@@ -1885,7 +1922,8 @@ extension EBookPageCurlReader {
                 padding-bottom: \(paddingBottom)px !important;
                 padding-left: \(m)px !important;
                 padding-right: \(m)px !important;
-                width: 100% !important;
+                width: auto !important;
+                max-width: none !important;
                 height: 100% !important;
                 max-height: 100% !important;
                 overflow: visible !important;
@@ -2076,14 +2114,22 @@ extension EBookPageCurlReader {
             window.onload = function() {
                 computeMetrics();
                 applyPagePosition();
-                window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
+                try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.metrics) {
+                        window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
+                    }
+                } catch(e) {}
             };
 
             if (document.fonts && document.fonts.ready) {
                 document.fonts.ready.then(function() {
                     computeMetrics();
                     applyPagePosition();
-                    window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
+                    try {
+                        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.metrics) {
+                            window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
+                        }
+                    } catch(e) {}
                 });
             }
 

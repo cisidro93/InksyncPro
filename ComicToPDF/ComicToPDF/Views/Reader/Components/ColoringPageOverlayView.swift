@@ -13,28 +13,28 @@ import PencilKit
 /// Colors drawn on the canvas flow seamlessly underneath the lineart mask, keeping black
 /// contours crisp, untouched, and on top at all times.
 @MainActor
-public final class ColoringPageOverlayView: UIView {
+final class ColoringPageOverlayView: UIView {
 
-    public let canvasView: PassthroughPKCanvasView
-    public let lineartView: UIImageView
+    let canvasView: PassthroughPKCanvasView
+    let lineartView: UIImageView
 
-    public var isColoringMode: Bool = false {
+    var isColoringMode: Bool = false {
         didSet {
             lineartView.isHidden = !isColoringMode || lineartView.image == nil
         }
     }
 
-    public var pageIndex: Int {
+    var pageIndex: Int {
         get { canvasView.pageIndex }
         set { canvasView.pageIndex = newValue }
     }
 
-    public weak var associatedPage: PDFPage? {
+    weak var associatedPage: PDFPage? {
         get { canvasView.associatedPage }
         set { canvasView.associatedPage = newValue }
     }
 
-    public init(frame: CGRect, canvasView: PassthroughPKCanvasView) {
+    init(frame: CGRect, canvasView: PassthroughPKCanvasView) {
         self.canvasView = canvasView
         self.lineartView = UIImageView(frame: frame)
         super.init(frame: frame)
@@ -63,14 +63,14 @@ public final class ColoringPageOverlayView: UIView {
     }
 
     /// Sets the extracted transparent lineart mask and updates visibility
-    public func setLineartMask(_ image: UIImage?) {
+    func setLineartMask(_ image: UIImage?) {
         lineartView.image = image
         lineartView.isHidden = !isColoringMode || image == nil
     }
 
     // MARK: - Hit Testing Forwarding
 
-    public override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         // Forward hit testing directly to canvasView so its passthrough logic
         // handles palm rejection, finger panning, and Pencil stroke capture.
         return canvasView.hitTest(point, with: event)

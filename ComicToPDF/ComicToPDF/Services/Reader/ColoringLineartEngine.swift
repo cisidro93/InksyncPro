@@ -43,56 +43,53 @@ public actor ColoringLineartEngine {
             return cached
         }
 
-        // Render page to bitmap in a detached background task
-        return await Task.detached(priority: .userInitiated) { [ciContext, cache] in
-            let renderWidth = max(1, Int(targetSize.width * scale))
-            let renderHeight = max(1, Int(targetSize.height * scale))
-            let renderSize = CGSize(width: renderWidth, height: renderHeight)
+        let renderWidth = max(1, Int(targetSize.width * scale))
+        let renderHeight = max(1, Int(targetSize.height * scale))
+        let renderSize = CGSize(width: renderWidth, height: renderHeight)
 
-            let format = UIGraphicsImageRendererFormat()
-            format.scale = 1.0
-            format.opaque = true
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = true
 
-            let renderer = UIGraphicsImageRenderer(size: renderSize, format: format)
-            let rawPageImage = renderer.image { ctx in
-                let cgContext = ctx.cgContext
-                cgContext.setFillColor(UIColor.white.cgColor)
-                cgContext.fill(CGRect(origin: .zero, size: renderSize))
+        let renderer = UIGraphicsImageRenderer(size: renderSize, format: format)
+        let rawPageImage = renderer.image { ctx in
+            let cgContext = ctx.cgContext
+            cgContext.setFillColor(UIColor.white.cgColor)
+            cgContext.fill(CGRect(origin: .zero, size: renderSize))
 
-                cgContext.saveGState()
-                // PDF coordinate system is flipped vertically relative to UIKit
-                cgContext.translateBy(x: 0, y: CGFloat(renderHeight))
-                cgContext.scaleBy(x: CGFloat(renderWidth) / page.bounds(for: .cropBox).width,
-                                  y: -CGFloat(renderHeight) / page.bounds(for: .cropBox).height)
-                page.draw(with: .cropBox, to: cgContext)
-                cgContext.restoreGState()
-            }
+            cgContext.saveGState()
+            // PDF coordinate system is flipped vertically relative to UIKit
+            cgContext.translateBy(x: 0, y: CGFloat(renderHeight))
+            cgContext.scaleBy(x: CGFloat(renderWidth) / page.bounds(for: .cropBox).width,
+                              y: -CGFloat(renderHeight) / page.bounds(for: .cropBox).height)
+            page.draw(with: .cropBox, to: cgContext)
+            cgContext.restoreGState()
+        }
 
-            guard let cgImage = rawPageImage.cgImage else { return nil }
-            let ciImage = CIImage(cgImage: cgImage)
+        guard let cgImage = rawPageImage.cgImage else { return nil }
+        let ciImage = CIImage(cgImage: cgImage)
 
-            // CIColorMatrix: map luminance into alpha, and set RGB to 0 (black)
-            // Output R = 0
-            // Output G = 0
-            // Output B = 0
-            // Output A = 1.0 - (0.299 * R + 0.587 * G + 0.114 * B)
-            let colorMatrix = CIFilter(name: "CIColorMatrix")
-            colorMatrix?.setValue(ciImage, forKey: kCIInputImageKey)
-            colorMatrix?.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputRVector")
-            colorMatrix?.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputGVector")
-            colorMatrix?.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputBVector")
-            colorMatrix?.setValue(CIVector(x: -0.299, y: -0.587, z: -0.114, w: 0), forKey: "inputAVector")
-            colorMatrix?.setValue(CIVector(x: 0, y: 0, z: 0, w: 1.0), forKey: "inputBiasVector")
+        // CIColorMatrix: map luminance into alpha, and set RGB to 0 (black)
+        // Output R = 0
+        // Output G = 0
+        // Output B = 0
+        // Output A = 1.0 - (0.299 * R + 0.587 * G + 0.114 * B)
+        let colorMatrix = CIFilter(name: "CIColorMatrix")
+        colorMatrix?.setValue(ciImage, forKey: kCIInputImageKey)
+        colorMatrix?.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputRVector")
+        colorMatrix?.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputGVector")
+        colorMatrix?.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputBVector")
+        colorMatrix?.setValue(CIVector(x: -0.299, y: -0.587, z: -0.114, w: 0), forKey: "inputAVector")
+        colorMatrix?.setValue(CIVector(x: 0, y: 0, z: 0, w: 1.0), forKey: "inputBiasVector")
 
-            guard let outputCI = colorMatrix?.outputImage,
-                  let processedCG = ciContext.createCGImage(outputCI, from: outputCI.extent) else {
-                return nil
-            }
+        guard let outputCI = colorMatrix?.outputImage,
+              let processedCG = ciContext.createCGImage(outputCI, from: outputCI.extent) else {
+            return nil
+        }
 
-            let maskImage = UIImage(cgImage: processedCG, scale: scale, orientation: .up)
-            cache.setObject(maskImage, forKey: cacheKey)
-            return maskImage
-        }.value
+        let maskImage = UIImage(cgImage: processedCG, scale: scale, orientation: .up)
+        cache.setObject(maskImage, forKey: cacheKey)
+        return maskImage
     }
 
     /// Convenience method extracting lineart mask directly from a PDFPage using its cropBox dimensions
