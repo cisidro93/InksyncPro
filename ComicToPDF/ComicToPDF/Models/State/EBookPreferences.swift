@@ -303,7 +303,7 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_applePencilAutoDraw") var applePencilAutoDraw: Bool = true {
         didSet { objectWillChange.send() }
     }
-    @AppStorage("ebook_applePencilDefaultTool") var applePencilDefaultTool: String = "highlighter" {
+    @AppStorage("ebook_applePencilDefaultTool") var applePencilDefaultTool: String = "pen" {
         didSet { objectWillChange.send() }
     }
     @AppStorage("ebook_applePencilDoubleTapAction") var applePencilDoubleTapAction: String = "switchEraser" {

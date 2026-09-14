@@ -36,13 +36,10 @@ final class PassthroughPKCanvasView: PKCanvasView {
             return nil
         }
 
-        // When finger drawing is disabled (pencil-only mode), direct finger touches pass down to PDFView for scrolling & page navigation
+        // When finger drawing is disabled (pencil-only mode), pass through only if all touches are confirmed direct finger touches
         if !allowFingerDrawing && currentMode != .eraser {
-            if let touches = event?.allTouches, !touches.isEmpty {
-                let hasPencilTouch = touches.contains(where: { $0.type == .pencil })
-                if !hasPencilTouch {
-                    return nil
-                }
+            if let touches = event?.allTouches, !touches.isEmpty, touches.allSatisfy({ $0.type == .direct }) {
+                return nil
             }
         }
 

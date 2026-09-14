@@ -112,8 +112,8 @@ actor LibraryScanner {
                 let relPath = relativePath(for: fileURL)
                 let canonicalPath = fileURL.resolvingSymlinksInPath().path.lowercased()
                 
-                // Exact path-based duplicate protection: Skip if this exact file is already loaded in memory
-                if existingRelPaths.contains(relPath) || existingCanonicalPaths.contains(canonicalPath) {
+                // Exact path and filename duplicate protection: Skip if this exact file is already loaded in memory
+                if existingFilenames.contains(filename) || existingRelPaths.contains(relPath) || existingCanonicalPaths.contains(canonicalPath) {
                     continue
                 }
                 
