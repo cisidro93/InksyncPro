@@ -41,15 +41,26 @@ Synthesized from world-class software engineering educators:
 
 ### Pillar 3: Paul Hudson Native Framework Integration
 
-1. **PDFKit & WebKit Optimization:**
-   - Enable Smart Margin Cropping by dynamically setting `page.setBounds(cropRect, for: .cropBox)` and scaling `scaleFactor` to fill 100% of the screen width.
-   - Prevent view destruction during crop toggles by keeping `PDFKitRepresentedView` mounted.
-2. **PencilKit & Metal Graphics:**
-   - Layer PencilKit canvas views (`PKCanvasView`) transparently over active pages without blocking reader tap gestures.
+1. **PDFKit Master Architecture & Inking Lifecycle (iOS 16+):**
+   - **Early Provider Binding**: Always assign `pdfView.pageOverlayViewProvider = provider` in `makeUIView` *prior* to `pdfView.document = document`. PDFKit instantiates overlays on document load; late binding skips initial pages.
+   - **Scroll View Gesture Isolation**: Whenever inking is active, configure `pdfView.scrollView.panGestureRecognizer.minimumNumberOfTouches = 2`. This guarantees 1-finger Apple Pencil and touch drawing strokes are never stolen or cancelled by scroll gestures, while 2-finger pans navigate the canvas.
+   - **Markup Mode Suppression**: Set `pdfView.isInMarkupMode = true` during drawing to disable text loupe capture. Suppress page-turn tap recognizers (`tapGesture.isEnabled = !isMarkupActive`) so rapid pen stippling and dotting never flip pages.
+   - **Device-Idiom Inking Gating**: Guarantee finger drawing on iPhone (`!isPad`), and allow finger drawing on iPad unless "Apple Pencil Drawing Only" is explicitly enabled in Settings.
+   - **Smart Margin Cropping**: Dynamically set `page.setBounds(cropRect, for: .cropBox)` and scale `scaleFactor` to fill 100% of the screen width without thrashing view hierarchies.
+2. **Text Highlighting & Selection Standard (Kindle / Apple Books Parity):**
+   - **Zero Auto-Commit Highlights in `selectionChanged`**: Selection notifications must purely update the selection snapshot to drive HUD presentation. Never place asynchronous debounce tasks in `selectionChanged` that unilaterally stamp highlights.
+   - **Dual Selection Pathways**: Fast-path dedicated stylus highlighter commits on `.ended` with `defaultHighlightColor`; standard reader selection displays the floating HUD (Color palette, Copy, Note, Translate, Speak).
+   - **Annotation Hit-Testing & Mutation**: Tapping existing highlights must hit-test the annotation, display the HUD with its active color, and allow color changes or deletion with zero duplicate highlight stamps.
+   - **Per-Line Quad Polygons**: Reconstruct stored highlights using `selectionsByLine()` for saved text, generating tight per-line quads via `PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)` so multi-line text never degenerates into a solid block.
+3. **EPUB WebKit Master Engine & Zero-Drift Reflow:**
+   - **Invariant Viewport Model**: Enforce `position: relative !important; width: 100vw !important; height: 100vh !important; box-sizing: border-box !important;`.
+   - **Mathematical Zero-Drift Column Stride**: Calculate $\text{colWidth} = (\text{renderWidth} / \text{cols}) - 2m$ and $\text{gap} = 2m$, guaranteeing $\text{colWidth} + \text{gap} = \text{pageWidth}$ so every page turn lands with pixel-perfect margin alignment.
+   - **Structural Layout Preservation**: Avoid destructive global CSS resets (`display: block !important; position: static !important;`). Protect page breaks with `break-inside: avoid !important` on images, figures, tables, and code blocks, and `break-after: avoid !important` on headings.
+   - **Failsafe Snapshot Lifecycle**: Retain the primary webview during `willTransitionTo` in `UIPageViewController` to eliminate blank page flashes during page curls.
+   - **Wrapper Idempotency**: Guard `wrapHTMLBodyWithViewport` with `if html.contains("id=\"inksync-viewport\"") { return html }`.
+4. **PencilKit & Metal Graphics:**
+   - Layer transparent `PKCanvasView` overlays with dynamic `contentScaleFactor` matching zoom level for crisp 120Hz ProMotion vector lines.
    - Use zero-latency PPL Metal rendering for comic archives and high-resolution document pages.
-3. **EPUB WebKit Master Engine:**
-   - Symmetrically mount primary `WKWebView` elements to span full screen width across dual-page medians.
-   - Pre-render 0ms column snapshots for 3D page curl transitions.
 
 ### Pillar 4: ThePrimeagen Low-Level Performance & Zero-Leak Memory Safety
 

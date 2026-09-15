@@ -89,14 +89,49 @@ flowchart TD
    - Disambiguate single-tap vs double-tap gestures with `tapGesture.require(toFail: doubleTap)`.
    - Analyze character bounding boxes via column detectors to center double-tap zoom directly over multi-column reading blocks.
 
-### B. 3D Page Curl & Flash Elimination
+### B. PDFKit Inking Lifecycle & Gesture Stealing Defense (iOS 16+)
+
+1. **Early Provider Binding**:
+   - `pdfView.pageOverlayViewProvider` MUST be assigned in `makeUIView` **before** `pdfView.document = document`. Late binding fails to query overlays on visible page 0.
+2. **Scroll View Gesture Isolation**:
+   - Whenever inking is active, configure `pdfView.scrollView.panGestureRecognizer.minimumNumberOfTouches = 2`. This guarantees 1-finger Apple Pencil and touch drawing strokes are never stolen or cancelled by scroll gestures, while 2-finger pans navigate the canvas.
+3. **Markup Mode Suppression**:
+   - Set `pdfView.isInMarkupMode = true` during drawing to disable text loupe capture. Suppress reader tap gestures (`tapGesture.isEnabled = !isMarkupActive`) so rapid stippling and dotting never flip pages.
+4. **Device-Idiom Inking Gating**:
+   - Ensure finger inking is unconditionally enabled on iPhone (`!isPad`), and enabled on iPad unless "Apple Pencil Drawing Only" is explicitly enabled in Settings.
+
+### C. Text Highlighting & Selection Standard (Kindle / Apple Books Parity)
+
+1. **Zero Auto-Commit Highlights in `selectionChanged`**:
+   - Selection notifications must purely update state to drive HUD presentation. Never place asynchronous debounce tasks in `selectionChanged` that unilaterally stamp highlights.
+2. **Dual Selection Pathways**:
+   - Fast-path dedicated stylus highlighter commits on `.ended` with `defaultHighlightColor`; standard reader selection displays the floating HUD (Color palette, Copy, Note, Translate, Speak).
+3. **Annotation Hit-Testing & Mutation**:
+   - Tapping existing highlights must hit-test the annotation, display the HUD with its active color, and allow color changes or deletion with zero duplicate highlight stamps.
+4. **Per-Line Quad Polygons**:
+   - Reconstruct stored highlights using `selectionsByLine()` for saved text, generating tight per-line quads via `PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)` so multi-line text never degenerates into a solid block upon reload.
+
+### D. WebKit Multi-Column EPUB Reflow & Snapshot Lifecycle
+
+1. **Invariant Viewport Model**:
+   - Enforce `position: relative !important; width: 100vw !important; height: 100vh !important; box-sizing: border-box !important;`.
+2. **Mathematical Zero-Drift Column Stride**:
+   - Calculate $\text{colWidth} = (\text{renderWidth} / \text{cols}) - 2m$ and $\text{gap} = 2m$, guaranteeing $\text{colWidth} + \text{gap} = \text{pageWidth}$ so every page turn lands with pixel-perfect margin alignment.
+3. **Structural Layout Preservation**:
+   - Avoid destructive global CSS resets (`display: block !important; position: static !important;`). Protect page breaks with `break-inside: avoid !important` on images, figures, tables, and code blocks, and `break-after: avoid !important` on headings.
+4. **Failsafe Snapshot Lifecycle**:
+   - Retain the primary webview during `willTransitionTo` in `UIPageViewController` to eliminate blank page flashes during page curls.
+5. **Wrapper Idempotency**:
+   - Guard `wrapHTMLBodyWithViewport` against duplicate nested `#inksync-viewport` wrapping.
+
+### E. 3D Page Curl & Flash Elimination
 
 1. **Frame-0 Image Pre-Caching**:
    - Curled transition pages must pre-cache uncompressed frame-0 image bitmaps so 3D page curl animations execute immediately from memory with zero blank/white flash.
 2. **Spread Splitting (`CropHalf`)**:
    - Dynamically handle two-up splash pages with geometry offsets (`offset(x: cropHalf == .left ? 0 : -width)`) respecting LTR vs RTL reading directions.
 
-### C. ProMotion 120Hz & Gesture Disambiguation
+### F. ProMotion 120Hz & Gesture Disambiguation
 
 1. **Touch Non-Cancellation**:
    - Set `cancelsTouchesInView = false` on top-level gestures so child elements (hyperlinks, text selections, sliders) remain responsive.
@@ -129,7 +164,8 @@ flowchart TD
 
 Always test features across 4 essential runtime conditions:
 
-1. **Cold Launch**: First run with empty cache or fresh install sentinel check.
+1. **Cold Launch & Frame-0 Cache Seeding**:
+   - First run with empty cache or fresh install sentinel check. Ensure managers and singletons (`ConversionManager`) synchronously populate initial cache projections (`rebuildVisiblePDFs()`) in their initializers so the very first frame renders the user's library without empty shelf flicker.
 2. **Zoomed In State (1.0x – 3.5x)**: Pan gestures and boundary constraints while zoomed.
 3. **Dynamic Device Rotation**: Switching Portrait ↔ Landscape across single and dual page spreads.
 4. **Low Memory Warnings**: Memory eviction of image caches without crashing the active reader session.

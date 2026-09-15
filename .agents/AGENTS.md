@@ -17,8 +17,26 @@ Whenever conducting code reviews, bug fixes, feature additions, or architectural
 
 ### 3. Paul Hudson Native Framework Mastery
 
-- Deep integration of Apple native APIs: PDFKit (Smart Margin Cropping & Fit-Width expansion), WebKit (Full-bleed dual-page median layout), PencilKit (Non-blocking drawing layers), and Metal graphics.
-- Fail-safe state restoration across orientation switches, app backgrounding, and memory pressure.
+- **PDFKit Inking & Page Overlay Lifecycle (iOS 16+)**:
+  - Assign `pdfView.pageOverlayViewProvider` in `makeUIView` **before** assigning `pdfView.document = document` so PDFKit queries overlays on initial layout for page 0.
+  - Enable `pdfView.isInMarkupMode = true` whenever inking is active to suppress internal text selection loupes.
+  - **Scroll View Gesture Isolation**: Configure `pdfView.scrollView.panGestureRecognizer.minimumNumberOfTouches = isCanvasMarkupActive ? 2 : 1` so 1-finger pencil and touch strokes draw with 100% fidelity without being cancelled by scroll gestures, while 2-finger gestures smoothly pan/zoom.
+  - Disable reader tap gesture recognizers (`tapGesture.isEnabled = !isCanvasMarkupActive`) during markup so stippling or dotting `i` never turns pages.
+  - Idiom-safe drawing policy: `allowFinger = !isPad || !pencilOnlyDrawingSetting || isEraser` so iPhones always permit finger inking.
+- **Text Highlighting & Selection Standard (Kindle / Apple Books Parity)**:
+  - Never auto-commit highlights inside `selectionChanged`. Selection must purely update state to present the floating HUD (Color palette, Copy, Note, Speak).
+  - Dedicated stylus highlighter mode (`isHighlighterMode`) commits instantly on gesture `.ended` with zero UI latency and clears selection.
+  - Tapping existing highlights must hit-test the annotation, present the HUD with active color, and allow color changes or deletion with zero duplicate highlight stamps.
+  - Multi-line highlights must resolve `selectionsByLine()` for stored text and compute line-by-line quad points relative to the union box (`PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)`), preventing solid block degeneration on reload.
+- **WebKit Multi-Column EPUB Reflow Standard**:
+  - Enforce invariant full-bleed viewport: `position: relative !important; width: 100vw !important; height: 100vh !important; box-sizing: border-box !important;`.
+  - Maintain the mathematical zero-drift column stride: $\text{colWidth} = (\text{renderWidth} / \text{cols}) - 2m$, $\text{gap} = 2m$, ensuring $\text{colWidth} + \text{gap} = \text{pageWidth}$ so every page turn lands with pixel-perfect margin alignment.
+  - Avoid destructive global CSS overrides (`display: block !important; position: static !important; float: none !important;` on divs/sections).
+  - Protect page breaks with `break-inside: avoid !important` on images, figures, tables, and code blocks, and `break-after: avoid !important` on headings.
+  - Retain the primary webview during `willTransitionTo` in `UIPageViewController` to prevent blank page flashes during page curls.
+  - Guard `wrapHTMLBodyWithViewport` against duplicate nested `#inksync-viewport` wrapping.
+- **PencilKit & Metal Graphics**: Non-blocking drawing layers, 120Hz touch responsiveness, and Metal GPU shaders.
+- **Fail-Safe State Restoration**: Invariant state restoration across orientation switches, app backgrounding, and memory pressure. Synchronously seed initial cache arrays in singleton initializers (`rebuildVisiblePDFs()`) to eliminate cold-launch empty states.
 
 ### 4. ThePrimeagen Low-Level Performance & Zero-Leak Memory Safety
 
