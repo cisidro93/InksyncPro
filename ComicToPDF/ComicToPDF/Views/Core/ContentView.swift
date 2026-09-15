@@ -269,27 +269,14 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingBatchMergeReorder) {
-            LazyView {
-                SeriesMergeConfigurationView(sourceFiles: batchMergeItems)
-                    .id(batchMergeSessionID)
-                    .environmentObject(conversionManager)
-                    .environmentObject(settingsManager)
-            }
+            batchMergeReorderSheet
         }
         .onChange(of: showingBatchMergeReorder) { _, newValue in
             if newValue {
                 batchMergeSessionID = UUID()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("GlobalErrorTriggered"))) { notification in
-            if let userInfo = notification.userInfo,
-               let message = userInfo["message"] as? String,
-               let category = userInfo["category"] as? String {
-                self.globalErrorCategory = category
-                self.globalErrorMessage = message
-                self.showingGlobalError = true
-            }
-        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("GlobalErrorTriggered")), perform: handleGlobalError)
         .alert("\(globalErrorCategory) Component Failure", isPresented: $showingGlobalError) {
             Button("Copy Diagnostic Code") { UIPasteboard.general.string = "[\(globalErrorCategory)] \(globalErrorMessage)" }
             Button("Dismiss", role: .cancel) { }
@@ -297,83 +284,13 @@ struct ContentView: View {
             Text("\(globalErrorMessage)\n\nA trace has been recorded. Navigate to Settings ➔ Logs and filter by '\(globalErrorCategory)' to export the failure context to Support.")
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-            Task {
-                await ReaderImageFilterEngine.shared.purgeCache()
-                await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
-            }
-            Logger.shared.log("⚠️ Memory warning received — purged ReaderImageFilterEngine cache and verified disk storage limits.", category: "Memory", type: .warning)
+            handleMemoryWarning()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            Logger.shared.log("App returned to foreground — coordinating shared import", category: "Import")
-            Task { @MainActor in
-                if SharedImportCoordinator.shared.hasPendingShareImport() {
-                    // Files staged by Share Extension — move them into InksyncVault/Inbox
-                    SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.8)
-                    // Wait for coordinator to finish (it sets isIngesting=false internally)
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                }
-                conversionManager.scanLibrary()
-            }
+            handleWillEnterForeground()
         }
-        // AppDelegate routes inksyncpro:// here after the Share Extension opens the app.
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShareImportReceived"))) { notification in
-            Task { @MainActor in
-                router.selectedTab = 0
-                withAnimation(.spring()) {
-                    activeToast = ToastMessage(
-                        title: "Files Imported",
-                        message: "Shared files added to your library.",
-                        systemImage: "arrow.down.doc.fill",
-                        type: .success
-                    )
-                }
-                if let pdf = notification.object as? ConvertedPDF {
-                    self.selectedPDF = pdf
-                    AppRouter.shared.presentFullScreen(.read(pdf))
-                } else {
-                    let filenames = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
-                    if let name = filenames.first,
-                       let match = conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == name }) {
-                        self.selectedPDF = match
-                        AppRouter.shared.presentFullScreen(.read(match))
-                    }
-                }
-            }
-        }
-        // AppDelegate routes direct file:// opens here (Open With, Files.app, AirDrop).
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.DirectFileOpenReceived"))) { notification in
-            Task { @MainActor in
-                router.selectedTab = 0
-                if let pdf = notification.object as? ConvertedPDF {
-                    self.selectedPDF = pdf
-                    withAnimation(.spring()) {
-                        activeToast = ToastMessage(
-                            title: "Added to Library",
-                            message: "\(pdf.name) ready to read.",
-                            systemImage: "checkmark.circle.fill",
-                            type: .success
-                        )
-                    }
-                    AppRouter.shared.presentFullScreen(.read(pdf))
-                } else if let destURL = notification.object as? URL {
-                    withAnimation(.spring()) {
-                        activeToast = ToastMessage(
-                            title: "Added to Library",
-                            message: "\(destURL.lastPathComponent) ready to read.",
-                            systemImage: "checkmark.circle.fill",
-                            type: .success
-                        )
-                    }
-                    if let newlyImported = conversionManager.convertedPDFs.first(
-                        where: { $0.url.lastPathComponent == destURL.lastPathComponent }
-                    ) {
-                        self.selectedPDF = newlyImported
-                        AppRouter.shared.presentFullScreen(.read(newlyImported))
-                    }
-                }
-                _ = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
-            }
-        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShareImportReceived")), perform: handleShareImport)
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.DirectFileOpenReceived")), perform: handleDirectFileOpen)
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToLibraryTab"))) { _ in
             router.selectedTab = 0
         }
@@ -398,77 +315,185 @@ struct ContentView: View {
             pdfToShare: $pdfToShare,
             pdfToEdit: $pdfToEdit
         ))
-        .onOpenURL { url in
-            Logger.shared.log("onOpenURL received: \(url.absoluteString)", category: "Import")
-
-            // Universal deep links (inksync://, handoff, Spotlight)
-            if let destination = UniversalLinkBridge.shared.parse(url: url) {
-                if let targetPDF = conversionManager.convertedPDFs.first(where: { $0.id == destination.documentID }) {
-                    self.selectedPDF = targetPDF
-                    UniversalLinkBridge.shared.handleDeepLink(destination)
-                }
-                return
-            }
-
-            Task { @MainActor in
-                await SharedImportCoordinator.shared.handleIncomingURL(url)
-            }
-        }
+        .onOpenURL(perform: handleOpenURL)
         .onChange(of: showingWebExport) { _, showing in
-            if showing {
-                showingWebExport = false
-                ImportCoordinator.present(type: .files) { urls in
-                    if let url = urls.first {
-                        let accessing = url.startAccessingSecurityScopedResource()
-                        
-                        Task.detached(priority: .userInitiated) {
-                            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                            
-                            let dest = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
-                            try? FileManager.default.removeItem(at: dest)
-                            
-                            var coordError: NSError?
-                            NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
-                                try? FileManager.default.copyItem(at: safeURL, to: dest)
-                            }
-                            
-                            _ = await ImportQueueManager.shared.stageWithDuplicateCheck([url])
-                        }
-                    }
-                }
-            }
+            handleWebExportChange(showing)
         }
         .sheet(isPresented: $showingSettingsInspector) {
-            NavigationStack {
-                SettingsView()
-                    .environmentObject(conversionManager)
-                    .environmentObject(settingsManager)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showingSettingsInspector = false }.bold()
-                        }
-                    }
-            }
-            .presentationDetents([.large])
-            .presentationCornerRadius(32)
-            .presentationDragIndicator(.visible)
+            settingsInspectorSheet
         }
         .fullScreenCover(item: $router.activeFullScreen, onDismiss: {
             selectedPDF = nil
         }) { dest in
-            switch dest {
-            case .read(let pdf, let initialReadingMode):
-                UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs, initialReadingMode: initialReadingMode)
-                    .environmentObject(conversionManager)
-            case .advancedWorkspace(let pdf):
-                AdvancedWorkspaceView(pdf: pdf)
-                    .environmentObject(conversionManager)
-            case .smartCollection(let rule):
-                SmartCollectionDetailView(rule: rule)
-                    .environmentObject(conversionManager)
-            }
+            fullScreenDestination(for: dest)
         }
         .environmentObject(router)
+    }
+
+    // MARK: - Subviews & Destinations (Compiler Optimization)
+
+    private var batchMergeReorderSheet: some View {
+        LazyView {
+            SeriesMergeConfigurationView(sourceFiles: batchMergeItems)
+                .id(batchMergeSessionID)
+                .environmentObject(conversionManager)
+                .environmentObject(settingsManager)
+        }
+    }
+
+    private var settingsInspectorSheet: some View {
+        NavigationStack {
+            SettingsView()
+                .environmentObject(conversionManager)
+                .environmentObject(settingsManager)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showingSettingsInspector = false }.bold()
+                    }
+                }
+        }
+        .presentationDetents([.large])
+        .presentationCornerRadius(32)
+        .presentationDragIndicator(.visible)
+    }
+
+    @ViewBuilder
+    private func fullScreenDestination(for dest: FullScreenDestination) -> some View {
+        switch dest {
+        case .read(let pdf, let initialReadingMode):
+            UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs, initialReadingMode: initialReadingMode)
+                .environmentObject(conversionManager)
+        case .advancedWorkspace(let pdf):
+            AdvancedWorkspaceView(pdf: pdf)
+                .environmentObject(conversionManager)
+        case .smartCollection(let rule):
+            SmartCollectionDetailView(rule: rule)
+                .environmentObject(conversionManager)
+        }
+    }
+
+    // MARK: - Notification & Action Handlers (Compiler Optimization)
+
+    private func handleGlobalError(notification: Notification) {
+        if let userInfo = notification.userInfo,
+           let message = userInfo["message"] as? String,
+           let category = userInfo["category"] as? String {
+            self.globalErrorCategory = category
+            self.globalErrorMessage = message
+            self.showingGlobalError = true
+        }
+    }
+
+    private func handleMemoryWarning() {
+        Task {
+            await ReaderImageFilterEngine.shared.purgeCache()
+            await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
+        }
+        Logger.shared.log("⚠️ Memory warning received — purged ReaderImageFilterEngine cache and verified disk storage limits.", category: "Memory", type: .warning)
+    }
+
+    private func handleWillEnterForeground() {
+        Logger.shared.log("App returned to foreground — coordinating shared import", category: "Import")
+        Task { @MainActor in
+            if SharedImportCoordinator.shared.hasPendingShareImport() {
+                SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.8)
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            conversionManager.scanLibrary()
+        }
+    }
+
+    private func handleShareImport(notification: Notification) {
+        Task { @MainActor in
+            router.selectedTab = 0
+            withAnimation(.spring()) {
+                activeToast = ToastMessage(
+                    title: "Files Imported",
+                    message: "Shared files added to your library.",
+                    systemImage: "arrow.down.doc.fill",
+                    type: .success
+                )
+            }
+            if let pdf = notification.object as? ConvertedPDF {
+                self.selectedPDF = pdf
+                AppRouter.shared.presentFullScreen(.read(pdf))
+            } else {
+                let filenames = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
+                if let name = filenames.first,
+                   let match = conversionManager.convertedPDFs.first(where: { (item: ConvertedPDF) -> Bool in item.url.lastPathComponent == name }) {
+                    self.selectedPDF = match
+                    AppRouter.shared.presentFullScreen(.read(match))
+                }
+            }
+        }
+    }
+
+    private func handleDirectFileOpen(notification: Notification) {
+        Task { @MainActor in
+            router.selectedTab = 0
+            if let pdf = notification.object as? ConvertedPDF {
+                self.selectedPDF = pdf
+                withAnimation(.spring()) {
+                    activeToast = ToastMessage(
+                        title: "Added to Library",
+                        message: "\(pdf.name) ready to read.",
+                        systemImage: "checkmark.circle.fill",
+                        type: .success
+                    )
+                }
+                AppRouter.shared.presentFullScreen(.read(pdf))
+            } else if let destURL = notification.object as? URL {
+                withAnimation(.spring()) {
+                    activeToast = ToastMessage(
+                        title: "Added to Library",
+                        message: "\(destURL.lastPathComponent) ready to read.",
+                        systemImage: "checkmark.circle.fill",
+                        type: .success
+                    )
+                }
+                if let newlyImported = conversionManager.convertedPDFs.first(where: { (item: ConvertedPDF) -> Bool in
+                    item.url.lastPathComponent == destURL.lastPathComponent
+                }) {
+                    self.selectedPDF = newlyImported
+                    AppRouter.shared.presentFullScreen(.read(newlyImported))
+                }
+            }
+            _ = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
+        }
+    }
+
+    private func handleOpenURL(_ url: URL) {
+        Logger.shared.log("onOpenURL received: \(url.absoluteString)", category: "Import")
+        if let destination = UniversalLinkBridge.shared.parse(url: url) {
+            if let targetPDF = conversionManager.convertedPDFs.first(where: { (item: ConvertedPDF) -> Bool in item.id == destination.documentID }) {
+                self.selectedPDF = targetPDF
+                UniversalLinkBridge.shared.handleDeepLink(destination)
+            }
+            return
+        }
+        Task { @MainActor in
+            await SharedImportCoordinator.shared.handleIncomingURL(url)
+        }
+    }
+
+    private func handleWebExportChange(_ showing: Bool) {
+        guard showing else { return }
+        showingWebExport = false
+        ImportCoordinator.present(type: .files) { urls in
+            if let url = urls.first {
+                let accessing = url.startAccessingSecurityScopedResource()
+                Task.detached(priority: .userInitiated) {
+                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                    let dest = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                    try? FileManager.default.removeItem(at: dest)
+                    var coordError: NSError?
+                    NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
+                        try? FileManager.default.copyItem(at: safeURL, to: dest)
+                    }
+                    _ = await ImportQueueManager.shared.stageWithDuplicateCheck([url])
+                }
+            }
+        }
     }
 
     private var iPadProgressPanel: some View {
