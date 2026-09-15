@@ -3825,6 +3825,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            if gestureRecognizer === twoFingerSwipeLeft || gestureRecognizer === twoFingerSwipeRight ||
+               otherGestureRecognizer === twoFingerSwipeLeft || otherGestureRecognizer === twoFingerSwipeRight {
+                return true
+            }
             if gestureRecognizer === twoFingerTap || otherGestureRecognizer === twoFingerTap ||
                gestureRecognizer === threeFingerTap || otherGestureRecognizer === threeFingerTap {
                 if otherGestureRecognizer is UITapGestureRecognizer || otherGestureRecognizer is UILongPressGestureRecognizer {
@@ -3834,6 +3838,25 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             if parent.isPencilMode && InksyncInkingState.shared.activeToolMode != .textHighlight {
                 if gestureRecognizer === pencilGlide || gestureRecognizer === fingerGlide ||
                    otherGestureRecognizer === pencilGlide || otherGestureRecognizer === fingerGlide {
+                    return false
+                }
+            }
+            return true
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            let inkingState = InksyncInkingState.shared
+            let currentToolMode = inkingState.activeToolMode
+            let prefs = EBookPreferences.shared
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let autoPencilActive = isPad && prefs.applePencilAutoDraw
+            let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
+            let isCanvasMarkupActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!parent.isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
+
+            // When in markup/drawing mode, NEVER allow tap gesture to receive Apple Pencil touches
+            // so stippling, dotting 'i', punctuation, and quick pencil taps draw with 100% fidelity without turning pages.
+            if isCanvasMarkupActive && gestureRecognizer == tapGesture {
+                if touch.type == .pencil {
                     return false
                 }
             }
@@ -3917,11 +3940,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 }
             }
 
-            let width = view.bounds.width
-            let prefs = EBookPreferences.shared
-            let zones = prefs.tapZoneStyle.zones
-            let isManga = prefs.pdfRTL || UserDefaults.standard.bool(forKey: "isMangaMode")
-
             if tapLocation.x < width * zones.leftEdge {
                 if isManga {
                     parent.onNextPage()
@@ -3961,35 +3979,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             } else {
                 parent.onPrevPage()
             }
-        }
-
-        // MARK: - UIGestureRecognizerDelegate
-
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            let inkingState = InksyncInkingState.shared
-            let currentToolMode = inkingState.activeToolMode
-            let prefs = EBookPreferences.shared
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let autoPencilActive = isPad && prefs.applePencilAutoDraw
-            let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
-            let isCanvasMarkupActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!parent.isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
-
-            // When in markup/drawing mode, NEVER allow tap gesture to receive Apple Pencil touches
-            // so stippling, dotting 'i', punctuation, and quick pencil taps draw with 100% fidelity without turning pages.
-            if isCanvasMarkupActive && gestureRecognizer == tapGesture {
-                if touch.type == .pencil {
-                    return false
-                }
-            }
-            return true
-        }
-
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-            if gestureRecognizer == twoFingerSwipeLeft || gestureRecognizer == twoFingerSwipeRight ||
-               otherGestureRecognizer == twoFingerSwipeLeft || otherGestureRecognizer == twoFingerSwipeRight {
-                return true
-            }
-            return false
         }
 
         @MainActor @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
