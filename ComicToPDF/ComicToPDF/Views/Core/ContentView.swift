@@ -358,7 +358,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func fullScreenDestination(for dest: FullScreenDestination) -> some View {
+    private func fullScreenDestination(for dest: LibraryFullScreenDestination) -> some View {
         switch dest {
         case .read(let pdf, let initialReadingMode):
             UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs, initialReadingMode: initialReadingMode)
