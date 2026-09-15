@@ -102,11 +102,13 @@ struct ModernLibraryView: View {
     // PERF D-H2: reviewCount scanned 15K trimmingCharacters per render — now cached.
     @State private var cachedReviewCount: Int = 0
 
-    private func rebuildNativeCache() {
+    @discardableResult
+    private func rebuildNativeCache() -> (pdfs: [ConvertedPDF], collections: [PDFCollection]) {
         let mapped = conversionManager.convertedPDFs
         let mappedCols = conversionManager.collections
+        let visible = settingsManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
         
-        cachedVisiblePDFs = settingsManager.isVaultUnlocked ? mapped : mapped.filter { !$0.isPrivate }
+        cachedVisiblePDFs = visible
         cachedCollections = mappedCols
         
         cachedReviewCount = mapped.filter { pdf in
@@ -115,7 +117,14 @@ struct ModernLibraryView: View {
             let titleEmpty  = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             return seriesEmpty || authorEmpty || titleEmpty
         }.count
-        MetadataMatchService.shared.rebuildClusters(pdfs: cachedVisiblePDFs)
+        MetadataMatchService.shared.rebuildClusters(pdfs: visible)
+        return (visible, mappedCols)
+    }
+
+    private func syncAndRebuildLibraryCache(withSort customSort: SortOption? = nil) {
+        let data = rebuildNativeCache()
+        let activeSort = customSort ?? sortOption
+        viewModel.updateLibraryItemsCache(pdfs: data.pdfs, collections: data.collections, sortOption: activeSort)
     }
 
     private var currentFolder: PDFCollection? {
@@ -141,8 +150,7 @@ struct ModernLibraryView: View {
             // so notification-based lookups (Resume, Handoff) fire correctly even
             // if onAppear hasn't run yet (e.g. app launch via Spotlight/widget).
             .task(id: conversionManager.convertedPDFs.count) {
-                rebuildNativeCache()
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
             }
             .focusable()
             .focused($isLibraryFocused)
@@ -287,8 +295,7 @@ struct ModernLibraryView: View {
     
     private func handleManagedObjectContextDidSave(_ notification: Notification) {
         InksyncProApp.sharedModelContainer.mainContext.processPendingChanges()
-        rebuildNativeCache()
-        viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+        syncAndRebuildLibraryCache()
     }
 
     // MARK: - Notification Shell (onReceive + debug overlay)
@@ -481,8 +488,7 @@ struct ModernLibraryView: View {
         shellWithAlerts
             .onAppear {
                 conversionManager.backfillMissingThumbnails()
-                rebuildNativeCache()
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
 
                 // Seed landscape state immediately (handles cold-launch in landscape)
                 let size = UIScreen.main.bounds.size
@@ -496,29 +502,26 @@ struct ModernLibraryView: View {
                 }
             }
             .onChange(of: settingsManager.isVaultUnlocked) {
-                rebuildNativeCache()
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
             }
             .onChange(of: ImportMonitorManager.shared.isImporting) { _, _ in
-                rebuildNativeCache()
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
             }
             // All other triggers are low-frequency and user-initiated — rebuild immediately.
             .onChange(of: sortOption) {
-                rebuildNativeCache()
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
             }
             .onChange(of: viewModel.debouncedSearchText) {
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
             }
             .onChange(of: viewModel.filterState) {
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
             }
             .onChange(of: viewModel.contentShelf) { _, _ in
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
             }
             .onChange(of: viewModel.currentFolderID) { _, _ in
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
             }
             .onChange(of: isSearchActive) { _, newVal in
                 if !newVal {
@@ -540,20 +543,16 @@ struct ModernLibraryView: View {
                     .forceProMotion()
             }
             .onReceive(conversionManager.objectWillChange.debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { _ in
-                rebuildNativeCache()
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
             }
             .onReceive(NotificationCenter.default.publisher(for: .libraryNeedsRescan)) { _ in
-                rebuildNativeCache()
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShareImportReceived"))) { _ in
-                rebuildNativeCache()
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.DirectFileOpenReceived"))) { _ in
-                rebuildNativeCache()
-                viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: sortOption)
+                syncAndRebuildLibraryCache()
             }
     }
 
@@ -793,7 +792,7 @@ struct ModernLibraryView: View {
             LibraryControlCenterView(
                 sortOption: Binding(
                     get: { sortOption },
-                    set: { sortOption = $0; rebuildNativeCache(); viewModel.updateLibraryItemsCache(pdfs: cachedVisiblePDFs, collections: cachedCollections, sortOption: $0) }
+                    set: { sortOption = $0; syncAndRebuildLibraryCache(withSort: $0) }
                 ),
                 filterState: $viewModel.filterState,
                 viewStyle: $viewStyle,
@@ -1476,14 +1475,7 @@ struct ModernLibraryView: View {
     }
     
     private func handleDropApplied() {
-        let livePDFs = settingsManager.isVaultUnlocked
-            ? conversionManager.convertedPDFs
-            : conversionManager.convertedPDFs.filter { !$0.isPrivate }
-        viewModel.updateLibraryItemsCache(
-            pdfs: livePDFs,
-            collections: conversionManager.collections,
-            sortOption: sortOption
-        )
+        syncAndRebuildLibraryCache()
     }
     
     private func handleDefaultImport() {

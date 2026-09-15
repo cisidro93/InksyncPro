@@ -84,6 +84,12 @@ final class PassthroughPKCanvasView: PKCanvasView {
             }
         }
 
+        // Multi-touch gestures (two-finger swipe for page turns, pinch zoom, two-finger pan)
+        // always pass through to the underlying PDFView and its scroll view.
+        if let touches = event?.allTouches, touches.count >= 2 {
+            return nil
+        }
+
         // In write, eraser, or coloring mode, capture touch directly for PKCanvasView
         if let hit = super.hitTest(point, with: event) {
             return hit

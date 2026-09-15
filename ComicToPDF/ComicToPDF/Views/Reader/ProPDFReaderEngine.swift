@@ -3120,9 +3120,27 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             NSNumber(value: UITouch.TouchType.pencil.rawValue)
         ]
         tapGesture.cancelsTouchesInView = false
-        tapGesture.isEnabled = !isCanvasMarkupActive
+        tapGesture.delegate = context.coordinator
+        tapGesture.isEnabled = true
         pdfView.addGestureRecognizer(tapGesture)
         context.coordinator.tapGesture = tapGesture
+
+        // ── 2-Finger Horizontal Swipe Page Turn (GoodNotes/Notability Parity) ──────
+        let twoFingerSwipeLeft = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTwoFingerSwipeLeft(_:)))
+        twoFingerSwipeLeft.numberOfTouchesRequired = 2
+        twoFingerSwipeLeft.direction = .left
+        twoFingerSwipeLeft.cancelsTouchesInView = false
+        twoFingerSwipeLeft.delegate = context.coordinator
+        pdfView.addGestureRecognizer(twoFingerSwipeLeft)
+        context.coordinator.twoFingerSwipeLeft = twoFingerSwipeLeft
+
+        let twoFingerSwipeRight = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTwoFingerSwipeRight(_:)))
+        twoFingerSwipeRight.numberOfTouchesRequired = 2
+        twoFingerSwipeRight.direction = .right
+        twoFingerSwipeRight.cancelsTouchesInView = false
+        twoFingerSwipeRight.delegate = context.coordinator
+        pdfView.addGestureRecognizer(twoFingerSwipeRight)
+        context.coordinator.twoFingerSwipeRight = twoFingerSwipeRight
 
         // ── Double-tap zoom (finger only) ─────────────────────────────────────────
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
@@ -3251,8 +3269,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 sv.panGestureRecognizer.minimumNumberOfTouches = isCanvasMarkupActive ? 2 : 1
             }
         }
-        if context.coordinator.tapGesture?.isEnabled == isCanvasMarkupActive {
-            context.coordinator.tapGesture?.isEnabled = !isCanvasMarkupActive
+        if context.coordinator.tapGesture?.isEnabled == false {
+            context.coordinator.tapGesture?.isEnabled = true
         }
 
         let isDedicatedHighlighter = isPencilMode && currentToolMode == .textHighlight
@@ -3376,8 +3394,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         uiView.gestureRecognizers?.forEach { uiView.removeGestureRecognizer($0) }
         coordinator.twoFingerTap = nil
         coordinator.threeFingerTap = nil
+        coordinator.twoFingerSwipeLeft = nil
+        coordinator.twoFingerSwipeRight = nil
         coordinator.fingerGlide = nil
         coordinator.pencilGlide = nil
+        coordinator.tapGesture = nil
         uiView.delegate = nil
         uiView.document = nil
     }
@@ -3397,12 +3418,14 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // other and pages get skipped or stuck.
         var isNavigatingProgrammatically: Bool = false
 
-        // Strong references to glide gesture recognizers for dynamic state gating
+        // Strong references to glide and navigation gesture recognizers
         var fingerGlide: UILongPressGestureRecognizer? = nil
         var pencilGlide: UILongPressGestureRecognizer? = nil
         var tapGesture: UITapGestureRecognizer? = nil
         var twoFingerTap: UITapGestureRecognizer? = nil
         var threeFingerTap: UITapGestureRecognizer? = nil
+        var twoFingerSwipeLeft: UISwipeGestureRecognizer? = nil
+        var twoFingerSwipeRight: UISwipeGestureRecognizer? = nil
 
         private enum ActiveDragTarget {
             case none
@@ -3461,7 +3484,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     sv.panGestureRecognizer.minimumNumberOfTouches = isCanvasMarkupActive ? 2 : 1
                 }
             }
-            tapGesture?.isEnabled = !isCanvasMarkupActive
+            tapGesture?.isEnabled = true
 
             let isDedicatedHighlighter = parent.isPencilMode && mode == .textHighlight
             let isPencilGlide = isDedicatedHighlighter || (!parent.isPencilMode && autoHighlighterActive)
@@ -3833,11 +3856,42 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         @MainActor @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let view = gesture.view as? PDFView else { return }
 
-            if parent.isPencilMode && (InksyncInkingState.shared.activeToolMode == .write || InksyncInkingState.shared.activeToolMode == .eraser) {
-                return
-            }
+            let inkingState = InksyncInkingState.shared
+            let currentToolMode = inkingState.activeToolMode
+            let prefs = EBookPreferences.shared
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let autoPencilActive = isPad && prefs.applePencilAutoDraw
+            let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
+            let isCanvasMarkupActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!parent.isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
 
             let tapLocation = gesture.location(in: view)
+            let width = view.bounds.width
+            let zones = prefs.tapZoneStyle.zones
+            let isManga = prefs.pdfRTL || UserDefaults.standard.bool(forKey: "isMangaMode")
+
+            if isCanvasMarkupActive {
+                // When inking is active, only finger taps in outer margin gutters turn the page.
+                // Center taps are ignored so hand resting / inadvertent touches never toggle chrome or disrupt inking.
+                let leftGutter = width * max(0.12, zones.leftEdge)
+                let rightGutter = width * min(0.88, zones.rightEdge)
+
+                if tapLocation.x < leftGutter {
+                    HapticEngine.selection()
+                    if isManga {
+                        parent.onNextPage()
+                    } else {
+                        parent.onPrevPage()
+                    }
+                } else if tapLocation.x > rightGutter {
+                    HapticEngine.selection()
+                    if isManga {
+                        parent.onPrevPage()
+                    } else {
+                        parent.onNextPage()
+                    }
+                }
+                return
+            }
 
             // If text is currently selected in PDFView, clear selection on single tap OUTSIDE the selection
             if let selection = view.currentSelection, let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -3883,6 +3937,59 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             } else {
                 parent.onTapCenter()
             }
+        }
+
+        @MainActor @objc func handleTwoFingerSwipeLeft(_ gesture: UISwipeGestureRecognizer) {
+            guard gesture.state == .ended else { return }
+            let prefs = EBookPreferences.shared
+            let isManga = prefs.pdfRTL || UserDefaults.standard.bool(forKey: "isMangaMode")
+            HapticEngine.selection()
+            if isManga {
+                parent.onPrevPage()
+            } else {
+                parent.onNextPage()
+            }
+        }
+
+        @MainActor @objc func handleTwoFingerSwipeRight(_ gesture: UISwipeGestureRecognizer) {
+            guard gesture.state == .ended else { return }
+            let prefs = EBookPreferences.shared
+            let isManga = prefs.pdfRTL || UserDefaults.standard.bool(forKey: "isMangaMode")
+            HapticEngine.selection()
+            if isManga {
+                parent.onNextPage()
+            } else {
+                parent.onPrevPage()
+            }
+        }
+
+        // MARK: - UIGestureRecognizerDelegate
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            let inkingState = InksyncInkingState.shared
+            let currentToolMode = inkingState.activeToolMode
+            let prefs = EBookPreferences.shared
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let autoPencilActive = isPad && prefs.applePencilAutoDraw
+            let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
+            let isCanvasMarkupActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!parent.isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
+
+            // When in markup/drawing mode, NEVER allow tap gesture to receive Apple Pencil touches
+            // so stippling, dotting 'i', punctuation, and quick pencil taps draw with 100% fidelity without turning pages.
+            if isCanvasMarkupActive && gestureRecognizer == tapGesture {
+                if touch.type == .pencil {
+                    return false
+                }
+            }
+            return true
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            if gestureRecognizer == twoFingerSwipeLeft || gestureRecognizer == twoFingerSwipeRight ||
+               otherGestureRecognizer == twoFingerSwipeLeft || otherGestureRecognizer == twoFingerSwipeRight {
+                return true
+            }
+            return false
         }
 
         @MainActor @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {

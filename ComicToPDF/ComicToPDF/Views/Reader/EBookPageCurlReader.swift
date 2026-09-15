@@ -722,12 +722,7 @@ extension EBookPageCurlReader {
         ) -> UIViewController? {
             guard let contentVC = viewController as? EBookPageContentViewController else { return nil }
             let prevIndex = contentVC.pageIndex - 1
-            if prevIndex < 0 {
-                // Prevent dragging infinitely into negative index space past transition page
-                if prevIndex < -1 { return nil }
-                // Return unique transition page to previous chapter to allow backward curl
-                return makeBlankPageViewController(for: prevIndex)
-            }
+            guard prevIndex >= 0 else { return nil }
             return makePageViewController(for: prevIndex)
         }
 
@@ -737,12 +732,7 @@ extension EBookPageCurlReader {
         ) -> UIViewController? {
             guard let contentVC = viewController as? EBookPageContentViewController else { return nil }
             let nextIndex = contentVC.pageIndex + 1
-            if nextIndex >= computedTotalPages {
-                // Prevent dragging infinitely past the end of the chapter past transition page
-                if nextIndex > computedTotalPages { return nil }
-                // Return unique transition page to next chapter to allow forward curl
-                return makeBlankPageViewController(for: nextIndex)
-            }
+            guard nextIndex < computedTotalPages else { return nil }
             return makePageViewController(for: nextIndex)
         }
 
@@ -816,18 +806,9 @@ extension EBookPageCurlReader {
             }
 
             let newPageIndex = currentVC.pageIndex
-            let hasExceededEnd = activeVCs.contains { $0.pageIndex >= computedTotalPages }
-            let hasExceededStart = activeVCs.contains { $0.pageIndex < 0 }
 
             if completed {
                 parent.onPageTurn?()
-                if hasExceededEnd {
-                    parent.onNext()
-                    return
-                } else if hasExceededStart {
-                    parent.onPrev()
-                    return
-                }
                 lastCompletedControllerIndex = newPageIndex
                 currentPageIndex = newPageIndex
                 parent.currentPage = newPageIndex
