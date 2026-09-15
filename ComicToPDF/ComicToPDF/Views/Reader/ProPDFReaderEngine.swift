@@ -3077,7 +3077,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let inkingState = InksyncInkingState.shared
         let currentToolMode = inkingState.activeToolMode
         let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
-        let autoPencilActive = UIDevice.current.userInterfaceIdiom == .pad && prefs.applePencilAutoDraw
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        let autoPencilActive = isPad && prefs.applePencilAutoDraw
         let isCanvasMarkupActive = (isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
 
         if #available(iOS 16.0, *) {
@@ -3161,8 +3162,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // 40ms duration when in text highlight mode for responsive fluid touch-drag,
         // 180ms minimum press duration when in normal reading allows scrolling/swiping.
         let fingerGlide = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleGlideSelection(_:)))
-        let inkingState = InksyncInkingState.shared
-        let isDedicatedHighlighter = isPencilMode && (inkingState.activeToolMode == .textHighlight)
+        let isDedicatedHighlighter = isPencilMode && currentToolMode == .textHighlight
         fingerGlide.minimumPressDuration = isDedicatedHighlighter ? 0.04 : 0.18
         fingerGlide.allowableMovement = 2000
         fingerGlide.cancelsTouchesInView = false
@@ -3176,8 +3176,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         // ── Apple Pencil Glide (instant word-snap) highlight gesture (stylus only) ──
         // 20ms ultra-low latency allows Apple Pencil to immediately snap and select text on touch.
-        let isPad = UIDevice.current.userInterfaceIdiom == .pad
-        let autoPencilActive = isPad && prefs.applePencilAutoDraw
         let isPencilHighlightGlide = isDedicatedHighlighter ||
                                      (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "highlighter")
         let pencilGlide = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleGlideSelection(_:)))
