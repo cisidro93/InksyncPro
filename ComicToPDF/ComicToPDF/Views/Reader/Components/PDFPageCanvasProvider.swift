@@ -63,6 +63,19 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
             .store(in: &cancellables)
     }
 
+    // MARK: - Lifecycle & State Management
+
+    /// Called when the active PDF document changes to clear the loaded-pages
+    /// sentinel set, active canvas cache, and debounce tasks, forcing all overlay
+    /// views to re-fetch drawings from the store.
+    public func reset(for newPDFID: UUID) {
+        pdfID = newPDFID
+        loadedPages.removeAll()
+        pageCanvases.removeAll()
+        debounceSaveTasks.values.forEach { $0.cancel() }
+        debounceSaveTasks.removeAll()
+    }
+
     // MARK: - Overlay View Provider Methods (MainActor)
 
     public func overlayView(for page: PDFPage) -> UIView? {
@@ -131,6 +144,8 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
             debounceSaveTasks.removeValue(forKey: key)
             saveDrawing(from: canvas, for: page)
         }
+        // Invalidate loadedPages so rapid page flick re-entry forces a fresh fetch from single source of truth
+        loadedPages.remove(key)
     }
 
     // MARK: - PKCanvasViewDelegate
@@ -201,6 +216,20 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         canvas.isScrollEnabled = false
         canvas.bounces = false
         canvas.panGestureRecognizer.isEnabled = !pencilOnlyDrawingSetting
+
+        if shouldBeActive {
+            if canvas.window != nil {
+                canvas.becomeFirstResponder()
+            } else {
+                DispatchQueue.main.async { [weak canvas] in
+                    if let canvas = canvas, canvas.isUserInteractionEnabled, canvas.window != nil {
+                        canvas.becomeFirstResponder()
+                    }
+                }
+            }
+        } else if canvas.isFirstResponder {
+            canvas.resignFirstResponder()
+        }
     }
 
     // MARK: - Persistence & OCR Synchronization

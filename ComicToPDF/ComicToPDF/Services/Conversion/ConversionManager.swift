@@ -95,6 +95,8 @@ class ConversionManager: ObservableObject {
         proLibraryPDFs = convertedPDFs.filter { (unlocked ? true : !$0.isPrivate) && $0.addedByMode == .pro }
     }
     
+    var isLibraryLoaded: Bool = false
+    
     // MARK: - Guaranteed Global Singleton
     @MainActor static let shared = ConversionManager()
     
@@ -102,8 +104,6 @@ class ConversionManager: ObservableObject {
     private var importMonitorRelay: AnyCancellable?
 
     init() {
-        loadLibrary()
-        
         createWelcomeFile()
         performStartupOptimization()
         migrateCoversToDisk()  // @MainActor class — direct call, no Task wrapper needed
@@ -112,6 +112,7 @@ class ConversionManager: ObservableObject {
         // Grid cells now observe thumbnailReadySubject locally for their specific PDF ID.
         
         NotificationCenter.default.addObserver(forName: .libraryNeedsRescan, object: nil, queue: .main) { [weak self] notification in
+            guard let self = self, self.isLibraryLoaded else { return }
             let modeRaw = notification.userInfo?["mode"] as? String
             let mode: AppUIMode = (modeRaw == AppUIMode.go.rawValue) ? .go : .pro
             Task { @MainActor [weak self] in
@@ -120,6 +121,7 @@ class ConversionManager: ObservableObject {
         }
         
         NotificationCenter.default.addObserver(forName: .libraryUpdated, object: nil, queue: .main) { [weak self] _ in
+            guard let self = self, self.isLibraryLoaded else { return }
             Task { @MainActor [weak self] in
                 self?.scanLibrary(addedByMode: .pro)
             }
@@ -262,7 +264,9 @@ class ConversionManager: ObservableObject {
     }
     
     func loadLibrary() {
-        LibraryPersistenceManager.shared.load(manager: self)
+        Task { @MainActor in
+            await LibraryService.shared.loadLibrary()
+        }
     }
     
     func savePanelOverrides(for pdfID: UUID, pageIndex: Int, panels: [PanelExtractor.Panel]) async {

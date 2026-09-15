@@ -62,9 +62,6 @@ final class PDFAnnotationSyncBridge {
                 let alreadyPresent = page.annotations.contains { native in
                     if native.userName == annotation.id.uuidString { return true }
                     guard native.type == nativeTypeName || native.type == "/\(nativeTypeName)" || native.type == nativeType.rawValue else { return false }
-                    if let text = annotation.selectedText, let c = native.contents, !text.isEmpty && c == text {
-                        return true
-                    }
                     if let b = annotation.bounds {
                         let expected = CGRect(
                             x: pageBounds.minX + (b.x * pageBounds.width),
@@ -72,7 +69,13 @@ final class PDFAnnotationSyncBridge {
                             width: b.width * pageBounds.width,
                             height: b.height * pageBounds.height
                         )
-                        return native.bounds.insetBy(dx: -4, dy: -4).intersects(expected)
+                        let spatialMatch = native.bounds.insetBy(dx: -4, dy: -4).intersects(expected)
+                        if let text = annotation.selectedText, let c = native.contents, !text.isEmpty && c == text {
+                            return spatialMatch
+                        }
+                        return spatialMatch
+                    } else if let text = annotation.selectedText, let c = native.contents, !text.isEmpty && c == text {
+                        return true
                     }
                     return false
                 }
@@ -218,6 +221,9 @@ final class PDFAnnotationSyncBridge {
                 if let t = text, !t.isEmpty, let c = ann.contents, (c == t || c.contains(t) || t.contains(c)) {
                     let typeName = ann.type ?? ""
                     if typeName.contains("Highlight") || typeName.contains("Underline") || typeName.contains("StrikeOut") || typeName.contains("Text") {
+                        if let b = bounds {
+                            return ann.bounds.intersects(b.insetBy(dx: -4, dy: -4))
+                        }
                         return true
                     }
                 }

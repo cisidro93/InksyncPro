@@ -38,8 +38,15 @@ final class PDFHighlightExtractor: Sendable {
                     let hexColor = color.toHexString()
                     let noteText = ann.contents
                     
+                    let annID: UUID = {
+                        if let uName = ann.userName, let uid = UUID(uuidString: uName) {
+                            return uid
+                        }
+                        return UUID()
+                    }()
+                    
                     let dto = Annotation(
-                        id: UUID(),
+                        id: annID,
                         pdfID: pdfID,
                         pageIndex: pageIndex,
                         chapterTitle: nil,

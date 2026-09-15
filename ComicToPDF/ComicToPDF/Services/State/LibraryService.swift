@@ -19,20 +19,23 @@ final class LibraryService: ObservableObject {
             let (loadedItems, loadedCollections) = try await LibraryRepository.shared.loadLibrary()
             let loadedOmnibuses = await LibraryDatabaseService.shared.loadVirtualOmnibuses()
             
-            // 🔴 AUTOMATIC STARTUP DEDUPLICATION: Purge duplicate entries matching the same filename
+            // 🔴 AUTOMATIC STARTUP DEDUPLICATION: Purge duplicate entries matching the same physical file or canonical path
             func normalizeFilename(_ raw: String) -> String {
                 let decoded = raw.removingPercentEncoding ?? raw
                 return decoded.precomposedStringWithCanonicalMapping.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
             }
             
             var uniqueItems: [ConvertedPDF] = []
-            var seenFilenames = Set<String>()
+            var seenPaths = Set<String>()
+            var seenFingerprints = Set<String>()
             for item in loadedItems {
-                let key = normalizeFilename(item.url.lastPathComponent)
-                let altKey = normalizeFilename(item.name)
-                if !seenFilenames.contains(key) && !seenFilenames.contains(altKey) {
-                    seenFilenames.insert(key)
-                    seenFilenames.insert(altKey)
+                let canonicalPath = item.url.resolvingSymlinksInPath().path.lowercased()
+                let filename = normalizeFilename(item.url.lastPathComponent)
+                let fingerprint = (item.fileSize > 0) ? "\(item.fileSize)||\(filename)" : canonicalPath
+                
+                if !seenPaths.contains(canonicalPath) && !seenFingerprints.contains(fingerprint) {
+                    seenPaths.insert(canonicalPath)
+                    seenFingerprints.insert(fingerprint)
                     uniqueItems.append(item)
                 }
             }
@@ -40,7 +43,8 @@ final class LibraryService: ObservableObject {
             if uniqueItems.count < loadedItems.count {
                 Logger.shared.log("LibraryService: Purged \(loadedItems.count - uniqueItems.count) duplicate items from startup load.", category: "Library", type: .warning)
                 self.items = uniqueItems
-                self.saveLibrary(isStructural: true)
+                try? await LibraryRepository.shared.sync(pdfs: uniqueItems, collections: loadedCollections)
+                await LibraryDatabaseService.shared.save(uniqueItems)
             } else {
                 self.items = loadedItems
             }
@@ -54,6 +58,7 @@ final class LibraryService: ObservableObject {
             manager.collections = self.collections
             manager.pruneEmptyCollections()
             self.collections = manager.collections
+            manager.isLibraryLoaded = true
             
             Logger.shared.log("LibraryService: loaded \(self.items.count) items, \(loadedCollections.count) collections, \(loadedOmnibuses.count) virtual omnibuses.", category: "Library")
             self.syncAllRemoteVirtualOmnibuses()
@@ -101,6 +106,9 @@ final class LibraryService: ObservableObject {
             
             // Organize flat library files under series subdirectories retroactively
             await PhysicalFileSystemRouter.shared.migrateFlatFilesToSeriesDirectories(manager: ConversionManager.shared)
+            self.items = ConversionManager.shared.convertedPDFs
+            try? await LibraryRepository.shared.sync(pdfs: self.items, collections: self.collections)
+            await LibraryDatabaseService.shared.save(self.items)
             Task.detached(priority: .background) {
                 PhysicalFileSystemRouter.reapAllEmptySeriesDirectoriesInDocuments()
             }

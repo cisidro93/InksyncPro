@@ -1190,6 +1190,20 @@ struct ProPDFReaderEngine: View {
                         EBookPreferences.shared.defaultHighlightColor = color
                         if let id = activeTappedAnnotationID {
                             updateHighlightColor(id: id, color: color, style: .highlight)
+                        } else if let ann = activeTappedAnnotation {
+                            ann.color = color.directHighlightUIColor
+                            if let idStr = ann.userName, let uid = UUID(uuidString: idStr) {
+                                updateHighlightColor(id: uid, color: color, style: .highlight)
+                            } else {
+                                if let pv = pdfViewReference {
+                                    forcePageRedraw(pv, pageIndex: currentPageIndex)
+                                }
+                                if let doc = pdfViewReference?.document ?? pdfDocument {
+                                    PDFAnnotationSyncBridge.shared.scheduleDebouncedDiskSync(for: pdf.id, in: doc, at: resolvedURL)
+                                }
+                                showToastMessage("Highlight Updated")
+                                HapticEngine.selection()
+                            }
                         } else {
                             saveMarkup(text: selectedText, color: color, style: .highlight)
                         }
@@ -1198,6 +1212,20 @@ struct ProPDFReaderEngine: View {
                         EBookPreferences.shared.defaultHighlightColor = color
                         if let id = activeTappedAnnotationID {
                             updateHighlightColor(id: id, color: color, style: style)
+                        } else if let ann = activeTappedAnnotation {
+                            ann.color = (style == .highlight) ? color.directHighlightUIColor : color.uiColor
+                            if let idStr = ann.userName, let uid = UUID(uuidString: idStr) {
+                                updateHighlightColor(id: uid, color: color, style: style)
+                            } else {
+                                if let pv = pdfViewReference {
+                                    forcePageRedraw(pv, pageIndex: currentPageIndex)
+                                }
+                                if let doc = pdfViewReference?.document ?? pdfDocument {
+                                    PDFAnnotationSyncBridge.shared.scheduleDebouncedDiskSync(for: pdf.id, in: doc, at: resolvedURL)
+                                }
+                                showToastMessage("Highlight Updated")
+                                HapticEngine.selection()
+                            }
                         } else {
                             saveMarkup(text: selectedText, color: color, style: style)
                         }
@@ -1211,6 +1239,27 @@ struct ProPDFReaderEngine: View {
                             selectedTextForHUD = nil
                             pdfViewReference?.setCurrentSelection(nil, animate: false)
                         } else if let ann = activeTappedAnnotation {
+                            // Find and clean matching store annotation if present
+                            let store = AnnotationStore.shared
+                            let pageCrop = (pdfViewReference?.document ?? pdfDocument)?.page(at: currentPageIndex)?.bounds(for: .cropBox) ?? .zero
+                            if let matchedStoreAnn = store.annotations(for: pdf.id).first(where: { storeAnn in
+                                guard storeAnn.pageIndex == currentPageIndex else { return false }
+                                let textMatches = (storeAnn.selectedText != nil && (storeAnn.selectedText == selectedText || selectedText.contains(storeAnn.selectedText!))) ||
+                                                  (ann.contents != nil && storeAnn.selectedText == ann.contents)
+                                guard textMatches else { return false }
+                                if let b = storeAnn.bounds, pageCrop.width > 0, pageCrop.height > 0 {
+                                    let r = CGRect(
+                                        x: pageCrop.minX + CGFloat(b.x) * pageCrop.width,
+                                        y: pageCrop.minY + CGFloat(b.y) * pageCrop.height,
+                                        width: CGFloat(b.width) * pageCrop.width,
+                                        height: CGFloat(b.height) * pageCrop.height
+                                    )
+                                    return r.intersects(ann.bounds.insetBy(dx: -8, dy: -8))
+                                }
+                                return true
+                            }) {
+                                store.delete(id: matchedStoreAnn.id, pdfID: pdf.id)
+                            }
                             if let page = (pdfViewReference?.document ?? pdfDocument)?.page(at: currentPageIndex) {
                                 page.removeAnnotation(ann)
                                 page.displaysAnnotations = false
@@ -1940,7 +1989,10 @@ struct ProPDFReaderEngine: View {
             if let excl = excludingID, a.userName == excl.uuidString { return false }
             let t = a.type ?? ""
             guard t.contains("Highlight") || t.contains("Underline") || t.contains("StrikeOut") else { return false }
-            return a.bounds.intersects(bounds) || (a.contents != nil && (text.contains(a.contents!) || a.contents!.contains(text)))
+            // CRITICAL: Require spatial geometric intersection so highlighting common words elsewhere on the page never wipes out unrelated annotations.
+            guard a.bounds.intersects(bounds.insetBy(dx: -4, dy: -4)) else { return false }
+            if a.contents == nil || a.contents?.isEmpty == true { return true }
+            return a.contents == text || text.contains(a.contents!) || a.contents!.contains(text)
         }
         for oldAnn in existingAnns {
             if let uidStr = oldAnn.userName, let uid = UUID(uuidString: uidStr) {
@@ -2136,9 +2188,6 @@ struct ProPDFReaderEngine: View {
             bounds: savedBounds
         )
         AnnotationStore.shared.add(highlight)
-        let sdAnnotation = SDAnnotation(from: highlight)
-        modelContext.insert(sdAnnotation)
-        try? modelContext.save()
         if let doc = activeDoc {
             PDFAnnotationSyncBridge.shared.scheduleDebouncedDiskSync(for: pdf.id, in: doc, at: resolvedURL)
         }
@@ -2602,27 +2651,44 @@ struct ProPDFReaderEngine: View {
     private func unhighlightSelection(text: String) {
         guard let doc = pdfViewReference?.document ?? pdfDocument else { return }
         let targetPage = activeSelectionSnapshot?.pageIndex ?? currentPageIndex
+        guard let page = doc.page(at: targetPage) else { return }
         let store = AnnotationStore.shared
         let pageAnnotations = store.annotations(for: pdf.id).filter { $0.pageIndex == targetPage }
         
+        let pageCrop = page.bounds(for: .cropBox)
+        let selectionBounds = pdfViewReference?.currentSelection?.bounds(for: page)
+        
         var removedCount = 0
         for ann in pageAnnotations {
-            let isTextMatch = (ann.selectedText != nil && (ann.selectedText == text || text.contains(ann.selectedText!) || ann.selectedText!.contains(text)))
-            if isTextMatch {
+            guard let selText = ann.selectedText, !selText.isEmpty else { continue }
+            let isExactText = selText == text
+            let isSubstr = text.contains(selText) || selText.contains(text)
+            
+            var isSpatialMatch = false
+            if let sb = selectionBounds, sb != .zero, let b = ann.bounds, pageCrop.width > 0, pageCrop.height > 0 {
+                let rect = CGRect(
+                    x: pageCrop.minX + CGFloat(b.x) * pageCrop.width,
+                    y: pageCrop.minY + CGFloat(b.y) * pageCrop.height,
+                    width: CGFloat(b.width) * pageCrop.width,
+                    height: CGFloat(b.height) * pageCrop.height
+                )
+                isSpatialMatch = rect.intersects(sb.insetBy(dx: -8, dy: -8))
+            }
+            
+            if (isExactText || isSubstr) && (selectionBounds == nil || isSpatialMatch) {
                 removeAnnotation(id: ann.id, pageIndex: targetPage)
                 removedCount += 1
             }
         }
         
-        if removedCount == 0, let page = doc.page(at: targetPage) {
-            let selectionBounds = pdfViewReference?.currentSelection?.bounds(for: page)
+        if removedCount == 0 {
             let matching = page.annotations.filter { ann in
                 let t = ann.type ?? ""
                 guard t.contains("Highlight") || t.contains("Underline") || t.contains("StrikeOut") else { return false }
-                if let c = ann.contents, c == text || text.contains(c) || c.contains(text) {
-                    return true
+                if let sb = selectionBounds, sb != .zero {
+                    return ann.bounds.intersects(sb.insetBy(dx: -4, dy: -4))
                 }
-                if let sb = selectionBounds, sb != .zero, ann.bounds.intersects(sb.insetBy(dx: -4, dy: -4)) {
+                if let c = ann.contents, c == text || text.contains(c) || c.contains(text) {
                     return true
                 }
                 return false
@@ -2640,11 +2706,12 @@ struct ProPDFReaderEngine: View {
             if let pv = pdfViewReference {
                 forcePageRedraw(pv, pageIndex: targetPage)
             }
-            if removedCount > 0 {
-                PDFAnnotationSyncBridge.shared.scheduleDebouncedDiskSync(for: pdf.id, in: doc, at: resolvedURL)
-                showToastMessage("Highlight Removed")
-                HapticEngine.selection()
-            }
+        }
+        
+        if removedCount > 0 {
+            PDFAnnotationSyncBridge.shared.scheduleDebouncedDiskSync(for: pdf.id, in: doc, at: resolvedURL)
+            showToastMessage("Highlight Removed")
+            HapticEngine.selection()
         }
         
         pdfViewReference?.setCurrentSelection(nil, animate: false)
@@ -3028,8 +3095,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // Assign document AFTER display configuration so PDFKit lays out correctly
         pdfView.document = document
         pdfView.autoScales = true
-        pdfView.minScaleFactor = 0.25
-        pdfView.maxScaleFactor = 8.0
+        pdfView.minScaleFactor = 0.5
+        pdfView.maxScaleFactor = 3.5
 
         // ── Tap gesture (finger & stylus) ──────────────────────────────────────────
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
@@ -3157,7 +3224,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             context.coordinator.canvasProvider.isMarkupActive = isCanvasMarkupActive
         }
         if context.coordinator.canvasProvider.pdfID != pdf.id {
-            context.coordinator.canvasProvider.pdfID = pdf.id
+            context.coordinator.canvasProvider.reset(for: pdf.id)
         }
 
         let isDedicatedHighlighter = isPencilMode && currentToolMode == .textHighlight
@@ -3221,11 +3288,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
             let fitScale = uiView.scaleFactorForSizeToFit
             if fitScale > 0.001 {
-                uiView.minScaleFactor = fitScale * 0.4
-                uiView.maxScaleFactor = fitScale * 8.0
+                uiView.minScaleFactor = fitScale
+                uiView.maxScaleFactor = fitScale * 3.5
                 if let sv = uiView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-                    sv.minimumZoomScale = fitScale * 0.4
-                    sv.maximumZoomScale = fitScale * 8.0
+                    sv.minimumZoomScale = fitScale
+                    sv.maximumZoomScale = fitScale * 3.5
                 }
             }
 

@@ -315,7 +315,16 @@ actor ImportOrchestrator {
                     continue
                 }
 
-                // 2. Filename collision inside the same series directory — rename to avoid overwriting
+                // 2. Physical disk duplicate check: if destination already exists with identical size, skip creating duplicate clone
+                if fileManager.fileExists(atPath: destURL.path) {
+                    let existingDiskSize = (try? fileManager.attributesOfItem(atPath: destURL.path)[.size] as? Int64) ?? 0
+                    if incomingSize > 0 && existingDiskSize == incomingSize {
+                        Logger.shared.log("Skipping physical disk duplicate: \(fileName) already exists at destination (\(incomingSize) bytes)", category: "Import", type: .info)
+                        continue
+                    }
+                }
+
+                // 3. Filename collision with different file inside the same series directory — rename to avoid overwriting
                 if existingPaths.contains(destURL.path) || batchDestPaths.contains(destURL.path) || fileManager.fileExists(atPath: destURL.path) {
                     let nameWithoutExt = (fileName as NSString).deletingPathExtension
                     let ext = (fileName as NSString).pathExtension

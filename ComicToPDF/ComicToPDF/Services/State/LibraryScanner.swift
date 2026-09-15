@@ -67,10 +67,11 @@ actor LibraryScanner {
         var newPDFs: [ConvertedPDF] = []
         let keys: [URLResourceKey] = [.nameKey, .isDirectoryKey, .fileSizeKey]
 
-        var (existingRelPaths, existingCanonicalPaths, existingFilenames) = await MainActor.run {
+        var (existingRelPaths, existingCanonicalPaths, existingFilenames, existingFingerprints) = await MainActor.run {
             var rels = Set<String>()
             var paths = Set<String>()
             var filenames = Set<String>()
+            var fingerprints = Set<String>()
             
             for pdf in manager.convertedPDFs {
                 if pdf.isLinked {
@@ -81,8 +82,11 @@ actor LibraryScanner {
                 paths.insert(pdf.url.resolvingSymlinksInPath().path.lowercased())
                 let fn = normalizeFilename(pdf.url.lastPathComponent)
                 filenames.insert(fn)
+                if pdf.fileSize > 0 {
+                    fingerprints.insert("\(pdf.fileSize)||\(fn)")
+                }
             }
-            return (rels, paths, filenames)
+            return (rels, paths, filenames, fingerprints)
         }
 
         // Scan Documents directory and InksyncVault Inbox
@@ -117,10 +121,30 @@ actor LibraryScanner {
                     continue
                 }
                 
+                let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+
+                // Detect redundant duplicate clone suffixes: e.g. "Comic (1).cbz" matching existing "Comic.cbz"
+                let strippedCloneName = filename.replacingOccurrences(of: #"\s*\(\d+\)(?=\.[^.]+$)"#, with: "", options: .regularExpression)
+                if strippedCloneName != filename && fileSize > 0 {
+                    let cloneKey = "\(fileSize)||\(strippedCloneName)"
+                    if existingFingerprints.contains(cloneKey) || existingFilenames.contains(strippedCloneName) {
+                        Logger.shared.log("LibraryScanner: Detected redundant clone on disk: \(filename) matches existing \(strippedCloneName) (\(fileSize) bytes). Removing duplicate from disk.", category: "Library", type: .warning)
+                        try? fileManager.removeItem(at: fileURL)
+                        continue
+                    }
+                }
+                
+                if fileSize > 0 && existingFingerprints.contains("\(fileSize)||\(filename)") {
+                    continue
+                }
+
                 // Track newly discovered file in set so intra-pass duplicates across folders are prevented:
                 existingRelPaths.insert(relPath)
                 existingCanonicalPaths.insert(canonicalPath)
                 existingFilenames.insert(filename)
+                if fileSize > 0 {
+                    existingFingerprints.insert("\(fileSize)||\(filename)")
+                }
                 
                 // Skip files currently being uploaded via WiFi
                 guard !ActiveUploadRegistry.shared.isUploading(fileURL) else { continue }
@@ -130,8 +154,6 @@ actor LibraryScanner {
                     Logger.shared.log("LibraryScanner: Skipping scan of incomplete or unreadable file: \(filename)", category: "Library", type: .warning)
                     continue
                 }
-
-                let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
 
                 let inferredContentType = MetadataHeuristics.detectAsymmetricContentType(url: fileURL)
 
@@ -315,6 +337,7 @@ actor LibraryScanner {
         let allPDFs = await MainActor.run { manager.convertedPDFs }
         
         var seenPaths = Set<String>()
+        var seenFingerprints = Set<String>()
         var missingIDs = Set<UUID>()
         var repairedURLs: [UUID: URL] = [:]
 
@@ -327,11 +350,12 @@ actor LibraryScanner {
             if pruneYieldCount % 50 == 0 { await Task.yield() }
 
             if pdf.isLinked {
-                if seenPaths.contains(pdf.url.path) {
+                let canonicalLinked = pdf.url.resolvingSymlinksInPath().path.lowercased()
+                if seenPaths.contains(canonicalLinked) {
                     missingIDs.insert(pdf.id)
                     continue
                 }
-                seenPaths.insert(pdf.url.path)
+                seenPaths.insert(canonicalLinked)
                 continue
             }
 
@@ -357,7 +381,7 @@ actor LibraryScanner {
                         didRepair = true
                     }
                 }
-                // Fallback: Check root of Documents and Inbox
+                // Fallback: Check root of Documents, Inbox, and series subdirectories
                 if !didRepair {
                     let rootDoc = docDir.appendingPathComponent(pdf.url.lastPathComponent)
                     let rootInbox = inboxDir.appendingPathComponent(pdf.url.lastPathComponent)
@@ -367,6 +391,28 @@ actor LibraryScanner {
                     } else if fileManager.fileExists(atPath: rootInbox.path) {
                         resolvedURL = rootInbox
                         didRepair = true
+                    } else {
+                        // Check series subfolder if known
+                        if let series = pdf.metadata.series, !series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            let seriesClean = SeriesNameParser.cleanFolderName(series)
+                            let seriesDir = docDir.appendingPathComponent(seriesClean, isDirectory: true)
+                            let seriesFile = seriesDir.appendingPathComponent(pdf.url.lastPathComponent)
+                            if fileManager.fileExists(atPath: seriesFile.path) {
+                                resolvedURL = seriesFile
+                                didRepair = true
+                            }
+                        }
+                        // Scan immediate subdirectories in Documents
+                        if !didRepair, let subdirs = try? fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+                            for sub in subdirs where (try? sub.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                                let candidate = sub.appendingPathComponent(pdf.url.lastPathComponent)
+                                if fileManager.fileExists(atPath: candidate.path) {
+                                    resolvedURL = candidate
+                                    didRepair = true
+                                    break
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -375,13 +421,18 @@ actor LibraryScanner {
                 repairedURLs[pdf.id] = resolvedURL
             }
 
-            if seenPaths.contains(resolvedURL.path) {
+            let canonicalPath = resolvedURL.resolvingSymlinksInPath().path.lowercased()
+            let filename = resolvedURL.lastPathComponent.lowercased()
+            let fingerprint = pdf.fileSize > 0 ? "\(pdf.fileSize)||\(filename)" : ""
+
+            if seenPaths.contains(canonicalPath) || (!fingerprint.isEmpty && seenFingerprints.contains(fingerprint)) {
                 missingIDs.insert(pdf.id)
                 continue
             }
 
             if fileManager.fileExists(atPath: resolvedURL.path) {
-                seenPaths.insert(resolvedURL.path)
+                seenPaths.insert(canonicalPath)
+                if !fingerprint.isEmpty { seenFingerprints.insert(fingerprint) }
             } else {
                 missingIDs.insert(pdf.id)
             }

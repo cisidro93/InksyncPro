@@ -139,6 +139,7 @@ class PhysicalFileSystemRouter {
         guard let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         
         var updated = false
+        var indicesToRemove = Set<Int>()
         
         for i in 0..<manager.convertedPDFs.count {
             let pdf = manager.convertedPDFs[i]
@@ -170,40 +171,76 @@ class PhysicalFileSystemRouter {
                 let targetDir = docDir.appendingPathComponent(cleanSeries, isDirectory: true)
                 let destURL = targetDir.appendingPathComponent(fileURL.lastPathComponent)
                 
+                // Ensure source file actually exists on disk before attempting migration
+                guard fileManager.fileExists(atPath: fileURL.path) else { continue }
+
                 do {
                     // Create target directory if needed
                     try fileManager.createDirectory(at: targetDir, withIntermediateDirectories: true)
                     
-                    // If target file already exists, generate a unique suffix
                     var resolvedDestURL = destURL
-                    if fileManager.fileExists(atPath: resolvedDestURL.path) {
-                        let nameWithoutExt = resolvedDestURL.deletingPathExtension().lastPathComponent
-                        let ext = resolvedDestURL.pathExtension
-                        var counter = 1
-                        var checkURL = targetDir.appendingPathComponent("\(nameWithoutExt) (\(counter)).\(ext)")
-                        while fileManager.fileExists(atPath: checkURL.path) {
-                            counter += 1
-                            checkURL = targetDir.appendingPathComponent("\(nameWithoutExt) (\(counter)).\(ext)")
+                    var isRedundantDuplicate = false
+                    if fileManager.fileExists(atPath: destURL.path) {
+                        let srcSize = (try? fileManager.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? 0
+                        let dstSize = (try? fileManager.attributesOfItem(atPath: destURL.path)[.size] as? Int64) ?? 0
+                        
+                        if srcSize == dstSize || (dstSize > 0 && srcSize == 0) {
+                            // Identical file already exists at destination — remove redundant flat file
+                            try? fileManager.removeItem(at: fileURL)
+                            resolvedDestURL = destURL
+                            isRedundantDuplicate = true
+                            Logger.shared.log("Pruned redundant flat duplicate \(fileURL.lastPathComponent); using existing series copy.", category: "FileSystem", type: .info)
+                        } else {
+                            // Genuinely different file with same name — resolve unique suffix
+                            let nameWithoutExt = destURL.deletingPathExtension().lastPathComponent
+                            let ext = destURL.pathExtension
+                            var counter = 1
+                            var checkURL = targetDir.appendingPathComponent("\(nameWithoutExt) (\(counter)).\(ext)")
+                            while fileManager.fileExists(atPath: checkURL.path) {
+                                counter += 1
+                                checkURL = targetDir.appendingPathComponent("\(nameWithoutExt) (\(counter)).\(ext)")
+                            }
+                            resolvedDestURL = checkURL
+                            try fileManager.moveItem(at: fileURL, to: resolvedDestURL)
                         }
-                        resolvedDestURL = checkURL
+                    } else {
+                        // Move the file on disk
+                        try fileManager.moveItem(at: fileURL, to: resolvedDestURL)
                     }
                     
-                    // Move the file on disk
-                    try fileManager.moveItem(at: fileURL, to: resolvedDestURL)
                     PhysicalFileSystemRouter.excludeFromBackup(at: resolvedDestURL)
                     
-                    // Update the model url
-                    manager.convertedPDFs[i].url = resolvedDestURL
-                    
-                    // Keep the model's logical series metadata in perfect sync with the grouping
-                    if manager.convertedPDFs[i].metadata.series != series {
-                        manager.convertedPDFs[i].metadata.series = series
+                    let canonicalDest = resolvedDestURL.resolvingSymlinksInPath().path.lowercased()
+                    let alreadyTracked = manager.convertedPDFs.indices.contains { otherIdx in
+                        otherIdx != i && manager.convertedPDFs[otherIdx].url.resolvingSymlinksInPath().path.lowercased() == canonicalDest
                     }
                     
-                    updated = true
-                    Logger.shared.log("Migrated flat file \(fileURL.lastPathComponent) to series directory \(cleanSeries)", category: "FileSystem", type: .success)
+                    if isRedundantDuplicate || alreadyTracked {
+                        // Destination already tracked in memory: delete duplicate flat record so two records don't point to same file
+                        indicesToRemove.insert(i)
+                        updated = true
+                    } else {
+                        // Update the model url
+                        manager.convertedPDFs[i].url = resolvedDestURL
+                        
+                        // Keep the model's logical series metadata in perfect sync with the grouping
+                        if manager.convertedPDFs[i].metadata.series != series {
+                            manager.convertedPDFs[i].metadata.series = series
+                        }
+                        
+                        updated = true
+                        Logger.shared.log("Migrated flat file \(fileURL.lastPathComponent) to series directory \(cleanSeries)", category: "FileSystem", type: .success)
+                    }
                 } catch {
                     Logger.shared.log("Failed to migrate flat file \(fileURL.lastPathComponent) to series directory: \(error.localizedDescription)", category: "FileSystem", type: .error)
+                }
+            }
+        }
+        
+        if !indicesToRemove.isEmpty {
+            for idx in indicesToRemove.sorted(by: >) {
+                if idx < manager.convertedPDFs.count {
+                    manager.convertedPDFs.remove(at: idx)
                 }
             }
         }

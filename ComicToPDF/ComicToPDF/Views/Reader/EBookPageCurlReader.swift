@@ -1539,6 +1539,37 @@ extension EBookPageCurlReader {
                 }
                 guard ready, let self = self, let bgWV = bgWV, !Task.isCancelled else { return }
 
+                // Wait for custom fonts to rasterize and ensure CSS columns layout stabilizes
+                let fontsScript = """
+                new Promise(function(resolve) {
+                    var settled = false;
+                    var finish = function() {
+                        if (!settled) {
+                            settled = true;
+                            if (window.computeMetrics) { computeMetrics(); }
+                            if (window.applyPagePosition) { applyPagePosition(false); }
+                            resolve(true);
+                        }
+                    };
+                    var timer = setTimeout(finish, 2000);
+                    if (document.fonts && document.fonts.ready) {
+                        document.fonts.ready.then(function() {
+                            clearTimeout(timer);
+                            finish();
+                        }).catch(function() {
+                            clearTimeout(timer);
+                            finish();
+                        });
+                    } else {
+                        clearTimeout(timer);
+                        finish();
+                    }
+                });
+                """
+                let _ = try? await bgWV.evaluateJavaScript(fontsScript)
+                try? await Task.sleep(nanoseconds: 60_000_000)
+                guard !Task.isCancelled, !self.isTransitioning else { return }
+
                 let isDual = self.isDualPageMode
                 let step = isDual ? 2 : 1
                 let maxPages = min(totalPages, 24)
@@ -1705,7 +1736,10 @@ extension EBookPageCurlReader {
                     } else {
                         self.parent.onHighlightCreated?(textToReport)
                     }
-                    self.takePageSnapshot(for: self.currentPageIndex)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                        guard let self = self else { return }
+                        self.takePageSnapshot(for: self.currentPageIndex)
+                    }
                 }
             }
         }
@@ -1717,11 +1751,13 @@ extension EBookPageCurlReader {
             let annotations = AnnotationStore.shared.annotations(for: pdfID)
                 .filter { ann in
                     guard ann.kind == .highlight || ann.kind == .underline || ann.kind == .strikeOut else { return false }
-                    if let title = ann.chapterTitle?.lowercased(), !title.isEmpty {
-                        if !spineLabel.isEmpty && (title.contains(spineLabel) || spineLabel.contains(title)) { return true }
-                        if !spineHref.isEmpty && (title.contains(spineHref) || spineHref.contains(title)) { return true }
+                    if ann.pageIndex == parent.spineIndex {
+                        return true
                     }
-                    return ann.pageIndex == parent.spineIndex
+                    if let title = ann.chapterTitle?.lowercased(), !title.isEmpty {
+                        return (!spineLabel.isEmpty && title == spineLabel) || (!spineHref.isEmpty && title == spineHref)
+                    }
+                    return false
                 }
             for ann in annotations {
                 guard let text = ann.selectedText, let color = ann.colorHex else { continue }
@@ -2085,7 +2121,7 @@ extension EBookPageCurlReader {
                 } catch(e) {}
 
                 var colWidth = _isMultiCol ? (pageStep / 2) : pageStep;
-                var total = Math.max(1, Math.ceil((scrollW - 10) / colWidth));
+                var total = Math.max(1, Math.ceil(scrollW / colWidth));
                 if (total === 1 && scrollW > colWidth + 20) {
                     total = 2;
                 }
@@ -2309,7 +2345,6 @@ extension EBookPageCurlReader {
                 if (sel) sel.removeAllRanges();
                 window.__lastSelectedText = "";
                 window.__lastSelectedRange = null;
-                try { window.webkit.messageHandlers.highlight.postMessage(text); } catch(e) {}
                 return text;
             };
 
@@ -2369,9 +2404,17 @@ extension EBookPageCurlReader {
                     targetMarks.push(idMark);
                 } else {
                     var marks = document.querySelectorAll('mark.inksync-highlight');
+                    var trimmedTarget = idOrText.trim();
                     for (var i = 0; i < marks.length; i++) {
-                        if (marks[i].textContent.indexOf(idOrText) !== -1 || idOrText.indexOf(marks[i].textContent) !== -1) {
+                        if (marks[i].textContent.trim() === trimmedTarget) {
                             targetMarks.push(marks[i]);
+                        }
+                    }
+                    if (targetMarks.length === 0 && trimmedTarget.length >= 6) {
+                        for (var i = 0; i < marks.length; i++) {
+                            if (marks[i].textContent.indexOf(trimmedTarget) !== -1 || trimmedTarget.indexOf(marks[i].textContent.trim()) !== -1) {
+                                targetMarks.push(marks[i]);
+                            }
                         }
                     }
                 }
@@ -2403,9 +2446,17 @@ extension EBookPageCurlReader {
                     targetMarks.push(idMark);
                 } else {
                     var marks = document.querySelectorAll('mark.inksync-highlight');
+                    var trimmedTarget = idOrText.trim();
                     for (var i = 0; i < marks.length; i++) {
-                        if (marks[i].textContent.indexOf(idOrText) !== -1 || idOrText.indexOf(marks[i].textContent) !== -1) {
+                        if (marks[i].textContent.trim() === trimmedTarget) {
                             targetMarks.push(marks[i]);
+                        }
+                    }
+                    if (targetMarks.length === 0 && trimmedTarget.length >= 6) {
+                        for (var i = 0; i < marks.length; i++) {
+                            if (marks[i].textContent.indexOf(trimmedTarget) !== -1 || trimmedTarget.indexOf(marks[i].textContent.trim()) !== -1) {
+                                targetMarks.push(marks[i]);
+                            }
                         }
                     }
                 }

@@ -32,15 +32,20 @@ actor LibraryModelActor {
         var validDocs: [SDConvertedPDF] = []
         var ghostIDs: Set<UUID> = []
         var seenPaths = Set<String>()
+        var seenFingerprints = Set<String>()
         
         let currentSandboxPath = appSupport?.path ?? ""
         let lastSandboxPath = UserDefaults.standard.string(forKey: "lastSandboxDocumentsPath")
         let isNewSandbox = !currentSandboxPath.isEmpty && lastSandboxPath != currentSandboxPath
         
         for doc in documents {
-            let normalizedPath = doc.url.path.lowercased()
-            if seenPaths.contains(normalizedPath) {
-                // Delete duplicate db record pointing to same path
+            let canonicalURL = doc.url.resolvingSymlinksInPath()
+            let normalizedPath = canonicalURL.path.lowercased()
+            let filename = canonicalURL.lastPathComponent.lowercased()
+            let fingerprint = doc.fileSize > 0 ? "\(doc.fileSize)||\(filename)" : ""
+            
+            if seenPaths.contains(normalizedPath) || (!fingerprint.isEmpty && seenFingerprints.contains(fingerprint)) {
+                // Delete duplicate db record pointing to same path or identical file
                 modelContext.delete(doc)
                 ghostIDs.insert(doc.id)
                 didUpdate = true
@@ -50,6 +55,7 @@ actor LibraryModelActor {
             // 1. If physical file exists, path is already correct
             if fileManager.fileExists(atPath: doc.url.path) {
                 seenPaths.insert(normalizedPath)
+                if !fingerprint.isEmpty { seenFingerprints.insert(fingerprint) }
                 validDocs.append(doc)
                 continue
             }
@@ -58,6 +64,7 @@ actor LibraryModelActor {
             if let data = doc.sourceModeData, let mode = try? JSONDecoder().decode(SourceMode.self, from: data) {
                 if mode.isLinked || mode.isCloud {
                     seenPaths.insert(normalizedPath)
+                    if !fingerprint.isEmpty { seenFingerprints.insert(fingerprint) }
                     validDocs.append(doc)
                     continue
                 }
@@ -101,7 +108,7 @@ actor LibraryModelActor {
                 }
             }
             
-            // 4. Fallback: Try re-anchoring by filename only across all sandbox roots
+            // 4. Fallback: Try re-anchoring by filename only across all sandbox roots & series folders
             if !foundReanchor {
                 let filename = doc.url.lastPathComponent
                 for root in possibleRoots {
@@ -112,17 +119,44 @@ actor LibraryModelActor {
                         break
                     }
                 }
+                
+                // If not at root, check inside series subdirectories in Documents
+                if !foundReanchor, let docs = docsRoot {
+                    if let series = doc.metadata.series, !series.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let seriesClean = SeriesNameParser.cleanFolderName(series)
+                        let candidate = docs.appendingPathComponent(seriesClean, isDirectory: true).appendingPathComponent(filename)
+                        if fileManager.fileExists(atPath: candidate.path) {
+                            checkURL = candidate
+                            foundReanchor = true
+                        }
+                    }
+                    if !foundReanchor, let subdirs = try? fileManager.contentsOfDirectory(at: docs, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+                        for sub in subdirs where (try? sub.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                            let candidate = sub.appendingPathComponent(filename)
+                            if fileManager.fileExists(atPath: candidate.path) {
+                                checkURL = candidate
+                                foundReanchor = true
+                                break
+                            }
+                        }
+                    }
+                }
             }
             
             if foundReanchor, let finalURL = checkURL {
-                let reanchoredPath = finalURL.path.lowercased()
-                if seenPaths.contains(reanchoredPath) {
+                let canonicalFinal = finalURL.resolvingSymlinksInPath()
+                let reanchoredPath = canonicalFinal.path.lowercased()
+                let reanchoredFilename = canonicalFinal.lastPathComponent.lowercased()
+                let reanchoredFingerprint = doc.fileSize > 0 ? "\(doc.fileSize)||\(reanchoredFilename)" : ""
+                
+                if seenPaths.contains(reanchoredPath) || (!reanchoredFingerprint.isEmpty && seenFingerprints.contains(reanchoredFingerprint)) {
                     modelContext.delete(doc)
                     ghostIDs.insert(doc.id)
                     didUpdate = true
                 } else {
                     doc.url = finalURL
                     seenPaths.insert(reanchoredPath)
+                    if !reanchoredFingerprint.isEmpty { seenFingerprints.insert(reanchoredFingerprint) }
                     didUpdate = true
                     validDocs.append(doc)
                 }

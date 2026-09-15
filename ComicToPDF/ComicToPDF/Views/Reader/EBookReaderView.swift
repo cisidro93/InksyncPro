@@ -282,10 +282,7 @@ struct EBookReaderView: View {
                                         selectedText: selectedText
                                     )
                                     AnnotationStore.shared.add(highlight)
-                                    let sdAnnotation = SDAnnotation(from: highlight)
-                                    modelContext.insert(sdAnnotation)
-                                    try? modelContext.save()
-                                    activeHighlightToEdit = sdAnnotation
+                                    activeHighlightToEdit = findMatchingAnnotation(tappedText: highlight.id.uuidString)
                                 },
                                 pdfID: pdf?.id,
                                 initialScrollFraction: UserDefaults.standard.double(forKey: "ebook_fraction_\(fileURL.lastPathComponent.hashValue)"),
@@ -1654,11 +1651,6 @@ struct EBookReaderView: View {
             selectedText: text
         )
         AnnotationStore.shared.add(highlight)
-        let sdAnnotation = SDAnnotation(from: highlight)
-        modelContext.insert(sdAnnotation)
-        Task { @MainActor in
-            try? InksyncProApp.sharedModelContainer.mainContext.save()
-        }
         HapticEngine.selection()
     }
 
@@ -1666,6 +1658,7 @@ struct EBookReaderView: View {
         guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return nil }
         let storeAnns = AnnotationStore.shared.annotations(for: p.id)
         guard let match = storeAnns.first(where: { ann in
+            guard ann.pageIndex == currentIndex else { return false }
             if ann.id.uuidString == tappedText { return true }
             guard let text = ann.selectedText, !text.isEmpty else { return false }
             return text.contains(tappedText) || tappedText.contains(text)
@@ -1725,11 +1718,6 @@ struct EBookReaderView: View {
             }
         }
         AnnotationStore.shared.add(highlight)
-        let sdAnnotation = SDAnnotation(from: highlight)
-        modelContext.insert(sdAnnotation)
-        Task { @MainActor in
-            try? InksyncProApp.sharedModelContainer.mainContext.save()
-        }
 
         let idStr = highlight.id.uuidString
         let safeSymbol = symbol?.replacingOccurrences(of: "'", with: "\\'") ?? ""
@@ -1743,10 +1731,24 @@ struct EBookReaderView: View {
     private func unhighlightInEPUB(text: String) {
         guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
         let storeAnns = AnnotationStore.shared.annotations(for: p.id)
-        let matches = storeAnns.filter { ann in
-            if ann.id.uuidString == text { return true }
-            guard let sel = ann.selectedText, !sel.isEmpty else { return false }
-            return sel == text || sel.contains(text) || text.contains(sel)
+        let chapterAnns = storeAnns.filter { $0.pageIndex == currentIndex }
+        
+        let matches: [Annotation]
+        if let active = activeHighlightToEdit {
+            matches = chapterAnns.filter { $0.id == active.id }
+        } else if let matchByID = chapterAnns.first(where: { $0.id.uuidString == text }) {
+            matches = [matchByID]
+        } else {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let exact = chapterAnns.filter { $0.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed }
+            if !exact.isEmpty {
+                matches = exact
+            } else {
+                matches = chapterAnns.filter { ann in
+                    guard let sel = ann.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines), !sel.isEmpty else { return false }
+                    return sel == trimmed || sel.contains(trimmed) || trimmed.contains(sel)
+                }
+            }
         }
         
         let activeWV = resolveActiveWebView() ?? webViewReference
@@ -1758,20 +1760,17 @@ struct EBookReaderView: View {
 
         for match in matches {
             let idStr = match.id.uuidString
-            activeWV?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(idStr)'); window.removeInksyncHighlight(`\(safeText)`); }")
+            activeWV?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(idStr)'); }")
             AnnotationStore.shared.delete(id: match.id, pdfID: p.id)
-            let matchID = match.id
-            let descriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.id == matchID })
-            if let sdAnns = try? modelContext.fetch(descriptor) {
-                for sd in sdAnns {
-                    modelContext.delete(sd)
-                }
-            }
         }
-        // Also call removeInksyncHighlight on the safeText in case it was a raw DOM selection
+        if matches.isEmpty {
+            activeWV?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight(`\(safeText)`); }")
+        }
         activeWV?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight(`\(safeText)`); window.getSelection()?.removeAllRanges(); }")
         
         try? modelContext.save()
+        activeHighlightToEdit = nil
+        selectedTextForHUD = nil
         showToastMessage("Highlight Removed")
         HapticEngine.selection()
     }
@@ -2849,7 +2848,6 @@ struct EBookWebReader: View {
             if (sel) { try { sel.removeAllRanges(); } catch(e) {} }
             window.__lastSelectedRange = null;
             window.__lastSelectedText = null;
-            try { window.webkit.messageHandlers.highlight.postMessage(text); } catch(e) {}
             return text;
         };
 

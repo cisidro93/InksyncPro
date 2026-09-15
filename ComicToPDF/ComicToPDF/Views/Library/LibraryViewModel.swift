@@ -237,7 +237,19 @@ class LibraryViewModel: ObservableObject {
                     let coverID = matchingCol?.explicitCoverFileID ?? pdf.id
                     groups[targetKey] = SeriesGroup(id: matchingCol?.id.uuidString ?? seriesName, title: title, coverIssueID: coverID, count: 0, issues: [])
                 }
-                if !(groups[targetKey]?.issues.contains(where: { $0.id == pdf.id }) ?? false) {
+                
+                let canonicalPath = pdf.url.resolvingSymlinksInPath().path.lowercased()
+                let filename = pdf.url.lastPathComponent.lowercased()
+                let fingerprint = pdf.fileSize > 0 ? "\(pdf.fileSize)||\(filename)" : ""
+
+                let isDuplicate = groups[targetKey]?.issues.contains { existing in
+                    if existing.id == pdf.id { return true }
+                    if existing.url.resolvingSymlinksInPath().path.lowercased() == canonicalPath { return true }
+                    if !fingerprint.isEmpty && existing.fileSize > 0 && "\(existing.fileSize)||\(existing.url.lastPathComponent.lowercased())" == fingerprint { return true }
+                    return false
+                } ?? false
+
+                if !isDuplicate {
                     groups[targetKey]?.issues.append(pdf)
                     groups[targetKey]?.count += 1
                 }
@@ -255,7 +267,19 @@ class LibraryViewModel: ObservableObject {
                         let coverID = collection.explicitCoverFileID ?? pdf.id
                         groups[colKey] = SeriesGroup(id: collection.id.uuidString, title: collection.name, coverIssueID: coverID, count: 0, issues: [])
                     }
-                    if !(groups[colKey]?.issues.contains(where: { $0.id == pdf.id }) ?? false) {
+                    
+                    let canonicalPath = pdf.url.resolvingSymlinksInPath().path.lowercased()
+                    let filename = pdf.url.lastPathComponent.lowercased()
+                    let fingerprint = pdf.fileSize > 0 ? "\(pdf.fileSize)||\(filename)" : ""
+
+                    let isDuplicate = groups[colKey]?.issues.contains { existing in
+                        if existing.id == pdf.id { return true }
+                        if existing.url.resolvingSymlinksInPath().path.lowercased() == canonicalPath { return true }
+                        if !fingerprint.isEmpty && existing.fileSize > 0 && "\(existing.fileSize)||\(existing.url.lastPathComponent.lowercased())" == fingerprint { return true }
+                        return false
+                    } ?? false
+
+                    if !isDuplicate {
                         groups[colKey]?.issues.append(pdf)
                         groups[colKey]?.count += 1
                     }
@@ -271,9 +295,22 @@ class LibraryViewModel: ObservableObject {
             
             // 3. Fallback to Singles if not in ANY group, and we are at the correct level
             if !inAnyGroup && (isOrphan ? folderID == nil : pdf.collectionId == folderID) {
-                let singleKey = "single_\(pdf.id)"
-                if firstAppearanceIndex[singleKey] == nil { firstAppearanceIndex[singleKey] = index }
-                singles.append(pdf)
+                let canonicalPath = pdf.url.resolvingSymlinksInPath().path.lowercased()
+                let filename = pdf.url.lastPathComponent.lowercased()
+                let fingerprint = pdf.fileSize > 0 ? "\(pdf.fileSize)||\(filename)" : ""
+
+                let isSingleDuplicate = singles.contains { existing in
+                    if existing.id == pdf.id { return true }
+                    if existing.url.resolvingSymlinksInPath().path.lowercased() == canonicalPath { return true }
+                    if !fingerprint.isEmpty && existing.fileSize > 0 && "\(existing.fileSize)||\(existing.url.lastPathComponent.lowercased())" == fingerprint { return true }
+                    return false
+                }
+
+                if !isSingleDuplicate {
+                    let singleKey = "single_\(pdf.id)"
+                    if firstAppearanceIndex[singleKey] == nil { firstAppearanceIndex[singleKey] = index }
+                    singles.append(pdf)
+                }
             }
         }
         
@@ -311,17 +348,35 @@ class LibraryViewModel: ObservableObject {
             guard !Task.isCancelled else { return [] }
             var mutableGroup = group
             if key.starts(with: "col_") {
-                let overlappingSeriesKey = "series_\(mutableGroup.title)"
-                if let orphanSeries = groups[overlappingSeriesKey] {
-                    // Merge the items into the collection group!
-                    for issue in orphanSeries.issues {
-                        if !mutableGroup.issues.contains(where: { $0.id == issue.id }) {
-                            mutableGroup.issues.append(issue)
-                            mutableGroup.count += 1
+                let candidateKeys = [
+                    "series_\(LibraryViewModel.normalizeSeriesTitle(mutableGroup.title))",
+                    "series_\(mutableGroup.title.lowercased())",
+                    "series_\(mutableGroup.title)"
+                ]
+                for overlappingSeriesKey in candidateKeys {
+                    if let orphanSeries = groups[overlappingSeriesKey] {
+                        // Merge the items into the collection group!
+                        for issue in orphanSeries.issues {
+                            let canonicalPath = issue.url.resolvingSymlinksInPath().path.lowercased()
+                            let filename = issue.url.lastPathComponent.lowercased()
+                            let fingerprint = issue.fileSize > 0 ? "\(issue.fileSize)||\(filename)" : ""
+
+                            let alreadyHasIssue = mutableGroup.issues.contains { existing in
+                                if existing.id == issue.id { return true }
+                                if existing.url.resolvingSymlinksInPath().path.lowercased() == canonicalPath { return true }
+                                if !fingerprint.isEmpty && existing.fileSize > 0 && "\(existing.fileSize)||\(existing.url.lastPathComponent.lowercased())" == fingerprint { return true }
+                                return false
+                            }
+
+                            if !alreadyHasIssue {
+                                mutableGroup.issues.append(issue)
+                                mutableGroup.count += 1
+                            }
                         }
+                        groups[key] = mutableGroup
+                        keysToRemove.append(overlappingSeriesKey)
+                        break
                     }
-                    groups[key] = mutableGroup
-                    keysToRemove.append(overlappingSeriesKey)
                 }
             }
         }

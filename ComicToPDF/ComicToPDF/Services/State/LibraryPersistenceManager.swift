@@ -60,13 +60,16 @@ class LibraryPersistenceManager {
                 }
                 
                 var uniquePDFs: [ConvertedPDF] = []
-                var seenKeys = Set<String>()
+                var seenPaths = Set<String>()
+                var seenFingerprints = Set<String>()
                 for pdf in legacyPDFs {
-                    let key = normalizeFilename(pdf.url.lastPathComponent)
-                    let altKey = normalizeFilename(pdf.name)
-                    if !seenKeys.contains(key) && !seenKeys.contains(altKey) {
-                        seenKeys.insert(key)
-                        seenKeys.insert(altKey)
+                    let canonicalPath = pdf.url.resolvingSymlinksInPath().path.lowercased()
+                    let filename = normalizeFilename(pdf.url.lastPathComponent)
+                    let fingerprint = (pdf.fileSize > 0) ? "\(pdf.fileSize)||\(filename)" : canonicalPath
+                    
+                    if !seenPaths.contains(canonicalPath) && !seenFingerprints.contains(fingerprint) {
+                        seenPaths.insert(canonicalPath)
+                        seenFingerprints.insert(fingerprint)
                         uniquePDFs.append(pdf)
                     }
                 }

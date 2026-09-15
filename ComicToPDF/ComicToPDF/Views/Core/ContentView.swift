@@ -208,7 +208,7 @@ struct ContentView: View {
                 // Run smart grouping asynchronously on background actor context to avoid blocking the Main Actor on launch.
                 await LibraryService.shared.runSmartGrouping()
                 
-                conversionManager.scanLibrary()
+                await LibraryScanner.shared.scanLibrary(manager: conversionManager)
                 
                 await SandboxCleanupManager.shared.passiveScan()
                 await SandboxCleanupManager.shared.autoCleanupIfStorageLow()

@@ -560,21 +560,49 @@ class AnnotationStore: ObservableObject {
             
             var loadedStore: [UUID: [Annotation]] = [:]
             var loadedIndex: [UUID: Annotation] = [:]
+            var seenIDs = Set<UUID>()
             var seenSignatures = Set<String>()
             var duplicatesToDelete: [SDAnnotation] = []
 
             for sd in allAnnotations {
                 let dto = sd.toDTO()
-                let textKey = (dto.selectedText ?? dto.noteText ?? "\(dto.drawingData?.count ?? 0)")
-                    .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                let sig = "\(dto.pdfID.uuidString)_\(dto.pageIndex)_\(dto.kind.rawValue)_\(textKey)"
                 
-                if !textKey.isEmpty && seenSignatures.contains(sig) {
+                // 1. Strict primary ID deduplication (literal duplicate records in SwiftData)
+                if seenIDs.contains(dto.id) {
                     duplicatesToDelete.append(sd)
                     continue
                 }
-                seenSignatures.insert(sig)
                 
+                let textKey = (dto.selectedText ?? dto.noteText ?? "\(dto.drawingData?.count ?? 0)")
+                    .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                
+                if let b = dto.bounds {
+                    // PDF / Spatial annotations: deduplicate by spatial coordinates + text
+                    let qX = Int((b.x * 100).rounded())
+                    let qY = Int((b.y * 100).rounded())
+                    let qW = Int((b.width * 100).rounded())
+                    let qH = Int((b.height * 100).rounded())
+                    let boundsKey = "_\(qX)_\(qY)_\(qW)_\(qH)"
+                    let sig = "\(dto.pdfID.uuidString)_\(dto.pageIndex)_\(dto.kind.rawValue)_\(textKey)\(boundsKey)"
+                    
+                    if !textKey.isEmpty && seenSignatures.contains(sig) {
+                        duplicatesToDelete.append(sd)
+                        continue
+                    }
+                    seenSignatures.insert(sig)
+                } else {
+                    // EPUB / non-spatial annotations: only deduplicate if identical text was inserted
+                    // in the exact same second (duplicate rapid insert artifact), never purging distinct highlights of identical words.
+                    let timeBucket = Int64(dto.createdAt.timeIntervalSince1970)
+                    let sig = "\(dto.pdfID.uuidString)_\(dto.pageIndex)_\(dto.kind.rawValue)_\(textKey)_\(timeBucket)"
+                    if !textKey.isEmpty && seenSignatures.contains(sig) {
+                        duplicatesToDelete.append(sd)
+                        continue
+                    }
+                    seenSignatures.insert(sig)
+                }
+                
+                seenIDs.insert(dto.id)
                 loadedStore[dto.pdfID, default: []].append(dto)
                 loadedIndex[dto.id] = dto
             }
