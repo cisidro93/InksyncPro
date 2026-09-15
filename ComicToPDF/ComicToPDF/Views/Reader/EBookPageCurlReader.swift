@@ -2081,7 +2081,37 @@ extension EBookPageCurlReader {
                 var pageStep = getPageStep();
                 if (pageStep <= 0) return 1;
                 var vp = document.getElementById('inksync-viewport') || document.body;
-                var scrollW = vp ? Math.max(vp.scrollWidth, document.body.scrollWidth, document.documentElement.scrollWidth) : 0;
+
+                var maxRight = 0;
+                try {
+                    var range = document.createRange();
+                    range.selectNodeContents(vp);
+                    var rects = range.getClientRects();
+                    for (var i = 0; i < rects.length; i++) {
+                        var r = rects[i].right + _currentShift;
+                        if (r > maxRight) { maxRight = r; }
+                    }
+                } catch(e) {}
+
+                try {
+                    var children = vp.children;
+                    for (var j = 0; j < children.length; j++) {
+                        var cr = children[j].getBoundingClientRect();
+                        var crRight = cr.right + _currentShift;
+                        if (crRight > maxRight) { maxRight = crRight; }
+                    }
+                } catch(e) {}
+
+                try {
+                    var media = vp.querySelectorAll('img, svg, table, pre, figure');
+                    for (var k = 0; k < media.length; k++) {
+                        var mr = media[k].getBoundingClientRect();
+                        var mrRight = mr.right + _currentShift;
+                        if (mrRight > maxRight) { maxRight = mrRight; }
+                    }
+                } catch(e) {}
+
+                var scrollW = Math.max(maxRight, vp ? vp.scrollWidth : 0, document.body.scrollWidth || 0, document.documentElement.scrollWidth || 0);
 
                 var totalSpreads = Math.max(1, Math.ceil((scrollW - 10) / pageStep));
                 _totalPages = _isMultiCol ? (totalSpreads * 2) : totalSpreads;

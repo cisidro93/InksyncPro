@@ -385,6 +385,11 @@ struct ContentView: View {
                 AppRouter.shared.presentFullScreen(.read(pdf))
             }
         }
+        .onChange(of: router.activeFullScreen) { _, newScreen in
+            if newScreen == nil {
+                selectedPDF = nil
+            }
+        }
         .modifier(iPadKeyboardShortcuts(
             selectedTab: $router.selectedTab,
             showImport: $showingWebExport,
@@ -447,6 +452,21 @@ struct ContentView: View {
             .presentationDetents([.large])
             .presentationCornerRadius(32)
             .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(item: $router.activeFullScreen, onDismiss: {
+            selectedPDF = nil
+        }) { dest in
+            switch dest {
+            case .read(let pdf, let initialReadingMode):
+                UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs, initialReadingMode: initialReadingMode)
+                    .environmentObject(conversionManager)
+            case .advancedWorkspace(let pdf):
+                AdvancedWorkspaceView(pdf: pdf)
+                    .environmentObject(conversionManager)
+            case .smartCollection(let rule):
+                SmartCollectionDetailView(rule: rule)
+                    .environmentObject(conversionManager)
+            }
         }
         .environmentObject(router)
     }
