@@ -351,23 +351,11 @@ struct LibraryListView: View {
             Divider()
             
             Button {
-                ReaderProgressTracker.shared.markComplete(pdfID: pdf.id)
-                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                    conversionManager.convertedPDFs[idx].metadata.lastReadPage = pdf.pageCount
-                    conversionManager.saveProgressOnly()
-                }
+                ReaderProgressTracker.shared.markComplete(pdfID: pdf.id, totalPages: pdf.pageCount)
             } label: { Label("Mark as Read", systemImage: "checkmark.circle") }
             
             Button {
-                var progress = ReaderProgressTracker.shared.progress(for: pdf.id) ?? ReadingProgress(pdfID: pdf.id, lastOpenedAt: Date(), currentPageIndex: 0, totalPagesRead: 0, completionFraction: 0.0, readingSessionDates: [])
-                progress.currentPageIndex = 0
-                progress.completionFraction = 0.0
-                ReaderProgressTracker.shared.update(progress)
-                
-                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                    conversionManager.convertedPDFs[idx].metadata.lastReadPage = 0
-                    conversionManager.saveProgressOnly()
-                }
+                ReaderProgressTracker.shared.markUnread(pdfID: pdf.id)
             } label: { Label("Mark as Unread", systemImage: "circle") }
             
             Divider()

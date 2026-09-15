@@ -1219,7 +1219,8 @@ struct ReaderView: View {
     // MARK: - Bookmarks
     private var isBookmarked: Bool {
         guard let pdf = pdf else { return false }
-        return pdf.metadata.bookmarkedPages.contains(currentPageIndex)
+        return pdf.metadata.bookmarkedPages.contains(currentPageIndex) ||
+            AnnotationStore.shared.annotations(for: pdf.id).contains(where: { $0.pageIndex == currentPageIndex && $0.kind == .bookmark })
     }
     
     private func toggleBookmark() {
@@ -1231,9 +1232,21 @@ struct ReaderView: View {
         var updated = conversionManager.convertedPDFs[idx]
         if isBookmarked {
             updated.metadata.bookmarkedPages.removeAll(where: { $0 == currentPageIndex })
+            if let ann = AnnotationStore.shared.annotations(for: p.id).first(where: { $0.pageIndex == currentPageIndex && $0.kind == .bookmark }) {
+                AnnotationStore.shared.delete(id: ann.id, pdfID: p.id)
+            }
             Logger.shared.log("Bookmark removed: page \(currentPageIndex + 1) of '\(p.name)'", category: "ReaderView", type: .info)
         } else {
-            updated.metadata.bookmarkedPages.append(currentPageIndex)
+            if !updated.metadata.bookmarkedPages.contains(currentPageIndex) {
+                updated.metadata.bookmarkedPages.append(currentPageIndex)
+            }
+            let newBookmark = Annotation(
+                pdfID: p.id,
+                pageIndex: currentPageIndex,
+                color: "yellow",
+                kind: .bookmark
+            )
+            AnnotationStore.shared.add(newBookmark)
             Logger.shared.log("Bookmark added: page \(currentPageIndex + 1) of '\(p.name)'", category: "ReaderView", type: .success)
         }
         

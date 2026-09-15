@@ -33,6 +33,8 @@ extension Notification.Name {
     static let inksyncOpenBook        = Notification.Name("InksyncOpenBook")
     /// Fired to programmatically jump the active reader to a specific 0-based page index.
     static let readerJumpToPage       = Notification.Name("Reader_JumpToPage")
+    /// Fired when a document's reading progress or last read page is updated.
+    static let readingProgressDidChange = Notification.Name("InksyncPro.readingProgressDidChange")
 
     // MARK: UI Interactions
     /// Fired when the Library tab icon is double-tapped — triggers scroll-to-top.

@@ -264,6 +264,19 @@ class ReaderProgressTracker: ObservableObject {
         progressMap[updated.pdfID] = updated
         save(pdfID: updated.pdfID)
         syncToiCloud(pdfID: updated.pdfID, progress: updated)
+
+        // Keep ConversionManager in-memory library and SQLite progress in sync
+        if let idx = ConversionManager.shared.convertedPDFs.firstIndex(where: { $0.id == updated.pdfID }) {
+            ConversionManager.shared.convertedPDFs[idx].metadata.lastReadPage = updated.currentPageIndex
+            ConversionManager.shared.saveProgressOnly()
+        }
+
+        // Broadcast to the app village (ModernLibraryView, ReadNowTabView, SeriesDetailView)
+        NotificationCenter.default.post(
+            name: .readingProgressDidChange,
+            object: nil,
+            userInfo: ["pdfID": updated.pdfID, "progress": updated]
+        )
     }
 
     /// Record pages turned and time spent during a session turn.
@@ -294,9 +307,34 @@ class ReaderProgressTracker: ObservableObject {
         return Double(totalPages) / totalMinutes
     }
     
-    func markComplete(pdfID: UUID) {
-        guard var prog = progressMap[pdfID] else { return }
+    func markComplete(pdfID: UUID, totalPages: Int? = nil) {
+        let pages = totalPages ?? ConversionManager.shared.convertedPDFs.first(where: { $0.id == pdfID })?.pageCount ?? 1
+        var prog = progressMap[pdfID] ?? ReadingProgress(
+            pdfID: pdfID,
+            lastOpenedAt: Date(),
+            currentPageIndex: max(1, pages),
+            totalPagesRead: max(1, pages),
+            completionFraction: 1.0,
+            readingSessionDates: [Date()]
+        )
+        prog.currentPageIndex = max(1, pages)
+        prog.totalPagesRead = max(prog.totalPagesRead, pages)
         prog.completionFraction = 1.0
+        prog.lastOpenedAt = Date()
+        update(prog)
+    }
+
+    func markUnread(pdfID: UUID) {
+        var prog = progressMap[pdfID] ?? ReadingProgress(
+            pdfID: pdfID,
+            lastOpenedAt: Date(),
+            currentPageIndex: 0,
+            totalPagesRead: 0,
+            completionFraction: 0.0,
+            readingSessionDates: []
+        )
+        prog.currentPageIndex = 0
+        prog.completionFraction = 0.0
         prog.lastOpenedAt = Date()
         update(prog)
     }
@@ -309,6 +347,11 @@ class ReaderProgressTracker: ObservableObject {
         }
         iCloudStore.removeObject(forKey: iCloudPrefix + pdfID.uuidString)
         iCloudStore.synchronize()
+        NotificationCenter.default.post(
+            name: .readingProgressDidChange,
+            object: nil,
+            userInfo: ["pdfID": pdfID]
+        )
     }
     
     // MARK: - Stats

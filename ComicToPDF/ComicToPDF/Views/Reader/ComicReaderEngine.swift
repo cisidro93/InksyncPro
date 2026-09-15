@@ -135,9 +135,12 @@ final class ComicImageCache: ObservableObject {
             isPreExtracted = false
             
             let omnibusID = UUID(uuidString: pdf.url.host ?? "") ?? UUID()
-            if let omni = LibraryService.shared.virtualOmnibuses.first(where: { $0.id == omnibusID }) {
+            let omni = LibraryService.shared.virtualOmnibuses.first(where: { $0.id == omnibusID })
+                ?? ConversionManager.shared.virtualOmnibuses.first(where: { $0.id == omnibusID })
+            if let omni {
                 let resolvedFiles = omni.fileIDs.compactMap { id in
                     LibraryService.shared.items.first(where: { $0.id == id })
+                        ?? ConversionManager.shared.convertedPDFs.first(where: { $0.id == id })
                 }
                 let coord = VirtualPageCoordinator(files: resolvedFiles)
                 self.virtualCoordinator = coord
@@ -2242,10 +2245,9 @@ struct ComicReaderEngine: View {
             isVisible: $chromeVisible,
             onBack: saveProgressAndDismiss,
             onBookmark: {
-                let bookmark = Annotation(pdfID: pdf.id, pageIndex: currentIndex,
-                                          kind: .bookmark, createdAt: Date(), modifiedAt: Date())
-                AnnotationStore.shared.add(bookmark)
+                toggleBookmark()
             },
+            onBookmarkActive: isCurrentPageBookmarked,
             onSettingsToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showingSettingsHUD.toggle() }
             },
@@ -2397,6 +2399,46 @@ struct ComicReaderEngine: View {
             progress.readingSessionDates.append(Date())
         }
         ReaderProgressTracker.shared.update(progress)
+    }
+
+    private var isCurrentPageBookmarked: Bool {
+        let inStore = AnnotationStore.shared.annotations(for: pdf.id).contains(where: { $0.pageIndex == currentIndex && $0.kind == .bookmark })
+        let inMetadata = pdf.metadata.bookmarkedPages.contains(currentIndex)
+        return inStore || inMetadata
+    }
+
+    private func toggleBookmark() {
+        let wasBookmarked = isCurrentPageBookmarked
+        if wasBookmarked {
+            let existing = AnnotationStore.shared.annotations(for: pdf.id).filter { $0.pageIndex == currentIndex && $0.kind == .bookmark }
+            for b in existing {
+                AnnotationStore.shared.delete(id: b.id, pdfID: pdf.id)
+            }
+            if let idx = ConversionManager.shared.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.removeAll(where: { $0 == currentIndex })
+                ConversionManager.shared.saveProgressOnly()
+            }
+            showToastMessage("Bookmark Removed")
+            HapticEngine.light()
+        } else {
+            let bookmark = Annotation(
+                pdfID: pdf.id,
+                pageIndex: currentIndex,
+                chapterTitle: "Page \(currentIndex + 1)",
+                kind: .bookmark,
+                createdAt: Date(),
+                modifiedAt: Date()
+            )
+            AnnotationStore.shared.add(bookmark)
+            if let idx = ConversionManager.shared.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                if !ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.contains(currentIndex) {
+                    ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.append(currentIndex)
+                    ConversionManager.shared.saveProgressOnly()
+                }
+            }
+            showToastMessage("Bookmark Added")
+            HapticEngine.medium()
+        }
     }
 
     private func saveProgressAndDismiss() {

@@ -29,7 +29,7 @@ struct UnifiedReaderView: View {
     @State private var dragInitialWidth: CGFloat? = nil
     @State private var isDraggingDivider: Bool = false
 
-    init(pdf: ConvertedPDF, allBooks: [ConvertedPDF] = [], startWithNotebookOpen: Bool = false) {
+    init(pdf: ConvertedPDF, allBooks: [ConvertedPDF] = [], startWithNotebookOpen: Bool = false, initialReadingMode: String? = nil) {
         self.initialPDF = pdf
         self.allBooks = allBooks
         self._currentBook = State(initialValue: pdf)
@@ -48,6 +48,20 @@ struct UnifiedReaderView: View {
             initialCheck = nil
         }
         self._epubComicCheckResult = State(initialValue: initialCheck)
+
+        let initialOverride: ContentType?
+        if let mode = initialReadingMode?.lowercased() {
+            if mode == "comic" {
+                initialOverride = .comic
+            } else if mode == "book" || mode == "ebook" || mode == "pdf" {
+                initialOverride = .book
+            } else {
+                initialOverride = nil
+            }
+        } else {
+            initialOverride = nil
+        }
+        self._activeEngineOverride = State(initialValue: initialOverride)
     }
     
     /// In-reader engine switcher state (allows switching between ProPDF, Comic, and EBook engines on the fly)
@@ -60,7 +74,10 @@ struct UnifiedReaderView: View {
             return true
         }
         
-        // Fast-path exclusion for non-PDF archive types
+        // Fast-path exclusion for non-PDF archive types and virtual omnibuses
+        if pdf.url.scheme?.lowercased() == "virtual-omnibus" {
+            return false
+        }
         if ext == "epub" || ext == "cbz" || ext == "cbr" || ext == "cb7" || ext == "zip" || ext == "rar" {
             return false
         }

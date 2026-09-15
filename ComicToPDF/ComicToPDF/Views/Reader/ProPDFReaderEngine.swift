@@ -1463,19 +1463,9 @@ struct ProPDFReaderEngine: View {
                 onDismiss()
             },
             onBookmark: {
-                let bookmark = Annotation(
-                    pdfID: pdf.id,
-                    pageIndex: currentPageIndex,
-                    chapterTitle: "Page \(currentPageIndex + 1)",
-                    kind: .bookmark,
-                    createdAt: Date(),
-                    modifiedAt: Date()
-                )
-                AnnotationStore.shared.add(bookmark)
-                showToastMessage("Bookmark Added")
-                HapticEngine.medium()
+                toggleBookmark()
             },
-            onBookmarkActive: AnnotationStore.shared.annotations(for: pdf.id).contains(where: { $0.pageIndex == currentPageIndex && $0.kind == .bookmark }),
+            onBookmarkActive: isCurrentPageBookmarked,
             onSettingsToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                     showingSettings = true
@@ -1819,6 +1809,46 @@ struct ProPDFReaderEngine: View {
         let total = max(1, totalPages)
         progress.completionFraction = Double(currentPageIndex + 1) / Double(total)
         ReaderProgressTracker.shared.update(progress)
+    }
+
+    private var isCurrentPageBookmarked: Bool {
+        let inStore = AnnotationStore.shared.annotations(for: pdf.id).contains(where: { $0.pageIndex == currentPageIndex && $0.kind == .bookmark })
+        let inMetadata = pdf.metadata.bookmarkedPages.contains(currentPageIndex)
+        return inStore || inMetadata
+    }
+
+    private func toggleBookmark() {
+        let wasBookmarked = isCurrentPageBookmarked
+        if wasBookmarked {
+            let existing = AnnotationStore.shared.annotations(for: pdf.id).filter { $0.pageIndex == currentPageIndex && $0.kind == .bookmark }
+            for b in existing {
+                AnnotationStore.shared.delete(id: b.id, pdfID: pdf.id)
+            }
+            if let idx = ConversionManager.shared.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.removeAll(where: { $0 == currentPageIndex })
+                ConversionManager.shared.saveProgressOnly()
+            }
+            showToastMessage("Bookmark Removed")
+            HapticEngine.light()
+        } else {
+            let bookmark = Annotation(
+                pdfID: pdf.id,
+                pageIndex: currentPageIndex,
+                chapterTitle: "Page \(currentPageIndex + 1)",
+                kind: .bookmark,
+                createdAt: Date(),
+                modifiedAt: Date()
+            )
+            AnnotationStore.shared.add(bookmark)
+            if let idx = ConversionManager.shared.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                if !ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.contains(currentPageIndex) {
+                    ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.append(currentPageIndex)
+                    ConversionManager.shared.saveProgressOnly()
+                }
+            }
+            showToastMessage("Bookmark Added")
+            HapticEngine.medium()
+        }
     }
 
     private func jumpToPage(_ pageIndex: Int) {

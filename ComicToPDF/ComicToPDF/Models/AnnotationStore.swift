@@ -368,6 +368,16 @@ class AnnotationStore: ObservableObject {
             }
         }
 
+        // Keep ConversionManager metadata bookmarkedPages in sync for village-wide parity
+        if annotation.kind == .bookmark {
+            if let idx = ConversionManager.shared.convertedPDFs.firstIndex(where: { $0.id == annotation.pdfID }) {
+                if !ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.contains(annotation.pageIndex) {
+                    ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.append(annotation.pageIndex)
+                    ConversionManager.shared.saveLibrary()
+                }
+            }
+        }
+
         // Notify UI components (StudyNotebookView, Zettelkasten Hub) immediately of the change
         NotificationCenter.default.post(
             name: .annotationsDidChange,
@@ -518,9 +528,23 @@ class AnnotationStore: ObservableObject {
     }
     
     func delete(id: UUID, pdfID: UUID) {
+        let existingAnnotation = idIndex[id] ?? store[pdfID]?.first(where: { $0.id == id })
+        let isBookmark = existingAnnotation?.kind == .bookmark
+        let bookmarkPage = existingAnnotation?.pageIndex
+
         store[pdfID]?.removeAll(where: { $0.id == id })
         idIndex.removeValue(forKey: id)
         Logger.shared.log("Annotation deleted (id=\(id), pdfID=\(pdfID))", category: "Annotations", type: .info)
+
+        // Keep ConversionManager metadata bookmarkedPages in sync for village-wide parity
+        if isBookmark, let page = bookmarkPage {
+            if let idx = ConversionManager.shared.convertedPDFs.firstIndex(where: { $0.id == pdfID }) {
+                if ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.contains(page) {
+                    ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.removeAll(where: { $0 == page })
+                    ConversionManager.shared.saveLibrary()
+                }
+            }
+        }
         
         if let context = modelContext {
             // O(1) predicated fetch instead of loading entire table
@@ -620,6 +644,23 @@ class AnnotationStore: ObservableObject {
             let totalBooks = loadedStore.keys.count
             let totalAnnotations = loadedStore.values.reduce(0) { $0 + $1.count }
             Logger.shared.log("AnnotationStore loaded: \(totalAnnotations) annotation(s) across \(totalBooks) book(s)", category: "Annotations", type: .success)
+
+            // Bidirectional bookmark harmonization across the village
+            var didMutateMetadata = false
+            for (pdfID, annList) in loadedStore {
+                let bookmarkPages = annList.filter { $0.kind == .bookmark }.map { $0.pageIndex }
+                if !bookmarkPages.isEmpty, let idx = ConversionManager.shared.convertedPDFs.firstIndex(where: { $0.id == pdfID }) {
+                    for p in bookmarkPages {
+                        if !ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.contains(p) {
+                            ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.append(p)
+                            didMutateMetadata = true
+                        }
+                    }
+                }
+            }
+            if didMutateMetadata {
+                ConversionManager.shared.saveLibrary()
+            }
         } catch {
             Logger.shared.log("AnnotationStore loadAll FAILED: \(error.localizedDescription)", category: "Annotations", type: .error)
         }

@@ -1218,7 +1218,9 @@ struct EBookReaderView: View {
     // MARK: - Bookmarks
     private var isBookmarked: Bool {
         guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return false }
-        return p.metadata.bookmarkedPages.contains(currentIndex)
+        let inMetadata = p.metadata.bookmarkedPages.contains(currentIndex)
+        let inStore = AnnotationStore.shared.annotations(for: p.id).contains(where: { $0.pageIndex == currentIndex && $0.kind == .bookmark })
+        return inMetadata || inStore
     }
 
     private func toggleBookmark() {
@@ -1231,18 +1233,36 @@ struct EBookReaderView: View {
         var updated = conversionManager.convertedPDFs[idx]
         if isBookmarked {
             updated.metadata.bookmarkedPages.removeAll(where: { $0 == currentIndex })
+            let existing = AnnotationStore.shared.annotations(for: p.id).filter { $0.pageIndex == currentIndex && $0.kind == .bookmark }
+            for b in existing {
+                AnnotationStore.shared.delete(id: b.id, pdfID: p.id)
+            }
             Logger.shared.log("Bookmark removed: chapter \(currentIndex + 1) of '\(p.name)'", category: "EBookReaderView", type: .info)
+            toastMessage = "Bookmark Removed"
+            showToast = true
         } else {
-            updated.metadata.bookmarkedPages.append(currentIndex)
+            if !updated.metadata.bookmarkedPages.contains(currentIndex) {
+                updated.metadata.bookmarkedPages.append(currentIndex)
+            }
+            let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? "Chapter \(currentIndex + 1)"
+            let bookmark = Annotation(
+                pdfID: p.id,
+                pageIndex: currentIndex,
+                chapterTitle: rawLabel,
+                kind: .bookmark,
+                createdAt: Date(),
+                modifiedAt: Date()
+            )
+            AnnotationStore.shared.add(bookmark)
             Logger.shared.log("Bookmark added: chapter \(currentIndex + 1) of '\(p.name)'", category: "EBookReaderView", type: .success)
+            toastMessage = "Bookmark Added"
+            showToast = true
         }
         
         conversionManager.convertedPDFs[idx] = updated
-        conversionManager.saveLibrary()
+        conversionManager.saveProgressOnly()
         
-        // Haptic feedback
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
+        HapticEngine.medium()
     }
 
     private func adjustEPUBSelection(delta: Int, isStart: Bool) {

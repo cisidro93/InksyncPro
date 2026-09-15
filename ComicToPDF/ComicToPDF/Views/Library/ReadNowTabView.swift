@@ -199,6 +199,9 @@ struct ReadNowTabView: View {
             .onChange(of: tracker.allProgress.count) { _, _ in
                 velocityVM.refresh(pdfs: conversionManager.convertedPDFs, tracker: tracker)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .readingProgressDidChange)) { _ in
+                velocityVM.refresh(pdfs: conversionManager.convertedPDFs, tracker: tracker)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
                 pdfToRead = nil
             }

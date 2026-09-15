@@ -311,12 +311,14 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
                 modifiedAt: Date()
             )
             dto.drawingData = drawingData
-            let newInk = SDAnnotation(from: dto)
-            ctx.insert(newInk)
-            try? ctx.save()
             AnnotationStore.shared.add(dto)
 
-            runOCR(for: newInk, drawing: drawing)
+            let fetchDesc = FetchDescriptor<SDAnnotation>(predicate: #Predicate {
+                $0.id == dto.id
+            })
+            if let savedEntity = try? ctx.fetch(fetchDesc).first {
+                runOCR(for: savedEntity, drawing: drawing)
+            }
         }
     }
 

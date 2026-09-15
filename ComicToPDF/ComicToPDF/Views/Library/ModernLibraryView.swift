@@ -530,8 +530,8 @@ struct ModernLibraryView: View {
             }
             .fullScreenCover(item: $router.activeFullScreen) { dest in
                 switch dest {
-                case .read(let pdf, _):
-                    UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs)
+                case .read(let pdf, let initialReadingMode):
+                    UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs, initialReadingMode: initialReadingMode)
                 case .advancedWorkspace(let pdf):
                     AdvancedWorkspaceView(pdf: pdf).environmentObject(conversionManager)
                 case .smartCollection(let rule):
@@ -543,6 +543,9 @@ struct ModernLibraryView: View {
                     .forceProMotion()
             }
             .onReceive(conversionManager.objectWillChange.debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { _ in
+                syncAndRebuildLibraryCache()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .readingProgressDidChange).debounce(for: .milliseconds(200), scheduler: RunLoop.main)) { _ in
                 syncAndRebuildLibraryCache()
             }
             .onReceive(NotificationCenter.default.publisher(for: .libraryNeedsRescan)) { _ in

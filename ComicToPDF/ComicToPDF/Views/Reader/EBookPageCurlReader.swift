@@ -960,11 +960,6 @@ extension EBookPageCurlReader {
                     modifiedAt: Date()
                 )
                 dto.drawingData = drawingData
-                let newInk = SDAnnotation(from: dto)
-                ctx.insert(newInk)
-                Task { @MainActor in
-                    try? InksyncProApp.sharedModelContainer.mainContext.save()
-                }
                 AnnotationStore.shared.add(dto)
             }
         }
@@ -1213,10 +1208,19 @@ extension EBookPageCurlReader {
 
         private func performTapZoneAction(location: CGPoint, width: CGFloat, pvc: UIPageViewController) {
             let zones = tapZoneStyle.zones
+            let isManga = parent.prefs.pdfRTL || UserDefaults.standard.bool(forKey: "isMangaMode")
             if location.x < width * zones.leftEdge {
-                turnBackward(pvc)
+                if isManga {
+                    turnForward(pvc)
+                } else {
+                    turnBackward(pvc)
+                }
             } else if location.x > width * zones.rightEdge {
-                turnForward(pvc)
+                if isManga {
+                    turnBackward(pvc)
+                } else {
+                    turnForward(pvc)
+                }
             } else {
                 parent.onCenterTap()
             }
