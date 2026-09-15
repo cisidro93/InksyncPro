@@ -800,8 +800,7 @@ extension EBookPageCurlReader {
                 captureSnapshot(for: vcs)
             }
             saveCurrentDrawingImmediate()
-            pencilCanvas?.removeFromSuperview()
-            primaryWebView?.removeFromSuperview()
+            pencilCanvas?.isHidden = true
         }
 
         func pageViewController(
@@ -1838,8 +1837,6 @@ extension EBookPageCurlReader {
             let safeBottom = max(safeArea.bottom, 20.0)
             let paddingTop = safeTop + max(20.0, prefs.textMarginTop)
             let paddingBottom = safeBottom + max(52.0, prefs.textMarginBottom + 24.0)
-            let paddingLeft = max(16.0, prefs.textMargin)
-            let paddingRight = max(16.0, prefs.textMargin)
 
             return """
             @font-face { font-family: 'Literata'; src: local('Literata-Regular'); font-weight: normal; font-style: normal; }
@@ -1903,15 +1900,11 @@ extension EBookPageCurlReader {
             }
             html {
                 margin: 0 !important; padding: 0 !important;
-                width: 100% !important;
-                height: 100% !important;
-                column-width: auto !important;
-                touch-action: pan-y pinch-zoom;
-                scroll-behavior: auto !important;
-                scroll-snap-type: none !important;
-                background-color: \(bgColor) !important;
+                width: 100vw !important;
+                height: 100vh !important;
                 overflow: hidden !important;
-                -webkit-overflow-scrolling: auto !important;
+                background-color: \(bgColor) !important;
+                -webkit-text-size-adjust: 100%;
             }
             html::-webkit-scrollbar, body::-webkit-scrollbar {
                 display: none !important;
@@ -1930,12 +1923,12 @@ extension EBookPageCurlReader {
                 text-align: \(textAlign) !important;
                 margin: 0 !important;
                 padding: 0 !important;
-                width: 100% !important;
-                height: 100% !important;
+                width: 100vw !important;
+                height: 100vh !important;
                 overflow: hidden !important;
                 background-color: transparent !important;
                 word-wrap: break-word;
-                -webkit-text-size-adjust: none;
+                -webkit-text-size-adjust: 100%;
                 -webkit-user-select: text !important;
                 user-select: text !important;
                 letter-spacing: \(letterSpacing) !important;
@@ -1952,76 +1945,79 @@ extension EBookPageCurlReader {
                 margin: 0 !important;
                 box-sizing: border-box !important;
                 display: block !important;
-                position: absolute !important;
+                position: relative !important;
                 top: 0 !important; left: 0 !important;
                 padding-top: \(paddingTop)px !important;
                 padding-bottom: \(paddingBottom)px !important;
                 padding-left: \(m)px !important;
                 padding-right: \(m)px !important;
-                width: auto !important;
-                max-width: none !important;
-                height: 100% !important;
-                max-height: 100% !important;
+                width: 100vw !important;
+                max-width: 100vw !important;
+                height: 100vh !important;
+                max-height: 100vh !important;
                 overflow: visible !important;
                 -webkit-user-select: text !important;
                 user-select: text !important;
                 \(pagedCSS)
                 will-change: transform;
             }
-            #inksync-viewport div, #inksync-viewport section, #inksync-viewport article, #inksync-viewport main {
-                height: auto !important;
-                max-height: none !important;
-                overflow: visible !important;
-                break-inside: auto !important;
-                page-break-inside: auto !important;
-                display: block !important;
-                position: static !important;
-                float: none !important;
-            }
-            #inksync-viewport p, #inksync-viewport li, #inksync-viewport blockquote {
-                orphans: 2 !important;
-                widows: 2 !important;
-            }
-            img, svg, .page, .chunk-container, figure, table, pre, code {
-                break-inside: avoid !important;
-                page-break-inside: avoid !important;
-            }
-            #inksync-viewport *, body * {
+            #inksync-viewport > * {
                 max-width: 100% !important;
                 box-sizing: border-box !important;
-                word-break: break-word !important;
-                overflow-wrap: break-word !important;
-                -webkit-user-select: text !important;
-                user-select: text !important;
+            }
+            p, blockquote {
+                orphans: 2 !important;
+                widows: 2 !important;
+                margin-bottom: \(paraSpace)em !important;
+                text-indent: \(paraIndent)em !important;
+            }
+            img, svg, figure, video {
+                max-width: 100% !important;
+                max-height: calc(100vh - \(paddingTop + paddingBottom + 20)px) !important;
+                height: auto !important;
+                object-fit: contain !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+                display: block !important;
+                margin: 1em auto !important;
+            }
+            img.gaiji, img[gaiji], img.inline-image {
+                display: inline-block !important;
+                vertical-align: middle !important;
+                max-height: 1.2em !important;
+                width: auto !important;
+                margin: 0 0.1em !important;
+            }
+            pre, table, code {
+                max-width: 100% !important;
+                overflow-x: auto !important;
+                word-wrap: break-word !important;
+                white-space: pre-wrap !important;
+            }
+            h1, h2, h3, h4, h5, h6 {
+                break-after: avoid !important;
+                page-break-after: avoid !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+                line-height: 1.25 !important;
+                color: \(textColor) !important;
             }
             body, p, span, li, td, th, div, a { font-family: \(fontFamily) !important; }
             body, p, li, td, th, a { font-size: \(fontSize)px !important; }
-            h1 { font-size: \(Double(fontSize) * 1.5)px !important; font-family: \(fontFamily) !important; }
-            h2 { font-size: \(Double(fontSize) * 1.3)px !important; font-family: \(fontFamily) !important; }
-            h3 { font-size: \(Double(fontSize) * 1.15)px !important; font-family: \(fontFamily) !important; }
-            h4 { font-size: \(Double(fontSize) * 1.05)px !important; font-family: \(fontFamily) !important; }
-            h5, h6 { font-size: \(Double(fontSize) * 1.0)px !important; font-family: \(fontFamily) !important; }
-            body * { max-width: 100% !important; }
+            h1 { font-size: \(Double(fontSize) * 1.5)px !important; }
+            h2 { font-size: \(Double(fontSize) * 1.3)px !important; }
+            h3 { font-size: \(Double(fontSize) * 1.15)px !important; }
+            h4 { font-size: \(Double(fontSize) * 1.05)px !important; }
+            h5, h6 { font-size: \(Double(fontSize) * 1.0)px !important; }
             #inksync-viewport, #inksync-viewport *:not(mark):not(.inksync-highlight):not(pre):not(code):not(table):not(tr):not(td):not(th) {
                 background-color: transparent !important;
                 background: transparent !important;
             }
-            #inksync-viewport > div, #inksync-viewport > section, #inksync-viewport > article, #inksync-viewport > main, p, span, blockquote {
-                max-height: none !important;
-                overflow: visible !important;
+            p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 {
+                color: \(textColor) !important;
+                line-height: \(lineHeight);
+                \(prefs.isBoldTextEnabled ? "font-weight: 600 !important;" : "")
             }
-            #inksync-viewport > div, #inksync-viewport > section, #inksync-viewport > article, #inksync-viewport > main { height: auto !important; }
-            div, section, article, main, p, blockquote {
-                display: block !important;
-                position: static !important;
-                float: none !important;
-            }
-            p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
-            p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); \(prefs.isBoldTextEnabled ? "font-weight: 600 !important;" : "") }
-            img, svg, .page, .chunk-container, figure { display: block !important; margin-left: auto !important; margin-right: auto !important; break-inside: avoid !important; page-break-inside: avoid !important; }
-            img { max-width: 100% !important; max-height: 100% !important; height: auto !important; border-radius: 4px; object-fit: contain !important; break-inside: avoid !important; page-break-inside: avoid !important; }
-            img.gaiji, img[gaiji], img.inline-image { display: inline-block !important; vertical-align: middle !important; max-height: 1.2em !important; width: auto !important; margin: 0 0.1em !important; }
-            pre, table, code { max-width: 100% !important; overflow-x: auto !important; word-wrap: break-word !important; white-space: pre-wrap !important; }
             a { color: \(linkColor) !important; }
             blockquote { border-left: 3px solid \(linkColor); margin-left: 0; padding-left: 16px; opacity: 0.85; }
             \(fontSize > 28 ? """
@@ -2031,8 +2027,8 @@ extension EBookPageCurlReader {
             }
             """ : """
             .dropcap, .drop-cap, span.first-letter {
-                float: left !important; font-size: 3.2em !important; line-height: 0.85em !important;
-                margin-top: 0.1em !important; margin-right: 0.1em !important; margin-bottom: -0.1em !important;
+                float: left !important; font-size: 3.0em !important; line-height: 0.85em !important;
+                margin-top: 0.1em !important; margin-right: 0.12em !important; margin-bottom: -0.1em !important;
                 font-weight: bold !important;
             }
             """)
@@ -2061,7 +2057,7 @@ extension EBookPageCurlReader {
             function applyPagePosition(animated) {
                 var pageStep = getPageStep();
                 if (pageStep <= 0) return;
-                if (_targetPage >= 99999) return; // Wait for computeMetrics to resolve true total pages!
+                if (_targetPage >= 99999) return;
                 var spreadIndex = _isMultiCol ? Math.floor(_targetPage / 2) : _targetPage;
                 var shift = spreadIndex * pageStep;
                 _currentShift = shift;
@@ -2100,36 +2096,17 @@ extension EBookPageCurlReader {
                 var pageStep = getPageStep();
                 if (pageStep <= 0) return 1;
                 var vp = document.getElementById('inksync-viewport') || document.body;
-                var scrollW = vp ? vp.scrollWidth : 0;
+                var scrollW = vp ? Math.max(vp.scrollWidth, document.body.scrollWidth, document.documentElement.scrollWidth) : 0;
 
-                // Precise document extent measurement across CSS columns in WebKit:
-                try {
-                    var range = document.createRange();
-                    range.selectNodeContents(vp);
-                    var rects = range.getClientRects();
-                    if (rects && rects.length > 0) {
-                        var currentShift = _currentShift || 0;
-                        var rightmost = 0;
-                        for (var i = 0; i < rects.length; i++) {
-                            var r = rects[i].right + currentShift;
-                            if (r > rightmost) rightmost = r;
-                        }
-                        if (rightmost > scrollW) {
-                            scrollW = rightmost;
-                        }
-                    }
-                } catch(e) {}
-
-                var colWidth = _isMultiCol ? (pageStep / 2) : pageStep;
-                var total = Math.max(1, Math.ceil(scrollW / colWidth));
-                if (total === 1 && scrollW > colWidth + 20) {
-                    total = 2;
-                }
-                _totalPages = Math.max(1, total, _targetPage + 1);
+                var totalSpreads = Math.max(1, Math.ceil((scrollW - 10) / pageStep));
+                _totalPages = _isMultiCol ? (totalSpreads * 2) : totalSpreads;
                 if (_targetPage >= 99999) {
                     _targetPage = Math.max(0, _totalPages - 1);
                 }
                 applyPagePosition(false);
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.metrics) {
+                    window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
+                }
                 return _totalPages;
             }
 
@@ -2138,7 +2115,6 @@ extension EBookPageCurlReader {
                     if (_totalPages > 1 && page < _totalPages) {
                         _targetPage = Math.max(0, page);
                     } else {
-                        // Allow navigation to requested page and expand total if needed
                         _targetPage = Math.max(0, page);
                         _totalPages = Math.max(_totalPages, _targetPage + 1);
                     }
@@ -2579,6 +2555,9 @@ extension EBookPageCurlReader {
     }
 
     static func wrapHTMLBodyWithViewport(_ html: String) -> String {
+        if html.contains("id=\"inksync-viewport\"") || html.contains("id='inksync-viewport'") {
+            return html
+        }
         var result = html
         let bodyPattern = "<body([^>]*)>"
         if let regex = try? NSRegularExpression(pattern: bodyPattern, options: .caseInsensitive),

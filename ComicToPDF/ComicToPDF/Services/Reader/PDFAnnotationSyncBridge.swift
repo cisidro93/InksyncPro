@@ -89,28 +89,9 @@ final class PDFAnnotationSyncBridge {
                     highlightColor = UIColor.systemYellow.withAlphaComponent(0.55)
                 }
                 
-                // Primary: reconstruct exact coordinates from recorded normalized bounds in O(1)
-                if let b = annotation.bounds {
-                    let bounds = CGRect(
-                        x: pageBounds.minX + (b.x * pageBounds.width),
-                        y: pageBounds.minY + (b.y * pageBounds.height),
-                        width: b.width * pageBounds.width,
-                        height: b.height * pageBounds.height
-                    )
-                    if bounds.width > 2 && bounds.height > 2 {
-                        let nativeHighlight = PDFAnnotation(bounds: bounds, forType: nativeType, withProperties: nil)
-                        nativeHighlight.userName = annotation.id.uuidString
-                        nativeHighlight.color = highlightColor
-                        nativeHighlight.contents = annotation.selectedText ?? annotation.noteText
-                        nativeHighlight.shouldDisplay = true
-                        nativeHighlight.shouldPrint = true
-                        nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: bounds)
-                        page.addAnnotation(nativeHighlight)
-                        continue
-                    }
-                }
-                
-                // Fallback only if bounds missing: search text scoped strictly to this single page (never full document)
+                var didAttach = false
+
+                // Primary: reconstruct tight line-by-line quads from recorded text scoped strictly to this single page
                 if let text = annotation.selectedText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     let pageText = page.string ?? ""
                     if let range = pageText.range(of: text, options: .caseInsensitive) {
@@ -129,8 +110,29 @@ final class PDFAnnotationSyncBridge {
                                 nativeHighlight.shouldPrint = true
                                 nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: validRects, relativeTo: unionBox)
                                 page.addAnnotation(nativeHighlight)
+                                didAttach = true
                             }
                         }
+                    }
+                }
+
+                // Fallback: reconstruct from recorded normalized bounds
+                if !didAttach, let b = annotation.bounds {
+                    let bounds = CGRect(
+                        x: pageBounds.minX + (b.x * pageBounds.width),
+                        y: pageBounds.minY + (b.y * pageBounds.height),
+                        width: b.width * pageBounds.width,
+                        height: b.height * pageBounds.height
+                    )
+                    if bounds.width > 2 && bounds.height > 2 {
+                        let nativeHighlight = PDFAnnotation(bounds: bounds, forType: nativeType, withProperties: nil)
+                        nativeHighlight.userName = annotation.id.uuidString
+                        nativeHighlight.color = highlightColor
+                        nativeHighlight.contents = annotation.selectedText ?? annotation.noteText
+                        nativeHighlight.shouldDisplay = true
+                        nativeHighlight.shouldPrint = true
+                        nativeHighlight.quadrilateralPoints = PDFHighlightGeometryHelper.createQuadPoints(for: bounds)
+                        page.addAnnotation(nativeHighlight)
                     }
                 }
                 

@@ -84,8 +84,11 @@ final class PassthroughPKCanvasView: PKCanvasView {
             }
         }
 
-        // In write or eraser mode, capture touch directly for PKCanvasView
-        return super.hitTest(point, with: event)
+        // In write, eraser, or coloring mode, capture touch directly for PKCanvasView
+        if let hit = super.hitTest(point, with: event) {
+            return hit
+        }
+        return self
     }
 }
 

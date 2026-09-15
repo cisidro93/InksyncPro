@@ -111,9 +111,22 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         return canvas
     }
 
-    public func willDisplay(overlayView: UIView, for page: PDFPage) {
+    public func willDisplay(overlayView: UIView, for page: PDFPage, in pdfView: PDFView? = nil) {
         let key = ObjectIdentifier(page)
         guard let canvas = overlayView as? PassthroughPKCanvasView else { return }
+
+        // Guarantee parent PDFPageView allows touch interaction
+        overlayView.isUserInteractionEnabled = true
+        overlayView.superview?.isUserInteractionEnabled = true
+        if let docView = pdfView?.documentView {
+            for sub in docView.subviews {
+                sub.isUserInteractionEnabled = true
+            }
+        }
+
+        if let pv = pdfView {
+            canvas.contentScaleFactor = max(1.0, pv.scaleFactor * UIScreen.main.scale)
+        }
 
         configureCanvasPolicy(canvas)
         canvas.tool = InksyncInkingState.shared.makePKTool()
@@ -208,14 +221,14 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
 
         canvas.overrideUserInterfaceStyle = .light
         canvas.isMarkupActive = shouldBeActive
-        let allowFinger = !pencilOnlyDrawingSetting || isEraser
+        let allowFinger = !isPad || !pencilOnlyDrawingSetting || isEraser
         canvas.allowFingerDrawing = allowFinger
-        canvas.drawingPolicy = (pencilOnlyDrawingSetting && !allowFinger) ? .pencilOnly : .anyInput
+        canvas.drawingPolicy = (!allowFinger) ? .pencilOnly : .anyInput
         canvas.isUserInteractionEnabled = shouldBeActive
         canvas.drawingGestureRecognizer.cancelsTouchesInView = false
         canvas.isScrollEnabled = false
         canvas.bounces = false
-        canvas.panGestureRecognizer.isEnabled = !pencilOnlyDrawingSetting
+        canvas.panGestureRecognizer.isEnabled = false
 
         if shouldBeActive {
             if canvas.window != nil {
@@ -411,7 +424,7 @@ extension PDFPageCanvasProvider: PDFPageOverlayViewProvider {
     @objc(pdfView:willDisplayOverlayView:forPage:)
     public nonisolated func pdfView(_ pdfView: PDFView, willDisplayOverlayView overlayView: UIView, for page: PDFPage) {
         MainActor.assumeIsolated {
-            self.willDisplay(overlayView: overlayView, for: page)
+            self.willDisplay(overlayView: overlayView, for: page, in: pdfView)
         }
     }
 

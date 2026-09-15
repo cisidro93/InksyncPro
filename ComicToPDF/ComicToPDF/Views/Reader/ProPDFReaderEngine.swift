@@ -3074,6 +3074,16 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
         let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
 
+        let inkingState = InksyncInkingState.shared
+        let currentToolMode = inkingState.activeToolMode
+        let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
+        let autoPencilActive = UIDevice.current.userInterfaceIdiom == .pad && prefs.applePencilAutoDraw
+        let isCanvasMarkupActive = (isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
+
+        if #available(iOS 16.0, *) {
+            pdfView.isInMarkupMode = isCanvasMarkupActive
+        }
+
         // Use singlePage (non-continuous) as the default mode so PDFViewPageChanged fires
         // reliably on every page turn. singlePageContinuous only fires on visible-page
         // threshold crossings which can miss pages when scrolling quickly.
@@ -3090,7 +3100,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if let sv = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
             sv.contentInsetAdjustmentBehavior = .never
             sv.contentInset = .zero
+            sv.panGestureRecognizer.minimumNumberOfTouches = isCanvasMarkupActive ? 2 : 1
         }
+
+        // Set page overlay provider BEFORE assigning document so PDFKit requests overlays for visible pages
+        pdfView.pageOverlayViewProvider = context.coordinator.canvasProvider
 
         // Assign document AFTER display configuration so PDFKit lays out correctly
         pdfView.document = document
@@ -3105,7 +3119,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             NSNumber(value: UITouch.TouchType.pencil.rawValue)
         ]
         tapGesture.cancelsTouchesInView = false
+        tapGesture.isEnabled = !isCanvasMarkupActive
         pdfView.addGestureRecognizer(tapGesture)
+        context.coordinator.tapGesture = tapGesture
 
         // ── Double-tap zoom (finger only) ─────────────────────────────────────────
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
@@ -3223,8 +3239,22 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if context.coordinator.canvasProvider.isMarkupActive != isCanvasMarkupActive {
             context.coordinator.canvasProvider.isMarkupActive = isCanvasMarkupActive
         }
+        if #available(iOS 16.0, *) {
+            if uiView.isInMarkupMode != isCanvasMarkupActive {
+                uiView.isInMarkupMode = isCanvasMarkupActive
+            }
+        }
         if context.coordinator.canvasProvider.pdfID != pdf.id {
             context.coordinator.canvasProvider.reset(for: pdf.id)
+        }
+
+        if let sv = uiView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+            if sv.panGestureRecognizer.minimumNumberOfTouches != (isCanvasMarkupActive ? 2 : 1) {
+                sv.panGestureRecognizer.minimumNumberOfTouches = isCanvasMarkupActive ? 2 : 1
+            }
+        }
+        if context.coordinator.tapGesture?.isEnabled == isCanvasMarkupActive {
+            context.coordinator.tapGesture?.isEnabled = !isCanvasMarkupActive
         }
 
         let isDedicatedHighlighter = isPencilMode && currentToolMode == .textHighlight
@@ -3350,8 +3380,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         coordinator.threeFingerTap = nil
         coordinator.fingerGlide = nil
         coordinator.pencilGlide = nil
-        coordinator.autoHighlightDebounceTask?.cancel()
-        coordinator.autoHighlightDebounceTask = nil
         uiView.delegate = nil
         uiView.document = nil
     }
@@ -3365,7 +3393,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         var lastTargetPageIndex: Int = -1
         var lastBoundsSize: CGSize = .zero
         var userCustomZoomScale: CGFloat? = nil
-        var autoHighlightDebounceTask: Task<Void, Never>? = nil
 
         // Prevents updateUIView.go(to:) from re-triggering when PDFViewPageChanged fires
         // after a programmatic navigation call. Without this flag, the two fight each
@@ -3375,6 +3402,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // Strong references to glide gesture recognizers for dynamic state gating
         var fingerGlide: UILongPressGestureRecognizer? = nil
         var pencilGlide: UILongPressGestureRecognizer? = nil
+        var tapGesture: UITapGestureRecognizer? = nil
         var twoFingerTap: UITapGestureRecognizer? = nil
         var threeFingerTap: UITapGestureRecognizer? = nil
 
@@ -3426,6 +3454,16 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let isPenDrawingTool = mode == .write || mode == .eraser
             let isCanvasMarkupActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!parent.isPencilMode && autoPenActive)
             canvasProvider.isMarkupActive = isCanvasMarkupActive
+            if #available(iOS 16.0, *) {
+                parent.pdfViewRef?.isInMarkupMode = isCanvasMarkupActive
+            }
+
+            if let pv = parent.pdfViewRef {
+                if let sv = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                    sv.panGestureRecognizer.minimumNumberOfTouches = isCanvasMarkupActive ? 2 : 1
+                }
+            }
+            tapGesture?.isEnabled = !isCanvasMarkupActive
 
             let isDedicatedHighlighter = parent.isPencilMode && mode == .textHighlight
             let isPencilGlide = isDedicatedHighlighter || (!parent.isPencilMode && autoHighlighterActive)
@@ -3697,7 +3735,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
             case .ended:
                 activeDragTarget = .none
-                autoHighlightDebounceTask?.cancel()
 
                 let startLoc = glideTouchDownLocation ?? locationInView
                 let dragDist = hypot(locationInView.x - startLoc.x, locationInView.y - startLoc.y)
@@ -3974,26 +4011,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             (pdfView as? ProPDFHighlightableView)?.disableEditMenuInteractions(in: pdfView)
 
             if let selection = pdfView.currentSelection, let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                autoHighlightDebounceTask?.cancel()
-                autoHighlightDebounceTask = Task { @MainActor [weak self, weak pdfView] in
-                    try? await Task.sleep(nanoseconds: 140_000_000)
-                    guard !Task.isCancelled, let self = self, let pv = pdfView else { return }
-                    guard let currentSel = pv.currentSelection,
-                          let currentText = currentSel.string,
-                          !currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                    guard let targetPage = currentSel.pages.first ?? pv.currentPage else { return }
-                    let color = EBookPreferences.shared.defaultHighlightColor
-                    self.parent.onHighlightSelectionDirect?(currentSel, targetPage, color)
-                    HapticEngine.selection()
-
-                    let isHighlighterMode = (self.parent.isPencilMode && InksyncInkingState.shared.activeToolMode == .textHighlight) ||
-                                            (!self.parent.isPencilMode && EBookPreferences.shared.applePencilAutoDraw && EBookPreferences.shared.applePencilDefaultTool == "highlighter")
-                    if isHighlighterMode {
-                        pv.setCurrentSelection(nil, animate: false)
-                        self.parent.onTextSelectionChanged(nil, nil)
-                    }
-                }
-
                 var linesInfo: [PDFSelectionLine] = []
                 var pageIndex = parent.currentPageIndex
                 var normBounds: CodableCGRect? = nil

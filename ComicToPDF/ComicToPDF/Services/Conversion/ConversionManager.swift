@@ -186,6 +186,9 @@ class ConversionManager: ObservableObject {
                 self.objectWillChange.send()
             }
         }
+
+        // PERF M2: Seed initial visible/pro caches synchronously on launch
+        rebuildVisiblePDFs()
     }
     
     

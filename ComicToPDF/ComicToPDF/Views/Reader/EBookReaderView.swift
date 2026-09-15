@@ -2249,6 +2249,9 @@ struct EBookWebReader: View {
     }
 
     private static func wrapHTMLBodyWithViewport(_ html: String) -> String {
+        if html.contains("id=\"inksync-viewport\"") || html.contains("id='inksync-viewport'") {
+            return html
+        }
         var result = html
         let bodyPattern = "<body([^>]*)>"
         if let regex = try? NSRegularExpression(pattern: bodyPattern, options: .caseInsensitive),
@@ -2297,7 +2300,7 @@ struct EBookWebReader: View {
         let defaultColumns = isLandscape ? (prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1
         let cols = (isPhone && !isLandscape) ? 1 : (prefs.columnCount == 0 ? defaultColumns : prefs.columnCount)
         
-        let m = isPaged ? (isPhone ? max(12.0, min(margin, 16.0)) : max(20.0, margin)) : (isPhone ? max(12.0, min(margin, 16.0)) : margin)
+        let m = isPaged ? (isPhone ? max(12.0, min(margin, 16.0)) : max(16.0, margin)) : (isPhone ? max(12.0, min(margin, 16.0)) : margin)
         let gap = 2 * m
         let colWidth = max(100.0, (renderWidth / CGFloat(cols)) - gap)
         
@@ -2310,6 +2313,8 @@ struct EBookWebReader: View {
 
         let paddingLeft = m
         let paddingRight = m
+        let topPadding: CGFloat = isPhone ? 48.0 : 64.0
+        let bottomPadding: CGFloat = isPhone ? 48.0 : 64.0
 
         return """
         @font-face {
@@ -2409,59 +2414,108 @@ struct EBookWebReader: View {
             font-style: italic;
         }
         @font-face {
-            font-family: 'Source Serif 4';
-            src: local('SourceSerif4-Regular');
+            font-family: 'SF Pro Text';
+            src: local('SFProText-Regular');
             font-weight: normal;
             font-style: normal;
         }
         @font-face {
-            font-family: 'Source Serif 4';
-            src: local('SourceSerif4-Regular');
+            font-family: 'SF Pro Text';
+            src: local('SFProText-Bold');
             font-weight: bold;
             font-style: normal;
         }
         @font-face {
-            font-family: 'Source Serif 4';
-            src: local('SourceSerif4-Italic');
+            font-family: 'SF Pro Text';
+            src: local('SFProText-Italic');
             font-weight: normal;
             font-style: italic;
         }
         @font-face {
-            font-family: 'Source Serif 4';
-            src: local('SourceSerif4-Italic');
+            font-family: 'SF Pro Text';
+            src: local('SFProText-BoldItalic');
             font-weight: bold;
             font-style: italic;
         }
-        *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scroll-behavior: auto !important; }
-        html {
-            margin: 0 !important; padding: 0 !important;
-            width: 100% !important;
-            column-width: auto !important;
-            touch-action: pan-x pan-y;
-            scroll-behavior: auto !important;
-            scroll-snap-type: none !important;
-            background-color: \(bgColor) !important;
+        @font-face {
+            font-family: 'New York';
+            src: local('NewYork-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'New York';
+            src: local('NewYork-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'New York';
+            src: local('NewYork-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'New York';
+            src: local('NewYork-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Baskerville';
+            src: local('Baskerville-Regular');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Baskerville';
+            src: local('Baskerville-Bold');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Baskerville';
+            src: local('Baskerville-Italic');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Baskerville';
+            src: local('Baskerville-BoldItalic');
+            font-weight: bold;
+            font-style: italic;
+        }
+
+        :root {
+            --bg-color: \(bgColor);
+            --text-color: \(textColor);
+            --link-color: \(linkColor);
+            --font-size: \(fontSize)px;
+            --line-height: \(lineHeight);
+            color-scheme: \(isDarkTheme ? "dark" : "light");
+        }
+        * {
+            box-sizing: border-box !important;
+            -webkit-tap-highlight-color: transparent !important;
+        }
+        html, body {
+            margin: 0 !important;
+            padding: 0 !important;
             \(isPaged ? """
-            height: 100% !important;
-            overflow-x: scroll !important;
-            overflow-y: hidden !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            overflow: hidden !important;
             """ : """
+            width: 100% !important;
             height: auto !important;
             overflow-x: hidden !important;
-            overflow-y: auto !important;
             """)
-        }
-        body {
+            background-color: \(bgColor) !important;
             color: \(textColor) !important;
             font-family: \(fontFamily) !important;
             font-size: \(fontSize)px !important;
             line-height: \(lineHeight) !important;
             text-align: \(textAlign) !important;
-            margin: 0 !important;
-            width: 100% !important;
-            overflow: visible !important;
-            background-color: transparent !important;
-            word-wrap: break-word;
             -webkit-text-size-adjust: none;
             letter-spacing: \(letterSpacing) !important;
             word-spacing: \(wordSpacing) !important;
@@ -2472,33 +2526,27 @@ struct EBookWebReader: View {
             font-variant-ligatures: common-ligatures !important;
             -webkit-font-feature-settings: "kern", "liga" 1 !important;
             font-feature-settings: "kern", "liga" 1 !important;
-            \(isPaged ? """
-            height: 100% !important;
-            """ : """
-            height: auto !important;
-            """)
         }
         #inksync-viewport {
             margin: 0 !important;
             box-sizing: border-box !important;
             \(isPaged ? """
             display: block !important;
-            position: static !important;
-            padding-top: 60px !important;
-            padding-bottom: 60px !important;
+            position: relative !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            padding-top: \(topPadding)px !important;
+            padding-bottom: \(bottomPadding)px !important;
             padding-left: \(paddingLeft)px !important;
             padding-right: \(paddingRight)px !important;
-            width: auto !important;
-            max-width: none !important;
-            height: 100% !important;
             overflow: visible !important;
             \(pagedCSS)
             """ : """
             display: block !important;
             width: 100% !important;
             height: auto !important;
-            padding-top: 60px !important;
-            padding-bottom: 60px !important;
+            padding-top: \(topPadding)px !important;
+            padding-bottom: \(bottomPadding)px !important;
             padding-left: \(paddingLeft)px !important;
             padding-right: \(paddingRight)px !important;
             """)
@@ -2527,17 +2575,21 @@ struct EBookWebReader: View {
             background: transparent !important;
         }
         \(isPaged ? """
-        div, section, article, main, p, span, blockquote {
+        div, section, article, main {
             max-height: none !important;
             overflow: visible !important;
+            column-count: auto !important;
+            column-width: auto !important;
         }
-        div, section, article, main {
-            height: auto !important;
+        img, figure, svg, table, pre, code, blockquote {
+            break-inside: avoid !important;
+            -webkit-column-break-inside: avoid !important;
+            page-break-inside: avoid !important;
         }
-        div, section, article, main, p, blockquote {
-            display: block !important;
-            position: static !important;
-            float: none !important;
+        h1, h2, h3, h4, h5, h6 {
+            break-after: avoid !important;
+            -webkit-column-break-after: avoid !important;
+            page-break-after: avoid !important;
         }
         """ : """
         div, section, article, main {
@@ -2546,10 +2598,6 @@ struct EBookWebReader: View {
             overflow: visible !important;
         }
         """)
-        div, section, article {
-            column-count: auto !important;
-            column-width: auto !important;
-        }
         p { margin-bottom: \(paraSpace)em !important; text-indent: \(paraIndent)em !important; }
         p, div, span, li, td, th, h1, h2, h3, h4, h5, h6 { color: \(textColor) !important; line-height: \(lineHeight); \(prefs.isBoldTextEnabled ? "font-weight: 600 !important;" : "") }
         img, svg, .page, .chunk-container { display: block !important; margin-left: auto !important; margin-right: auto !important; }
