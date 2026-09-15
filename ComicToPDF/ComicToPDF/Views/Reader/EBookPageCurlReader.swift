@@ -54,6 +54,8 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         pvc.isDoubleSided = false
         pvc.dataSource = context.coordinator
         pvc.delegate = context.coordinator
+        pvc.view.clipsToBounds = true
+        pvc.view.layer.masksToBounds = true
 
         pvc.onLayoutSubviews = { [weak coordinator = context.coordinator] bounds in
             guard bounds.width > 1 && bounds.height > 1 else { return }
@@ -131,8 +133,8 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             }
         }
 
-        // If spine item (chapter) changed, reset transitioning lock and reload everything
-        let chapterChanged = oldParent.spineItem.href != self.spineItem.href || oldParent.spineItem.id != self.spineItem.id
+        // If spine item (chapter) changed, reset transitioning lock and reload in-place
+        let chapterChanged = oldParent.spineItem.href != self.spineItem.href || oldParent.spineItem.id != self.spineItem.id || oldParent.spineIndex != self.spineIndex
         if chapterChanged {
             context.coordinator.isTransitioning = false
             context.coordinator.computedTotalPages = 1
@@ -418,6 +420,47 @@ extension EBookPageCurlReader {
         var isTouchDragActive: Bool = false
         weak var selectionGuard: UILongPressGestureRecognizer?
 
+        var containerBounds: CGRect {
+            if let pvc = pageViewController, pvc.view.bounds.width > 1 && pvc.view.bounds.height > 1 {
+                return pvc.view.bounds
+            }
+            return UIScreen.main.bounds
+        }
+
+        var containerSize: CGSize {
+            containerBounds.size
+        }
+
+        static func computeColumnCount(prefs: EBookPreferences, size: CGSize) -> Int {
+            let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
+            let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let isPhone = UIDevice.current.userInterfaceIdiom == .phone
+            let isLandscape = renderWidth > renderHeight
+
+            // iPhone Portrait: Strictly 1 column
+            if isPhone && !isLandscape {
+                return 1
+            }
+
+            // Compact Split View or Slide Over (width < 600): Always 1 column to avoid squished text
+            if renderWidth < 600 {
+                return 1
+            }
+
+            // Explicit user preference:
+            if prefs.columnCount > 0 {
+                return prefs.columnCount
+            }
+
+            // Auto column mode:
+            if isLandscape {
+                return prefs.autoLandscapeDualPage ? 2 : (isPad && renderWidth >= 700 ? 2 : 1)
+            } else {
+                return 1
+            }
+        }
+
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             // UIPageViewController's pan gesture should NEVER recognize simultaneously with
             // WebKit selection, handle adjustment, loupe, or text editing gestures.
@@ -437,10 +480,21 @@ extension EBookPageCurlReader {
                     return false
                 }
             }
+            // Strict split-screen isolation: pan gestures must stay within reader bounds
+            if let pan = gestureRecognizer as? UIPanGestureRecognizer, let targetView = pan.view {
+                let loc = pan.location(in: targetView)
+                if !targetView.bounds.contains(loc) {
+                    return false
+                }
+            }
             return true
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let view = gestureRecognizer.view else { return false }
+            let location = touch.location(in: view)
+            guard view.bounds.contains(location) else { return false }
+
             // Walk the entire responder hierarchy of the touch to reject text selection handles/loupe
             var v: UIView? = touch.view
             while let current = v {
@@ -503,7 +557,10 @@ extension EBookPageCurlReader {
             controller.add(handlerProxy, name: "footnote")
             controller.add(handlerProxy, name: "scrollFraction")
 
-            let wv = HighlightableWebView(frame: UIScreen.main.bounds, configuration: config)
+            let initialFrame = pageViewController?.view.bounds ?? CGRect(x: 0, y: 0, width: 768, height: 1024)
+            let wv = HighlightableWebView(frame: initialFrame, configuration: config)
+            wv.clipsToBounds = true
+            wv.layer.masksToBounds = true
             wv.onHighlightRequested = { [weak self] in
                 self?.handleHighlightRequest()
             }
@@ -590,7 +647,8 @@ extension EBookPageCurlReader {
                 self.mountPrimaryWebViewOnRoot()
                 self.loadDrawingForCurrentPage()
 
-                if self.parent.startAtEndOfChapter || self.parent.initialScrollFraction >= 0.99 {
+                let goingBackward = self.parent.startAtEndOfChapter || self.parent.initialScrollFraction >= 0.99
+                if goingBackward {
                     self.needsJumpToEnd = true
                 }
 
@@ -599,9 +657,10 @@ extension EBookPageCurlReader {
                 let fullHTML = self.buildPageHTML(for: initialScriptPage)
                 self.primaryWebView?.loadHTMLString(fullHTML, baseURL: self.chapterBaseURL)
 
-                // Present initial page VC
+                // Present initial page VC with direction matching navigation intent
                 let vcs = self.spreadViewControllers(for: self.currentPageIndex)
-                self.safeSetViewControllers(vcs, direction: .forward, animated: false)
+                let direction: UIPageViewController.NavigationDirection = goingBackward ? .reverse : .forward
+                self.safeSetViewControllers(vcs, direction: direction, animated: false)
             }
         }
 
@@ -647,10 +706,7 @@ extension EBookPageCurlReader {
 
 
         var isDualPageMode: Bool {
-            let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
-            return cols > 1
+            Coordinator.computeColumnCount(prefs: parent.prefs, size: containerSize) > 1
         }
 
         func spreadViewControllers(for pageIndex: Int) -> [UIViewController] {
@@ -873,6 +929,7 @@ extension EBookPageCurlReader {
             }
 
             if boundsChanged {
+                updateLiveStyles()
                 wv.evaluateJavaScript("if(window.computeMetrics) { computeMetrics(); applyPagePosition(false); }")
             }
         }
@@ -884,10 +941,9 @@ extension EBookPageCurlReader {
             wv.backgroundColor = .clear
             wv.scrollView.backgroundColor = .clear
 
-            let targetBounds = (pvc.view.bounds.width > 1 && pvc.view.bounds.height > 1)
-                ? pvc.view.bounds
-                : (pvc.view.window?.bounds ?? UIScreen.main.bounds)
-
+            let targetBounds = containerBounds
+            wv.clipsToBounds = true
+            wv.layer.masksToBounds = true
             wv.frame = targetBounds
             wv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             if wv.superview != pvc.view {
@@ -898,6 +954,8 @@ extension EBookPageCurlReader {
             wv.isHidden = false
 
             if let canvas = pencilCanvas {
+                canvas.clipsToBounds = true
+                canvas.layer.masksToBounds = true
                 canvas.frame = targetBounds
                 canvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
                 if canvas.superview != pvc.view {
@@ -1026,12 +1084,7 @@ extension EBookPageCurlReader {
             isTransitioning = true
             defer { isTransitioning = false }
 
-            let isLandscape = orientation.isLandscape
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let cols = parent.prefs.columnCount == 0
-                ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1)
-                : parent.prefs.columnCount
-            let dual = cols > 1
+            let dual = isDualPageMode
 
             if dual {
                 let leftIndex = currentPageIndex % 2 == 0 ? currentPageIndex : currentPageIndex - 1
@@ -1060,6 +1113,7 @@ extension EBookPageCurlReader {
         private var lastLiveStyleUpdate: Date = Date()
 
         @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            if parent.isPencilMode { return }
             switch gesture.state {
             case .began:
                 initialPinchFontSize = parent.prefs.fontSize
@@ -1229,10 +1283,8 @@ extension EBookPageCurlReader {
         private func turnForward(_ pvc: UIPageViewController) {
             guard !isTransitioning else { return }
 
-            let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
-            let step = cols > 1 ? 2 : 1
+            let isDual = isDualPageMode
+            let step = isDual ? 2 : 1
 
             parent.onPageTurn?()
             let nextIndex = currentPageIndex + step
@@ -1258,10 +1310,8 @@ extension EBookPageCurlReader {
         private func turnBackward(_ pvc: UIPageViewController) {
             guard !isTransitioning else { return }
 
-            let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
-            let step = cols > 1 ? 2 : 1
+            let isDual = isDualPageMode
+            let step = isDual ? 2 : 1
 
             parent.onPageTurn?()
             let prevIndex = currentPageIndex - step
@@ -1443,7 +1493,7 @@ extension EBookPageCurlReader {
         func updateLiveStyles() {
             guard let wv = primaryWebView else { return }
             let frac = computedTotalPages > 1 ? Double(currentPageIndex) / Double(computedTotalPages - 1) : 0.0
-            let size = UIScreen.main.bounds.size
+            let size = containerSize
             let newCSS = computeCSS(prefs: parent.prefs, size: size)
             let safeCSS = newCSS
                 .replacingOccurrences(of: "\\", with: "\\\\")
@@ -1499,6 +1549,8 @@ extension EBookPageCurlReader {
             let config = WKWebViewConfiguration()
             config.suppressesIncrementalRendering = false
             let bgWV = WKWebView(frame: frame, configuration: config)
+            bgWV.clipsToBounds = true
+            bgWV.layer.masksToBounds = true
             bgWV.isOpaque = false
             bgWV.backgroundColor = .clear
             bgWV.scrollView.isScrollEnabled = false
@@ -1512,8 +1564,8 @@ extension EBookPageCurlReader {
             precacheTask = Task { @MainActor [weak self, weak bgWV] in
                 // Verify DOM readiness before snapshotting
                 var ready = false
-                for _ in 0..<15 {
-                    try? await Task.sleep(nanoseconds: 100_000_000)
+                for _ in 0..<6 {
+                    try? await Task.sleep(nanoseconds: 50_000_000)
                     guard let bgWV = bgWV, !Task.isCancelled else { return }
                     if let state = try? await bgWV.evaluateJavaScript("document.readyState") as? String,
                        state == "complete" || state == "interactive" {
@@ -1556,14 +1608,25 @@ extension EBookPageCurlReader {
 
                 let isDual = self.isDualPageMode
                 let step = isDual ? 2 : 1
-                let maxPages = min(totalPages, 24)
-                var page = step
+                let current = self.currentPageIndex
 
-                while page < maxPages {
+                var pagesToCache: [Int] = []
+                for delta in [step, -step, 2 * step, -2 * step, 3 * step, -3 * step, 4 * step] {
+                    let p = current + delta
+                    if p >= 0 && p < totalPages && !pagesToCache.contains(p) {
+                        pagesToCache.append(p)
+                    }
+                }
+                for p in stride(from: 0, to: min(totalPages, 24), by: step) {
+                    if !pagesToCache.contains(p) {
+                        pagesToCache.append(p)
+                    }
+                }
+
+                for targetPage in pagesToCache {
                     guard !Task.isCancelled, !self.isTransitioning else { break }
-                    let targetPage = page
-                    let leftIdx = page
-                    let rightIdx = page + 1
+                    let leftIdx = isDual ? (targetPage % 2 == 0 ? targetPage : targetPage - 1) : targetPage
+                    let rightIdx = leftIdx + 1
 
                     if self.pageSnapshots[leftIdx] == nil || (isDual && rightIdx < totalPages && self.pageSnapshots[rightIdx] == nil) {
                         await withCheckedContinuation { continuation in
@@ -1572,7 +1635,7 @@ extension EBookPageCurlReader {
                             }
                         }
 
-                        try? await Task.sleep(nanoseconds: 80_000_000)
+                        try? await Task.sleep(nanoseconds: 60_000_000)
                         guard !Task.isCancelled, !self.isTransitioning else { break }
 
                         let snapshotConfig = WKSnapshotConfiguration()
@@ -1610,8 +1673,6 @@ extension EBookPageCurlReader {
                             }
                         }
                     }
-
-                    page += step
                 }
 
                 bgWV.removeFromSuperview()
@@ -1762,7 +1823,7 @@ extension EBookPageCurlReader {
 
         func buildFullCSS() -> String {
             let prefs = parent.prefs
-            let size = UIScreen.main.bounds.size
+            let size = containerSize
             let cssContent = computeCSS(prefs: prefs, size: size)
             let pageScript = buildPageScript(initialPage: parent.initialPage)
 
@@ -1796,14 +1857,11 @@ extension EBookPageCurlReader {
             let defaultHighlightBg = isDarkTheme ? "rgba(255, 214, 10, 0.52)" : "rgba(255, 214, 10, 0.45)"
             let hyphenCSS = prefs.hyphenation ? "auto" : "manual"
 
-            let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
-            let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
+            let renderWidth = size.width > 0 ? size.width : containerSize.width
+            let renderHeight = size.height > 0 ? size.height : containerSize.height
 
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let cols = Coordinator.computeColumnCount(prefs: prefs, size: CGSize(width: renderWidth, height: renderHeight))
             let isPhone = UIDevice.current.userInterfaceIdiom == .phone
-            let isLandscape = renderWidth > renderHeight
-            let defaultColumns = isLandscape ? (prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1
-            let cols = (isPhone && !isLandscape) ? 1 : (prefs.columnCount == 0 ? defaultColumns : prefs.columnCount)
 
             let m = isPhone ? max(12.0, min(margin, 16.0)) : max(20.0, margin)
             let gap = 2 * m
@@ -2021,10 +2079,7 @@ extension EBookPageCurlReader {
         }
 
         func buildPageScript(initialPage: Int = 0) -> String {
-            let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let cols = parent.prefs.columnCount == 0 ? (isLandscape ? (parent.prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1) : parent.prefs.columnCount
-            let isMultiCol = cols > 1
+            let isMultiCol = isDualPageMode
             let isDarkTheme = parent.prefs.activeTheme.isDark
 
             return """
@@ -2608,8 +2663,16 @@ extension EBookPageCurlReader {
 final class InksyncPageViewController: UIPageViewController {
     var onLayoutSubviews: ((CGRect) -> Void)?
 
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.clipsToBounds = true
+        view.layer.masksToBounds = true
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        view.clipsToBounds = true
+        view.layer.masksToBounds = true
         onLayoutSubviews?(view.bounds)
     }
 }
@@ -2656,15 +2719,18 @@ class EBookPageContentViewController: UIViewController {
 
         let prefs = EBookPreferences.shared
         let bgColor = UIColor(hex: prefs.activeTheme.cssBackground) ?? .black
-        view.backgroundColor = snapshot != nil ? bgColor : .clear
+        view.backgroundColor = bgColor
+        view.clipsToBounds = true
+        view.layer.masksToBounds = true
 
         // Setup snapshot image view (0ms instant page rendering for 3D curl)
         let iv = UIImageView(frame: view.bounds)
         // scaleToFill maps snapshot pixels 1:1 to view bounds — avoids shrinking/expanding text during 3D page curl.
         iv.contentMode = .scaleToFill
         iv.clipsToBounds = true
+        iv.layer.masksToBounds = true
         iv.image = snapshot
-        iv.backgroundColor = snapshot != nil ? bgColor : .clear
+        iv.backgroundColor = bgColor
         iv.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(iv)

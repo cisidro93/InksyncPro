@@ -252,7 +252,8 @@ struct EBookReaderView: View {
                                     activeFootnoteText = text
                                 }
                             )
-                            .id("ebook_\(currentIndex)_\(prefs.pageTurnStyle.rawValue)")
+                            .clipped()
+                            .id("ebook_\(prefs.pageTurnStyle.rawValue)")
                         } else {
                             // ── Scroll Mode (continuous vertical) ──────────────────
                             EBookWebReader(
@@ -304,6 +305,7 @@ struct EBookReaderView: View {
             }
             .readingFilter(prefs.readingFilter)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
             .ignoresSafeArea()
 
             // ── Reading Progress Bar (Fixed Top Floating Overlay) ──────────
@@ -438,7 +440,7 @@ struct EBookReaderView: View {
     }
 
     // MARK: - Top Bar (Glass HUD)
-    @ViewBuilder private var topBar: some View {
+    @ViewBuilder private func topBar(topInset: CGFloat = 0) -> some View {
         HStack(spacing: 10) {
             // Back Button
             Button { if let onExit = onExit { onExit() } else { dismiss() } } label: {
@@ -593,7 +595,7 @@ struct EBookReaderView: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.top, 52)
+        .padding(.top, max(topInset + 8, 44))
         .padding(.bottom, 10)
         .background(
             LinearGradient(
@@ -606,7 +608,7 @@ struct EBookReaderView: View {
     }
     
     // MARK: - Bottom Bar (Glass HUD)
-    @ViewBuilder private var bottomBar: some View {
+    @ViewBuilder private func bottomBar(bottomInset: CGFloat = 0) -> some View {
         VStack(spacing: 0) {
             // ── Progress Scrubber ─────────────────────────────────────────
             if totalChapters > 1 {
@@ -682,7 +684,8 @@ struct EBookReaderView: View {
                 }
                 .disabled(currentIndex >= totalChapters - 1)
             }
-            .padding(.vertical, 14)
+            .padding(.top, 14)
+            .padding(.bottom, max(bottomInset + 8, 20))
             .padding(.horizontal, 24)
         }
         .background(
@@ -1291,7 +1294,7 @@ struct EBookReaderView: View {
     }
 
     // MARK: - Text Selection & Highlighting HUD
-    @ViewBuilder private var textSelectionHUDOverlay: some View {
+    @ViewBuilder private func textSelectionHUDOverlay(bottomInset: CGFloat = 0) -> some View {
         if let selectedText = selectedTextForHUD, !selectedText.isEmpty {
             ZStack {
                 Color.black.opacity(0.001)
@@ -1357,7 +1360,7 @@ struct EBookReaderView: View {
                             wv?.evaluateJavaScript("window.getSelection()?.removeAllRanges();")
                         }
                     )
-                    .padding(.bottom, showHUD ? 80 : 30)
+                    .padding(.bottom, showHUD ? (bottomInset + 80) : max(bottomInset + 20, 30))
                     .padding(.horizontal, 20)
                 }
             }
@@ -1368,106 +1371,112 @@ struct EBookReaderView: View {
     // MARK: - Reader Overlay & Sheet Subviews
     @ViewBuilder
     private var readerOverlays: some View {
-        ZStack {
-            if showHUD {
-                VStack(spacing: 0) {
-                    topBar
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            dismissHUD()
+        GeometryReader { geo in
+            let topInset = geo.safeAreaInsets.top
+            let bottomInset = geo.safeAreaInsets.bottom
+            ZStack {
+                if showHUD {
+                    VStack(spacing: 0) {
+                        topBar(topInset: topInset)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                dismissHUD()
+                            }
+                        bottomBar(bottomInset: bottomInset)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    .ignoresSafeArea(edges: .vertical)
+                }
+                
+                if narrationEngine.isPlaying {
+                    VStack(spacing: 0) {
+                        Spacer()
+                        narrationFloatingHUD
+                            .padding(.bottom, showHUD ? (bottomInset + 90) : (bottomInset + 24))
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    .ignoresSafeArea(edges: .bottom)
+                }
+                
+                if !showHUD {
+                    VStack(spacing: 0) {
+                        Spacer()
+                        KindleProgressFooterView(
+                            currentPage: currentIndex + 1,
+                            totalPages: totalChapters,
+                            chapterPage: chapterPage,
+                            chapterTotalPages: chapterTotalPages,
+                            chapterTitle: currentChapterTitle,
+                            isBookSection: true,
+                            estimatedMinutesLeft: pdf.flatMap { ReaderProgressTracker.shared.progress(for: $0.id)?.estimatedMinutesRemaining }
+                        )
+                        .padding(.bottom, max(bottomInset > 0 ? bottomInset - 10 : 0, 4))
+                        .transition(.opacity)
+                    }
+                    .ignoresSafeArea(edges: .bottom)
+                }
+                
+                if isPencilMode {
+                    VStack {
+                        Spacer()
+                        InksyncPenDockView(
+                            onUndo: {
+                                NotificationCenter.default.post(name: NSNotification.Name("EPUBReaderUndoDrawing"), object: nil)
+                            },
+                            onRedo: {
+                                NotificationCenter.default.post(name: NSNotification.Name("EPUBReaderRedoDrawing"), object: nil)
+                            },
+                            onClearPage: {
+                                NotificationCenter.default.post(name: NSNotification.Name("EPUBReaderClearDrawing"), object: nil)
+                            },
+                            onClose: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                    isPencilMode = false
+                                }
+                            }
+                        )
+                        .padding(.bottom, max(bottomInset + 12, 36))
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .ignoresSafeArea(.keyboard)
+                } else if !showHUD && selectedTextForHUD == nil {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Button {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                    isPencilMode = true
+                                    InksyncInkingState.shared.activeToolMode = .write
+                                }
+                                HapticEngine.medium()
+                            } label: {
+                                Image(systemName: "pencil.tip.crop.circle")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 44, height: 44)
+                                    .background(.ultraThinMaterial)
+                                    .clipShape(Circle())
+                                    .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 3)
+                            }
+                            .padding(.trailing, 20)
+                            .padding(.bottom, max(bottomInset + 8, 28))
                         }
-                    bottomBar
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-                .ignoresSafeArea(edges: .vertical)
-            }
-            
-            if narrationEngine.isPlaying {
-                VStack(spacing: 0) {
-                    Spacer()
-                    narrationFloatingHUD
-                        .padding(.bottom, showHUD ? 90 : 24)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-                .ignoresSafeArea(edges: .bottom)
-            }
-            
-            if !showHUD {
-                VStack(spacing: 0) {
-                    Spacer()
-                    KindleProgressFooterView(
-                        currentPage: currentIndex + 1,
-                        totalPages: totalChapters,
-                        chapterPage: chapterPage,
-                        chapterTotalPages: chapterTotalPages,
-                        chapterTitle: currentChapterTitle,
-                        isBookSection: true,
-                        estimatedMinutesLeft: pdf.flatMap { ReaderProgressTracker.shared.progress(for: $0.id)?.estimatedMinutesRemaining }
-                    )
+                    }
                     .transition(.opacity)
                 }
-                .ignoresSafeArea(edges: .bottom)
-            }
-            
-            if isPencilMode {
-                VStack {
-                    Spacer()
-                    InksyncPenDockView(
-                        onUndo: {
-                            NotificationCenter.default.post(name: NSNotification.Name("EPUBReaderUndoDrawing"), object: nil)
-                        },
-                        onRedo: {
-                            NotificationCenter.default.post(name: NSNotification.Name("EPUBReaderRedoDrawing"), object: nil)
-                        },
-                        onClearPage: {
-                            NotificationCenter.default.post(name: NSNotification.Name("EPUBReaderClearDrawing"), object: nil)
-                        },
-                        onClose: {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                                isPencilMode = false
-                            }
-                        }
-                    )
-                    .padding(.bottom, 36)
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .ignoresSafeArea(.keyboard)
-            } else if !showHUD && selectedTextForHUD == nil {
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                                isPencilMode = true
-                                InksyncInkingState.shared.activeToolMode = .write
-                            }
-                            HapticEngine.medium()
-                        } label: {
-                            Image(systemName: "pencil.tip.crop.circle")
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Circle())
-                                .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 3)
-                        }
-                        .padding(.trailing, 20)
-                        .padding(.bottom, 28)
-                    }
-                }
-                .transition(.opacity)
-            }
 
-            textSelectionHUDOverlay
-            ReadingJumpToastOverlay()
-            toastAlertOverlay
-            
-            if prefs.showReadingRuler {
-                ReadingRulerOverlay()
+                textSelectionHUDOverlay(bottomInset: bottomInset)
+                ReadingJumpToastOverlay()
+                toastAlertOverlay(bottomInset: bottomInset)
+                
+                if prefs.showReadingRuler {
+                    ReadingRulerOverlay()
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleMarkupMode"))) { _ in
             withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
@@ -1820,7 +1829,7 @@ struct EBookReaderView: View {
         }
     }
 
-    @ViewBuilder private var toastAlertOverlay: some View {
+    @ViewBuilder private func toastAlertOverlay(bottomInset: CGFloat = 0) -> some View {
         if showToast {
             Text(toastMessage)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -1830,7 +1839,7 @@ struct EBookReaderView: View {
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
-                .padding(.bottom, 110)
+                .padding(.bottom, max(bottomInset + 90, 110))
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(100)
         }

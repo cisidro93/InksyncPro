@@ -198,6 +198,7 @@ struct UnifiedReaderView: View {
                         fileURL: pdf.url
                     )
                     .frame(width: notebookWidth)
+                    .clipped()
                     .transition(.move(edge: .leading).combined(with: .opacity))
                     .id("sidebar_notebook_\(pdf.id)")
                     
@@ -223,6 +224,7 @@ struct UnifiedReaderView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
                 
                 if notebookPlacement == .right && showNotebookPanel && sizeClass == .regular {
                     draggableDivider(geo: geo, placement: .right)
@@ -233,6 +235,7 @@ struct UnifiedReaderView: View {
                         fileURL: pdf.url
                     )
                     .frame(width: notebookWidth)
+                    .clipped()
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .id("sidebar_notebook_\(pdf.id)")
                 }
