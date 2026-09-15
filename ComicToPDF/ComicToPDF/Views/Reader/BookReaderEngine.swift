@@ -1750,6 +1750,48 @@ private func computeColumnCount(for size: CGSize) -> Int {
         }
     }
 
+    private var isCurrentPageBookmarked: Bool {
+        let inStore = AnnotationStore.shared.annotations(for: pdf.id).contains(where: { $0.pageIndex == vm.currentChapterIndex && $0.kind == .bookmark })
+        let inMetadata = pdf.metadata.bookmarkedPages.contains(vm.currentChapterIndex)
+        return inStore || inMetadata
+    }
+
+    private func toggleBookmark() {
+        let wasBookmarked = isCurrentPageBookmarked
+        if wasBookmarked {
+            let existing = AnnotationStore.shared.annotations(for: pdf.id).filter { $0.pageIndex == vm.currentChapterIndex && $0.kind == .bookmark }
+            for b in existing {
+                AnnotationStore.shared.delete(id: b.id, pdfID: pdf.id)
+            }
+            if let idx = ConversionManager.shared.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.removeAll(where: { $0 == vm.currentChapterIndex })
+                ConversionManager.shared.saveProgressOnly()
+            }
+            showToastMessage("Bookmark Removed")
+            Haptics.shared.playImpact(style: .light)
+        } else {
+            let rawLabel = vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
+            let spineLabel = !rawLabel.isEmpty ? rawLabel : "Chapter \(vm.currentChapterIndex + 1)"
+            let bookmark = Annotation(
+                pdfID: pdf.id,
+                pageIndex: vm.currentChapterIndex,
+                chapterTitle: spineLabel,
+                kind: .bookmark,
+                createdAt: Date(),
+                modifiedAt: Date()
+            )
+            AnnotationStore.shared.add(bookmark)
+            if let idx = ConversionManager.shared.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                if !ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.contains(vm.currentChapterIndex) {
+                    ConversionManager.shared.convertedPDFs[idx].metadata.bookmarkedPages.append(vm.currentChapterIndex)
+                }
+                ConversionManager.shared.saveProgressOnly()
+            }
+            showToastMessage("Chapter Bookmarked")
+            Haptics.shared.playImpact(style: .light)
+        }
+    }
+
     @ViewBuilder
     private var readerChromeView: some View {
         ReaderChrome(
@@ -1757,12 +1799,8 @@ private func computeColumnCount(for size: CGSize) -> Int {
             pageText: bookPageStatusText,
             isVisible: $chromeVisible,
             onBack: onDismiss,
-            onBookmark: {
-                let rawLabel = vm.tocItems[safe: vm.currentChapterIndex]?.label ?? ""
-                let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
-                let bookmark = Annotation(pdfID: pdf.id, pageIndex: vm.currentChapterIndex, chapterTitle: spineLabel, kind: .bookmark, createdAt: Date(), modifiedAt: Date())
-                AnnotationStore.shared.add(bookmark)
-            },
+            onBookmark: toggleBookmark,
+            onBookmarkActive: isCurrentPageBookmarked,
             onSettingsToggle: {
                 withAnimation { showTypographyHUD = true }
             },
@@ -1786,7 +1824,8 @@ private func computeColumnCount(for size: CGSize) -> Int {
                 }
             },
             isSettingsActive: showTypographyHUD,
-            sessionStartTime: sessionStartTime
+            sessionStartTime: sessionStartTime,
+            onSwipeDown: onDismiss
         )
     }
 

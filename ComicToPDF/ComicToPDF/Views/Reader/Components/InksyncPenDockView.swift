@@ -10,6 +10,8 @@ public struct InksyncPenDockView: View {
 
     @ObservedObject var inkingState = InksyncInkingState.shared
     @ObservedObject var prefs = EBookPreferences.shared
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+    private var isCompact: Bool { hSizeClass == .compact || UIDevice.current.userInterfaceIdiom == .phone }
     var onUndo: (() -> Void)? = nil
     var onRedo: (() -> Void)? = nil
     var onClearPage: (() -> Void)? = nil
@@ -90,7 +92,7 @@ public struct InksyncPenDockView: View {
     // MARK: - Main Dock Capsule
 
     private var mainDockCapsule: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: isCompact ? 6 : 10) {
             // Minimize button
             Button {
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
@@ -101,14 +103,14 @@ public struct InksyncPenDockView: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.secondary)
-                    .padding(6)
+                    .padding(isCompact ? 4 : 6)
                     .background(.ultraThinMaterial, in: Circle())
             }
             .buttonStyle(.plain)
             .help("Minimize Toolbar")
 
             // Kindle-Style Master Tool Mode Switcher
-            HStack(spacing: 4) {
+            HStack(spacing: isCompact ? 2 : 4) {
                 ForEach(ReaderToolMode.allCases) { mode in
                     let isSelected = inkingState.activeToolMode == mode
                     Button {
@@ -117,17 +119,17 @@ public struct InksyncPenDockView: View {
                         }
                         HapticEngine.selection()
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 3) {
                             Image(systemName: mode.iconSystemName)
-                                .font(.system(size: 13, weight: isSelected ? .bold : .medium))
-                            if isSelected {
+                                .font(.system(size: isCompact ? 12 : 13, weight: isSelected ? .bold : .medium))
+                            if isSelected && !isCompact {
                                 Text(mode.displayName)
                                     .font(.system(size: 11, weight: .bold, design: .rounded))
                             }
                         }
                         .foregroundStyle(isSelected ? Color.white : Color.secondary)
-                        .padding(.horizontal, isSelected ? 10 : 7)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, isSelected ? (isCompact ? 8 : 10) : (isCompact ? 5 : 7))
+                        .padding(.vertical, isCompact ? 5 : 6)
                         .background(
                             isSelected ? (mode == .textHighlight ? Color.inkOrange : Color.inkGreen) : Color.clear,
                             in: Capsule()
@@ -153,7 +155,7 @@ public struct InksyncPenDockView: View {
                 Image(systemName: "paintpalette.fill")
                     .font(.system(size: 13, weight: inkingState.isColoringModeActive ? .bold : .medium))
                     .foregroundStyle(inkingState.isColoringModeActive ? Color.white : Color.secondary)
-                    .padding(6)
+                    .padding(isCompact ? 4 : 6)
                     .background(
                         inkingState.isColoringModeActive ? Color.inkOrange : Color.clear,
                         in: Circle()
@@ -167,9 +169,10 @@ public struct InksyncPenDockView: View {
                 .background(Color.secondary.opacity(0.3))
 
             if inkingState.activeToolMode == .write {
-                // 4 Favorite Tool Slots
-                HStack(spacing: 6) {
-                    ForEach(0..<inkingState.favorites.count, id: \.self) { index in
+                // Favorite Tool Slots (2 on compact phone, 4 on regular iPad)
+                let slotCount = isCompact ? 2 : inkingState.favorites.count
+                HStack(spacing: isCompact ? 4 : 6) {
+                    ForEach(0..<min(slotCount, inkingState.favorites.count), id: \.self) { index in
                         favoriteSlotButton(at: index)
                     }
                 }
@@ -193,8 +196,8 @@ public struct InksyncPenDockView: View {
                             .foregroundStyle(.secondary)
                     }
                     .foregroundStyle(inkingState.activePreset.color.color)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, isCompact ? 6 : 8)
+                    .padding(.vertical, isCompact ? 5 : 6)
                     .background(.ultraThinMaterial, in: Capsule())
                 }
                 .buttonStyle(.plain)
@@ -338,8 +341,8 @@ public struct InksyncPenDockView: View {
                 .help("Close Pen Toolbar")
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, isCompact ? 10 : 14)
+        .padding(.vertical, isCompact ? 6 : 8)
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
@@ -429,7 +432,7 @@ public struct InksyncPenDockView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
-        .frame(maxWidth: 420)
+        .frame(maxWidth: isCompact ? 340 : 420)
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
@@ -455,7 +458,7 @@ public struct InksyncPenDockView: View {
                 in: isWideTool ? 4.0...36.0 : 0.5...16.0,
                 step: 0.5
             )
-            .frame(width: 160)
+            .frame(width: isCompact ? 120 : 160)
             .tint(inkingState.activePreset.color.color)
 
             Text("Broad")

@@ -494,13 +494,15 @@ struct EBookReaderView: View {
                     .background(.ultraThinMaterial, in: Circle())
             }
 
-            // Orientation lock
-            Button { orientationLock.toggleLock(current: deviceOrientation) } label: {
-                Image(systemName: orientationLock.isLocked ? "lock.rotation" : "lock.rotation.open")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(orientationLock.isLocked ? Color.orange : .white)
-                    .frame(width: 34, height: 34)
-                    .background(.ultraThinMaterial, in: Circle())
+            // Orientation lock (iPad regular width)
+            if sizeClass == .regular {
+                Button { orientationLock.toggleLock(current: deviceOrientation) } label: {
+                    Image(systemName: orientationLock.isLocked ? "lock.rotation" : "lock.rotation.open")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(orientationLock.isLocked ? Color.orange : .white)
+                        .frame(width: 34, height: 34)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
             }
 
             // Dedicated Typography / Settings (aA) Button
@@ -521,6 +523,14 @@ struct EBookReaderView: View {
                 Section("Appearance") {
                     Button { showingSettingsPanel.toggle() } label: {
                         Label("Text & Layout", systemImage: "textformat.size")
+                    }
+                    if sizeClass != .regular {
+                        Button { orientationLock.toggleLock(current: deviceOrientation) } label: {
+                            Label(
+                                orientationLock.isLocked ? "Unlock Orientation" : "Lock Orientation",
+                                systemImage: orientationLock.isLocked ? "lock.rotation" : "lock.rotation.open"
+                            )
+                        }
                     }
                 }
                 Section("Navigate") {

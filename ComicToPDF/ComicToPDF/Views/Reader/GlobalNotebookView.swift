@@ -234,12 +234,17 @@ struct GlobalNotebookView: View {
                             } else {
                                 // Notebooks grid view
                                 ScrollView {
-                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 170, maximum: 220), spacing: 24)], spacing: 28) {
+                                    LazyVGrid(
+                                        columns: sizeClass == .regular
+                                            ? [GridItem(.adaptive(minimum: 170, maximum: 220), spacing: 24)]
+                                            : [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 14)],
+                                        spacing: sizeClass == .regular ? 28 : 18
+                                    ) {
                                         ForEach(filteredNotebooks) { notebook in
                                             notebookCard(for: notebook)
                                         }
                                     }
-                                    .padding(.horizontal, 24)
+                                    .padding(.horizontal, sizeClass == .regular ? 24 : 14)
                                     .padding(.top, 20)
                                     .padding(.bottom, 120) // spacing for tab bar
                                 }
@@ -348,7 +353,7 @@ struct GlobalNotebookView: View {
                     }
                 }
                 
-                HStack {
+                ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
                         ForEach(Tab.allCases) { tab in
                             Button {
@@ -357,15 +362,15 @@ struct GlobalNotebookView: View {
                                     activeTab = tab
                                 }
                             } label: {
-                                HStack(spacing: 6) {
+                                HStack(spacing: 5) {
                                     Image(systemName: tab.icon)
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(.system(size: 11, weight: .bold))
                                     Text(tab.rawValue)
-                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
                                         .lineLimit(1)
                                 }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
                                 .background(
                                     activeTab == tab
                                         ? AnyShapeStyle(Color.orange.opacity(0.18))
@@ -377,10 +382,8 @@ struct GlobalNotebookView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(4)
+                    .padding(3)
                     .background(Color.inkSurfaceRaised.opacity(0.5), in: Capsule())
-                    
-                    Spacer()
                 }
             } else {
                 // Regular iPad / Landscape Layout: 1 row
@@ -964,7 +967,7 @@ struct GlobalNotebookView: View {
                             .fill(gradient)
                     }
                 }
-                .frame(height: 240)
+                .frame(height: sizeClass == .regular ? 240 : 200)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.4 : 0.15), radius: 8, x: 0, y: 4)
                 .overlay(

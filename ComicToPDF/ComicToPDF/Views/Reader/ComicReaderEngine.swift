@@ -1504,6 +1504,9 @@ struct ComicReaderEngine: View {
     
     func shouldShowTwoUpSpread(for size: CGSize) -> Bool {
         let isLandscape = size.width > size.height
+        if UIDevice.current.userInterfaceIdiom == .phone && !isLandscape {
+            return false
+        }
         let pdfDual = EBookPreferences.shared.pdfDualPage || (EBookPreferences.shared.autoLandscapeDualPage && isLandscape)
         let isDual = prefersTwoUpSpreads || pdfDual
         guard isDual else { return false }
@@ -1514,6 +1517,9 @@ struct ComicReaderEngine: View {
     private var isCurrentlyTwoUp: Bool {
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
             let isLandscape = windowScene.interfaceOrientation.isLandscape
+            if UIDevice.current.userInterfaceIdiom == .phone && !isLandscape {
+                return false
+            }
             let pdfDual = EBookPreferences.shared.pdfDualPage || (EBookPreferences.shared.autoLandscapeDualPage && isLandscape)
             let isDual = prefersTwoUpSpreads || pdfDual
             guard isDual else { return false }
