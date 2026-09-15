@@ -1243,8 +1243,10 @@ struct ReaderView: View {
             let newBookmark = Annotation(
                 pdfID: p.id,
                 pageIndex: currentPageIndex,
-                color: "yellow",
-                kind: .bookmark
+                chapterTitle: "Page \(currentPageIndex + 1)",
+                kind: .bookmark,
+                createdAt: Date(),
+                modifiedAt: Date()
             )
             AnnotationStore.shared.add(newBookmark)
             Logger.shared.log("Bookmark added: page \(currentPageIndex + 1) of '\(p.name)'", category: "ReaderView", type: .success)

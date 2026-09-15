@@ -25,8 +25,8 @@ struct Annotation: Codable, Identifiable {
     var pageIndex: Int                    // 0-based page
     var chapterTitle: String?             // for books
     var kind: AnnotationKind
-    var createdAt: Date
-    var modifiedAt: Date
+    var createdAt: Date = Date()
+    var modifiedAt: Date = Date()
     var colorHex: String?                 // highlight colour
     var selectedText: String?             // the highlighted text
     var noteText: String?                 // user's note on the annotation
