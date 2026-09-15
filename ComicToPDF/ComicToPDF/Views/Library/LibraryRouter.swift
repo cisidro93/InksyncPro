@@ -54,7 +54,7 @@ enum LibrarySheetDestination: Identifiable {
     }
 }
 
-enum LibraryFullScreenDestination: Identifiable {
+enum LibraryFullScreenDestination: Identifiable, Equatable {
     case read(ConvertedPDF, initialReadingMode: String?)
     case advancedWorkspace(ConvertedPDF)
     case smartCollection(SmartCollectionRule)
@@ -69,5 +69,9 @@ enum LibraryFullScreenDestination: Identifiable {
         case .advancedWorkspace(let p): return "workspace_\(p.id)"
         case .smartCollection(let rule): return "smartCollection_\(rule.id)"
         }
+    }
+
+    static func == (lhs: LibraryFullScreenDestination, rhs: LibraryFullScreenDestination) -> Bool {
+        lhs.id == rhs.id
     }
 }
