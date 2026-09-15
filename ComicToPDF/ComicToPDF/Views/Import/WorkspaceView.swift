@@ -33,6 +33,7 @@ struct WorkspaceView: View {
     @State private var mode: WorkspaceMode = .active
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) var dismiss
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     @AppStorage("appUIMode") private var appUIMode: AppUIMode = .pro
     @FocusState private var isFocused: Bool
     
@@ -141,15 +142,17 @@ struct WorkspaceView: View {
                 mode = segment
             }
         } label: {
-            HStack(spacing: 7) {
+            HStack(spacing: hSizeClass == .regular ? 7 : 5) {
                 Image(systemName: isActive ? segment.activeIcon : segment.icon)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: hSizeClass == .regular ? 13 : 11, weight: .semibold))
                 Text(segment.rawValue)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: hSizeClass == .regular ? 14 : 12, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .foregroundStyle(isActive ? .white : Color.inkTextSecondary)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, hSizeClass == .regular ? 16 : 8)
+            .padding(.vertical, hSizeClass == .regular ? 10 : 8)
             .frame(maxWidth: .infinity)
             .background(
                 isActive

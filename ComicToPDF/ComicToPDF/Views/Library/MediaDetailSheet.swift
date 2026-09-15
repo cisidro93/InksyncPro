@@ -35,7 +35,10 @@ struct MediaDetailSheet: View {
                                  .foregroundColor(.gray)
                          }
                     }
-                    .frame(width: 120, height: 180)
+                    .frame(
+                        width: hSizeClass == .regular ? 120 : 100,
+                        height: hSizeClass == .regular ? 180 : 150
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
                     .task {
@@ -47,13 +50,13 @@ struct MediaDetailSheet: View {
                     // Metadata Info
                     VStack(alignment: .leading, spacing: 6) {
                         Text(pdf.name)
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.system(size: hSizeClass == .regular ? 22 : 19, weight: .bold))
                             .foregroundColor(.white)
                             .lineLimit(3)
                             
                         if let series = pdf.metadata.series, !series.isEmpty {
                             Text("\(series) \(pdf.metadata.issueNumber.map { "Issue #\($0)" } ?? "")")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.system(size: 15, weight: .semibold))
                                 .foregroundColor(.blue)
                         }
                         
@@ -63,36 +66,36 @@ struct MediaDetailSheet: View {
                                 .foregroundColor(.gray)
                         }
                         
-                        Spacer(minLength: 8)
+                        Spacer(minLength: 4)
                         
                         // Type & Size Badges
-                        HStack(spacing: 8) {
+                        HStack(spacing: hSizeClass == .regular ? 8 : 6) {
                             Text(pdf.contentType.rawValue.uppercased())
-                                .font(.system(size: 10, weight: .bold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
+                                .font(.system(size: hSizeClass == .regular ? 10 : 9, weight: .bold))
+                                .padding(.horizontal, hSizeClass == .regular ? 8 : 6)
+                                .padding(.vertical, hSizeClass == .regular ? 5 : 4)
                                 .background(.ultraThinMaterial)
                                 .foregroundColor(pdf.contentType.badgeColor)
                                 .clipShape(Capsule())
                                 
                             Text(pdf.formattedSize)
-                                .font(.system(size: 10, weight: .bold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
+                                .font(.system(size: hSizeClass == .regular ? 10 : 9, weight: .bold))
+                                .padding(.horizontal, hSizeClass == .regular ? 8 : 6)
+                                .padding(.vertical, hSizeClass == .regular ? 5 : 4)
                                 .background(.ultraThinMaterial)
                                 .foregroundColor(.white)
                                 .clipShape(Capsule())
                                 
                             // Add Time Left Pill here if there's progress!
                             if let prog = ReaderProgressTracker.shared.progress(for: pdf.id), let mins = prog.estimatedMinutesRemaining, mins > 0 {
-                                HStack(spacing: 4) {
+                                HStack(spacing: 3) {
                                     Image(systemName: "timer")
-                                        .font(.system(size: 9, weight: .bold))
+                                        .font(.system(size: hSizeClass == .regular ? 9 : 8, weight: .bold))
                                     Text("\(mins)m")
-                                        .font(.system(size: 10, weight: .bold))
+                                        .font(.system(size: hSizeClass == .regular ? 10 : 9, weight: .bold))
                                 }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
+                                .padding(.horizontal, hSizeClass == .regular ? 8 : 6)
+                                .padding(.vertical, hSizeClass == .regular ? 5 : 4)
                                 .background(.ultraThinMaterial)
                                 .foregroundColor(Color.orange)
                                 .clipShape(Capsule())

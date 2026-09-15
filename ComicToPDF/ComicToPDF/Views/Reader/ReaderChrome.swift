@@ -547,7 +547,7 @@ struct ReaderChrome: View {
             // ── Action row ─────────────────────────────────────────────────────
             HStack {
                 // Left cluster
-                HStack(spacing: 4) {
+                HStack(spacing: hSizeClass == .regular ? 4 : 2) {
                     barButton(
                         icon: onBookmarkActive ? "bookmark.fill" : "bookmark",
                         label: "Bookmark Page",
@@ -566,35 +566,45 @@ struct ReaderChrome: View {
                             Haptics.shared.playImpact(style: .light)
                             onCopyToggle?()
                         }
-                    }
-
-                    if isPDF {
-                        Button {
-                            Haptics.shared.playImpact(style: .light)
-                            onReflowToggle?()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: isReflowActive ? "doc.richtext" : "text.alignleft")
-                                    .font(.system(size: 12, weight: .semibold))
-                                Text(isReflowActive ? "Original" : "Reflow")
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    } else if isPDF {
+                        if hSizeClass == .regular {
+                            Button {
+                                Haptics.shared.playImpact(style: .light)
+                                onReflowToggle?()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: isReflowActive ? "doc.richtext" : "text.alignleft")
+                                        .font(.system(size: 12, weight: .semibold))
+                                    Text(isReflowActive ? "Original" : "Reflow")
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundColor(isReflowActive ? .inkGreen : Color.primary.opacity(0.85))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(
+                                    isReflowActive
+                                        ? Color.inkGreen.opacity(0.18)
+                                        : Color.primary.opacity(0.08),
+                                    in: Capsule()
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke(isReflowActive ? Color.inkGreen.opacity(0.4) : Color.primary.opacity(0.12), lineWidth: 0.5)
+                                )
                             }
-                            .foregroundColor(isReflowActive ? .inkGreen : Color.primary.opacity(0.85))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(
-                                isReflowActive
-                                    ? Color.inkGreen.opacity(0.18)
-                                    : Color.primary.opacity(0.08),
-                                in: Capsule()
-                            )
-                            .overlay(
-                                Capsule()
-                                    .stroke(isReflowActive ? Color.inkGreen.opacity(0.4) : Color.primary.opacity(0.12), lineWidth: 0.5)
-                            )
+                            .help(isReflowActive ? "Return to Original PDF Layout" : "Toggle Text Reflow Mode")
+                            .accessibilityLabel(isReflowActive ? "Return to Original PDF Layout" : "Toggle Text Reflow Mode")
+                        } else {
+                            // iPhone compact: sleek icon button matching touch targets
+                            barButton(
+                                icon: isReflowActive ? "doc.richtext" : "text.alignleft",
+                                label: isReflowActive ? "Original PDF" : "Reflow Text",
+                                tint: isReflowActive ? .inkGreen : .primary
+                            ) {
+                                Haptics.shared.playImpact(style: .light)
+                                onReflowToggle?()
+                            }
                         }
-                        .help(isReflowActive ? "Return to Original PDF Layout" : "Toggle Text Reflow Mode")
-                        .accessibilityLabel(isReflowActive ? "Return to Original PDF Layout" : "Toggle Text Reflow Mode")
                     }
                 }
 
@@ -631,7 +641,7 @@ struct ReaderChrome: View {
                 Spacer()
 
                 // Right cluster
-                HStack(spacing: 4) {
+                HStack(spacing: hSizeClass == .regular ? 4 : 2) {
                     if let onMarkup = onMarkupToggle {
                         barButton(
                             icon: isMarkupActive ? "pencil.tip.crop.circle.badge.plus.fill" : "pencil.tip.crop.circle",
@@ -656,7 +666,7 @@ struct ReaderChrome: View {
                     }
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, hSizeClass == .regular ? 12 : 8)
             .padding(.vertical, 8)
         }
         .background(bottomCardBackground)

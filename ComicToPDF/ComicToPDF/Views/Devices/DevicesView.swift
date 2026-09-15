@@ -9,6 +9,7 @@ struct DevicesView: View {
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @State private var showAddDevice = false
     @State private var selectedDeviceID: UUID?
+    @State private var activeDetailDevice: SDRegisteredDevice? = nil
     
     @Query(sort: \SDRegisteredDevice.name) private var savedDevices: [SDRegisteredDevice]
 
@@ -43,6 +44,14 @@ struct DevicesView: View {
                                     Image(systemName: "plus")
                                 }
                                 .foregroundColor(.inkBlue)
+                            }
+                        }
+                        .navigationDestination(isPresented: Binding(
+                            get: { activeDetailDevice != nil },
+                            set: { if !$0 { activeDetailDevice = nil } }
+                        )) {
+                            if let device = activeDetailDevice {
+                                DeviceDetailView(device: device)
                             }
                         }
                 }
@@ -129,6 +138,9 @@ struct DevicesView: View {
         Button {
             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                 selectedDeviceID = device.id
+                if hSizeClass != .regular {
+                    activeDetailDevice = device
+                }
             }
         } label: {
             DeviceRow(
@@ -276,6 +288,7 @@ struct DeviceRow: View {
     let isSelected: Bool
     let onSetPrimary: () -> Void
 
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     @State private var isPulsing = false
 
     private var transferIcon: String {
@@ -343,6 +356,12 @@ struct DeviceRow: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+            }
+
+            if hSizeClass == .compact {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color.inkTextTertiary)
             }
         }
         .padding(.vertical, 12)

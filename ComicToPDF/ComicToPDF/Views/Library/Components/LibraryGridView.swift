@@ -61,15 +61,16 @@ struct LibraryGridView: View {
         if width >= 950  { return 6 }
         if width >= 720  { return 5 }
         if width >= 500  { return 4 }
-        return 3
+        if width >= 420  { return 3 }
+        return 2
     }
 
     private var colSpacing: CGFloat {
-        hSizeClass == .regular ? 16 : 10
+        hSizeClass == .regular ? 16 : 12
     }
 
     private func hPad(for width: CGFloat) -> CGFloat {
-        width >= 1000 ? 28 : (width >= 700 ? 20 : 10)
+        width >= 1000 ? 28 : (width >= 700 ? 20 : (width >= 420 ? 12 : 14))
     }
 
     private func chunkedItems(_ source: [LibraryListItem], cols: Int) -> [[LibraryListItem]] {

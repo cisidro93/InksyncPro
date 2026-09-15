@@ -954,14 +954,15 @@ struct SeriesDetailView: View {
                 volumeFilterBar
                     .padding(.bottom, 8)
 
-                let hPad: CGFloat = viewportWidth >= 1000 ? 32 : (viewportWidth >= 700 ? 20 : 12)
-                let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 10
+                let hPad: CGFloat = viewportWidth >= 1000 ? 32 : (viewportWidth >= 700 ? 20 : (viewportWidth >= 420 ? 12 : 14))
+                let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 12
                 let colCount: Int = {
                     if viewportWidth >= 1200 { return 7 }
                     if viewportWidth >= 950  { return 6 }
                     if viewportWidth >= 720  { return 5 }
                     if viewportWidth >= 500  { return 4 }
-                    return 3
+                    if viewportWidth >= 420  { return 3 }
+                    return 2
                 }()
                 let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
 
@@ -1561,12 +1562,12 @@ struct SeriesDetailView: View {
 
     var headerView: some View {
         VStack(spacing: 16) {
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .top, spacing: hSizeClass == .regular ? 16 : 12) {
                 if let img = headerCover {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 110, height: 165)
+                        .frame(width: hSizeClass == .regular ? 110 : 96, height: hSizeClass == .regular ? 165 : 144)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -1577,7 +1578,7 @@ struct SeriesDetailView: View {
                 } else {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Theme.surface)
-                        .frame(width: 110, height: 165)
+                        .frame(width: hSizeClass == .regular ? 110 : 96, height: hSizeClass == .regular ? 165 : 144)
                         .overlay(
                             Image(systemName: "books.vertical")
                                 .font(.system(size: 28, weight: .light))
@@ -1588,7 +1589,7 @@ struct SeriesDetailView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(series.title)
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.system(size: hSizeClass == .regular ? 22 : 19, weight: .bold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(3)
 

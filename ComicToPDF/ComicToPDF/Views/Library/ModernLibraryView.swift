@@ -988,29 +988,29 @@ struct ModernLibraryView: View {
             // Custom Unified Brand Header (collapses vertical height and cleans up dead space)
             HStack(alignment: .center) {
                 // 1. Stylized Brand Title & Logo morph spacing
-                HStack(spacing: 8) {
-                    // Reserved space for logo morph (size 32)
+                HStack(spacing: hSizeClass == .regular ? 8 : 6) {
+                    // Reserved space for logo morph
                     ZStack {
                         if !isAppLoading {
                             Image("AppLogo")
                                 .resizable()
                                 .scaledToFit()
-                                .frame(width: 32, height: 32)
-                                .clipShape(RoundedRectangle(cornerRadius: 32 * 0.28))
+                                .frame(width: hSizeClass == .regular ? 32 : 26, height: hSizeClass == .regular ? 32 : 26)
+                                .clipShape(RoundedRectangle(cornerRadius: (hSizeClass == .regular ? 32 : 26) * 0.28))
                                 .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
                                 .transition(.opacity)
                         }
                     }
-                    .frame(width: 36, height: 32)
+                    .frame(width: hSizeClass == .regular ? 36 : 28, height: hSizeClass == .regular ? 32 : 26)
                     
                     Text("InkSync Pro")
-                        .font(.system(size: 22, weight: .black, design: .rounded))
+                        .font(.system(size: hSizeClass == .regular ? 22 : 18, weight: .black, design: .rounded))
                         .foregroundColor(.white)
                     
                     // Dynamic item count badge
-                    Text("\(cachedVisiblePDFs.count) Items")
+                    Text(hSizeClass == .regular ? "\(cachedVisiblePDFs.count) Items" : "\(cachedVisiblePDFs.count)")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.3))
+                        .foregroundColor(.white.opacity(0.4))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Color.white.opacity(0.06), in: Capsule())
@@ -1019,12 +1019,12 @@ struct ModernLibraryView: View {
                 Spacer()
                 
                 // 2. Action buttons grouped in a sleek glassmorphic pill toolbar
-                HStack(spacing: 16) {
+                HStack(spacing: hSizeClass == .regular ? 16 : 13) {
                     Button {
                         withAnimation(.spring) { isSearchActive.toggle() }
                     } label: {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: hSizeClass == .regular ? 16 : 15, weight: .semibold))
                             .foregroundColor(.white.opacity(0.8))
                     }
                     
@@ -1032,7 +1032,7 @@ struct ModernLibraryView: View {
                         (onFolderImport ?? handleDefaultImport)()
                     } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: hSizeClass == .regular ? 16 : 15, weight: .semibold))
                             .foregroundColor(.white.opacity(0.8))
                     }
                     
@@ -1040,16 +1040,16 @@ struct ModernLibraryView: View {
                         AppRouter.shared.presentSheet(.controlCenter)
                     } label: {
                         Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: hSizeClass == .regular ? 16 : 15, weight: .semibold))
                             .foregroundColor(.white.opacity(0.8))
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.horizontal, hSizeClass == .regular ? 14 : 11)
+                .padding(.vertical, hSizeClass == .regular ? 8 : 7)
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(Color.white.opacity(0.08)))
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, hSizeClass == .regular ? 16 : 14)
             .padding(.vertical, 10)
 
             // Apple Books-style persisted Content Shelf tab strip
