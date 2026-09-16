@@ -75,6 +75,21 @@ private struct PremiumHeroCard: View {
         CGFloat(pdf.metadata.lastReadPage ?? 0) / CGFloat(max(pdf.pageCount, 1))
     }
     
+    private var progressDetailText: String {
+        let lastRead = pdf.metadata.lastReadPage ?? 0
+        let total = max(pdf.pageCount, 1)
+        let pagesLeft = max(0, total - lastRead)
+        let pagesWord = pagesLeft == 1 ? "page left" : "pages left"
+        
+        if let issue = pdf.metadata.issueNumber, !issue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Issue \(issue) · \(pagesLeft) \(pagesWord)"
+        } else if let ch = SeriesNameParser.chapterKey(from: pdf.name) {
+            return "Ch. \(ch) · \(pagesLeft) \(pagesWord)"
+        } else {
+            return "\(pagesLeft) \(pagesWord) in book"
+        }
+    }
+    
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -151,7 +166,7 @@ private struct PremiumHeroCard: View {
                         
                         Spacer(minLength: 2)
                         
-                        // Progress Percentage & Page Count
+                        // Progress Percentage & Chapter / Pages Left Detail
                         HStack(spacing: 4) {
                             Text("\(Int(progress * 100))%")
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -161,7 +176,7 @@ private struct PremiumHeroCard: View {
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundColor(.white.opacity(0.4))
                             
-                            Text("Page \(pdf.metadata.lastReadPage ?? 0) of \(pdf.pageCount)")
+                            Text(progressDetailText)
                                 .font(.system(size: 11, weight: .medium, design: .rounded))
                                 .foregroundColor(.white.opacity(0.65))
                         }
