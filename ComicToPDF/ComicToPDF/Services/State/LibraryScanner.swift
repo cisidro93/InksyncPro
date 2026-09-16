@@ -278,7 +278,6 @@ actor LibraryScanner {
                 if !genuinelyNew.isEmpty {
                     currentItems.append(contentsOf: genuinelyNew)
                     manager.convertedPDFs = currentItems
-                    LibraryService.shared.items = currentItems
                     Logger.shared.log("Library Scanned: Found \(genuinelyNew.count) new files (mode: \(addedByMode?.rawValue ?? "Pro"))", category: "Library")
                     manager.saveLibrary()
                 }
