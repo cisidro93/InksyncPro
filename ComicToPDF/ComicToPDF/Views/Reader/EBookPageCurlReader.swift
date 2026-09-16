@@ -105,6 +105,13 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         twoFingerTap.delegate = context.coordinator
         view.addGestureRecognizer(twoFingerTap)
 
+        // ── Apple Pencil Pro & Apple Pencil 2 native interaction (iPad only) ──
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            let pencilInteraction = UIPencilInteraction()
+            pencilInteraction.delegate = context.coordinator
+            view.addInteraction(pencilInteraction)
+        }
+
         // Single tap — handles left/center/right zones — fires instantly (< 5ms) on touch-up
         let singleTap = UITapGestureRecognizer(
             target: context.coordinator,
@@ -236,7 +243,7 @@ extension EBookPageCurlReader {
     // MARK: - Coordinator
     // ============================================================
     @MainActor
-    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate, WKNavigationDelegate, WKScriptMessageHandler, UIGestureRecognizerDelegate, PKCanvasViewDelegate {
+    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate, WKNavigationDelegate, WKScriptMessageHandler, UIGestureRecognizerDelegate, PKCanvasViewDelegate, UIPencilInteractionDelegate {
         var parent: EBookPageCurlReader
         weak var pageViewController: UIPageViewController?
         var isTransitioning: Bool = false {
@@ -1247,6 +1254,26 @@ extension EBookPageCurlReader {
             } else {
                 HapticEngine.light()
                 NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": "Nothing to Redo"])
+            }
+        }
+
+        // MARK: - UIPencilInteractionDelegate (iPad Apple Pencil 2 & Pencil Pro)
+        @MainActor func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+            InksyncInkingState.shared.toggleEraser()
+            HapticEngine.selection()
+            NotificationCenter.default.post(
+                name: NSNotification.Name("InksyncPro.ShowToast"),
+                object: nil,
+                userInfo: ["message": InksyncInkingState.shared.activeToolMode == .eraser ? "Eraser" : "Pen"]
+            )
+        }
+
+        @available(iOS 17.5, *)
+        @MainActor func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+            guard squeeze.phase == .ended else { return }
+            HapticEngine.selection()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                InksyncInkingState.shared.isDockMinimized.toggle()
             }
         }
 

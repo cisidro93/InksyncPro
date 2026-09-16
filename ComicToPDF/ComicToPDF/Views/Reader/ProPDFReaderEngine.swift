@@ -845,6 +845,7 @@ struct ProPDFReaderEngine: View {
             )
             .ignoresSafeArea()
 
+
             if isPencilMode {
                 VStack {
                     HStack {

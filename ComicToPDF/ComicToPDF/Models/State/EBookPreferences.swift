@@ -78,6 +78,9 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_showBatteryPercentage") var showBatteryPercentage: Bool = true
     @AppStorage("ebook_fullBleedSpreads") var fullBleedSpreads: Bool = true
     @AppStorage("ebook_linkCoverAsSpread") var linkCoverAsSpread: Bool = false
+    @AppStorage("volumeButtonsTurnPages") var volumeButtonsTurnPages: Bool = true {
+        didSet { objectWillChange.send() }
+    }
 
     // MARK: - Archive & Streaming Settings
     @AppStorage("useZeroCopyStreaming") var useZeroCopyStreaming: Bool = true {

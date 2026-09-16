@@ -301,7 +301,23 @@ struct ReaderView: View {
                     withAnimation { deviceOrientation = newOrientation }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageForward"))) { _ in
+                if isMangaMode { prevPage() } else { nextPage() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageBackward"))) { _ in
+                if isMangaMode { nextPage() } else { prevPage() }
+            }
+            .onAppear {
+                VolumeButtonPageTurnManager.shared.onVolumeUp = {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+                }
+                VolumeButtonPageTurnManager.shared.onVolumeDown = {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+                }
+                VolumeButtonPageTurnManager.shared.startListening()
+            }
             .onDisappear {
+                VolumeButtonPageTurnManager.shared.stopListening()
                 Logger.shared.log("ReaderView disappearing — flushing session for '\(fileURL.lastPathComponent)' at page \(currentPageIndex + 1)/\(pages.count)", category: "ReaderView", type: .info)
                 if let id = pdf?.id, pagesReadThisSession > 0 {
                     let elapsed = Date().timeIntervalSince(sessionStartTime)

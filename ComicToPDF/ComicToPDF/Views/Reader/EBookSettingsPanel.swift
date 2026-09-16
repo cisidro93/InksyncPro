@@ -1047,6 +1047,31 @@ struct EBookSettingsPanel: View {
                             isOn: $prefs.showBatteryPercentage
                         )
                     }
+
+                    Divider().padding(.leading, 44)
+
+                    ReaderSettingsToggleRow(
+                        label: "Volume Buttons Turn Pages",
+                        icon: "speaker.wave.2",
+                        isOn: $prefs.volumeButtonsTurnPages
+                    )
+                }
+            }
+
+            // Apple Pencil & Gestures (iPad Only)
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                ReaderSettingsSection(title: "Apple Pencil & Gestures", icon: "pencil.and.outline") {
+                    ReaderSettingsToggleRow(
+                        label: "Double-Tap to Toggle Eraser",
+                        icon: "pencil.slash",
+                        isOn: $prefs.applePencilAutoDraw
+                    )
+                    Divider().padding(.leading, 44)
+                    ReaderSettingsToggleRow(
+                        label: "Pencil Hover Feedback",
+                        icon: "hand.point.up.braille",
+                        isOn: $prefs.applePencilHoverEnabled
+                    )
                 }
             }
 

@@ -334,6 +334,18 @@ struct UnifiedReaderView: View {
                 ConversionManager.shared.updateContentType(for: pdf.id, to: .book)
             }
             logReaderRouting(trigger: "onAppear")
+
+            // Hardware volume buttons page turning (iPhone 1-handed & iPad hands-free)
+            VolumeButtonPageTurnManager.shared.onVolumeUp = {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            }
+            VolumeButtonPageTurnManager.shared.onVolumeDown = {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            }
+            VolumeButtonPageTurnManager.shared.startListening()
+        }
+        .onDisappear {
+            VolumeButtonPageTurnManager.shared.stopListening()
         }
         .readerKeyboardShortcuts(
             onNextPage: {

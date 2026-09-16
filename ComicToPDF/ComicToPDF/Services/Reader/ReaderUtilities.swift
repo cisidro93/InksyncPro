@@ -125,7 +125,7 @@ final class SleepTimerManager: ObservableObject {
 
 /// Centralized reader layout and gesture constants (eliminates magic numbers)
 enum ReaderLayoutConstants {
-    static let brightnessZoneWidth: CGFloat = 30.0
+    static let brightnessZoneWidth: CGFloat = 38.0
     static let minBrightnessThreshold: CGFloat = 0.05
     static let maxBrightnessThreshold: CGFloat = 1.0
     static let defaultAnimationDuration: Double = 0.2
@@ -135,30 +135,93 @@ enum ReaderLayoutConstants {
 }
 
 /// Reusable edge brightness gesture zone (DRY principle — eliminates duplicate gesture code across readers)
+/// Features one-thumb vertical drag on iPhone & iPad bezel with a floating frosted-glass HUD
 struct EdgeBrightnessGestureZone: View {
     @State private var lastDragTranslationY: CGFloat = 0
+    @State private var showHUD: Bool = false
+    @State private var currentLevel: CGFloat = UIScreen.main.brightness
+    @State private var dismissTask: Task<Void, Never>? = nil
 
     var body: some View {
-        HStack {
-            Color.clear
-                .contentShape(Rectangle())
-                .frame(width: ReaderLayoutConstants.brightnessZoneWidth)
-                .allowsHitTesting(true)
-                .gesture(
-                    DragGesture(minimumDistance: 24)
-                        .onChanged { value in
-                            let delta = value.translation.height - lastDragTranslationY
-                            lastDragTranslationY = value.translation.height
-                            let currentBrightness = UIScreen.main.brightness
-                            let targetBrightness = max(
-                                ReaderLayoutConstants.minBrightnessThreshold,
-                                min(ReaderLayoutConstants.maxBrightnessThreshold, currentBrightness - delta * 0.001)
-                            )
-                            UIScreen.main.brightness = targetBrightness
+        ZStack(alignment: .leading) {
+            HStack {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: ReaderLayoutConstants.brightnessZoneWidth)
+                    .allowsHitTesting(true)
+                    .gesture(
+                        DragGesture(minimumDistance: 14)
+                            .onChanged { value in
+                                let delta = value.translation.height - lastDragTranslationY
+                                lastDragTranslationY = value.translation.height
+                                let currentBrightness = UIScreen.main.brightness
+                                let targetBrightness = max(
+                                    ReaderLayoutConstants.minBrightnessThreshold,
+                                    min(ReaderLayoutConstants.maxBrightnessThreshold, currentBrightness - delta * 0.002)
+                                )
+                                UIScreen.main.brightness = targetBrightness
+                                currentLevel = targetBrightness
+
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                    showHUD = true
+                                }
+
+                                dismissTask?.cancel()
+                                dismissTask = Task { @MainActor in
+                                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                        showHUD = false
+                                    }
+                                }
+                            }
+                            .onEnded { _ in
+                                lastDragTranslationY = 0
+                            }
+                    )
+                Spacer()
+            }
+
+            if showHUD {
+                HStack {
+                    VStack(spacing: 8) {
+                        Image(systemName: currentLevel < 0.3 ? "sun.min.fill" : (currentLevel < 0.7 ? "sun.max.fill" : "sun.max.trianglebadge.exclamationmark.fill"))
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Color.yellow)
+
+                        GeometryReader { geo in
+                            ZStack(alignment: .bottom) {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.18))
+                                    .frame(width: 4)
+
+                                Capsule()
+                                    .fill(Color.yellow)
+                                    .frame(width: 4, height: max(2, geo.size.height * currentLevel))
+                            }
                         }
-                        .onEnded { _ in lastDragTranslationY = 0 }
-                )
-            Spacer()
+                        .frame(width: 4, height: 64)
+
+                        Text("\(Int(currentLevel * 100))%")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 12)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+                    )
+                    .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+                    .padding(.leading, 16)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+
+                    Spacer()
+                }
+                .allowsHitTesting(false)
+                .zIndex(99)
+            }
         }
+        .ignoresSafeArea()
     }
 }

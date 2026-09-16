@@ -168,6 +168,20 @@ struct ReaderSettingsHUD: View {
                         icon: "rectangle.split.2x1",
                         isOn: $prefersTwoUpSpreads
                     )
+                    toggleRow(
+                        title: "Volume Buttons Turn Pages",
+                        description: "Use hardware volume buttons for fatigue-free one-handed reading",
+                        icon: "speaker.wave.2",
+                        isOn: $prefs.volumeButtonsTurnPages
+                    )
+                    if UIDevice.current.userInterfaceIdiom == .pad {
+                        toggleRow(
+                            title: "Apple Pencil Double-Tap",
+                            description: "Switch between inking tool and eraser",
+                            icon: "pencil.and.outline",
+                            isOn: $prefs.applePencilAutoDraw
+                        )
+                    }
                 }
                 .padding(.horizontal, 14)
                 .padding(.bottom, 28)
