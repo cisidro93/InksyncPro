@@ -12,7 +12,7 @@ final class ReaderIdleTimerManager: ObservableObject {
 
     private var activeReaderCount: Int = 0
     private var heartbeatTask: Task<Void, Never>? = nil
-    private var observers: [NSObjectProtocol] = []
+    private var cancellables = Set<AnyCancellable>()
 
     private init() {
         setupObservers()
@@ -20,24 +20,20 @@ final class ReaderIdleTimerManager: ObservableObject {
 
     private func setupObservers() {
         // 1. Re-assert keep-awake immediately when Low Power Mode is toggled
-        let powerObserver = NotificationCenter.default.addObserver(
-            forName: Notification.Name.NSProcessInfoPowerStateDidChange,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.reassertKeepAwake()
-        }
-        observers.append(powerObserver)
+        NotificationCenter.default.publisher(for: Notification.Name.NSProcessInfoPowerStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.reassertKeepAwake()
+            }
+            .store(in: &cancellables)
 
         // 2. Re-assert keep-awake when returning from Control Center or multitasking
-        let activeObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.reassertKeepAwake()
-        }
-        observers.append(activeObserver)
+        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.reassertKeepAwake()
+            }
+            .store(in: &cancellables)
     }
 
     /// Call when a reader view appears
@@ -95,11 +91,5 @@ final class ReaderIdleTimerManager: ObservableObject {
     private func stopHeartbeat() {
         heartbeatTask?.cancel()
         heartbeatTask = nil
-    }
-
-    deinit {
-        for obs in observers {
-            NotificationCenter.default.removeObserver(obs)
-        }
     }
 }
