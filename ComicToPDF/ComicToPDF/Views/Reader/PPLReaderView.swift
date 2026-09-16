@@ -170,6 +170,7 @@ struct PPLReaderView: View {
             )
             .scaleEffect(scale)
             .offset(x: offset.width + dragOffset.width,
+                    y: offset.height + dragOffset.height)
         }
         .gesture((isDrawingMode && !(UIDevice.current.userInterfaceIdiom == .pad && settingsManager.conversionSettings.pencilOnlyDrawing)) ? nil : zoomGesture(geo: geo))
         .simultaneousGesture((isDrawingMode && !(UIDevice.current.userInterfaceIdiom == .pad && settingsManager.conversionSettings.pencilOnlyDrawing)) ? nil : swipeAndPanGesture(geo: geo))
