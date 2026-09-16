@@ -210,9 +210,9 @@ class PhysicalFileSystemRouter {
                     
                     PhysicalFileSystemRouter.excludeFromBackup(at: resolvedDestURL)
                     
-                    let canonicalDest = resolvedDestURL.resolvingSymlinksInPath().path.lowercased()
+                    let canonicalDest = resolvedDestURL.fastCanonicalPath
                     let alreadyTracked = manager.convertedPDFs.indices.contains { otherIdx in
-                        otherIdx != i && manager.convertedPDFs[otherIdx].url.resolvingSymlinksInPath().path.lowercased() == canonicalDest
+                        otherIdx != i && manager.convertedPDFs[otherIdx].url.fastCanonicalPath == canonicalDest
                     }
                     
                     if isRedundantDuplicate || alreadyTracked {

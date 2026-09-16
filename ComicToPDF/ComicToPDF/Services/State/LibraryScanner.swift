@@ -79,7 +79,7 @@ actor LibraryScanner {
                 } else {
                     rels.insert(relativePath(for: pdf.url))
                 }
-                paths.insert(pdf.url.resolvingSymlinksInPath().path.lowercased())
+                paths.insert(pdf.url.fastCanonicalPath)
                 let fn = normalizeFilename(pdf.url.lastPathComponent)
                 filenames.insert(fn)
                 if pdf.fileSize > 0 {
@@ -114,7 +114,7 @@ actor LibraryScanner {
 
                 let filename = normalizeFilename(fileURL.lastPathComponent)
                 let relPath = relativePath(for: fileURL)
-                let canonicalPath = fileURL.resolvingSymlinksInPath().path.lowercased()
+                let canonicalPath = fileURL.fastCanonicalPath
                 
                 // Exact path and filename duplicate protection: Skip if this exact file is already loaded in memory
                 if existingFilenames.contains(filename) || existingRelPaths.contains(relPath) || existingCanonicalPaths.contains(canonicalPath) {
@@ -266,10 +266,10 @@ actor LibraryScanner {
         if !finalNewPDFs.isEmpty {
             await MainActor.run {
                 var currentItems = manager.convertedPDFs
-                var seen = Set(currentItems.map { $0.url.resolvingSymlinksInPath().path.lowercased() })
+                var seen = Set(currentItems.map { $0.url.fastCanonicalPath })
                 var genuinelyNew: [ConvertedPDF] = []
                 for newPDF in finalNewPDFs {
-                    let path = newPDF.url.resolvingSymlinksInPath().path.lowercased()
+                    let path = newPDF.url.fastCanonicalPath
                     if !seen.contains(path) {
                         seen.insert(path)
                         genuinelyNew.append(newPDF)
@@ -363,7 +363,7 @@ actor LibraryScanner {
             if pruneYieldCount % 50 == 0 { await Task.yield() }
 
             if pdf.isLinked {
-                let canonicalLinked = pdf.url.resolvingSymlinksInPath().path.lowercased()
+                let canonicalLinked = pdf.url.fastCanonicalPath
                 if seenPaths.contains(canonicalLinked) {
                     missingIDs.insert(pdf.id)
                     continue
@@ -434,7 +434,7 @@ actor LibraryScanner {
                 repairedURLs[pdf.id] = resolvedURL
             }
 
-            let canonicalPath = resolvedURL.resolvingSymlinksInPath().path.lowercased()
+            let canonicalPath = resolvedURL.fastCanonicalPath
             let filename = resolvedURL.lastPathComponent.lowercased()
             let fingerprint = pdf.fileSize > 0 ? "\(pdf.fileSize)||\(filename)" : ""
 

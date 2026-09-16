@@ -63,7 +63,7 @@ class LibraryPersistenceManager {
                 var seenPaths = Set<String>()
                 var seenFingerprints = Set<String>()
                 for pdf in legacyPDFs {
-                    let canonicalPath = pdf.url.resolvingSymlinksInPath().path.lowercased()
+                    let canonicalPath = pdf.url.fastCanonicalPath
                     let filename = normalizeFilename(pdf.url.lastPathComponent)
                     let fingerprint = (pdf.fileSize > 0) ? "\(pdf.fileSize)||\(filename)" : canonicalPath
                     

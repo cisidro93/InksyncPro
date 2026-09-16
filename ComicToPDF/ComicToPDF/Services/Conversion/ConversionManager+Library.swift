@@ -14,12 +14,12 @@ extension ConversionManager {
     // MARK: - Direct File Ingestion & Immediate Auto-Open
     @discardableResult
     func registerDirectFile(at fileURL: URL, autoOpen: Bool = true) -> ConvertedPDF {
-        let canonicalPath = fileURL.resolvingSymlinksInPath().path.lowercased()
+        let canonicalPath = fileURL.fastCanonicalPath
         let filename = fileURL.lastPathComponent.lowercased()
 
         // Check if this document is already loaded in memory
         if let existing = convertedPDFs.first(where: {
-            $0.url.resolvingSymlinksInPath().path.lowercased() == canonicalPath ||
+            $0.url.fastCanonicalPath == canonicalPath ||
             $0.url.lastPathComponent.lowercased() == filename
         }) {
             Logger.shared.log("ConversionManager.registerDirectFile: File already registered in library: '\(existing.name)' (ContentType: .\(existing.contentType.rawValue)). AutoOpen=\(autoOpen)", category: "Library", type: .info)

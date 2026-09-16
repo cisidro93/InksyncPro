@@ -73,7 +73,7 @@ class LibraryViewModel: ObservableObject {
         let progressMap = ReaderProgressTracker.shared.allProgress
         let progressSnapshot = Dictionary(uniqueKeysWithValues: progressMap.map { ($0.pdfID, $0) })
 
-        rebuilTask = Task.detached(priority: .background) { () async -> Void in
+        rebuilTask = Task.detached(priority: .userInitiated) { () async -> Void in
             guard !Task.isCancelled else { return }
 
             // Perform sorting and grouping on the background thread using helper
@@ -110,6 +110,10 @@ class LibraryViewModel: ObservableObject {
                 Logger.shared.log("Library Cache Rebuilt: \(finalItems.count) total UI groups rendered (Filter: \(filter.rawValue), Shelf: \(shelf.rawValue), Depth: \(folderID?.uuidString ?? "Root"))", category: "Library")
             }
         }
+    }
+
+    static nonisolated func fastCanonicalPath(_ url: URL) -> String {
+        url.fastCanonicalPath
     }
 
     static nonisolated func normalizeSeriesTitle(_ text: String) -> String {
@@ -170,10 +174,22 @@ class LibraryViewModel: ObservableObject {
         }
 
         // ✅ PHASE 2: Ensure all child collections of the current folder exist, even if empty
+        var collectionByNormalizedName: [String: PDFCollection] = [:]
         for collection in collections where collection.parentId == folderID {
             let colKey = "col_\(collection.id.uuidString)"
             groups[colKey] = SeriesGroup(id: collection.id.uuidString, title: collection.name, coverIssueID: collection.explicitCoverFileID, count: 0, issues: [])
+            collectionByNormalizedName[LibraryViewModel.normalizeSeriesTitle(collection.name)] = collection
+            collectionByNormalizedName[collection.name.lowercased()] = collection
         }
+
+        // Fast O(1) Sets for zero-delay in-memory duplicate detection (eliminates 200,000+ disk syscalls)
+        var groupSeenIDs: [String: Set<UUID>] = [:]
+        var groupSeenPaths: [String: Set<String>] = [:]
+        var groupSeenFingerprints: [String: Set<String>] = [:]
+
+        var singleSeenIDs = Set<UUID>()
+        var singleSeenPaths = Set<String>()
+        var singleSeenFingerprints = Set<String>()
 
         for (index, pdf) in sortedPDFs.enumerated() {
             guard !Task.isCancelled else { return [] }
@@ -217,17 +233,18 @@ class LibraryViewModel: ObservableObject {
             let isOrphan = pdf.collectionId == nil || (collectionByID[pdf.collectionId!] == nil && !collections.isEmpty)
             var inAnyGroup = false
             
+            let canonicalPath = LibraryViewModel.fastCanonicalPath(pdf.url)
+            let filename = pdf.url.lastPathComponent.lowercased()
+            let fingerprint = pdf.fileSize > 0 ? "\(pdf.fileSize)||\(filename)" : ""
+
             // 1. Process standard Publisher Series (Only at Root)
             if folderID == nil, let rawSeriesName = pdf.metadata.series, !rawSeriesName.isEmpty, isOrphan {
                 let seriesName = seriesAliases[rawSeriesName.lowercased()] ?? rawSeriesName
                 let normalizedSeries = LibraryViewModel.normalizeSeriesTitle(seriesName)
                 let lowerSeries = seriesName.lowercased()
                 
-                // If a custom collection with matching title exists at root, coalesce into collection key
-                let matchingCol = collections.first(where: { 
-                    $0.parentId == folderID && 
-                    (LibraryViewModel.normalizeSeriesTitle($0.name) == normalizedSeries || $0.name.lowercased() == lowerSeries)
-                })
+                // O(1) collection lookup
+                let matchingCol = collectionByNormalizedName[normalizedSeries] ?? collectionByNormalizedName[lowerSeries]
                 let targetKey = matchingCol != nil ? "col_\(matchingCol!.id.uuidString)" : "series_\(normalizedSeries)"
                 
                 if firstAppearanceIndex[targetKey] == nil { firstAppearanceIndex[targetKey] = index }
@@ -238,20 +255,18 @@ class LibraryViewModel: ObservableObject {
                     groups[targetKey] = SeriesGroup(id: matchingCol?.id.uuidString ?? seriesName, title: title, coverIssueID: coverID, count: 0, issues: [])
                 }
                 
-                let canonicalPath = pdf.url.resolvingSymlinksInPath().path.lowercased()
-                let filename = pdf.url.lastPathComponent.lowercased()
-                let fingerprint = pdf.fileSize > 0 ? "\(pdf.fileSize)||\(filename)" : ""
+                let alreadyInGroup = groupSeenIDs[targetKey]?.contains(pdf.id) == true ||
+                                     groupSeenPaths[targetKey]?.contains(canonicalPath) == true ||
+                                     (!fingerprint.isEmpty && groupSeenFingerprints[targetKey]?.contains(fingerprint) == true)
 
-                let isDuplicate = groups[targetKey]?.issues.contains { existing in
-                    if existing.id == pdf.id { return true }
-                    if existing.url.resolvingSymlinksInPath().path.lowercased() == canonicalPath { return true }
-                    if !fingerprint.isEmpty && existing.fileSize > 0 && "\(existing.fileSize)||\(existing.url.lastPathComponent.lowercased())" == fingerprint { return true }
-                    return false
-                } ?? false
-
-                if !isDuplicate {
+                if !alreadyInGroup {
                     groups[targetKey]?.issues.append(pdf)
                     groups[targetKey]?.count += 1
+                    groupSeenIDs[targetKey, default: []].insert(pdf.id)
+                    groupSeenPaths[targetKey, default: []].insert(canonicalPath)
+                    if !fingerprint.isEmpty {
+                        groupSeenFingerprints[targetKey, default: []].insert(fingerprint)
+                    }
                 }
                 inAnyGroup = true
             }
@@ -268,20 +283,18 @@ class LibraryViewModel: ObservableObject {
                         groups[colKey] = SeriesGroup(id: collection.id.uuidString, title: collection.name, coverIssueID: coverID, count: 0, issues: [])
                     }
                     
-                    let canonicalPath = pdf.url.resolvingSymlinksInPath().path.lowercased()
-                    let filename = pdf.url.lastPathComponent.lowercased()
-                    let fingerprint = pdf.fileSize > 0 ? "\(pdf.fileSize)||\(filename)" : ""
+                    let alreadyInGroup = groupSeenIDs[colKey]?.contains(pdf.id) == true ||
+                                         groupSeenPaths[colKey]?.contains(canonicalPath) == true ||
+                                         (!fingerprint.isEmpty && groupSeenFingerprints[colKey]?.contains(fingerprint) == true)
 
-                    let isDuplicate = groups[colKey]?.issues.contains { existing in
-                        if existing.id == pdf.id { return true }
-                        if existing.url.resolvingSymlinksInPath().path.lowercased() == canonicalPath { return true }
-                        if !fingerprint.isEmpty && existing.fileSize > 0 && "\(existing.fileSize)||\(existing.url.lastPathComponent.lowercased())" == fingerprint { return true }
-                        return false
-                    } ?? false
-
-                    if !isDuplicate {
+                    if !alreadyInGroup {
                         groups[colKey]?.issues.append(pdf)
                         groups[colKey]?.count += 1
+                        groupSeenIDs[colKey, default: []].insert(pdf.id)
+                        groupSeenPaths[colKey, default: []].insert(canonicalPath)
+                        if !fingerprint.isEmpty {
+                            groupSeenFingerprints[colKey, default: []].insert(fingerprint)
+                        }
                     }
                     inAnyGroup = true
                 } else if cid == folderID {
@@ -295,18 +308,15 @@ class LibraryViewModel: ObservableObject {
             
             // 3. Fallback to Singles if not in ANY group, and we are at the correct level
             if !inAnyGroup && (isOrphan ? folderID == nil : pdf.collectionId == folderID) {
-                let canonicalPath = pdf.url.resolvingSymlinksInPath().path.lowercased()
-                let filename = pdf.url.lastPathComponent.lowercased()
-                let fingerprint = pdf.fileSize > 0 ? "\(pdf.fileSize)||\(filename)" : ""
-
-                let isSingleDuplicate = singles.contains { existing in
-                    if existing.id == pdf.id { return true }
-                    if existing.url.resolvingSymlinksInPath().path.lowercased() == canonicalPath { return true }
-                    if !fingerprint.isEmpty && existing.fileSize > 0 && "\(existing.fileSize)||\(existing.url.lastPathComponent.lowercased())" == fingerprint { return true }
-                    return false
-                }
+                let isSingleDuplicate = singleSeenIDs.contains(pdf.id) ||
+                                        singleSeenPaths.contains(canonicalPath) ||
+                                        (!fingerprint.isEmpty && singleSeenFingerprints.contains(fingerprint))
 
                 if !isSingleDuplicate {
+                    singleSeenIDs.insert(pdf.id)
+                    singleSeenPaths.insert(canonicalPath)
+                    if !fingerprint.isEmpty { singleSeenFingerprints.insert(fingerprint) }
+                    
                     let singleKey = "single_\(pdf.id)"
                     if firstAppearanceIndex[singleKey] == nil { firstAppearanceIndex[singleKey] = index }
                     singles.append(pdf)
@@ -355,24 +365,22 @@ class LibraryViewModel: ObservableObject {
                 ]
                 for overlappingSeriesKey in candidateKeys {
                     if let orphanSeries = groups[overlappingSeriesKey] {
-                        // Merge the items into the collection group!
+                        var existingIDs = groupSeenIDs[key] ?? Set(mutableGroup.issues.map(\.id))
+                        var existingPaths = groupSeenPaths[key] ?? Set(mutableGroup.issues.map { LibraryViewModel.fastCanonicalPath($0.url) })
                         for issue in orphanSeries.issues {
-                            let canonicalPath = issue.url.resolvingSymlinksInPath().path.lowercased()
-                            let filename = issue.url.lastPathComponent.lowercased()
-                            let fingerprint = issue.fileSize > 0 ? "\(issue.fileSize)||\(filename)" : ""
-
-                            let alreadyHasIssue = mutableGroup.issues.contains { existing in
-                                if existing.id == issue.id { return true }
-                                if existing.url.resolvingSymlinksInPath().path.lowercased() == canonicalPath { return true }
-                                if !fingerprint.isEmpty && existing.fileSize > 0 && "\(existing.fileSize)||\(existing.url.lastPathComponent.lowercased())" == fingerprint { return true }
-                                return false
-                            }
+                            let canonicalPath = LibraryViewModel.fastCanonicalPath(issue.url)
+                            let alreadyHasIssue = existingIDs.contains(issue.id) ||
+                                                  existingPaths.contains(canonicalPath)
 
                             if !alreadyHasIssue {
                                 mutableGroup.issues.append(issue)
                                 mutableGroup.count += 1
+                                existingIDs.insert(issue.id)
+                                existingPaths.insert(canonicalPath)
                             }
                         }
+                        groupSeenIDs[key] = existingIDs
+                        groupSeenPaths[key] = existingPaths
                         groups[key] = mutableGroup
                         keysToRemove.append(overlappingSeriesKey)
                         break

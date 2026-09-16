@@ -168,6 +168,9 @@ class MigrationService {
     }
     
     func migrateLegacyAnnotations(context: ModelContext) {
+        guard !UserDefaults.standard.bool(forKey: "didMigrateLegacyAnnotations_v1") else { return }
+        UserDefaults.standard.set(true, forKey: "didMigrateLegacyAnnotations_v1")
+        
         let descriptor = FetchDescriptor<SDAnnotation>()
         guard let annotations = try? context.fetch(descriptor) else { return }
         

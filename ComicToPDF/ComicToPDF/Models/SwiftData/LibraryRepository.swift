@@ -39,9 +39,8 @@ actor LibraryModelActor {
         let isNewSandbox = !currentSandboxPath.isEmpty && lastSandboxPath != currentSandboxPath
         
         for doc in documents {
-            let canonicalURL = doc.url.resolvingSymlinksInPath()
-            let normalizedPath = canonicalURL.path.lowercased()
-            let filename = canonicalURL.lastPathComponent.lowercased()
+            let normalizedPath = doc.url.fastCanonicalPath
+            let filename = doc.url.lastPathComponent.lowercased()
             let fingerprint = doc.fileSize > 0 ? "\(doc.fileSize)||\(filename)" : ""
             
             if seenPaths.contains(normalizedPath) || (!fingerprint.isEmpty && seenFingerprints.contains(fingerprint)) {
@@ -144,9 +143,8 @@ actor LibraryModelActor {
             }
             
             if foundReanchor, let finalURL = checkURL {
-                let canonicalFinal = finalURL.resolvingSymlinksInPath()
-                let reanchoredPath = canonicalFinal.path.lowercased()
-                let reanchoredFilename = canonicalFinal.lastPathComponent.lowercased()
+                let reanchoredPath = finalURL.fastCanonicalPath
+                let reanchoredFilename = finalURL.lastPathComponent.lowercased()
                 let reanchoredFingerprint = doc.fileSize > 0 ? "\(doc.fileSize)||\(reanchoredFilename)" : ""
                 
                 if seenPaths.contains(reanchoredPath) || (!reanchoredFingerprint.isEmpty && seenFingerprints.contains(reanchoredFingerprint)) {

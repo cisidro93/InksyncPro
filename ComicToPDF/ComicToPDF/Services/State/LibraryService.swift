@@ -29,7 +29,7 @@ final class LibraryService: ObservableObject {
             var seenPaths = Set<String>()
             var seenFingerprints = Set<String>()
             for item in loadedItems {
-                let canonicalPath = item.url.resolvingSymlinksInPath().path.lowercased()
+                let canonicalPath = LibraryViewModel.fastCanonicalPath(item.url)
                 let filename = normalizeFilename(item.url.lastPathComponent)
                 let fingerprint = (item.fileSize > 0) ? "\(item.fileSize)||\(filename)" : canonicalPath
                 
@@ -43,8 +43,10 @@ final class LibraryService: ObservableObject {
             if uniqueItems.count < loadedItems.count {
                 Logger.shared.log("LibraryService: Purged \(loadedItems.count - uniqueItems.count) duplicate items from startup load.", category: "Library", type: .warning)
                 self.items = uniqueItems
-                try? await LibraryRepository.shared.sync(pdfs: uniqueItems, collections: loadedCollections)
-                await LibraryDatabaseService.shared.save(uniqueItems)
+                Task.detached(priority: .background) {
+                    try? await LibraryRepository.shared.sync(pdfs: uniqueItems, collections: loadedCollections)
+                    await LibraryDatabaseService.shared.save(uniqueItems)
+                }
             } else {
                 self.items = loadedItems
             }
