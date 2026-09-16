@@ -172,10 +172,16 @@ struct PPLReaderView: View {
             .offset(x: offset.width + dragOffset.width,
                     y: offset.height + dragOffset.height)
         }
-        .gesture((isDrawingMode && !(UIDevice.current.userInterfaceIdiom == .pad && settingsManager.conversionSettings.pencilOnlyDrawing)) ? nil : zoomGesture(geo: geo))
-        .simultaneousGesture((isDrawingMode && !(UIDevice.current.userInterfaceIdiom == .pad && settingsManager.conversionSettings.pencilOnlyDrawing)) ? nil : swipeAndPanGesture(geo: geo))
-        .onTapGesture(count: 2) { loc in handleDoubleTap(at: loc, geo: geo) }
-        .onTapGesture              { loc in handleSingleTap(at: loc, geo: geo) }
+        .gesture(zoomGesture(geo: geo), including: areNavigationGesturesEnabled ? .all : .none)
+        .simultaneousGesture(swipeAndPanGesture(geo: geo), including: areNavigationGesturesEnabled ? .all : .none)
+        .onTapGesture(count: 2) { loc in
+            guard areNavigationGesturesEnabled else { return }
+            handleDoubleTap(at: loc, geo: geo)
+        }
+        .onTapGesture { loc in
+            guard areNavigationGesturesEnabled else { return }
+            handleSingleTap(at: loc, geo: geo)
+        }
         .overlay(alignment: .bottom) {
             // Guided Reading panel progress indicator
             if isGuidedReadingActive && !guidedPanels.isEmpty {
@@ -200,6 +206,17 @@ struct PPLReaderView: View {
                 .animation(.spring(response: 0.35, dampingFraction: 0.8), value: guidedPanelIndex)
             }
         }
+    }
+
+    private var areNavigationGesturesEnabled: Bool {
+        if isDrawingMode {
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let pencilOnly = settingsManager.conversionSettings.pencilOnlyDrawing
+            if !isPad || !pencilOnly {
+                return false
+            }
+        }
+        return true
     }
 
     // MARK: - Current Content
