@@ -78,6 +78,25 @@ public struct InksyncPenDockView: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isMinimized)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showColorPalette)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showWidthSlider)
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncDodgePenDock"))) { _ in
+            if !isMinimized {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    isMinimized = true
+                    inkingState.isDockMinimized = true
+                }
+                HapticEngine.light()
+            }
+        }
+        .onChange(of: inkingState.isDockMinimized) { _, newVal in
+            if isMinimized != newVal {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    isMinimized = newVal
+                }
+            }
+        }
+        .onAppear {
+            isMinimized = inkingState.isDockMinimized
+        }
         .alert("Clear Page Markup?", isPresented: $showClearConfirmation) {
             Button("Clear All", role: .destructive) {
                 onClearPage?()
@@ -97,6 +116,7 @@ public struct InksyncPenDockView: View {
             Button {
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
                     isMinimized = true
+                    inkingState.isDockMinimized = true
                 }
                 HapticEngine.light()
             } label: {
@@ -489,6 +509,7 @@ public struct InksyncPenDockView: View {
         Button {
             withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
                 isMinimized = false
+                inkingState.isDockMinimized = false
             }
             HapticEngine.medium()
         } label: {

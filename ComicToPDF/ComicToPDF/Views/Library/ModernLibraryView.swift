@@ -33,6 +33,7 @@ struct ModernLibraryView: View {
     }
     @AppStorage("libraryViewStyle") private var viewStyle: LibraryViewStyle = .grid
     @AppStorage("dismissCharacterReviewBanner") private var dismissCharacterReviewBanner = false
+    @State private var dismissContinueReadingCard: Bool = false
     @AppStorage("libraryTapAction") private var tapAction: LibraryTapAction = .read
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     @AppStorage("libraryHeaderPinMode") private var headerPinModeRaw: String = HeaderPinMode.auto.rawValue
@@ -1047,7 +1048,27 @@ struct ModernLibraryView: View {
                 selected: $viewModel.contentShelf,
                 counts: contentShelfCounts
             )
-            .padding(.bottom, 12)
+            .padding(.bottom, 8)
+
+            // ── Continue Reading Launch Card ───────────────────────────────────
+            if let recent = activeRecentBookAndProgress {
+                ContinueReadingLaunchCard(
+                    pdf: recent.pdf,
+                    progress: recent.progress,
+                    onResume: {
+                        AppRouter.shared.presentFullScreen(.read(recent.pdf))
+                    },
+                    onDismiss: {
+                        dismissContinueReadingCard = true
+                    }
+                )
+                .padding(.horizontal, hSizeClass == .regular ? 16 : 14)
+                .padding(.bottom, 12)
+                .transition(.asymmetric(
+                    insertion: .scale(scale: 0.96).combined(with: .opacity),
+                    removal: .opacity
+                ))
+            }
 
 
             if !dismissCharacterReviewBanner, MetadataMatchService.shared.activeClusters.contains(where: {
@@ -1142,6 +1163,19 @@ struct ModernLibraryView: View {
     // PERF D-H2: reviewCount moved to @State (cachedReviewCount), rebuilt in
     // rebuildNativeCache(). Left as a private accessor for any legacy call sites.
     private var reviewCount: Int { cachedReviewCount }
+
+    private var activeRecentBookAndProgress: (pdf: ConvertedPDF, progress: ReadingProgress)? {
+        guard !dismissContinueReadingCard, !isSearchActive, currentFolder == nil else { return nil }
+        for session in ReaderProgressTracker.shared.recentSessions() {
+            if session.completionFraction < 0.99 && (session.totalPagesRead > 0 || session.currentPageIndex > 0) {
+                if let match = cachedVisiblePDFs.first(where: { $0.id == session.pdfID })
+                    ?? conversionManager.convertedPDFs.first(where: { $0.id == session.pdfID }) {
+                    return (match, session)
+                }
+            }
+        }
+        return nil
+    }
 
     private var contentShelfCounts: [ContentShelf: Int] {
         var counts: [ContentShelf: Int] = [.all: 0, .comics: 0, .manga: 0, .books: 0, .converted: 0]

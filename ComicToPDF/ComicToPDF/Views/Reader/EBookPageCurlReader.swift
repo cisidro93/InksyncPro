@@ -482,6 +482,12 @@ extension EBookPageCurlReader {
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            if let tap = gestureRecognizer as? UITapGestureRecognizer, tap.numberOfTouchesRequired >= 2 {
+                return true
+            }
+            if let otherTap = otherGestureRecognizer as? UITapGestureRecognizer, otherTap.numberOfTouchesRequired >= 2 {
+                return true
+            }
             // UIPageViewController's pan gesture should NEVER recognize simultaneously with
             // WebKit selection, handle adjustment, loupe, or text editing gestures.
             if gestureRecognizer is UIPanGestureRecognizer || otherGestureRecognizer is UIPanGestureRecognizer {
@@ -1244,15 +1250,6 @@ extension EBookPageCurlReader {
             }
         }
 
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-            if let tap = gestureRecognizer as? UITapGestureRecognizer, tap.numberOfTouchesRequired >= 2 {
-                return true
-            }
-            if let otherTap = otherGestureRecognizer as? UITapGestureRecognizer, otherTap.numberOfTouchesRequired >= 2 {
-                return true
-            }
-            return false
-        }
 
         @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {
             guard let view = gesture.view, let pvc = pageViewController else { return }

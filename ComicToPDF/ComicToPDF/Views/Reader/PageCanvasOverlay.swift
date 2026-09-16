@@ -139,6 +139,18 @@ final class PassthroughPKCanvasView: PKCanvasView {
             }
         }
 
+        // Bottom pen dock corridor: When drawing or inking near the bottom 140pt of the window,
+        // automatically collapse the floating pen dock to its minimal pill so it never obscures annotations!
+        if let window = self.window {
+            let windowPoint = self.convert(point, to: window)
+            if windowPoint.y > window.bounds.height - 140 {
+                if !InksyncInkingState.shared.isDockMinimized {
+                    InksyncInkingState.shared.triggerDockAutoDodge()
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncDodgePenDock"), object: nil)
+                }
+            }
+        }
+
         // In write, eraser, or coloring mode, capture touch directly for PKCanvasView
         if let hit = super.hitTest(point, with: event) {
             return hit

@@ -194,8 +194,18 @@ public final class InksyncInkingState: ObservableObject {
     }
 
     @Published public var isDockVisible: Bool = true
+    @Published public var isDockMinimized: Bool = false
     @Published public var dockEdge: InksyncDockEdge = .bottom
     @Published public var eraserType: PKEraserTool.EraserType = .vector
+
+    /// Automatically dodges and collapses the pen dock when strokes approach the bottom margin
+    public func triggerDockAutoDodge() {
+        guard !isDockMinimized else { return }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+            isDockMinimized = true
+        }
+        HapticEngine.light()
+    }
 
     /// Digital Coloring Studio Mode: activates transparent lineart preservation
     /// and expands the inking toolbar to full artist palette + artist inking tools.
