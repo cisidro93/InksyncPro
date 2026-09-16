@@ -698,6 +698,20 @@ extension EBookPageCurlReader {
                 }
             }
 
+            if let active = pvc.viewControllers, active.count == safeVCs.count {
+                let matches = zip(active, safeVCs).allSatisfy { (act, target) in
+                    if let actPage = act as? EBookPageContentViewController, let targetPage = target as? EBookPageContentViewController {
+                        return actPage.pageIndex == targetPage.pageIndex
+                    }
+                    return act === target
+                }
+                if matches {
+                    self.mountPrimaryWebViewOnRoot()
+                    completion?(true)
+                    return
+                }
+            }
+
             pvc.setViewControllers(safeVCs, direction: direction, animated: animated) { [weak self] finished in
                 self?.mountPrimaryWebViewOnRoot()
                 completion?(finished)
@@ -847,6 +861,9 @@ extension EBookPageCurlReader {
             }
             saveCurrentDrawingImmediate()
             pencilCanvas?.isHidden = true
+            // Hide primary webview during interactive 3D page curl gesture so the
+            // underlying curling snapshot view controller is 100% visible with zero visual occlusion.
+            primaryWebView?.isHidden = true
         }
 
         func pageViewController(
@@ -877,7 +894,7 @@ extension EBookPageCurlReader {
             pruneSnapshotCache(around: targetPage)
             primaryWebView?.isHidden = true
             pencilCanvas?.isHidden = true
-            mountPrimaryWebViewOnRoot()
+            mountPrimaryWebViewOnRoot(reveal: false)
             loadDrawingForCurrentPage()
             // Reveal the WebView only after the JS column-position commit completes,
             // preventing any momentary flash of the wrong column position.
@@ -934,7 +951,7 @@ extension EBookPageCurlReader {
             }
         }
 
-        func mountPrimaryWebViewOnRoot() {
+        func mountPrimaryWebViewOnRoot(reveal: Bool = true) {
             guard let pvc = pageViewController, let wv = primaryWebView else { return }
             let bgColor = UIColor(hex: parent.prefs.activeTheme.cssBackground) ?? .black
             pvc.view.backgroundColor = bgColor
@@ -951,7 +968,9 @@ extension EBookPageCurlReader {
                 pvc.view.addSubview(wv)
             }
             pvc.view.bringSubviewToFront(wv)
-            wv.isHidden = false
+            if reveal {
+                wv.isHidden = false
+            }
 
             if let canvas = pencilCanvas {
                 canvas.clipsToBounds = true
@@ -963,7 +982,9 @@ extension EBookPageCurlReader {
                     pvc.view.addSubview(canvas)
                 }
                 pvc.view.bringSubviewToFront(canvas)
-                canvas.isHidden = false
+                if reveal {
+                    canvas.isHidden = false
+                }
             }
         }
 
@@ -1194,18 +1215,18 @@ extension EBookPageCurlReader {
                 return
             }
 
-            let location = gesture.location(in: view)
-            let width = view.bounds.width
+            let tapLocation = gesture.location(in: view)
+            let viewWidth = view.bounds.width
             let zones = tapZoneStyle.zones
 
             // Instantaneous edge turn: left or right page turn zones fire with zero asynchronous latency
-            if location.x < width * zones.leftEdge || location.x > width * zones.rightEdge {
-                performTapZoneAction(location: location, width: width, pvc: pvc)
+            if tapLocation.x < viewWidth * zones.leftEdge || tapLocation.x > viewWidth * zones.rightEdge {
+                performTapZoneAction(location: tapLocation, width: viewWidth, pvc: pvc)
                 return
             }
 
             guard let wv = primaryWebView else {
-                performTapZoneAction(location: location, width: width, pvc: pvc)
+                performTapZoneAction(location: tapLocation, width: viewWidth, pvc: pvc)
                 return
             }
 
@@ -1222,14 +1243,18 @@ extension EBookPageCurlReader {
                     var text = mark.textContent.trim();
                     return JSON.stringify({ type: "highlight", id: id, text: text });
                 }
-                if (el.closest('a') || el.tagName === 'A') return "link";
+                var link = el.closest ? el.closest('a[href]') : null;
+                if (link) {
+                    var href = link.getAttribute('href') || '';
+                    if (href.trim().length > 0 && !href.startsWith('#')) return "link";
+                }
                 if (el.closest('.footnote') || el.getAttribute('epub:type') === 'noteref' || el.getAttribute('epub:type') === 'footnote') return "footnote";
                 return "page";
             })();
             """
 
-            wv.evaluateJavaScript(checkJS) { [weak self, weak view, weak pvc] result, _ in
-                guard let self = self, let view = view, let pvc = pvc else { return }
+            wv.evaluateJavaScript(checkJS) { [weak self, weak pvc] result, _ in
+                guard let self = self, let pvc = pvc else { return }
                 let res = result as? String ?? "page"
                 if res == "selection" {
                     wv.evaluateJavaScript("window.getSelection().removeAllRanges();")
@@ -1255,8 +1280,7 @@ extension EBookPageCurlReader {
                     return
                 }
 
-                let loc = gesture.location(in: view)
-                self.performTapZoneAction(location: loc, width: view.bounds.width, pvc: pvc)
+                self.performTapZoneAction(location: tapLocation, width: viewWidth, pvc: pvc)
             }
         }
 
@@ -1291,6 +1315,7 @@ extension EBookPageCurlReader {
             if nextIndex < computedTotalPages {
                 HapticEngine.light()
                 let animate = (parent.prefs.pageTurnStyle != .instant)
+                lastCompletedControllerIndex = nextIndex
                 currentPageIndex = nextIndex
                 parent.currentPage = nextIndex
                 reportScrollFraction()
@@ -1318,6 +1343,7 @@ extension EBookPageCurlReader {
             if prevIndex >= 0 {
                 HapticEngine.light()
                 let animate = (parent.prefs.pageTurnStyle != .instant)
+                lastCompletedControllerIndex = prevIndex
                 currentPageIndex = prevIndex
                 parent.currentPage = prevIndex
                 reportScrollFraction()
@@ -1869,9 +1895,13 @@ extension EBookPageCurlReader {
 
             let pagedCSS = """
                 column-width: \(colWidth)px !important;
+                -webkit-column-width: \(colWidth)px !important;
                 column-gap: \(gap)px !important;
+                -webkit-column-gap: \(gap)px !important;
                 column-fill: auto !important;
+                -webkit-column-fill: auto !important;
                 column-rule: none !important;
+                -webkit-column-rule: none !important;
             """
 
             let windowScene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
@@ -2007,6 +2037,17 @@ extension EBookPageCurlReader {
             #inksync-viewport > * {
                 max-width: 100% !important;
                 box-sizing: border-box !important;
+            }
+            div, section, article, main, p, span, blockquote {
+                max-height: none !important;
+                overflow: visible !important;
+            }
+            div, section, article, main {
+                height: auto !important;
+                column-count: auto !important;
+                -webkit-column-count: auto !important;
+                column-width: auto !important;
+                -webkit-column-width: auto !important;
             }
             p, blockquote {
                 orphans: 2 !important;
@@ -2190,6 +2231,11 @@ extension EBookPageCurlReader {
                     }
                 }
                 applyPagePosition(animated);
+                try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.metrics) {
+                        window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
+                    }
+                } catch(e) {}
             }
             window.goToInksyncPage = goToPage;
 

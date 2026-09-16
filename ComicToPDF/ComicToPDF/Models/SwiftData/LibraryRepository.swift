@@ -443,9 +443,11 @@ final class LibraryRepository: Sendable {
     
     /// Asynchronously fetches all library items and collections from SwiftData background context using fast loading.
     func loadLibrary() async throws -> ([ConvertedPDF], [PDFCollection]) {
-        _ = try await actor.performSelfHealingAndCleanup()
         let pdfs = try await actor.fetchDocumentsFast()
         let cols = try await actor.fetchAllCollections()
+        Task.detached(priority: .utility) { [weak self] in
+            _ = try? await self?.actor.performSelfHealingAndCleanup()
+        }
         return (pdfs, cols)
     }
     

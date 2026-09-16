@@ -203,24 +203,26 @@ struct ContentView: View {
                 
                 // Always fetch the latest SwiftData on startup to ensure conversionManager matches the DB.
                 await LibraryService.shared.loadLibrary()
-                PhysicalFileSystemRouter.shared.purgeLegacyCachedCoversIfNeeded(manager: conversionManager)
                 
-                // Run smart grouping asynchronously on background actor context to avoid blocking the Main Actor on launch.
-                await LibraryService.shared.runSmartGrouping()
-                
-                await LibraryScanner.shared.scanLibrary(manager: conversionManager)
-                
-                await SandboxCleanupManager.shared.passiveScan()
-                await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
-                
-                // Enforce a minimum display duration of 0.5s for smooth animation
+                // Enforce a minimum display duration of 0.4s for smooth splash breathing animation
                 let elapsed = Date().timeIntervalSince(startTime)
-                if elapsed < 0.5 {
-                    try? await Task.sleep(for: .seconds(0.5 - elapsed))
+                if elapsed < 0.4 {
+                    try? await Task.sleep(for: .seconds(0.4 - elapsed))
                 }
                 
-                withAnimation(.spring(response: 0.7, dampingFraction: 0.8)) {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                     isAppLoading = false
+                }
+                
+                // Offload heavy scans, smart grouping, and disk maintenance to background task
+                Task.detached(priority: .utility) {
+                    await LibraryService.shared.runSmartGrouping()
+                    await LibraryScanner.shared.scanLibrary(manager: conversionManager)
+                    await SandboxCleanupManager.shared.passiveScan()
+                    await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
+                    await MainActor.run {
+                        PhysicalFileSystemRouter.shared.purgeLegacyCachedCoversIfNeeded(manager: conversionManager)
+                    }
                 }
                 
                 Task {

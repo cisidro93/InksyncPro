@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import SwiftData
 
 /// Unidirectional service manager holding the single source of truth for the library items and collections.
 @MainActor
@@ -11,7 +12,24 @@ final class LibraryService: ObservableObject {
     @Published var collections: [PDFCollection] = []
     @Published var virtualOmnibuses: [VirtualOmnibus] = []
     
-    private init() {}
+    private init() {
+        // Fast synchronous seeding from SwiftData mainContext to ensure zero-delay initial UI display
+        let descriptor = FetchDescriptor<SDConvertedPDF>()
+        if let docs = try? InksyncProApp.sharedModelContainer.mainContext.fetch(descriptor), !docs.isEmpty {
+            var uniqueItems: [ConvertedPDF] = []
+            var seenPaths = Set<String>()
+            for doc in docs {
+                let canonical = doc.url.resolvingSymlinksInPath().path.lowercased()
+                if !seenPaths.contains(canonical) {
+                    seenPaths.insert(canonical)
+                    uniqueItems.append(doc.toDTO())
+                }
+            }
+            self.items = uniqueItems
+            ConversionManager.shared.convertedPDFs = uniqueItems
+            ConversionManager.shared.isLibraryLoaded = true
+        }
+    }
     
     /// Loads the library from SwiftData repository into memory.
     func loadLibrary() async {

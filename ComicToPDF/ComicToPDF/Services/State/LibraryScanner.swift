@@ -265,9 +265,23 @@ actor LibraryScanner {
         let finalNewPDFs = newPDFs
         if !finalNewPDFs.isEmpty {
             await MainActor.run {
-                manager.convertedPDFs.append(contentsOf: finalNewPDFs)
-                Logger.shared.log("Library Scanned: Found \(finalNewPDFs.count) new files (mode: \(addedByMode?.rawValue ?? "Pro"))", category: "Library")
-                manager.saveLibrary()
+                var currentItems = manager.convertedPDFs
+                var seen = Set(currentItems.map { $0.url.resolvingSymlinksInPath().path.lowercased() })
+                var genuinelyNew: [ConvertedPDF] = []
+                for newPDF in finalNewPDFs {
+                    let path = newPDF.url.resolvingSymlinksInPath().path.lowercased()
+                    if !seen.contains(path) {
+                        seen.insert(path)
+                        genuinelyNew.append(newPDF)
+                    }
+                }
+                if !genuinelyNew.isEmpty {
+                    currentItems.append(contentsOf: genuinelyNew)
+                    manager.convertedPDFs = currentItems
+                    LibraryService.shared.items = currentItems
+                    Logger.shared.log("Library Scanned: Found \(genuinelyNew.count) new files (mode: \(addedByMode?.rawValue ?? "Pro"))", category: "Library")
+                    manager.saveLibrary()
+                }
             }
             await LibraryService.shared.runSmartGrouping()
         }
