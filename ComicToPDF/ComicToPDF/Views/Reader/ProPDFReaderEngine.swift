@@ -98,25 +98,15 @@ struct ProPDFReaderEngine: View {
     }
 
     private func startChromeIdleTimer() {
+        // Keep chrome active while navigating; dismissal is explicit by tapping reading canvas
         chromeIdleTask?.cancel()
-        chromeIdleTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
-            guard !Task.isCancelled else { return }
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                chromeVisible = false
-            }
-        }
     }
 
     private func toggleChrome() {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             chromeVisible.toggle()
         }
-        if chromeVisible {
-            startChromeIdleTimer()
-        } else {
-            chromeIdleTask?.cancel()
-        }
+        chromeIdleTask?.cancel()
     }
 
     private func showToastMessage(_ message: String) {

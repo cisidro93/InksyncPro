@@ -1662,8 +1662,7 @@ struct ComicReaderEngine: View {
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                     chromeVisible.toggle()
                                 }
-                                // Phase 4A: start / reset 4-second auto-hide timer
-                                if chromeVisible { startChromeIdleTimer() }
+                                chromeIdleTask?.cancel()
                                 NotificationCenter.default.post(name: NSNotification.Name("Reader_ForceKeyFocus"), object: nil)
                             },
                             onFlipPastEnd: { attemptComicSeriesContinuation() }
@@ -2031,11 +2030,7 @@ struct ComicReaderEngine: View {
                         activeFilterPreset: activeFilterPreset,
                         onAppearAction: {
                             currentIndex = index
-                            if chromeVisible {
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    chromeVisible = false
-                                }
-                            }
+                            // Keep chrome active while scrolling / navigating through Webtoon mode
                         }
                     )
                 }
@@ -2063,9 +2058,7 @@ struct ComicReaderEngine: View {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 chromeVisible.toggle()
             }
-            if chromeVisible {
-                startChromeIdleTimer()
-            }
+            chromeIdleTask?.cancel()
         }
     }
     
@@ -2439,14 +2432,9 @@ struct ComicReaderEngine: View {
     }
 
     /// Phase 4A: Start (or restart) the 4-second idle timer that auto-hides the chrome.
-    /// Cancels any in-flight timer so rapid taps don't stack timers.
+    /// Keep chrome active while navigating; dismissal is explicit by tapping reading canvas.
     private func startChromeIdleTimer() {
         chromeIdleTask?.cancel()
-        chromeIdleTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_000_000_000) // 4 seconds
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.3)) { chromeVisible = false }
-        }
     }
 
 

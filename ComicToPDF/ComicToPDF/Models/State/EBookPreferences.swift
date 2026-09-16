@@ -73,6 +73,14 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_autoScroll")     var autoScroll: Bool        = false
     @AppStorage("ebook_autoScrollSpeed") var autoScrollSpeed: Double = 1.0  // multiplier
     @AppStorage("ebook_showReadingSpeedStats") var showReadingSpeedStats: Bool = false
+
+    // MARK: - Display Idle Timer / Always-On
+    @AppStorage("ebook_keepScreenAwakeWhileReading") var keepScreenAwakeWhileReading: Bool = true {
+        didSet {
+            objectWillChange.send()
+            ReaderIdleTimerManager.shared.reassertKeepAwake()
+        }
+    }
     @AppStorage("ebook_readingSpeedWPM") var readingSpeedWPM: Double = 250.0
     @AppStorage("ebook_showClockHeader") var showClockHeader: Bool = true
     @AppStorage("ebook_showBatteryPercentage") var showBatteryPercentage: Bool = true

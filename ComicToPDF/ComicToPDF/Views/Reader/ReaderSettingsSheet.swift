@@ -394,6 +394,12 @@ struct ReaderSettingsSheet: View {
                 icon: "hand.tap.fill",
                 isOn: $backTapEnabled
             )
+            Divider().padding(.leading, 44)
+            SettingsToggleRow(
+                label: "Keep Screen Awake",
+                icon: "sun.max.fill",
+                isOn: $prefs.keepScreenAwakeWhileReading
+            )
         }
     }
 

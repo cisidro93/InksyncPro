@@ -50,14 +50,8 @@ struct EBookReaderView: View {
     @State private var hudIdleTask: Task<Void, Never>? = nil
 
     private func startHUDIdleTimer(delay: UInt64 = 3_500_000_000) {
+        // Keep HUD active while navigating; dismissal is explicit by tapping reading canvas
         hudIdleTask?.cancel()
-        hudIdleTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: delay)
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.25)) {
-                showHUD = false
-            }
-        }
     }
 
     private func dismissHUD() {
@@ -72,11 +66,7 @@ struct EBookReaderView: View {
         withAnimation(.easeInOut(duration: 0.2)) {
             showHUD.toggle()
         }
-        if showHUD {
-            startHUDIdleTimer()
-        } else {
-            hudIdleTask?.cancel()
-        }
+        hudIdleTask?.cancel()
     }
     @State private var errorMessage: String?
     @State private var loadDiagnosticReport: DocumentDiagnosticReport? = nil
@@ -206,7 +196,7 @@ struct EBookReaderView: View {
                                 onNext:      nextChapter,
                                 onPrev:      prevChapter,
                                 onCenterTap: toggleHUD,
-                                onPageTurn:  dismissHUD,
+                                onPageTurn:  { /* Keep HUD active while navigating */ },
                                 isHUDShowing: showHUD,
                                 onHighlightCreated: { selectedText in
                                     guard !isApplyingHighlightDirectly else { return }
@@ -267,7 +257,7 @@ struct EBookReaderView: View {
                                 onNext:      nextChapter,
                                 onPrev:      prevChapter,
                                 onCenterTap: toggleHUD,
-                                onPageTurn:  dismissHUD,
+                                onPageTurn:  { /* Keep HUD active while navigating */ },
                                 onHighlightCreated: { selectedText in
                                     guard let p = pdf else { return }
                                     let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
@@ -362,9 +352,6 @@ struct EBookReaderView: View {
         }
         // FIX 4: Save scroll fraction whenever the chapter page changes
         .onChange(of: chapterPage) { _, _ in
-            if showHUD {
-                dismissHUD()
-            }
             saveProgress()
             velocityEngine.recordPageTurn()
             Task {
@@ -849,7 +836,6 @@ struct EBookReaderView: View {
     
     // MARK: - Navigation
     private func nextChapter() {
-        dismissHUD()
         if currentIndex >= totalChapters - 1 {
             // Last chapter — try to jump to next volume in series
             attemptSeriesContinuation()
@@ -875,7 +861,6 @@ struct EBookReaderView: View {
     }
 
     private func prevChapter() {
-        dismissHUD()
         guard currentIndex > 0 else { return }
         HapticEngine.medium()
         isGoingForward = false

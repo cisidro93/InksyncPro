@@ -323,7 +323,16 @@ struct UnifiedReaderView: View {
                 AppRouter.shared.updateCurrentReaderBook(nextBook)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name.NSProcessInfoPowerStateDidChange)) { _ in
+            ReaderIdleTimerManager.shared.reassertKeepAwake()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            ReaderIdleTimerManager.shared.reassertKeepAwake()
+        }
         .onAppear {
+            // Assert display keep-awake (always-on mode across normal and Low Power Mode)
+            ReaderIdleTimerManager.shared.enterReader()
+
             // Auto-heal misclassified PDF books that were mistakenly tagged as comic without explicit user choice
             if isPDFDocument && pdf.contentType == .comic && pdf.metadata.hasFormatOverride != true {
                 ConversionManager.shared.updateContentType(for: pdf.id, to: .book)
@@ -345,6 +354,7 @@ struct UnifiedReaderView: View {
             VolumeButtonPageTurnManager.shared.startListening()
         }
         .onDisappear {
+            ReaderIdleTimerManager.shared.leaveReader()
             VolumeButtonPageTurnManager.shared.stopListening()
         }
         .readerKeyboardShortcuts(

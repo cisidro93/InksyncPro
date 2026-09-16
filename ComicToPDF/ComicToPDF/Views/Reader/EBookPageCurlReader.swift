@@ -1289,8 +1289,16 @@ extension EBookPageCurlReader {
                 return
             }
 
-            // If the reader HUD overlay is currently showing, any tap on the canvas immediately dismisses it
+            // If the reader HUD overlay is currently showing:
+            // Edge taps turn pages while keeping HUD active; center tap dismisses HUD.
             if parent.isHUDShowing {
+                let tapLocation = gesture.location(in: view)
+                let viewWidth = view.bounds.width
+                let zones = tapZoneStyle.zones
+                if tapLocation.x < viewWidth * zones.leftEdge || tapLocation.x > viewWidth * zones.rightEdge {
+                    performTapZoneAction(location: tapLocation, width: viewWidth, pvc: pvc)
+                    return
+                }
                 parent.onCenterTap()
                 return
             }

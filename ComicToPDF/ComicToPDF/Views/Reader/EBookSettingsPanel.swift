@@ -1117,6 +1117,12 @@ struct EBookSettingsPanel: View {
                         displayFormat: { String(format: "%.1f×", $0) }
                     )
                 }
+                Divider().padding(.leading, 44)
+                ReaderSettingsToggleRow(
+                    label: "Keep Screen Awake",
+                    icon: "sun.max.fill",
+                    isOn: $prefs.keepScreenAwakeWhileReading
+                )
             }
 
             // Tap Zone Layout (KOReader style)
