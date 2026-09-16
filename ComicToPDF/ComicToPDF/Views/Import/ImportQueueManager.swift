@@ -41,6 +41,19 @@ class ImportQueueManager: ObservableObject {
     // Debounce token — coalesces multiple rapid persist calls into one disk write.
     private var persistTask: Task<Void, Never>?
 
+    nonisolated static func isGenericFolder(_ name: String) -> Bool {
+        let genericContainers: Set<String> = [
+            "downloads", "inbox", "tmp", "temp", "comics", "documents", "desktop", "manga", 
+            "antigravity inksyncpro inbox", "inksyncpro inbox", "inksyncpro"
+        ]
+        let lower = name.lowercased()
+        return genericContainers.contains(lower)
+            || lower.contains("inbox")
+            || lower.contains("staging")
+            || lower.hasPrefix("folder_spider_")
+            || lower.hasPrefix("com.apple")
+    }
+
     // MARK: - Smart Stage (primary entry point)
 
     /// Stages new files after dedup check. Returns what was skipped.
@@ -51,23 +64,10 @@ class ImportQueueManager: ObservableObject {
         let libraryFilenames = Set(LibraryService.shared.items.map { $0.url.lastPathComponent })
 
         // 2. Fast pre-filters (no file I/O)
-        let genericContainers: Set<String> = [
-            "downloads", "inbox", "tmp", "temp", "comics", "documents", "desktop", "manga", 
-            "antigravity inksyncpro inbox", "inksyncpro inbox", "inksyncpro"
-        ]
-        func isGenericFolder(_ name: String) -> Bool {
-            let lower = name.lowercased()
-            return genericContainers.contains(lower)
-                || lower.contains("inbox")
-                || lower.contains("staging")
-                || lower.hasPrefix("folder_spider_")
-                || lower.hasPrefix("com.apple")
-        }
-
         let existingFilenames = Set(currentSnapshot.map { $0.lastPathComponent })
         let existingChapterKeys: Set<String> = Set(currentSnapshot.compactMap { url -> String? in
             let series = url.deletingLastPathComponent().lastPathComponent
-            guard !isGenericFolder(series), let ch = SeriesNameParser.chapterKey(from: url.lastPathComponent) else { return nil }
+            guard !Self.isGenericFolder(series), let ch = SeriesNameParser.chapterKey(from: url.lastPathComponent) else { return nil }
             return "\(series.lowercased()):\(ch)"
         })
 
@@ -87,7 +87,7 @@ class ImportQueueManager: ObservableObject {
                     dupes.append(url); continue
                 }
 
-                if !isGenericFolder(seriesFolder),
+                if !Self.isGenericFolder(seriesFolder),
                    let ch = SeriesNameParser.chapterKey(from: filename),
                    existingChapterKeys.contains("\(seriesFolder.lowercased()):\(ch)") {
                     dupes.append(url); continue
