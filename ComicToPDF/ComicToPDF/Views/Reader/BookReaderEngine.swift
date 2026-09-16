@@ -1219,11 +1219,17 @@ struct BookReaderEngine: View {
     
     var isMangaMode: Bool { pdf.metadata.isManga == true || pdf.contentType == .manga }
 
-private func computeColumnCount(for size: CGSize) -> Int {
+    private func computeColumnCount(for size: CGSize) -> Int {
         let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
         let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let isLandscape = renderWidth > renderHeight
+
+        // iPhone Portrait or compact Split View/Slide Over (width < 600): Strictly 1 column
+        if (!isPad && !isLandscape) || renderWidth < 600 {
+            return 1
+        }
+
         let defaultColumns = (isPad && isLandscape) ? 2 : 1
         return prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
     }

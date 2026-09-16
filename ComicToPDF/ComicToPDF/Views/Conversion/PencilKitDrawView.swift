@@ -7,8 +7,9 @@ struct PencilKitDrawView: UIViewRepresentable {
     @State var toolPicker = PKToolPicker()
     
     func makeUIView(context: Context) -> PKCanvasView {
-        // Essential configuration for an Apple Pencil optimized drawing environment
-        canvas.drawingPolicy = .pencilOnly // Important: Let fingers scroll/pan, pencil draws
+        // Essential configuration for an Apple Pencil optimized drawing environment (iPad uses pencilOnly, iPhone allows finger)
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        canvas.drawingPolicy = isPad ? .pencilOnly : .anyInput
         canvas.isOpaque = false // Allows underlying views (like comic pages) to show through
         canvas.backgroundColor = .clear
         canvas.delegate = context.coordinator

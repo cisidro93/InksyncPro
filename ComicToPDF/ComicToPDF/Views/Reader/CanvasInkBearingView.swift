@@ -10,9 +10,13 @@ struct CanvasInkBearingView: UIViewRepresentable {
     let pencilOnly: Bool
     var onDrawingSaved: ((PKDrawing) -> Void)?
 
+    private var effectivePencilOnly: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && pencilOnly
+    }
+
     func makeUIView(context: Context) -> PKCanvasView {
-        // Phase 4E-1: allow drawing based on setting (pencil only vs any input)
-        canvasView.drawingPolicy = pencilOnly ? .pencilOnly : .anyInput
+        // Phase 4E-1: allow drawing based on setting (pencil only on iPad vs any input on iPhone)
+        canvasView.drawingPolicy = effectivePencilOnly ? .pencilOnly : .anyInput
         canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
 
@@ -33,7 +37,7 @@ struct CanvasInkBearingView: UIViewRepresentable {
 
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
         uiView.isUserInteractionEnabled = isDrawingMode
-        uiView.drawingPolicy = isDrawingMode ? (pencilOnly ? .pencilOnly : .anyInput) : .pencilOnly
+        uiView.drawingPolicy = isDrawingMode ? (effectivePencilOnly ? .pencilOnly : .anyInput) : (effectivePencilOnly ? .pencilOnly : .anyInput)
 
         if isDrawingMode {
             uiView.becomeFirstResponder()

@@ -948,6 +948,8 @@ extension EBookPageCurlReader {
             if boundsChanged {
                 updateLiveStyles()
                 wv.evaluateJavaScript("if(window.computeMetrics) { computeMetrics(); applyPagePosition(false); }")
+                let vcs = spreadViewControllers(for: currentPageIndex)
+                safeSetViewControllers(vcs, direction: .forward, animated: false)
             }
         }
 

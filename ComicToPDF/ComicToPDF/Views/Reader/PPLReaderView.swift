@@ -170,11 +170,9 @@ struct PPLReaderView: View {
             )
             .scaleEffect(scale)
             .offset(x: offset.width + dragOffset.width,
-                    y: offset.height + dragOffset.height)
         }
-        // If drawing mode is on, we let PKCanvasView handle gestures and disable reader zoom/pan (unless Pencil-Only is active)
-        .gesture((isDrawingMode && !settingsManager.conversionSettings.pencilOnlyDrawing) ? nil : zoomGesture(geo: geo))
-        .simultaneousGesture((isDrawingMode && !settingsManager.conversionSettings.pencilOnlyDrawing) ? nil : swipeAndPanGesture(geo: geo))
+        .gesture((isDrawingMode && !(UIDevice.current.userInterfaceIdiom == .pad && settingsManager.conversionSettings.pencilOnlyDrawing)) ? nil : zoomGesture(geo: geo))
+        .simultaneousGesture((isDrawingMode && !(UIDevice.current.userInterfaceIdiom == .pad && settingsManager.conversionSettings.pencilOnlyDrawing)) ? nil : swipeAndPanGesture(geo: geo))
         .onTapGesture(count: 2) { loc in handleDoubleTap(at: loc, geo: geo) }
         .onTapGesture              { loc in handleSingleTap(at: loc, geo: geo) }
         .overlay(alignment: .bottom) {

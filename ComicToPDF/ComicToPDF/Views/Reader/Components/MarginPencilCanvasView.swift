@@ -94,9 +94,12 @@ struct PencilKitRepresentable: UIViewRepresentable {
     @Binding var canvasView: PKCanvasView
     @Binding var toolPicker: PKToolPicker
     var isPencilOnly: Bool
+    private var effectivePencilOnly: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && isPencilOnly
+    }
     
     func makeUIView(context: Context) -> PKCanvasView {
-        canvasView.drawingPolicy = isPencilOnly ? .pencilOnly : .anyInput
+        canvasView.drawingPolicy = effectivePencilOnly ? .pencilOnly : .anyInput
         canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
         
@@ -107,6 +110,6 @@ struct PencilKitRepresentable: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
-        uiView.drawingPolicy = isPencilOnly ? .pencilOnly : .anyInput
+        uiView.drawingPolicy = effectivePencilOnly ? .pencilOnly : .anyInput
     }
 }
