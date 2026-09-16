@@ -160,286 +160,191 @@ struct ReaderChrome: View {
     // MARK: - Body
 
     var body: some View {
-        VStack {
-            topBar
-                .offset(y: isVisible ? 0 : -12)
-                // Phase 4A: swipe downward on the top bar to dismiss the reader
-                .gesture(
-                    DragGesture(minimumDistance: 20)
-                        .onEnded { val in
-                            if val.translation.height > 80 {
-                                HapticEngine.light()
-                                onSwipeDown?()
+        ZStack {
+            if isVisible {
+                VStack(spacing: 0) {
+                    topBar
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .gesture(
+                            DragGesture(minimumDistance: 20)
+                                .onEnded { val in
+                                    if val.translation.height > 80 {
+                                        HapticEngine.light()
+                                        onSwipeDown?()
+                                    }
+                                }
+                        )
+
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                isVisible = false
                             }
                         }
-                )
 
-            Spacer()
-
-            bottomCard
-                .offset(y: isVisible ? 0 : 16)
+                    bottomBar
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                .ignoresSafeArea(edges: .vertical)
+            }
         }
-        .opacity(isVisible ? 1 : 0)
-        .allowsHitTesting(isVisible)
-        .animation(.spring(response: 0.42, dampingFraction: 0.88), value: isVisible)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isVisible)
     }
 
-    // MARK: - Top Bar
+    // MARK: - Top Bar (Clean EPUB-Standard Glass Gradient)
 
     private var topBar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 10) {
             // ── Back button ────────────────────────────────────────────────────
             Button(action: onBack) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
             }
-
-            // ── Divider ────────────────────────────────────────────────────────
-            chromeDivider
-
-            if isVisible, let startTime = sessionStartTime {
-                SessionTimerView(startTime: startTime)
-                
-                chromeDivider
-            }
+            .buttonStyle(.plain)
 
             // ── Title ──────────────────────────────────────────────────────────
             Text(title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.primary)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 8)
+                .shadow(color: .black.opacity(0.6), radius: 3)
 
-            // ── Divider ────────────────────────────────────────────────────────
-            chromeDivider
+            Spacer()
 
-            // ── Action cluster ─────────────────────────────────────────────────
-            HStack(spacing: 0) {
-                if hSizeClass == .compact {
-                    // iPhone compact cluster: Search, Settings (Aa), and More Actions Menu (...)
-                    if let onSearch = onSearchToggle {
-                        chromeButton(
-                            icon: "magnifyingglass",
-                            label: "Search Book",
-                            active: false,
-                            activeColor: .white,
-                            action: onSearch
-                        )
+            // ── Session Timer Badge ────────────────────────────────────────────
+            if let startTime = sessionStartTime {
+                SessionTimerView(startTime: startTime)
+            }
+
+            // ── Bookmark Button ────────────────────────────────────────────────
+            Button(action: onBookmark) {
+                Image(systemName: onBookmarkActive ? "bookmark.fill" : "bookmark")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(onBookmarkActive ? Color.orange : .white)
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+
+            // ── Settings (aA) Button ───────────────────────────────────────────
+            Button(action: onSettingsToggle) {
+                Image(systemName: "textformat.size")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(isSettingsActive ? Color.orange : .white)
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+
+            // ── More Actions Menu (...) ────────────────────────────────────────
+            Menu {
+                Section("Appearance") {
+                    Button(action: onSettingsToggle) {
+                        Label("Reader Settings", systemImage: "textformat.size")
                     }
-
-                    chromeButton(
-                        icon: isSettingsActive ? "slider.horizontal.3" : "textformat.size",
-                        label: "Appearance & Layout",
-                        active: isSettingsActive,
-                        activeColor: .white,
-                        badgeText: isSettingsActive ? currentModeLabel : nil,
-                        action: onSettingsToggle
-                    )
-
-                    // Overflow Menu
-                    Menu {
-                        if let onEnhance = onEnhanceToggle {
-                            Button(action: onEnhance) {
-                                Label("AI Summary & Insights", systemImage: "wand.and.stars")
-                            }
-                        }
-
-                        if let onDialogueLens = onDialogueLensToggle {
-                            Button(action: onDialogueLens) {
-                                Label(isDialogueLensEnabled ? "Disable Dialogue Lens" : "AI Dialogue Lens", systemImage: "sparkle.magnifyingglass")
-                            }
-                        }
-
-                        if isPDF {
-                            Divider()
-                            if let onMarkup = onMarkupToggle {
-                                Button(action: onMarkup) {
-                                    Label(isMarkupActive ? "Exit Pencil Markup" : "Pencil & Inking Markup", systemImage: isMarkupActive ? "pencil.slash" : "pencil.tip.crop.circle")
-                                }
-                            }
-                            if let onReflow = onReflowToggle {
-                                Button(action: onReflow) {
-                                    Label(isReflowActive ? "Original PDF Layout" : "Reflow Text", systemImage: "text.alignleft")
-                                }
-                            }
-                            if let onCrop = onCropToggle {
-                                Button(action: onCrop) {
-                                    Label(isAutoCropEnabled ? "Disable Auto-Crop" : "Smart Auto-Crop", systemImage: isAutoCropEnabled ? "crop.slash" : "sparkles")
-                                }
-                            }
-                            if let onManual = onManualCropToggle {
-                                Button(action: onManual) {
-                                    Label("Manual Visual Crop Editor...", systemImage: "viewfinder")
-                                }
-                            }
-                        }
-                    } label: {
-                        chromeButton(
-                            icon: "ellipsis.circle",
-                            label: "More Actions",
-                            active: false,
-                            activeColor: .white,
-                            action: {}
-                        )
-                    }
-                } else {
-                    // iPad Regular cluster (full row of quick tools)
-                    if onEnhanceToggle != nil {
-                        chromeButton(
-                            icon: "wand.and.stars",
-                            label: "AI Summary",
-                            active: isEnhanced,
-                            activeColor: .yellow,
-                            action: { onEnhanceToggle?() }
-                        )
-                    }
-
-                    if let onMarkup = onMarkupToggle {
-                        chromeButton(
-                            icon: isMarkupActive ? "pencil.tip.crop.circle.badge.plus.fill" : "pencil.tip.crop.circle",
-                            label: "Pencil & Inking",
-                            active: isMarkupActive,
-                            activeColor: .yellow,
-                            action: onMarkup
-                        )
-                    }
-
-                    if isPDF {
-                        Button {
-                            Haptics.shared.playImpact(style: .light)
-                            onReflowToggle?()
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: isReflowActive ? "doc.richtext" : "text.alignleft")
-                                    .font(.system(size: 13, weight: .semibold))
-                                Text(isReflowActive ? "Original PDF" : "Reflow Text")
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            }
-                            .foregroundColor(isReflowActive ? .inkGreen : Color.primary.opacity(0.85))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                isReflowActive
-                                    ? Color.inkGreen.opacity(0.18)
-                                    : Color.white.opacity(0.08),
-                                in: Capsule()
-                            )
-                            .overlay(
-                                Capsule()
-                                    .stroke(isReflowActive ? Color.inkGreen.opacity(0.4) : Color.white.opacity(0.12), lineWidth: 0.5)
-                            )
-                        }
-                        .help(isReflowActive ? "Return to Original PDF Layout" : "Toggle Text Reflow Mode")
-                        .accessibilityLabel(isReflowActive ? "Return to Original PDF Layout" : "Toggle Text Reflow Mode")
-                    }
-
-                    if isPDF {
-                        Menu {
-                            Button(action: {
-                                onCropModeSelected?("smartAuto") ?? onCropToggle?()
-                            }) {
-                                Label(
-                                    selectedCropMode == "smartAuto" ? "Smart Auto-Crop (Active)" : "Smart Auto-Crop",
-                                    systemImage: selectedCropMode == "smartAuto" ? "checkmark.circle.fill" : "sparkles"
-                                )
-                            }
-
-                            Button(action: {
-                                onCropModeSelected?("custom")
-                            }) {
-                                Label(
-                                    selectedCropMode == "custom" ? "Manual Margins (Active)" : "Manual Margins",
-                                    systemImage: selectedCropMode == "custom" ? "checkmark.circle.fill" : "slider.horizontal.3"
-                                )
-                            }
-
-                            Button(action: {
-                                onCropModeSelected?("none")
-                            }) {
-                                Label(
-                                    selectedCropMode == "none" ? "Full Page / No Crop (Active)" : "Full Page (No Crop)",
-                                    systemImage: selectedCropMode == "none" ? "checkmark.circle.fill" : "arrow.up.left.and.down.right"
-                                )
-                            }
-
-                            Divider()
-
-                            if let onManual = onManualCropToggle {
-                                Button(action: onManual) {
-                                    Label("Manual Visual Crop Editor...", systemImage: "viewfinder")
-                                }
-                            }
-                        } label: {
-                            chromeButton(
-                                icon: "crop",
-                                label: "Crop Margins",
-                                active: isAutoCropEnabled,
-                                activeColor: .white
-                            ) {}
+                    if let onEnhance = onEnhanceToggle {
+                        Button(action: onEnhance) {
+                            Label("Color Filter & Enhance", systemImage: "slider.horizontal.3")
                         }
                     }
-
-                    if let onDialogueLens = onDialogueLensToggle {
-                        chromeButton(
-                            icon: "sparkle.magnifyingglass",
-                            label: "AI Dialogue Lens",
-                            active: isDialogueLensEnabled,
-                            activeColor: .purple,
-                            action: onDialogueLens
-                        )
-                    }
-
-                    if let onSearch = onSearchToggle {
-                        chromeButton(
-                            icon: "magnifyingglass",
-                            label: "Search Book",
-                            active: false,
-                            activeColor: .white,
-                            action: onSearch
-                        )
-                    }
-
-                    chromeButton(
-                        icon: isSettingsActive ? "slider.horizontal.3" : "textformat.size",
-                        label: "Appearance & Layout",
-                        active: isSettingsActive,
-                        activeColor: .white,
-                        badgeText: isSettingsActive ? currentModeLabel : nil,
-                        action: onSettingsToggle
-                    )
                 }
+                Section("Navigate") {
+                    if let onTOC = onTOCToggle {
+                        Button(action: onTOC) {
+                            Label("Table of Contents", systemImage: "list.bullet.rectangle")
+                        }
+                    }
+                    if let onSearch = onSearchToggle {
+                        Button(action: onSearch) {
+                            Label("Search in Book", systemImage: "magnifyingglass")
+                        }
+                    }
+                    if let onJump = onJumpToPage {
+                        Button(action: onJump) {
+                            Label("Page Thumbnails", systemImage: "square.grid.2x2")
+                        }
+                    }
+                }
+                Section("Tools") {
+                    if let onAnnotations = onAnnotationsToggle {
+                        Button(action: onAnnotations) {
+                            Label("Study Notebook", systemImage: "note.text")
+                        }
+                    }
+                    if let onMarkup = onMarkupToggle {
+                        Button(action: onMarkup) {
+                            Label(isMarkupActive ? "Exit Pencil Markup" : "Pencil Markup", systemImage: isMarkupActive ? "pencil.slash" : "pencil.tip.crop.circle")
+                        }
+                    }
+                    if hasCopyAction, let onCopy = onCopyToggle {
+                        Button(action: onCopy) {
+                            Label("Copy Page Text", systemImage: "doc.on.doc")
+                        }
+                    }
+                    if isPDF {
+                        if let onReflow = onReflowToggle {
+                            Button(action: onReflow) {
+                                Label(isReflowActive ? "Original PDF Layout" : "Reflow Text", systemImage: "text.alignleft")
+                            }
+                        }
+                        if let onCrop = onCropToggle {
+                            Button(action: onCrop) {
+                                Label(isAutoCropEnabled ? "Disable Auto-Crop" : "Smart Auto-Crop", systemImage: isAutoCropEnabled ? "crop.slash" : "sparkles")
+                            }
+                        }
+                        if let onManual = onManualCropToggle {
+                            Button(action: onManual) {
+                                Label("Manual Visual Crop Editor\u{2026}", systemImage: "viewfinder")
+                            }
+                        }
+                    }
+                    if let onDialogueLens = onDialogueLensToggle {
+                        Button(action: onDialogueLens) {
+                            Label(isDialogueLensEnabled ? "Disable Dialogue Lens" : "AI Dialogue Lens", systemImage: "sparkle.magnifyingglass")
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
             }
         }
-        .frame(height: 48)
-        .background(topBarBackground)
-        .clipShape(Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
-        .frame(maxWidth: hSizeClass == .regular ? 860 : .infinity)  // constrain on iPad
-        .padding(.horizontal, hSizeClass == .regular ? 32 : 16)
-        .padding(.top, 8)
+        .padding(.horizontal, 14)
+        .padding(.top, 50)
+        .padding(.bottom, 10)
+        .background(
+            LinearGradient(
+                colors: [Color.black.opacity(0.55), Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .top)
+        )
     }
 
-    // MARK: - Bottom Card
+    // MARK: - Bottom Bar (Clean EPUB-Standard Glass Gradient)
 
-    private var bottomCard: some View {
+    private var bottomBar: some View {
         VStack(spacing: 0) {
             // ── Scrubber ───────────────────────────────────────────────────────
             if let custom = customScrubber {
                 custom
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 20)
                     .padding(.top, 14)
-                    .padding(.bottom, 10)
-            } else {
+                    .padding(.bottom, 4)
+            } else if totalPages > 1 {
                 HStack(spacing: 10) {
                     Text("1")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundStyle(.white.opacity(0.5))
                         .frame(width: 20, alignment: .leading)
 
                     Slider(
@@ -459,7 +364,7 @@ struct ReaderChrome: View {
                             }
                         }
                     )
-                    .tint(Color.white)
+                    .tint(Color(hex: "#B39DDB"))
                     .overlay(
                         GeometryReader { sliderGeo in
                             if isScrubbing {
@@ -487,11 +392,11 @@ struct ReaderChrome: View {
                                         
                                         Text("Page \(pageNum)")
                                             .font(.system(size: 11, weight: .bold, design: .rounded))
-                                            .foregroundColor(.primary)
+                                            .foregroundColor(.white)
                                             .padding(.horizontal, 10)
                                             .padding(.vertical, 4)
                                             .background(.ultraThinMaterial, in: Capsule())
-                                            .overlay(Capsule().stroke(Color.primary.opacity(0.15), lineWidth: 0.5))
+                                            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
                                     }
                                     .position(
                                         x: 14 + (sliderGeo.size.width - 28) * CGFloat(currentProgress),
@@ -519,188 +424,82 @@ struct ReaderChrome: View {
 
                     Text("\(totalPages)")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.white.opacity(0.5))
                         .frame(width: 20, alignment: .trailing)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 20)
                 .padding(.top, 14)
-                .padding(.bottom, 10)
-            }
-            
-            if !isScrubbing {
-                Text("\(Int(currentProgress * 100))%")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundColor(.secondary)
-                    .padding(.bottom, 8)
-            } else {
-                Text(" ") // Keeps layout stable
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .padding(.bottom, 8)
+                .padding(.bottom, 4)
             }
 
-            // ── Thin divider ───────────────────────────────────────────────────
             Rectangle()
-                .fill(Color.primary.opacity(0.08))
+                .fill(Color.white.opacity(0.08))
                 .frame(height: 0.5)
                 .padding(.horizontal, 16)
 
-            // ── Action row ─────────────────────────────────────────────────────
-            HStack {
-                // Left cluster
-                HStack(spacing: hSizeClass == .regular ? 4 : 2) {
-                    barButton(
-                        icon: onBookmarkActive ? "bookmark.fill" : "bookmark",
-                        label: "Bookmark Page",
-                        tint: onBookmarkActive ? Color.yellow : Color.primary
-                    ) {
-                        Haptics.shared.playImpact(style: .light)
-                        onBookmark()
-                    }
-
-                    if hasCopyAction {
-                        barButton(
-                            icon: "doc.on.doc",
-                            label: "Copy Selection",
-                            tint: .primary
-                        ) {
-                            Haptics.shared.playImpact(style: .light)
-                            onCopyToggle?()
-                        }
-                    } else if isPDF {
-                        if hSizeClass == .regular {
-                            Button {
-                                Haptics.shared.playImpact(style: .light)
-                                onReflowToggle?()
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: isReflowActive ? "doc.richtext" : "text.alignleft")
-                                        .font(.system(size: 12, weight: .semibold))
-                                    Text(isReflowActive ? "Original" : "Reflow")
-                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                }
-                                .foregroundColor(isReflowActive ? .inkGreen : Color.primary.opacity(0.85))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(
-                                    isReflowActive
-                                        ? Color.inkGreen.opacity(0.18)
-                                        : Color.primary.opacity(0.08),
-                                    in: Capsule()
-                                )
-                                .overlay(
-                                    Capsule()
-                                        .stroke(isReflowActive ? Color.inkGreen.opacity(0.4) : Color.primary.opacity(0.12), lineWidth: 0.5)
-                                )
-                            }
-                            .help(isReflowActive ? "Return to Original PDF Layout" : "Toggle Text Reflow Mode")
-                            .accessibilityLabel(isReflowActive ? "Return to Original PDF Layout" : "Toggle Text Reflow Mode")
-                        } else {
-                            // iPhone compact: sleek icon button matching touch targets
-                            barButton(
-                                icon: isReflowActive ? "doc.richtext" : "text.alignleft",
-                                label: isReflowActive ? "Original PDF" : "Reflow Text",
-                                tint: isReflowActive ? .inkGreen : .primary
-                            ) {
-                                Haptics.shared.playImpact(style: .light)
-                                onReflowToggle?()
-                            }
-                        }
-                    }
-                }
-
-                Spacer()
-
-                // Page counter / Time Left — centred and prominent
+            // ── Navigation row ─────────────────────────────────────────────────
+            HStack(spacing: 24) {
                 Button {
-                    Haptics.shared.playImpact(style: .light)
+                    let step = 1.0 / Double(max(totalPages - 1, 1))
+                    currentProgress = max(0.0, currentProgress - step)
+                    HapticEngine.light()
+                } label: {
+                    Image(systemName: "chevron.left.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(currentProgress <= 0.001 ? .white.opacity(0.2) : .white.opacity(0.9))
+                }
+                .buttonStyle(.plain)
+                .disabled(currentProgress <= 0.001)
+
+                Button {
+                    HapticEngine.selection()
                     onProgressModeToggle?()
                 } label: {
                     VStack(spacing: 2) {
                         Text(pageText)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundColor(.primary)
-                        if let tr = timeRemainingText {
+                            .foregroundStyle(.white)
+                        if let tr = timeRemainingText, !tr.isEmpty {
                             Text(tr)
-                                .font(.system(size: 9, weight: .medium, design: .rounded))
-                                .foregroundColor(.secondary)
+                                .font(.system(size: 10, weight: .regular, design: .rounded))
+                                .foregroundStyle(Color(hex: "#B39DDB").opacity(0.8))
                         }
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(Color.primary.opacity(0.12), in: Capsule())
+                    .frame(minWidth: 100)
                 }
                 .buttonStyle(.plain)
                 .simultaneousGesture(
                     LongPressGesture(minimumDuration: 0.5)
                         .onEnded { _ in
-                            Haptics.shared.playImpact(style: .medium)
+                            HapticEngine.medium()
                             onJumpToPage?()
                         }
                 )
 
-                Spacer()
-
-                // Right cluster
-                HStack(spacing: hSizeClass == .regular ? 4 : 2) {
-                    if let onMarkup = onMarkupToggle {
-                        barButton(
-                            icon: isMarkupActive ? "pencil.tip.crop.circle.badge.plus.fill" : "pencil.tip.crop.circle",
-                            label: "Pencil Markup",
-                            tint: isMarkupActive ? Color.yellow : Color.primary
-                        ) {
-                            Haptics.shared.playImpact(style: .light)
-                            onMarkup()
-                        }
-                    }
-                    if let onTOC = onTOCToggle {
-                        barButton(icon: "list.bullet", label: "Table of Contents", tint: .primary) {
-                            Haptics.shared.playImpact(style: .light)
-                            onTOC()
-                        }
-                    }
-                    if let onAnnotations = onAnnotationsToggle {
-                        barButton(icon: "pencil.and.outline", label: "Pencil & Annotations", tint: .primary) {
-                            Haptics.shared.playImpact(style: .light)
-                            onAnnotations()
-                        }
-                    }
+                Button {
+                    let step = 1.0 / Double(max(totalPages - 1, 1))
+                    currentProgress = min(1.0, currentProgress + step)
+                    HapticEngine.light()
+                } label: {
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(currentProgress >= 0.999 ? .white.opacity(0.2) : .white.opacity(0.9))
                 }
+                .buttonStyle(.plain)
+                .disabled(currentProgress >= 0.999)
             }
-            .padding(.horizontal, hSizeClass == .regular ? 12 : 8)
-            .padding(.vertical, 8)
+            .padding(.top, 14)
+            .padding(.bottom, 28)
+            .padding(.horizontal, 24)
         }
-        .background(bottomCardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
+        .background(
+            LinearGradient(
+                colors: [Color.clear, Color.black.opacity(0.65)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .bottom)
         )
-        .shadow(color: .black.opacity(0.3), radius: 18, y: -4)
-        .frame(maxWidth: hSizeClass == .regular ? 680 : .infinity)  // constrain on iPad
-        .padding(.horizontal, hSizeClass == .regular ? 32 : 12)
-        .padding(.bottom, 12)
-    }
-
-    // MARK: - Shared Backgrounds
-
-    private var topBarBackground: some View {
-        ZStack {
-            Color.clear.background(.ultraThinMaterial)
-            if ambientColor != .clear {
-                ambientColor.opacity(0.10)
-            }
-        }
-    }
-
-    private var bottomCardBackground: some View {
-        ZStack {
-            // Base: system material
-            Rectangle().fill(.ultraThinMaterial)
-            // Ambient tint overlay (Panels-style page colour)
-            if ambientColor != .clear {
-                Rectangle().fill(ambientColor.opacity(0.08))
-            }
-        }
     }
 
     // MARK: - Reusable Components

@@ -1420,7 +1420,36 @@ struct EBookReaderView: View {
                 
                 if isPencilMode {
                     VStack {
+                        HStack {
+                            Button {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                    isPencilMode = false
+                                }
+                                saveProgress()
+                                if let onExit = onExit { onExit() } else { dismiss() }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "chevron.left")
+                                        .font(.system(size: 14, weight: .bold))
+                                    Text("Done")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.5))
+                                .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.leading, 16)
+                            .padding(.top, max(topInset + 8, 44))
+
+                            Spacer()
+                        }
+
                         Spacer()
+
                         InksyncPenDockView(
                             onUndo: {
                                 NotificationCenter.default.post(name: NSNotification.Name("EPUBReaderUndoDrawing"), object: nil)
@@ -1439,7 +1468,7 @@ struct EBookReaderView: View {
                         )
                         .padding(.bottom, max(bottomInset + 12, 36))
                     }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(.opacity)
                     .ignoresSafeArea(.keyboard)
                 } else if !showHUD && selectedTextForHUD == nil {
                     VStack {

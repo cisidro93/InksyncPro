@@ -847,7 +847,36 @@ struct ProPDFReaderEngine: View {
 
             if isPencilMode {
                 VStack {
+                    HStack {
+                        Button {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                isPencilMode = false
+                            }
+                            saveReadingProgress()
+                            onDismiss()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 14, weight: .bold))
+                                Text("Done")
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.5))
+                            .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.leading, 16)
+                        .padding(.top, 50)
+
+                        Spacer()
+                    }
+
                     Spacer()
+
                     InksyncPenDockView(
                         onUndo: {
                             performUndo()
@@ -866,7 +895,7 @@ struct ProPDFReaderEngine: View {
                     )
                     .padding(.bottom, 36)
                 }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(.opacity)
                 .ignoresSafeArea(.keyboard)
             } else if !chromeVisible && selectedTextForHUD == nil {
                 VStack {
@@ -3198,8 +3227,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         twoFingerTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         twoFingerTap.cancelsTouchesInView = false
         twoFingerTap.delegate = context.coordinator
-        // Require threeFingerTap to fail so 3-finger taps NEVER trigger a 2-finger undo if one touch lands slightly late
-        twoFingerTap.require(toFail: threeFingerTap)
         pdfView.addGestureRecognizer(twoFingerTap)
         context.coordinator.twoFingerTap = twoFingerTap
 
@@ -3861,9 +3888,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             }
             if gestureRecognizer === twoFingerTap || otherGestureRecognizer === twoFingerTap ||
                gestureRecognizer === threeFingerTap || otherGestureRecognizer === threeFingerTap {
-                if otherGestureRecognizer is UITapGestureRecognizer || otherGestureRecognizer is UILongPressGestureRecognizer {
-                    return false
-                }
+                return true
             }
             if parent.isPencilMode && InksyncInkingState.shared.activeToolMode != .textHighlight {
                 if gestureRecognizer === pencilGlide || gestureRecognizer === fingerGlide ||

@@ -87,6 +87,24 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             }
         }
 
+        // ── 3-Finger Tap Redo shortcut (finger only) ──────────────────────────────
+        let threeFingerTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleThreeFingerTap(_:)))
+        threeFingerTap.numberOfTouchesRequired = 3
+        threeFingerTap.numberOfTapsRequired = 1
+        threeFingerTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        threeFingerTap.cancelsTouchesInView = false
+        threeFingerTap.delegate = context.coordinator
+        view.addGestureRecognizer(threeFingerTap)
+
+        // ── 2-Finger Tap Undo shortcut (finger only) ──────────────────────────────
+        let twoFingerTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTwoFingerTap(_:)))
+        twoFingerTap.numberOfTouchesRequired = 2
+        twoFingerTap.numberOfTapsRequired = 1
+        twoFingerTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        twoFingerTap.cancelsTouchesInView = false
+        twoFingerTap.delegate = context.coordinator
+        view.addGestureRecognizer(twoFingerTap)
+
         // Single tap — handles left/center/right zones — fires instantly (< 5ms) on touch-up
         let singleTap = UITapGestureRecognizer(
             target: context.coordinator,
@@ -96,6 +114,8 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         singleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         singleTap.cancelsTouchesInView = false
         singleTap.delegate = context.coordinator
+        singleTap.require(toFail: twoFingerTap)
+        singleTap.require(toFail: threeFingerTap)
         view.addGestureRecognizer(singleTap)
 
         // Pinch to Zoom / Scale Text (Kindle-style interactive text scaling)
@@ -1198,6 +1218,40 @@ extension EBookPageCurlReader {
             default:
                 break
             }
+        }
+
+        @MainActor @objc func handleTwoFingerTap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended else { return }
+            if pencilCanvas?.undoManager?.canUndo == true {
+                pencilCanvas?.undoManager?.undo()
+                HapticEngine.medium()
+                NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": "Undo"])
+            } else {
+                HapticEngine.light()
+                NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": "Nothing to Undo"])
+            }
+        }
+
+        @MainActor @objc func handleThreeFingerTap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended else { return }
+            if pencilCanvas?.undoManager?.canRedo == true {
+                pencilCanvas?.undoManager?.redo()
+                HapticEngine.medium()
+                NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": "Redo"])
+            } else {
+                HapticEngine.light()
+                NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": "Nothing to Redo"])
+            }
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            if let tap = gestureRecognizer as? UITapGestureRecognizer, tap.numberOfTouchesRequired >= 2 {
+                return true
+            }
+            if let otherTap = otherGestureRecognizer as? UITapGestureRecognizer, otherTap.numberOfTouchesRequired >= 2 {
+                return true
+            }
+            return false
         }
 
         @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {

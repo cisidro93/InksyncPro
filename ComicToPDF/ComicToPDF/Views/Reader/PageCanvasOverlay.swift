@@ -60,16 +60,71 @@ final class PassthroughPKCanvasView: PKCanvasView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         overrideUserInterfaceStyle = .light
+        setupMultiTouchGestures()
     }
     
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         overrideUserInterfaceStyle = .light
+        setupMultiTouchGestures()
+    }
+
+    private func setupMultiTouchGestures() {
+        let threeFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleThreeFingerTap(_:)))
+        threeFingerTap.numberOfTouchesRequired = 3
+        threeFingerTap.numberOfTapsRequired = 1
+        threeFingerTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        threeFingerTap.cancelsTouchesInView = true
+        addGestureRecognizer(threeFingerTap)
+
+        let twoFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleTwoFingerTap(_:)))
+        twoFingerTap.numberOfTouchesRequired = 2
+        twoFingerTap.numberOfTapsRequired = 1
+        twoFingerTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        twoFingerTap.cancelsTouchesInView = true
+        addGestureRecognizer(twoFingerTap)
+    }
+
+    @MainActor @objc private func handleTwoFingerTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        if self.undoManager?.canUndo == true {
+            self.undoManager?.undo()
+            HapticEngine.medium()
+            NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": "Undo"])
+        } else {
+            HapticEngine.light()
+            NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": "Nothing to Undo"])
+        }
+    }
+
+    @MainActor @objc private func handleThreeFingerTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        if self.undoManager?.canRedo == true {
+            self.undoManager?.redo()
+            HapticEngine.medium()
+            NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": "Redo"])
+        } else {
+            HapticEngine.light()
+            NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": "Nothing to Redo"])
+        }
     }
     
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard isMarkupActive else { return nil }
         guard bounds.contains(point) else { return nil }
+
+        // Top navigation corridor: Never capture touches in the top safe area / header zone (top 54pt of window).
+        // This ensures tapping near the top edge always invokes the navigation chrome / Back button
+        // without drawing stray ink marks on the document!
+        if let window = self.window {
+            let windowPoint = self.convert(point, to: window)
+            let topSafeLimit = max(54.0, window.safeAreaInsets.top + 44.0)
+            if windowPoint.y < topSafeLimit {
+                return nil
+            }
+        } else if point.y < 54.0 {
+            return nil
+        }
         
         let currentMode = InksyncInkingState.shared.activeToolMode
         // When in highlight glide or read mode, touches pass down to PDFView for fluid text selection & reading
@@ -82,12 +137,6 @@ final class PassthroughPKCanvasView: PKCanvasView {
             if let touches = event?.allTouches, !touches.isEmpty, touches.allSatisfy({ $0.type == .direct }) {
                 return nil
             }
-        }
-
-        // Multi-touch gestures (two-finger swipe for page turns, pinch zoom, two-finger pan)
-        // always pass through to the underlying PDFView and its scroll view.
-        if let touches = event?.allTouches, touches.count >= 2 {
-            return nil
         }
 
         // In write, eraser, or coloring mode, capture touch directly for PKCanvasView
