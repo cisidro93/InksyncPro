@@ -1114,23 +1114,31 @@ extension EBookPageCurlReader {
             let isPenDrawingTool = currentMode == .write || isEraser
             let isColoring = InksyncInkingState.shared.isColoringModeActive
             let autoPenActive = isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
-            let shouldBeActive = (isPencilMode && isPenDrawingTool) || isColoring || autoPenActive
+            let isExplicitDrawingMode = (isPencilMode && isPenDrawingTool) || isColoring
+            let shouldBeActive = isExplicitDrawingMode || autoPenActive
             let pencilOnlySetting = AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
 
             canvas.overrideUserInterfaceStyle = .light
             canvas.isMarkupActive = shouldBeActive
-            let allowFinger = !pencilOnlySetting || isEraser
+            
+            // Finger drawing policy:
+            // In normal reading mode (!isExplicitDrawingMode), finger drawing MUST NEVER be allowed!
+            // When in explicit drawing mode: allow finger only if not isPad, or pencilOnlySetting is off, or eraser.
+            let allowFinger: Bool
+            if isExplicitDrawingMode {
+                allowFinger = !isPad || !pencilOnlySetting || isEraser
+            } else {
+                // In normal reading mode with auto-pencil active: STRICTLY Apple Pencil only!
+                allowFinger = false
+            }
+
             canvas.allowFingerDrawing = allowFinger
-            canvas.drawingPolicy = (isPad && pencilOnlySetting && !allowFinger) ? .pencilOnly : .anyInput
+            canvas.drawingPolicy = allowFinger ? .anyInput : .pencilOnly
             canvas.isUserInteractionEnabled = shouldBeActive
             canvas.drawingGestureRecognizer.cancelsTouchesInView = false
             canvas.isScrollEnabled = false
             canvas.bounces = false
-            if isPad && !allowFinger {
-                canvas.panGestureRecognizer.isEnabled = false
-            } else {
-                canvas.panGestureRecognizer.isEnabled = true
-            }
+            canvas.panGestureRecognizer.isEnabled = allowFinger
         }
 
 

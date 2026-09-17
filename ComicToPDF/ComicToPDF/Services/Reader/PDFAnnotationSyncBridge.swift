@@ -585,9 +585,12 @@ private final class BackgroundWriteOperation: @unchecked Sendable {
         self.didAccessSecurityScope = didAccessSecurityScope
     }
 
+    @MainActor
     func start() {
         self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "InksyncPDFSync_\(pdfID.uuidString)") { [weak self] in
-            self?.end()
+            Task { @MainActor in
+                self?.end()
+            }
         }
 
         Self.serialQueue.async { [weak self] in
@@ -596,7 +599,9 @@ private final class BackgroundWriteOperation: @unchecked Sendable {
                 if self.didAccessSecurityScope {
                     self.targetURL.stopAccessingSecurityScopedResource()
                 }
-                self.end()
+                Task { @MainActor in
+                    self.end()
+                }
             }
 
             let writeSuccess = self.document.write(to: self.targetURL)
@@ -608,12 +613,11 @@ private final class BackgroundWriteOperation: @unchecked Sendable {
         }
     }
 
+    @MainActor
     private func end() {
-        DispatchQueue.main.async {
-            guard self.backgroundTaskID != .invalid else { return }
-            UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
-            self.backgroundTaskID = .invalid
-        }
+        guard self.backgroundTaskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
+        self.backgroundTaskID = .invalid
     }
 }
 

@@ -154,8 +154,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                             guard let rsrc = try? fileURL.resourceValues(forKeys: Set(keys)),
                                   rsrc.isDirectory == false else { continue }
                             guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
-
-                            let fileName = fileURL.lastPathComponent
                             guard seenInBatch.insert(fileURL.path).inserted else { continue }
 
                             // Preserve native structure for SeriesNameParser Context

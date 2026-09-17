@@ -132,9 +132,12 @@ final class PassthroughPKCanvasView: PKCanvasView {
             return nil
         }
 
-        // When finger drawing is disabled (pencil-only mode), pass through only if all touches are confirmed direct finger touches
+        // When finger drawing is disabled (pencil-only mode / reading mode), the canvas must strictly ONLY capture
+        // confirmed Apple Pencil touches. Any direct finger touch, or ambiguous event without a pencil touch,
+        // MUST pass through (return nil) so document navigation, tapping to toggle UI chrome, and reading work 100% cleanly!
         if !allowFingerDrawing && currentMode != .eraser {
-            if let touches = event?.allTouches, !touches.isEmpty, touches.allSatisfy({ $0.type == .direct }) {
+            let hasPencilTouch = event?.allTouches?.contains(where: { $0.type == .pencil }) ?? false
+            if !hasPencilTouch {
                 return nil
             }
         }

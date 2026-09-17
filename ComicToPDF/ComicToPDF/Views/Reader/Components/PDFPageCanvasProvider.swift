@@ -217,13 +217,25 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         let isEraser = currentMode == .eraser
         let isColoring = InksyncInkingState.shared.isColoringModeActive
         let autoPenActive = isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
-        let shouldBeActive = isWriting || isEraser || isColoring || isMarkupActive || autoPenActive
+        let isExplicitDrawingMode = isWriting || isEraser || isColoring || isMarkupActive
+        let shouldBeActive = isExplicitDrawingMode || autoPenActive
 
         canvas.overrideUserInterfaceStyle = .light
         canvas.isMarkupActive = shouldBeActive
-        let allowFinger = !isPad || !pencilOnlyDrawingSetting || isEraser
+        
+        // Finger drawing policy:
+        // On iPad in normal reading mode (!isExplicitDrawingMode), finger drawing MUST NEVER be allowed!
+        // When in explicit drawing mode: allow finger only if not isPad, or pencilOnlyDrawingSetting is off, or eraser.
+        let allowFinger: Bool
+        if isExplicitDrawingMode {
+            allowFinger = !isPad || !pencilOnlyDrawingSetting || isEraser
+        } else {
+            // In normal reading mode with auto-pencil active: STRICTLY Apple Pencil only!
+            allowFinger = false
+        }
+        
         canvas.allowFingerDrawing = allowFinger
-        canvas.drawingPolicy = (!allowFinger) ? .pencilOnly : .anyInput
+        canvas.drawingPolicy = allowFinger ? .anyInput : .pencilOnly
         canvas.isUserInteractionEnabled = shouldBeActive
         canvas.drawingGestureRecognizer.cancelsTouchesInView = false
         canvas.isScrollEnabled = false

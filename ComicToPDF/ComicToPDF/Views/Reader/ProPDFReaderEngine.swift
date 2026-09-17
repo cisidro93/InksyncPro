@@ -3129,10 +3129,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let autoPencilActive = isPad && prefs.applePencilAutoDraw
-        let isCanvasMarkupActive = (isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
+        let isDrawingMode = (isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive
+        let isCanvasMarkupActive = isDrawingMode || (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
 
         if #available(iOS 16.0, *) {
-            pdfView.isInMarkupMode = isCanvasMarkupActive
+            pdfView.isInMarkupMode = isDrawingMode
         }
 
         // Use singlePage (non-continuous) as the default mode so PDFViewPageChanged fires
@@ -3151,7 +3152,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if let sv = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
             sv.contentInsetAdjustmentBehavior = .never
             sv.contentInset = .zero
-            sv.panGestureRecognizer.minimumNumberOfTouches = isCanvasMarkupActive ? 2 : 1
+            sv.panGestureRecognizer.minimumNumberOfTouches = isDrawingMode ? 2 : 1
         }
 
         // Set page overlay provider BEFORE assigning document so PDFKit requests overlays for visible pages
@@ -3226,10 +3227,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         // ── Finger Glide (word-snap) highlight gesture (finger only) ─────────────
         // 40ms duration when in text highlight mode for responsive fluid touch-drag,
-        // 180ms minimum press duration when in normal reading allows scrolling/swiping.
+        // 300ms minimum press duration when in normal reading allows scrolling/swiping and reliable single taps.
         let fingerGlide = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleGlideSelection(_:)))
         let isDedicatedHighlighter = isPencilMode && currentToolMode == .textHighlight
-        fingerGlide.minimumPressDuration = isDedicatedHighlighter ? 0.04 : 0.18
+        fingerGlide.minimumPressDuration = isDedicatedHighlighter ? 0.04 : 0.30
         fingerGlide.allowableMovement = 2000
         fingerGlide.cancelsTouchesInView = false
         fingerGlide.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
@@ -3299,13 +3300,14 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let autoPencilActive = isPad && prefs.applePencilAutoDraw
 
         let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
-        let isCanvasMarkupActive = (isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
+        let isDrawingMode = (isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive
+        let isCanvasMarkupActive = isDrawingMode || (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
         if context.coordinator.canvasProvider.isMarkupActive != isCanvasMarkupActive {
             context.coordinator.canvasProvider.isMarkupActive = isCanvasMarkupActive
         }
         if #available(iOS 16.0, *) {
-            if uiView.isInMarkupMode != isCanvasMarkupActive {
-                uiView.isInMarkupMode = isCanvasMarkupActive
+            if uiView.isInMarkupMode != isDrawingMode {
+                uiView.isInMarkupMode = isDrawingMode
             }
         }
         if context.coordinator.canvasProvider.pdfID != pdf.id {
@@ -3313,8 +3315,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         }
 
         if let sv = uiView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-            if sv.panGestureRecognizer.minimumNumberOfTouches != (isCanvasMarkupActive ? 2 : 1) {
-                sv.panGestureRecognizer.minimumNumberOfTouches = isCanvasMarkupActive ? 2 : 1
+            if sv.panGestureRecognizer.minimumNumberOfTouches != (isDrawingMode ? 2 : 1) {
+                sv.panGestureRecognizer.minimumNumberOfTouches = isDrawingMode ? 2 : 1
             }
         }
         if context.coordinator.tapGesture?.isEnabled == false {
@@ -3331,7 +3333,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if context.coordinator.fingerGlide?.isEnabled != targetFingerGlide {
             context.coordinator.fingerGlide?.isEnabled = targetFingerGlide
         }
-        let targetPressDuration: TimeInterval = isDedicatedHighlighter ? 0.04 : 0.18
+        let targetPressDuration: TimeInterval = isDedicatedHighlighter ? 0.04 : 0.30
         if context.coordinator.fingerGlide?.minimumPressDuration != targetPressDuration {
             context.coordinator.fingerGlide?.minimumPressDuration = targetPressDuration
         }
@@ -3521,15 +3523,16 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let autoHighlighterActive = isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "highlighter"
 
             let isPenDrawingTool = mode == .write || mode == .eraser
-            let isCanvasMarkupActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!parent.isPencilMode && autoPenActive)
+            let isDrawingMode = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive
+            let isCanvasMarkupActive = isDrawingMode || (!parent.isPencilMode && autoPenActive)
             canvasProvider.isMarkupActive = isCanvasMarkupActive
             if #available(iOS 16.0, *) {
-                parent.pdfViewRef?.isInMarkupMode = isCanvasMarkupActive
+                parent.pdfViewRef?.isInMarkupMode = isDrawingMode
             }
 
             if let pv = parent.pdfViewRef {
                 if let sv = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-                    sv.panGestureRecognizer.minimumNumberOfTouches = isCanvasMarkupActive ? 2 : 1
+                    sv.panGestureRecognizer.minimumNumberOfTouches = isDrawingMode ? 2 : 1
                 }
             }
             tapGesture?.isEnabled = true
@@ -3540,7 +3543,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
             pencilGlide?.isEnabled = isPencilGlide
             fingerGlide?.isEnabled = isFingerGlide
-            fingerGlide?.minimumPressDuration = isDedicatedHighlighter ? 0.04 : 0.18
+            fingerGlide?.minimumPressDuration = isDedicatedHighlighter ? 0.04 : 0.30
         }
 
         deinit {
@@ -3608,8 +3611,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 let typeName = ann.type ?? ""
                 guard typeName.contains("Highlight") || typeName.contains("Underline") || typeName.contains("StrikeOut") else { continue }
                 
-                // Allow a comfortable hit-test padding around the annotation bounds
-                let hitArea = ann.bounds.insetBy(dx: -14, dy: -10)
+                // Precise hit-test padding around the annotation bounds
+                let hitArea = ann.bounds.insetBy(dx: -4, dy: -2)
                 if hitArea.contains(point) {
                     let annID = ann.userName.flatMap { UUID(uuidString: $0) }
                     let text = ann.contents ?? page.selection(for: ann.bounds)?.string ?? ""
@@ -3635,7 +3638,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                         width: CGFloat(b.width) * pageCrop.width,
                         height: CGFloat(b.height) * pageCrop.height
                     )
-                    if rect.insetBy(dx: -14, dy: -10).contains(point) {
+                    if rect.insetBy(dx: -4, dy: -2).contains(point) {
                         let sel = page.selection(for: rect)
                         return HighlightMatch(annotation: nil, id: ann.id, text: ann.selectedText ?? "", bounds: rect, selection: sel)
                     }
@@ -3897,11 +3900,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let isPad = UIDevice.current.userInterfaceIdiom == .pad
             let autoPencilActive = isPad && prefs.applePencilAutoDraw
             let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
-            let isCanvasMarkupActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!parent.isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
+            let isDrawingActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || autoPencilActive
 
-            // When in markup/drawing mode, NEVER allow tap gesture to receive Apple Pencil touches
+            // When in markup/drawing mode or auto-pencil is active, NEVER allow tap gesture to receive Apple Pencil touches
             // so stippling, dotting 'i', punctuation, and quick pencil taps draw with 100% fidelity without turning pages.
-            if isCanvasMarkupActive && gestureRecognizer == tapGesture {
+            if isDrawingActive && gestureRecognizer == tapGesture {
                 if touch.type == .pencil {
                     return false
                 }
@@ -3928,18 +3931,16 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let inkingState = InksyncInkingState.shared
             let currentToolMode = inkingState.activeToolMode
             let prefs = EBookPreferences.shared
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let autoPencilActive = isPad && prefs.applePencilAutoDraw
             let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
-            let isCanvasMarkupActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || (!parent.isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
+            let isExplicitDrawingMode = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive
 
             let tapLocation = gesture.location(in: view)
             let width = view.bounds.width
             let zones = prefs.tapZoneStyle.zones
             let isManga = prefs.pdfRTL || UserDefaults.standard.bool(forKey: "isMangaMode")
 
-            if isCanvasMarkupActive {
-                // When inking is active, only finger taps in outer margin gutters turn the page.
+            if isExplicitDrawingMode {
+                // When actively in drawing/markup mode, only finger taps in outer margin gutters turn the page.
                 // Center taps are ignored so hand resting / inadvertent touches never toggle chrome or disrupt inking.
                 let leftGutter = width * max(0.12, zones.leftEdge)
                 let rightGutter = width * min(0.88, zones.rightEdge)
@@ -3984,6 +3985,12 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     presentHighlightHUD(for: hit, on: page, in: view)
                     return
                 }
+            }
+
+            // If a highlight/markup HUD was previously showing without an active text selection, single-tap outside dismisses it
+            if parent.selectedTextForHUD != nil || parent.activeTappedAnnotationID != nil {
+                parent.onTextSelectionChanged(nil, nil)
+                return
             }
 
             if tapLocation.x < width * zones.leftEdge {

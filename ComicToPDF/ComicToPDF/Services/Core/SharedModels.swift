@@ -176,6 +176,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     
     // Computed helpers
     var isLinked: Bool { sourceMode.isLinked }
+    var isVirtualOmnibus: Bool { url.scheme?.lowercased() == "virtual-omnibus" }
     var driveBookmarkData: Data? {
         if case .linked(let data) = sourceMode { return data }
         return nil
