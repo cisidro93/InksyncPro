@@ -61,18 +61,41 @@ class ImportQueueManager: ObservableObject {
     /// (3) chapter-key fast check, (4) SHA-256 hash check vs library.
     func stageWithDuplicateCheck(_ incomingURLs: [URL]) async -> StageResult {
         let currentSnapshot = stagedURLs
-        let libraryFilenames = Set(LibraryService.shared.items.map { $0.url.lastPathComponent })
+        
+        // Build staged keys: (seriesFolder/filename)
+        let existingStagedKeys = Set(currentSnapshot.map { url -> String in
+            let series = url.deletingLastPathComponent().lastPathComponent.lowercased()
+            return "\(series)/\(url.lastPathComponent.lowercased())"
+        })
+        
+        // Build library items lookup:
+        // Key 1: series/filename
+        // Key 2: exact size + filename (for generic containers)
+        let (librarySeriesKeys, libraryExactFingerprints) = await MainActor.run {
+            var sKeys = Set<String>()
+            var fingerprints = Set<String>()
+            for item in LibraryService.shared.items {
+                let series = item.url.deletingLastPathComponent().lastPathComponent.lowercased()
+                let fn = item.url.lastPathComponent.lowercased()
+                if !Self.isGenericFolder(series) {
+                    sKeys.insert("\(series)/\(fn)")
+                }
+                if item.fileSize > 0 {
+                    fingerprints.insert("\(item.fileSize)||\(fn)")
+                }
+            }
+            return (sKeys, fingerprints)
+        }
 
-        // 2. Fast pre-filters (no file I/O)
-        let existingFilenames = Set(currentSnapshot.map { $0.lastPathComponent })
+        // Fast pre-filter for chapter keys within same series in current queue
         let existingChapterKeys: Set<String> = Set(currentSnapshot.compactMap { url -> String? in
             let series = url.deletingLastPathComponent().lastPathComponent
             guard !Self.isGenericFolder(series), let ch = SeriesNameParser.chapterKey(from: url.lastPathComponent) else { return nil }
             return "\(series.lowercased()):\(ch)"
         })
 
-        // Move the heavy loop off the main thread
-        let result = await Task.detached(priority: .userInitiated) { [libraryFilenames] () -> (toStage: [URL], dupes: [URL]) in
+        // Move loop off the main thread
+        let result = await Task.detached(priority: .userInitiated) { [existingStagedKeys, librarySeriesKeys, libraryExactFingerprints, existingChapterKeys] () -> (toStage: [URL], dupes: [URL]) in
             var seenPaths = Set<String>()
             let dedupedIncoming = incomingURLs.filter { seenPaths.insert($0.path).inserted }
 
@@ -80,17 +103,38 @@ class ImportQueueManager: ObservableObject {
             var dupes: [URL] = []
 
             for url in dedupedIncoming {
-                let filename = url.lastPathComponent
-                let seriesFolder = url.deletingLastPathComponent().lastPathComponent
+                let filename = url.lastPathComponent.lowercased()
+                let seriesFolder = url.deletingLastPathComponent().lastPathComponent.lowercased()
+                let isGeneric = Self.isGenericFolder(seriesFolder)
+                let stagedKey = "\(seriesFolder)/\(filename)"
 
-                if existingFilenames.contains(filename) || libraryFilenames.contains(filename) {
-                    dupes.append(url); continue
+                // 1. Check if already staged in current queue
+                if existingStagedKeys.contains(stagedKey) {
+                    dupes.append(url)
+                    continue
                 }
 
-                if !Self.isGenericFolder(seriesFolder),
-                   let ch = SeriesNameParser.chapterKey(from: filename),
-                   existingChapterKeys.contains("\(seriesFolder.lowercased()):\(ch)") {
-                    dupes.append(url); continue
+                // 2. Check if already exists in library in the same series folder
+                if !isGeneric && librarySeriesKeys.contains(stagedKey) {
+                    dupes.append(url)
+                    continue
+                }
+
+                // 3. For generic folders, check exact size + filename
+                if isGeneric {
+                    let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+                    if fileSize > 0 && libraryExactFingerprints.contains("\(fileSize)||\(filename)") {
+                        dupes.append(url)
+                        continue
+                    }
+                }
+
+                // 4. Chapter collision check within same series in current queue
+                if !isGeneric,
+                   let ch = SeriesNameParser.chapterKey(from: url.lastPathComponent),
+                   existingChapterKeys.contains("\(seriesFolder):\(ch)") {
+                    dupes.append(url)
+                    continue
                 }
 
                 toStage.append(url)

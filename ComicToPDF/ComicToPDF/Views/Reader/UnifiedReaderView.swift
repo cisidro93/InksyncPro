@@ -243,6 +243,7 @@ struct UnifiedReaderView: View {
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showNotebookPanel)
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: notebookPlacement)
         }
+        .ignoresSafeArea()
         .navigationBarHidden(true)
         .statusBar(hidden: true)
         .forceProMotion()

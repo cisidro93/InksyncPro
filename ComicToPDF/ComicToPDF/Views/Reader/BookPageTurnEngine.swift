@@ -526,8 +526,9 @@ class PageContentViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .black
         
-        let hostingController = UIHostingController(rootView: content)
+        let hostingController = UIHostingController(rootView: content.ignoresSafeArea())
         hostingController.view.backgroundColor = .black
+        hostingController.view.insetsLayoutMarginsFromSafeArea = false
         addChild(hostingController)
         view.addSubview(hostingController.view)
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false

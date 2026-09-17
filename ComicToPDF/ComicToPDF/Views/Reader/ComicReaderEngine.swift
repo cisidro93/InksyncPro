@@ -1997,6 +1997,7 @@ struct ComicReaderEngine: View {
                 showAnnotations.toggle()
             }
         }
+        .ignoresSafeArea()
     } // closes GeometryReader
 } // end body
 
@@ -2060,6 +2061,7 @@ struct ComicReaderEngine: View {
             }
             chromeIdleTask?.cancel()
         }
+        .ignoresSafeArea()
     }
     
     var twoUpView: some View {
@@ -3044,6 +3046,7 @@ struct ComicPageView: View {
                     }
                 }
                 .clipped()
+                .ignoresSafeArea()
             } else {
                 Color.black
             }

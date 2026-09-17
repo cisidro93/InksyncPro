@@ -31,7 +31,8 @@ final class LibraryService: ObservableObject {
             for item in loadedItems {
                 let canonicalPath = LibraryViewModel.fastCanonicalPath(item.url)
                 let filename = normalizeFilename(item.url.lastPathComponent)
-                let fingerprint = (item.fileSize > 0) ? "\(item.fileSize)||\(filename)" : canonicalPath
+                let parentFolder = item.url.deletingLastPathComponent().lastPathComponent.lowercased()
+                let fingerprint = (item.fileSize > 0) ? "\(item.fileSize)||\(parentFolder)/\(filename)" : canonicalPath
                 
                 if !seenPaths.contains(canonicalPath) && !seenFingerprints.contains(fingerprint) {
                     seenPaths.insert(canonicalPath)

@@ -67,8 +67,9 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
             picker.allowsMultipleSelection = false
         } else {
-            // Legacy 0bb6b38 Perfection: Unified Picker handles BOTH files and folders simultaneously natively.
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
+            // Known working order: asCopy: true copies files and folders into sandbox /tmp/ before delegating,
+            // completely avoiding security-scoped file provider deadlocks and background worker hangs.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
             picker.allowsMultipleSelection = true
         }
 
@@ -221,7 +222,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             return foundURLs
         }
         
-        Task {
+        Task { @MainActor in
             let foundURLs = await stagingTask.value
             self.finish(with: foundURLs)
         }

@@ -120,20 +120,23 @@ enum SeriesNameParser {
             // 2. What does the file name itself tell us?
             let detection = SeriesNameDetector.detect(from: filename)
             
-            // 3. Fallback priority selection
-            if detection.confidence == .low && !isGenericFolder && !isSourceSiteFolder(folderName) {
-                // Filename is ambiguous (e.g. "01.cbz") AND the folder name is explicitly structured (e.g. "One Piece")
+            // 3. Primary selection: If files are inside a structured non-generic series folder,
+            // that folder is the authoritative series container. This prevents files with varying
+            // chapter or year suffixes within the same series folder from being fragmented.
+            if !isGenericFolder && !isSourceSiteFolder(folderName) {
                 let cleaned = cleanFolderName(folderName)
-                return cleaned.isEmpty ? cleanFolderName(detection.seriesName) : cleaned
+                if !cleaned.isEmpty {
+                    return cleaned
+                }
             }
             
-            // Use the smart filename detection.
+            // Fallback: Use smart filename detection for loose files (e.g. from Downloads/Inbox)
             let detectedName = cleanFolderName(detection.seriesName)
-            if detectedName.isEmpty || isSourceSiteFolder(detectedName) {
-                return !isGenericFolder ? cleanFolderName(folderName) : "Imported Files"
+            if !detectedName.isEmpty && !isSourceSiteFolder(detectedName) {
+                return detectedName
             }
             
-            return detectedName
+            return !isGenericFolder ? cleanFolderName(folderName) : "Imported Files"
         }
 
         return bySeries

@@ -81,9 +81,10 @@ actor LibraryScanner {
                 }
                 paths.insert(pdf.url.fastCanonicalPath)
                 let fn = normalizeFilename(pdf.url.lastPathComponent)
+                let parentFolder = pdf.url.deletingLastPathComponent().lastPathComponent.lowercased()
                 filenames.insert(fn)
                 if pdf.fileSize > 0 {
-                    fingerprints.insert("\(pdf.fileSize)||\(fn)")
+                    fingerprints.insert("\(pdf.fileSize)||\(parentFolder)/\(fn)")
                 }
             }
             return (rels, paths, filenames, fingerprints)
@@ -115,26 +116,27 @@ actor LibraryScanner {
                 let filename = normalizeFilename(fileURL.lastPathComponent)
                 let relPath = relativePath(for: fileURL)
                 let canonicalPath = fileURL.fastCanonicalPath
+                let parentFolder = fileURL.deletingLastPathComponent().lastPathComponent.lowercased()
                 
-                // Exact path and filename duplicate protection: Skip if this exact file is already loaded in memory
-                if existingFilenames.contains(filename) || existingRelPaths.contains(relPath) || existingCanonicalPaths.contains(canonicalPath) {
+                // Exact path duplicate protection: Skip if this exact file/relative path is already loaded in memory
+                if existingRelPaths.contains(relPath) || existingCanonicalPaths.contains(canonicalPath) {
                     continue
                 }
                 
                 let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
 
-                // Detect redundant duplicate clone suffixes: e.g. "Comic (1).cbz" matching existing "Comic.cbz"
-                let strippedCloneName = filename.replacingOccurrences(of: #"\s*\(\d+\)(?=\.[^.]+$)"#, with: "", options: .regularExpression)
+                // Detect redundant duplicate copy suffixes: e.g. "Comic (1).cbz" matching existing "Comic.cbz" in SAME folder
+                // IMPORTANT: Use \d{1,2} so 4-digit publication years like "(2024)" are NEVER treated as copy suffixes!
+                let strippedCloneName = filename.replacingOccurrences(of: #"\s*\(\d{1,2}\)(?=\.[^.]+$)"#, with: "", options: .regularExpression)
                 if strippedCloneName != filename && fileSize > 0 {
-                    let cloneKey = "\(fileSize)||\(strippedCloneName)"
-                    if existingFingerprints.contains(cloneKey) || existingFilenames.contains(strippedCloneName) {
-                        Logger.shared.log("LibraryScanner: Detected redundant clone on disk: \(filename) matches existing \(strippedCloneName) (\(fileSize) bytes). Removing duplicate from disk.", category: "Library", type: .warning)
-                        try? fileManager.removeItem(at: fileURL)
+                    let cloneKey = "\(fileSize)||\(parentFolder)/\(strippedCloneName)"
+                    if existingFingerprints.contains(cloneKey) {
+                        Logger.shared.log("LibraryScanner: Detected redundant copy clone on disk: \(filename) matches existing \(strippedCloneName) (\(fileSize) bytes). Skipping clone ingestion.", category: "Library", type: .info)
                         continue
                     }
                 }
                 
-                if fileSize > 0 && existingFingerprints.contains("\(fileSize)||\(filename)") {
+                if fileSize > 0 && existingFingerprints.contains("\(fileSize)||\(parentFolder)/\(filename)") {
                     continue
                 }
 
@@ -143,7 +145,7 @@ actor LibraryScanner {
                 existingCanonicalPaths.insert(canonicalPath)
                 existingFilenames.insert(filename)
                 if fileSize > 0 {
-                    existingFingerprints.insert("\(fileSize)||\(filename)")
+                    existingFingerprints.insert("\(fileSize)||\(parentFolder)/\(filename)")
                 }
                 
                 // Skip files currently being uploaded via WiFi
@@ -436,7 +438,8 @@ actor LibraryScanner {
 
             let canonicalPath = resolvedURL.fastCanonicalPath
             let filename = resolvedURL.lastPathComponent.lowercased()
-            let fingerprint = pdf.fileSize > 0 ? "\(pdf.fileSize)||\(filename)" : ""
+            let parentFolder = resolvedURL.deletingLastPathComponent().lastPathComponent.lowercased()
+            let fingerprint = pdf.fileSize > 0 ? "\(pdf.fileSize)||\(parentFolder)/\(filename)" : ""
 
             if seenPaths.contains(canonicalPath) || (!fingerprint.isEmpty && seenFingerprints.contains(fingerprint)) {
                 missingIDs.insert(pdf.id)
