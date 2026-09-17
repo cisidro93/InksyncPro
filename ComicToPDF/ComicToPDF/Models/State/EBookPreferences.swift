@@ -201,6 +201,18 @@ class EBookPreferences: ObservableObject {
         didSet { objectWillChange.send() }
     }
 
+    // MARK: - Comic / Manga Screen Fit Mode (iPhone Full-Bleed Scaling)
+    @AppStorage("comic_pageFitMode") var comicPageFitModeRaw: String = ComicPageFitMode.fitWidth.rawValue {
+        didSet { objectWillChange.send() }
+    }
+    var comicPageFitMode: ComicPageFitMode {
+        get { ComicPageFitMode(rawValue: comicPageFitModeRaw) ?? .fitWidth }
+        set {
+            comicPageFitModeRaw = newValue.rawValue
+            objectWillChange.send()
+        }
+    }
+
     var defaultCodableCropInsets: CodableCropInsets {
         CodableCropInsets(
             top: defaultCropTop,
@@ -546,6 +558,43 @@ enum ReadingProgressMode: Int, CaseIterable, Identifiable, Sendable {
         case .timeRemaining:  return "Time"
         case .readingPaceWPM: return "WPM"
         case .hidden:         return "Off"
+        }
+    }
+}
+
+// MARK: - Comic Page Fit Mode
+enum ComicPageFitMode: String, CaseIterable, Identifiable, Codable, Sendable {
+    case fitWidth   = "fitWidth"   // Scales comic page to 100% of screen width
+    case fillScreen = "fillScreen" // True edge-to-edge full bleed filling 100% of display
+    case fitPage    = "fitPage"    // Full page aspect fit (classic letterboxed overview)
+    case smartFit   = "smartFit"   // Auto-crops margins & fits artwork to maximize screen real estate
+    
+    var id: String { rawValue }
+    
+    var title: String {
+        switch self {
+        case .fitWidth:   return "Fit Width"
+        case .fillScreen: return "Fill Screen"
+        case .fitPage:    return "Fit Page"
+        case .smartFit:   return "Smart Fit"
+        }
+    }
+    
+    var subtitle: String {
+        switch self {
+        case .fitWidth:   return "Matches screen width edge-to-edge"
+        case .fillScreen: return "Full bleed screen coverage without letterboxing"
+        case .fitPage:    return "Full page overview with letterboxing"
+        case .smartFit:   return "Auto-crops borders to maximize artwork size"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .fitWidth:   return "arrow.left.and.right.square"
+        case .fillScreen: return "arrow.up.left.and.arrow.down.right.square"
+        case .fitPage:    return "aspectratio"
+        case .smartFit:   return "sparkles.rectangle.stack"
         }
     }
 }

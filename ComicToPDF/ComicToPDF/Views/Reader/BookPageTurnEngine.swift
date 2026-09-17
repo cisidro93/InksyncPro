@@ -525,10 +525,14 @@ class PageContentViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        view.insetsLayoutMarginsFromSafeArea = false
+        view.preservesSuperviewLayoutMargins = false
         
         let hostingController = UIHostingController(rootView: content.ignoresSafeArea())
         hostingController.view.backgroundColor = .black
         hostingController.view.insetsLayoutMarginsFromSafeArea = false
+        hostingController.view.preservesSuperviewLayoutMargins = false
+        hostingController.additionalSafeAreaInsets = .zero
         addChild(hostingController)
         view.addSubview(hostingController.view)
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
@@ -1169,9 +1173,9 @@ struct TwoUpPageCell: View {
         let manualInsets = ReaderProgressTracker.shared.cropInsets(for: cache.pdfID)
         if let insets = manualInsets, insets.modeRaw == "custom" {
             let minX = insets.left
-            let minY = insets.top
             let cropW = max(0.05, 1.0 - insets.left - insets.right)
             let cropH = max(0.05, 1.0 - insets.top - insets.bottom)
+            let minY = insets.bottom
             let normalizedRect = CGRect(x: minX, y: minY, width: cropW, height: cropH)
             if let cropped = ImageProcessor.crop(image: source, to: normalizedRect) {
                 self.croppedImage = cropped
@@ -1180,7 +1184,7 @@ struct TwoUpPageCell: View {
         } else if let insets = manualInsets, insets.modeRaw == "none" {
             self.croppedImage = source
             return
-        } else if (manualInsets?.modeRaw == "smartAuto") || (manualInsets == nil && (UserDefaults.standard.bool(forKey: "isAutoCropEnabled") || EBookPreferences.shared.isSmartCropEnabled)) {
+        } else if (manualInsets?.modeRaw == "smartAuto") || (manualInsets == nil && (UserDefaults.standard.bool(forKey: "isAutoCropEnabled") || EBookPreferences.shared.isSmartCropEnabled || EBookPreferences.shared.comicPageFitMode == .smartFit)) {
             if let cropRect = SmartCropper.suggestCrop(for: source),
                let cropped = ImageProcessor.crop(image: source, to: cropRect) {
                 self.croppedImage = cropped

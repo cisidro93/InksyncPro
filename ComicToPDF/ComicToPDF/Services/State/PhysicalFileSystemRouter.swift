@@ -338,11 +338,17 @@ class PhysicalFileSystemRouter {
         
         // 1. Remove from UI state atomically in a single pass for zero-latency UI update
         manager.convertedPDFs.removeAll { idsToDelete.contains($0.id) }
+        LibraryService.shared.items.removeAll { idsToDelete.contains($0.id) }
         manager.pruneEmptyCollections()
         manager.saveLibrary()
         
-        // 1.5. Batch preserve source metadata on SQLite annotations so highlights don't become 'Unknown Source'
         let context = InksyncProApp.sharedModelContainer.mainContext
+        if let allDocs = try? context.fetch(FetchDescriptor<SDConvertedPDF>()) {
+            for doc in allDocs where idsToDelete.contains(doc.id) {
+                context.delete(doc)
+            }
+            try? context.save()
+        }
         let metadataMap: [UUID: (name: String, author: String?)] = Dictionary(
             uniqueKeysWithValues: pdfs.map { ($0.id, ($0.name, $0.metadata.author)) }
         )

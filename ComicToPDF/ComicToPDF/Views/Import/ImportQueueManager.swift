@@ -74,7 +74,12 @@ class ImportQueueManager: ObservableObject {
         let (librarySeriesKeys, libraryExactFingerprints) = await MainActor.run {
             var sKeys = Set<String>()
             var fingerprints = Set<String>()
+            let fm = FileManager.default
             for item in LibraryService.shared.items {
+                // Ensure the file actually exists on physical disk.
+                // If it was deleted, it is a ghost entry and must NOT block re-importing the file!
+                guard fm.fileExists(atPath: item.url.path) else { continue }
+                
                 let series = item.url.deletingLastPathComponent().lastPathComponent.lowercased()
                 let fn = item.url.lastPathComponent.lowercased()
                 if !Self.isGenericFolder(series) {

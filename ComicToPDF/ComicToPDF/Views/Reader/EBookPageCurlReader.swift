@@ -198,10 +198,6 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
         let targetIndex = currentPage
 
-        // Rebound Guard: If a page turn completed within the last 650ms, protect the turned page
-        let now = CACurrentMediaTime()
-        let isReconciling = (now - context.coordinator.lastPageTurnTimestamp < 0.65)
-
         // Clear gesture completion marker if set
         if context.coordinator.lastCompletedControllerIndex != nil {
             let lastCompleted = context.coordinator.lastCompletedControllerIndex
@@ -209,10 +205,6 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             if lastCompleted == targetIndex {
                 return // Gesture completed this exact page turn — do NOT re-trigger setViewControllers!
             }
-        }
-
-        if isReconciling {
-            return
         }
 
         if let currentVC = uiViewController.viewControllers?.first as? EBookPageContentViewController {
@@ -272,7 +264,6 @@ extension EBookPageCurlReader {
         }
         private var transitionWatchdogTask: Task<Void, Never>? = nil
         var lastCompletedControllerIndex: Int? = nil
-        var lastPageTurnTimestamp: TimeInterval = 0
 
         // Chapter & Primary WebEngine state
         private var chapterHTML: String = ""
@@ -924,7 +915,6 @@ extension EBookPageCurlReader {
 
             if completed {
                 hasLoadedInitialPage = true
-                lastPageTurnTimestamp = CACurrentMediaTime()
                 parent.onPageTurn?()
                 lastCompletedControllerIndex = newPageIndex
                 currentPageIndex = newPageIndex
@@ -1413,7 +1403,6 @@ extension EBookPageCurlReader {
             let nextIndex = currentPageIndex + step
             if nextIndex < computedTotalPages {
                 hasLoadedInitialPage = true
-                lastPageTurnTimestamp = CACurrentMediaTime()
                 HapticEngine.light()
                 let animate = (parent.prefs.pageTurnStyle != .instant)
                 lastCompletedControllerIndex = nextIndex
@@ -1443,7 +1432,6 @@ extension EBookPageCurlReader {
             let prevIndex = currentPageIndex - step
             if prevIndex >= 0 {
                 hasLoadedInitialPage = true
-                lastPageTurnTimestamp = CACurrentMediaTime()
                 HapticEngine.light()
                 let animate = (parent.prefs.pageTurnStyle != .instant)
                 lastCompletedControllerIndex = prevIndex
@@ -1606,16 +1594,8 @@ extension EBookPageCurlReader {
                 safeSetViewControllers(vcs, direction: .forward, animated: false)
                 reportScrollFraction()
             } else {
-                let now = CACurrentMediaTime()
-                let isRecentTurn = (now - lastPageTurnTimestamp < 0.65)
-                if isRecentTurn {
-                    primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(currentPageIndex), false);")
-                } else {
-                    currentPageIndex = clampedCurrent
-                    if parent.currentPage != clampedCurrent {
-                        parent.currentPage = clampedCurrent
-                    }
-                }
+                primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(currentPageIndex), false);")
+                reportScrollFraction()
             }
 
             mountPrimaryWebViewOnRoot()

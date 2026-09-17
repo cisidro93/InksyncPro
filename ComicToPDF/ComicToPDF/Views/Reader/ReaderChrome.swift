@@ -252,6 +252,21 @@ struct ReaderChrome: View {
                             Label("Color Filter & Enhance", systemImage: "slider.horizontal.3")
                         }
                     }
+                    Menu {
+                        ForEach(ComicPageFitMode.allCases) { mode in
+                            Button {
+                                EBookPreferences.shared.comicPageFitMode = mode
+                            } label: {
+                                if EBookPreferences.shared.comicPageFitMode == mode {
+                                    Label(mode.title, systemImage: "checkmark")
+                                } else {
+                                    Label(mode.title, systemImage: mode.icon)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Screen Fit: \(EBookPreferences.shared.comicPageFitMode.title)", systemImage: EBookPreferences.shared.comicPageFitMode.icon)
+                    }
                 }
                 Section("Navigate") {
                     if let onTOC = onTOCToggle {

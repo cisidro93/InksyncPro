@@ -67,9 +67,12 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
             picker.allowsMultipleSelection = false
         } else {
-            // Known working order: asCopy: true copies files and folders into sandbox /tmp/ before delegating,
-            // completely avoiding security-scoped file provider deadlocks and background worker hangs.
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
+            // Critical fix: asCopy must be false when importing folders / unified content.
+            // When asCopy: true is used with directories, iOS File Provider hangs out-of-process
+            // attempting to copy the folder hierarchy synchronously before delegating, causing an
+            // infinite spinner on the "Open" button. With asCopy: false, didPickDocumentsAt returns
+            // immediately and our sandboxed staging pipeline copies files in the background safely.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
             picker.allowsMultipleSelection = true
         }
 

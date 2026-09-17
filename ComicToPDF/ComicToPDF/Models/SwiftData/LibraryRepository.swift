@@ -11,7 +11,17 @@ actor LibraryModelActor {
     func fetchDocumentsFast() throws -> [ConvertedPDF] {
         let descriptor = FetchDescriptor<SDConvertedPDF>()
         let documents = try modelContext.fetch(descriptor)
-        return documents.map { $0.toDTO() }
+        let fm = FileManager.default
+        return documents.compactMap { doc in
+            let dto = doc.toDTO()
+            if dto.sourceMode.isLinked || dto.sourceMode.isCloud || dto.isVirtualOmnibus {
+                return dto
+            }
+            if fm.fileExists(atPath: dto.url.path) {
+                return dto
+            }
+            return nil
+        }
     }
 
     /// Runs all slow file-check, re-anchoring, self-healing, cascade-delete, and other cleaning logic.

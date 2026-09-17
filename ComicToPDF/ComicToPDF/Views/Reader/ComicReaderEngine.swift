@@ -2841,6 +2841,7 @@ struct ComicPageView: View {
     var onShare: (() -> Void)? = nil
     var onBookmark: (() -> Void)? = nil
     
+    @ObservedObject private var prefs = EBookPreferences.shared
     @State private var image: UIImage? = nil
     @State private var displayImage: UIImage? = nil
     @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled = false
@@ -2852,21 +2853,33 @@ struct ComicPageView: View {
     @State private var showShareSheet = false
     @State private var cropTask: Task<Void, Never>? = nil
 
-    /// Compute the rendered width/height that fits the image inside `container`
-    /// without overflowing, preserving aspect ratio.
-    private func renderSize(for image: UIImage, in container: CGSize) -> CGSize {
+    /// Compute the rendered width/height according to the user's active ComicPageFitMode.
+    private func renderSize(for image: UIImage, in container: CGSize, fitMode: ComicPageFitMode) -> CGSize {
+        let imgWidth  = max(1, image.size.width)
         let imgHeight = max(1, image.size.height)
+        let contWidth  = max(1, container.width)
         let contHeight = max(1, container.height)
         
-        let imageAspect     = image.size.width / imgHeight
-        let containerAspect = container.width  / contHeight
+        let imageAspect     = imgWidth / imgHeight
+        let containerAspect = contWidth / contHeight
         
-        if imageAspect > containerAspect {
-            // Landscape-dominant: clamp to container width
-            return CGSize(width: container.width, height: container.width / imageAspect)
-        } else {
-            // Portrait-dominant: clamp to container height
-            return CGSize(width: container.height * imageAspect, height: container.height)
+        switch fitMode {
+        case .fitWidth:
+            // Matches screen width 100% — panel expands horizontally edge-to-edge
+            return CGSize(width: contWidth, height: contWidth / imageAspect)
+            
+        case .fillScreen:
+            // True Edge-to-Edge full bleed: fills 100% of container so zero letterboxing occurs
+            let scale = max(contWidth / imgWidth, contHeight / imgHeight)
+            return CGSize(width: imgWidth * scale, height: imgHeight * scale)
+            
+        case .smartFit, .fitPage:
+            // Traditional aspect-fit within bounds (smartFit trims borders first)
+            if imageAspect > containerAspect {
+                return CGSize(width: contWidth, height: contWidth / imageAspect)
+            } else {
+                return CGSize(width: contHeight * imageAspect, height: contHeight)
+            }
         }
     }
 
@@ -2901,9 +2914,11 @@ struct ComicPageView: View {
         let manualInsets = ReaderProgressTracker.shared.cropInsets(for: cache.pdfID)
         if let insets = manualInsets, insets.modeRaw == "custom" {
             let minX = insets.left
-            let minY = insets.top
             let cropW = max(0.05, 1.0 - insets.left - insets.right)
             let cropH = max(0.05, 1.0 - insets.top - insets.bottom)
+            // ImageProcessor.crop expects CoreGraphics coordinates (y: (1.0 - rect.maxY) * height)
+            // To start insets.top from the top of the image, rect.maxY must be 1.0 - insets.top
+            let minY = insets.bottom
             let normalizedRect = CGRect(x: minX, y: minY, width: cropW, height: cropH)
             if let cropped = ImageProcessor.crop(image: sourceImage, to: normalizedRect) {
                 self.displayImage = cropped
@@ -2914,8 +2929,9 @@ struct ComicPageView: View {
             return
         }
         
-        // 2. Smart Auto Crop (Document-specific smartAuto or global auto-crop fallback)
-        let shouldAutoCrop = (manualInsets?.modeRaw == "smartAuto") || (manualInsets == nil && isAutoCropEnabled)
+        // 2. Smart Auto Crop (Document-specific smartAuto, global auto-crop fallback, or smartFit mode)
+        let isSmartFit = (prefs.comicPageFitMode == .smartFit)
+        let shouldAutoCrop = isSmartFit || (manualInsets?.modeRaw == "smartAuto") || (manualInsets == nil && (isAutoCropEnabled || prefs.isSmartCropEnabled))
         if shouldAutoCrop {
             cropTask = Task.detached(priority: .userInitiated) {
                 let cropRect = SmartCropper.suggestCrop(for: sourceImage)
@@ -2938,15 +2954,21 @@ struct ComicPageView: View {
         Group {
             if let img = displayImage ?? currentImage {
                 GeometryReader { geo in
-                    let rendered = renderSize(for: img, in: geo.size)
+                    let fitMode = prefs.comicPageFitMode
+                    let rendered = renderSize(for: img, in: geo.size, fitMode: fitMode)
+                    let isPannable = (currentScale > 1.01) || (rendered.height > geo.size.height + 2) || (rendered.width > geo.size.width + 2)
 
                     ZStack {
                         Color.black.ignoresSafeArea()
 
                         Image(uiImage: img)
                             .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxWidth: geo.size.width, maxHeight: geo.size.height)
+                            .aspectRatio(contentMode: (fitMode == .fillScreen) ? .fill : .fit)
+                            .frame(
+                                width: (fitMode == .fillScreen || fitMode == .fitWidth) ? rendered.width : nil,
+                                height: (fitMode == .fillScreen || fitMode == .fitWidth) ? rendered.height : nil
+                            )
+                            .frame(maxWidth: (fitMode == .fitPage) ? geo.size.width : nil, maxHeight: (fitMode == .fitPage) ? geo.size.height : nil)
                             .scaleEffect(currentScale)
                             .offset(offset)
                             .gesture(
@@ -2960,8 +2982,8 @@ struct ComicPageView: View {
                                         validateAndClampOffset(containerSize: geo.size, renderedSize: rendered)
                                     }
                             )
-                            .dragGestureOnlyIfZoomed(
-                                currentScale: currentScale,
+                            .dragGestureIfPannable(
+                                isPannable: isPannable,
                                 onChanged: { val in
                                     offset = CGSize(
                                         width: lastOffset.width + val.translation.width,
@@ -2974,27 +2996,31 @@ struct ComicPageView: View {
                                 }
                             )
                             .onTapGesture(count: 2) { loc in
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                                    if currentScale > 1.0 {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    if currentScale > 1.05 {
                                         currentScale = 1.0
                                         lastScale = 1.0
                                         offset = .zero
                                         lastOffset = .zero
                                     } else {
-                                        currentScale = 2.5
-                                        lastScale = 2.5
-                                        let centerX = geo.size.width / 2
-                                        let centerY = geo.size.height / 2
-                                        let dx = (centerX - loc.x) * (currentScale - 1)
-                                        let dy = (centerY - loc.y) * (currentScale - 1)
-                                        
-                                        let maxW = max(0, (rendered.width * currentScale - geo.size.width) / 2)
-                                        let maxH = max(0, (rendered.height * currentScale - geo.size.height) / 2)
-                                        offset = CGSize(
-                                            width: min(maxW, max(-maxW, dx)),
-                                            height: min(maxH, max(-maxH, dy))
-                                        )
-                                        lastOffset = offset
+                                        if prefs.comicPageFitMode == .fitPage {
+                                            prefs.comicPageFitMode = .fillScreen
+                                        } else {
+                                            currentScale = 2.0
+                                            lastScale = 2.0
+                                            let centerX = geo.size.width / 2
+                                            let centerY = geo.size.height / 2
+                                            let dx = (centerX - loc.x) * (currentScale - 1)
+                                            let dy = (centerY - loc.y) * (currentScale - 1)
+                                            
+                                            let maxW = max(0, (rendered.width * currentScale - geo.size.width) / 2)
+                                            let maxH = max(0, (rendered.height * currentScale - geo.size.height) / 2)
+                                            offset = CGSize(
+                                                width: min(maxW, max(-maxW, dx)),
+                                                height: min(maxH, max(-maxH, dy))
+                                            )
+                                            lastOffset = offset
+                                        }
                                     }
                                 }
                             }
@@ -3067,6 +3093,15 @@ struct ComicPageView: View {
             updateDisplayImage()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_CropInsetsChanged"))) { _ in
+            updateDisplayImage()
+        }
+        .onChange(of: prefs.comicPageFitMode) { _, _ in
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                offset = .zero
+                lastOffset = .zero
+                currentScale = 1.0
+                lastScale = 1.0
+            }
             updateDisplayImage()
         }
         .onChange(of: currentScale) { oldScale, newScale in
@@ -3536,6 +3571,23 @@ extension View {
         if currentScale > 1.0 {
             self.gesture(
                 DragGesture()
+                    .onChanged(onChanged)
+                    .onEnded(onEnded)
+            )
+        } else {
+            self
+        }
+    }
+    
+    @ViewBuilder
+    func dragGestureIfPannable(
+        isPannable: Bool,
+        onChanged: @escaping (DragGesture.Value) -> Void,
+        onEnded: @escaping (DragGesture.Value) -> Void
+    ) -> some View {
+        if isPannable {
+            self.gesture(
+                DragGesture(minimumDistance: 10)
                     .onChanged(onChanged)
                     .onEnded(onEnded)
             )
