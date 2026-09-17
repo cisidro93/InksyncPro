@@ -738,6 +738,7 @@ struct ProPDFReaderEngine: View {
                 isCroppedMode: isCroppedMode,
                 isExpandedView: isExpandedView,
                 isPencilMode: isPencilMode,
+                isHUDShowing: selectedTextForHUD != nil || activeTappedAnnotationID != nil,
                 themeBgColor: effectiveThemeBackgroundColor,
                 onPrevPage: {
                     advancePage(forward: false)
@@ -3087,6 +3088,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     var isCroppedMode: Bool
     var isExpandedView: Bool
     var isPencilMode: Bool = false
+    var isHUDShowing: Bool = false
     var themeBgColor: Color = .clear
     var onPrevPage: () -> Void
     var onNextPage: () -> Void
@@ -3131,6 +3133,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let autoPencilActive = isPad && prefs.applePencilAutoDraw
         let isDrawingMode = (isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive
         let isCanvasMarkupActive = isDrawingMode || (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
+        context.coordinator.canvasProvider.isMarkupActive = isCanvasMarkupActive
 
         if #available(iOS 16.0, *) {
             pdfView.isInMarkupMode = isDrawingMode
@@ -3988,7 +3991,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             }
 
             // If a highlight/markup HUD was previously showing without an active text selection, single-tap outside dismisses it
-            if parent.selectedTextForHUD != nil || parent.activeTappedAnnotationID != nil {
+            if parent.isHUDShowing {
+                view.clearSelection()
                 parent.onTextSelectionChanged(nil, nil)
                 return
             }

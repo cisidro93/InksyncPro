@@ -222,7 +222,6 @@ struct StudyCanvasView: UIViewRepresentable {
             // 3. Generate smooth, interpolated PKStroke points with matching ink properties
             var newStrokePoints: [PKStrokePoint] = []
             let totalNew = snappedPoints.count
-            let lastOrigPoint = points.last ?? points[0]
             
             for (idx, pt) in snappedPoints.enumerated() {
                 let frac = CGFloat(idx) / CGFloat(max(totalNew - 1, 1))
