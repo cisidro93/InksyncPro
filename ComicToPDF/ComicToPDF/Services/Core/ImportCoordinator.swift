@@ -49,10 +49,21 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             // iPadOS to enter a hybrid browse/select mode that suppresses selection circles.
             // We validate the actual file extension in the parser, so broad matching is safe.
             supportedTypes = [.content]
+        case .folder:
+            supportedTypes = [.folder, .directory]
+        case .files:
+            supportedTypes = [
+                .pdf, .zip, .archive,
+                UTType(filenameExtension: "epub") ?? .epub,
+                UTType(filenameExtension: "cbz") ?? .zip,
+                UTType(filenameExtension: "cbr") ?? .archive,
+                UTType(filenameExtension: "cb7") ?? .archive,
+                UTType(filenameExtension: "cbt") ?? .archive
+            ].compactMap { $0 }
         default:
             // Unified Legacy Forward-Port (0bb6b38)
             supportedTypes = [
-                .pdf, .zip, .folder, .archive,
+                .pdf, .zip, .folder, .directory, .archive,
                 UTType(filenameExtension: "epub") ?? .epub,
                 UTType(filenameExtension: "cbz") ?? .zip,
                 UTType(filenameExtension: "cbr") ?? .archive,
@@ -63,23 +74,36 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
         let picker: UIDocumentPickerViewController
 
-        if type == .json {
+        switch type {
+        case .folder:
+            // Point of truth: asCopy: false and allowsMultipleSelection: false.
+            // In iOS, setting allowsMultipleSelection = false for directories enables the
+            // top-right "Open" button to target the active directory itself, returning immediately
+            // with zero spinning circle or fileproviderd deadlock on both iPad and iPhone.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
+            picker.allowsMultipleSelection = false
+        case .unified:
+            // Unified picker must also use allowsMultipleSelection = false so folder open functions.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
+            picker.allowsMultipleSelection = false
+        case .files:
+            // Standalone files picker uses asCopy: true and allowsMultipleSelection: true
+            // so individual comic files can be multi-selected with selection checkmarks.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
+            picker.allowsMultipleSelection = true
+        case .json, .smartList:
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
             picker.allowsMultipleSelection = false
-        } else {
-            // Critical fix: asCopy must be false when importing folders / unified content.
-            // When asCopy: true is used with directories, iOS File Provider hangs out-of-process
-            // attempting to copy the folder hierarchy synchronously before delegating, causing an
-            // infinite spinner on the "Open" button. With asCopy: false, didPickDocumentsAt returns
-            // immediately and our sandboxed staging pipeline copies files in the background safely.
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
-            picker.allowsMultipleSelection = true
         }
 
         picker.delegate = coordinator
         picker.shouldShowFileExtensions = true
-        picker.modalPresentationStyle = .fullScreen
-        Logger.shared.log("ImportCoordinator: Presenting structured picker payload natively.", category: "System")
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            picker.modalPresentationStyle = .formSheet
+        } else {
+            picker.modalPresentationStyle = .fullScreen
+        }
+        Logger.shared.log("ImportCoordinator: Presenting structured picker payload natively for \(type).", category: "System")
         rootVC.present(picker, animated: true)
     }
 
@@ -98,6 +122,14 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
+        // Synchronously capture security scope on main thread BEFORE dismissal or async dispatch
+        var securedURLs: [URL] = []
+        for url in urls {
+            if url.startAccessingSecurityScopedResource() {
+                securedURLs.append(url)
+            }
+        }
+
         // Dismiss the picker immediately — asCopy:false never auto-dismisses.
         // We do NOT use a completion block so processing is not gated on the animation.
         controller.dismiss(animated: true)
@@ -105,6 +137,12 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         let type = self.currentType
         
         let stagingTask = Task.detached(priority: .userInitiated) { () -> [URL] in
+            defer {
+                for url in securedURLs {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
             if type == .json || type == .smartList {
                 return urls
             }
@@ -115,18 +153,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
             let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
             try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-
-            var securedURLs: [URL] = []
-            for url in urls {
-                if url.startAccessingSecurityScopedResource() {
-                    securedURLs.append(url)
-                }
-            }
-            defer {
-                for url in securedURLs {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
 
             // ── Phase 1: Collect candidate (source, dest) pairs without copying ──
             // Enumeration is cheap (metadata only); we yield every 25 items to keep
