@@ -1644,10 +1644,10 @@ struct ComicReaderEngine: View {
                 Group {
                     if readingMode == .webtoonScroll {
                         webtoonView
+                    } else if readingMode == .panelNavigation {
+                        guidedView(for: geo.size)
                     } else if shouldShowTwoUpSpread(for: geo.size) {
                         twoUpView
-                    } else if readingMode == .panelNavigation {
-                        guidedView
                     } else {
                         BookPager(
                             currentIndex: $currentIndex,
@@ -1861,6 +1861,11 @@ struct ComicReaderEngine: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ComicReader_ToggleGuidedInspection"))) { _ in
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                readingMode = (readingMode == .panelNavigation) ? (isMangaComic ? .mangaRTL : .pageHorizontal) : .panelNavigation
+            }
+        }
 
         .sheet(item: $activeHighlightToEdit) { annotation in
             AnnotationEditSheet(annotation: annotation)
@@ -1999,24 +2004,29 @@ struct ComicReaderEngine: View {
     } // closes GeometryReader
 } // end body
 
-    var guidedView: some View {
-        TabView(selection: $currentIndex) {
-            ForEach(0..<cache.pageCount, id: \.self) { index in
-                let panelsForPage = PageModelStore.shared.legacyVisionPanels(for: pdf.id, pageIndex: index)
-                ComicGuidedPageView(
-                    index: index,
-                    cache: cache,
-                    panels: panelsForPage,
-                    masterIndex: $currentIndex,
-                    totalPages: cache.pageCount,
-                    isMangaMode: isMangaComic || readingMode == .mangaRTL,
-                    onTapChrome: { chromeVisible.toggle() }
-                )
-                .applyFilterPreset(activeFilterPreset)
-                .tag(index)
+    @ViewBuilder
+    private func guidedView(for size: CGSize) -> some View {
+        let isTwoUp = shouldShowTwoUpSpread(for: size)
+        let spreads = isTwoUp ? computeSpreads() : (0..<cache.pageCount).map { [$0] }
+        let activeSpreadIndex = spreads.firstIndex(where: { $0.contains(currentIndex) }) ?? 0
+        let currentSpread = (activeSpreadIndex < spreads.count) ? spreads[activeSpreadIndex] : [currentIndex]
+
+        ComicSpreadGuidedView(
+            spread: currentSpread,
+            cache: cache,
+            pdfID: pdf.id,
+            masterIndex: $currentIndex,
+            spreads: spreads,
+            activeFilterPreset: activeFilterPreset,
+            isMangaMode: isMangaComic || readingMode == .mangaRTL,
+            onTapChrome: { chromeVisible.toggle() },
+            onToggleReadingMode: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    readingMode = isMangaComic ? .mangaRTL : .pageHorizontal
+                }
             }
-        }
-        .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+        )
+        .id("guided_spread_\(activeSpreadIndex)")
     }
     
     var webtoonView: some View {
@@ -3123,149 +3133,390 @@ struct ComicPageView: View {
     }
 }
 
-// MARK: - Guided View Component
-struct ComicGuidedPageView: View {
-    let index: Int
+// MARK: - Guided View Component (Dual-Page Spread & Single-Page Support)
+struct ComicSpreadGuidedView: View {
+    let spread: [Int] // [pageIndex] for single, or [leftIndex, rightIndex] for dual spread
     let cache: ComicImageCache
-    let panels: [PanelExtractor.Panel]
+    let pdfID: UUID
     @Binding var masterIndex: Int
-    let totalPages: Int
+    let spreads: [[Int]]
+    let activeFilterPreset: ReadingFilterPreset
     var isMangaMode: Bool = false
     var onTapChrome: () -> Void
-    
-    @State private var image: UIImage? = nil
-    @State private var currentPanelIndex: Int = -1 // -1 means Zoomed Out
-    
+    var onToggleReadingMode: (() -> Void)? = nil
+
+    @State private var image0: UIImage? = nil
+    @State private var image1: UIImage? = nil
+    @State private var currentStrideIndex: Int = -1 // -1 = Macro Overview (full physical spread or full page)
+    @State private var strides: [SpreadStride] = []
+    @State private var isAnalyzing: Bool = false
+
     private var tapZoneStyle: TapZoneStyle {
         TapZoneStyle(rawValue: UserDefaults.standard.string(forKey: "tapZoneStyle") ?? "") ?? .classic
     }
-    
-    var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                Color.black.ignoresSafeArea()
 
-                if let img = image {
-                    let metrics = calculateMetrics(for: geo.size, image: img)
-
-                    Image(uiImage: img)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .scaleEffect(metrics.scale)
-                        .offset(x: metrics.offsetX, y: metrics.offsetY)
-                        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: currentPanelIndex)
-                        .onTapGesture { loc in
-                            let w = geo.size.width
-                            let zones = tapZoneStyle.zones
-                            if loc.x < w * zones.leftEdge {
-                                if isMangaMode { advance() } else { rewind() }
-                            } else if loc.x > w * zones.rightEdge {
-                                if isMangaMode { rewind() } else { advance() }
-                            } else {
-                                onTapChrome()
-                            }
-                        }
-
-                    // ── Panel Navigation HUD ──────────────────────────
-                    VStack {
-                        Spacer()
-                        if panels.isEmpty {
-                            // Zero panels: show a hint to open Work Area
-                            HStack(spacing: 8) {
-                                Image(systemName: "viewfinder")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(.white.opacity(0.6))
-                                Text("No panels — tap \u{203A} to skip page")
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.white.opacity(0.6))
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .padding(.bottom, 90)
-                        } else if currentPanelIndex >= 0 {
-                            // Active panel indicator
-                            VStack(spacing: 6) {
-                                // Segmented progress dots
-                                HStack(spacing: 4) {
-                                    ForEach(0..<panels.count, id: \.self) { i in
-                                        Capsule()
-                                            .fill(i <= currentPanelIndex ? Color.white : Color.white.opacity(0.3))
-                                            .frame(width: i == currentPanelIndex ? 18 : 6, height: 4)
-                                            .animation(.spring(response: 0.25), value: currentPanelIndex)
-                                    }
-                                }
-                                Text("Panel \(currentPanelIndex + 1) of \(panels.count)")
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.white)
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .padding(.bottom, 90)
-                        }
-                    }
-                } else {
-                    ZStack {
-                        Color.black
-                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
-                    }
-                    .onAppear {
-                        image = cache.getImage(at: index)
-                    }
-                }
-            }
-        }
-        .onAppear {
-            image = cache.getImage(at: index)
-            currentPanelIndex = -1 // Start zoomed out
-            // Auto-advance pages with no panels when in guided mode
-            if panels.isEmpty && masterIndex < totalPages - 1 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    // Only auto-skip if there are genuinely no panels for this page
-                    // (don't skip if panels haven't loaded yet)
-                }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
-            guard let userInfo = notification.userInfo,
-                  let loadedIndex = userInfo["index"] as? Int,
-                  loadedIndex == index else { return }
-            image = cache.getImage(at: index)
-        }
+    struct SpreadStride: Identifiable, Equatable {
+        let id = UUID()
+        let pageIndex: Int
+        let panel: PanelExtractor.Panel
+        let label: String
+        let subIndex: Int
+        let totalForPage: Int
     }
-    
+
     struct ViewMetrics {
         let scale: CGFloat
         let offsetX: CGFloat
         let offsetY: CGFloat
     }
-    
-    private func calculateMetrics(for proxy: CGSize, image: UIImage) -> ViewMetrics {
-        if currentPanelIndex == -1 || panels.isEmpty { return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0) }
-        
-        let panel = panels[currentPanelIndex]
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                if currentStrideIndex == -1 {
+                    // ── Macro Physical Spread Overview (Feels like holding a comic) ──
+                    macroSpreadView(for: geo.size)
+                } else if currentStrideIndex >= 0 && currentStrideIndex < strides.count {
+                    // ── Focused Inspection View (Smart Gutter / Panel Zoom) ──
+                    inspectionStrideView(for: geo.size)
+                } else {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                }
+
+                // ── Liquid Glass Stride HUD Overlay ──
+                hudOverlay
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                // Double-tap to smoothly toggle between Macro Overview & Inspection Zoom
+                HapticEngine.selection()
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                    if currentStrideIndex == -1 {
+                        currentStrideIndex = 0
+                    } else {
+                        currentStrideIndex = -1
+                    }
+                }
+            }
+            .onTapGesture(count: 1) { loc in
+                handleTap(loc: loc, width: geo.size.width)
+            }
+        }
+        .onAppear {
+            loadImagesAndAnalyze()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
+            guard let userInfo = notification.userInfo,
+                  let loadedIndex = userInfo["index"] as? Int else { return }
+            if loadedIndex == spread.first || (spread.count > 1 && loadedIndex == spread[1]) {
+                loadImagesAndAnalyze()
+            }
+        }
+    }
+
+    // MARK: - Subviews
+
+    @ViewBuilder
+    private func macroSpreadView(for size: CGSize) -> some View {
+        if spread.count == 2 {
+            let leftImg = isMangaMode ? image1 : image0
+            let rightImg = isMangaMode ? image0 : image1
+            HStack(spacing: 4) {
+                if let l = leftImg {
+                    Image(uiImage: l)
+                        .resizable()
+                        .applyFilterPreset(activeFilterPreset)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: (size.width - 4) / 2, maxHeight: size.height)
+                }
+                if let r = rightImg {
+                    Image(uiImage: r)
+                        .resizable()
+                        .applyFilterPreset(activeFilterPreset)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: (size.width - 4) / 2, maxHeight: size.height)
+                }
+            }
+            .frame(width: size.width, height: size.height)
+        } else {
+            if let img0 = image0 {
+                Image(uiImage: img0)
+                    .resizable()
+                    .applyFilterPreset(activeFilterPreset)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: size.width, height: size.height)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func inspectionStrideView(for size: CGSize) -> some View {
+        let activeStride = strides[currentStrideIndex]
+        let activeImg = (activeStride.pageIndex == spread[0]) ? image0 : image1
+
+        if let img = activeImg {
+            let metrics = calculateMetrics(for: size, image: img, panel: activeStride.panel)
+
+            Image(uiImage: img)
+                .resizable()
+                .applyFilterPreset(activeFilterPreset)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size.width, height: size.height)
+                .scaleEffect(metrics.scale)
+                .offset(x: metrics.offsetX, y: metrics.offsetY)
+                .animation(.spring(response: 0.38, dampingFraction: 0.82), value: currentStrideIndex)
+        }
+    }
+
+    @ViewBuilder
+    private var hudOverlay: some View {
+        VStack {
+            Spacer()
+            if currentStrideIndex == -1 {
+                HStack(spacing: 6) {
+                    Image(systemName: "book.pages")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                    Text(spread.count == 2 ? "Physical Spread • Tap to read" : "Single Page • Tap to read")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                .padding(.horizontal, 13)
+                .padding(.vertical, 6.5)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.2), lineWidth: 0.5)
+                )
+                .shadow(color: Color.black.opacity(0.25), radius: 8, y: 2)
+                .contentShape(Capsule())
+                .onTapGesture {
+                    HapticEngine.selection()
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                        currentStrideIndex = 0
+                    }
+                }
+                .padding(.bottom, 60)
+                .transition(.opacity)
+            } else if currentStrideIndex >= 0 && currentStrideIndex < strides.count {
+                let activeStride = strides[currentStrideIndex]
+                VStack(spacing: 5) {
+                    HStack(spacing: 4) {
+                        ForEach(0..<strides.count, id: \.self) { i in
+                            Capsule()
+                                .fill(i <= currentStrideIndex ? Color.white : Color.white.opacity(0.3))
+                                .frame(width: i == currentStrideIndex ? 18 : 6, height: 4)
+                                .animation(.spring(response: 0.25), value: currentStrideIndex)
+                        }
+                    }
+                    Text("Page \(activeStride.pageIndex + 1) · \(activeStride.label)")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.2), lineWidth: 0.5)
+                )
+                .shadow(color: Color.black.opacity(0.25), radius: 8, y: 2)
+                .contentShape(Capsule())
+                .onTapGesture {
+                    HapticEngine.selection()
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                        currentStrideIndex = -1
+                    }
+                }
+                .padding(.bottom, 60)
+                .transition(.opacity)
+            }
+        }
+    }
+
+    // MARK: - Gesture Handling
+
+    private func handleTap(loc: CGPoint, width: CGFloat) {
+        let zones = tapZoneStyle.zones
+        if loc.x < width * zones.leftEdge {
+            if isMangaMode { advance() } else { rewind() }
+        } else if loc.x > width * zones.rightEdge {
+            if isMangaMode { rewind() } else { advance() }
+        } else {
+            onTapChrome()
+        }
+    }
+
+    private func advance() {
+        HapticEngine.light()
+        if strides.isEmpty {
+            goToNextSpread()
+            return
+        }
+        if currentStrideIndex < strides.count - 1 {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                currentStrideIndex += 1
+            }
+        } else {
+            goToNextSpread()
+        }
+    }
+
+    private func rewind() {
+        HapticEngine.light()
+        if currentStrideIndex > 0 {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                currentStrideIndex -= 1
+            }
+        } else if currentStrideIndex == 0 {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                currentStrideIndex = -1
+            }
+        } else {
+            goToPrevSpread()
+        }
+    }
+
+    private func goToNextSpread() {
+        guard let currentSpreadIdx = spreads.firstIndex(where: { $0 == spread }) else { return }
+        let nextSpreadIdx = currentSpreadIdx + 1
+        if nextSpreadIdx < spreads.count {
+            masterIndex = spreads[nextSpreadIdx].first ?? masterIndex
+            currentStrideIndex = -1
+        }
+    }
+
+    private func goToPrevSpread() {
+        guard let currentSpreadIdx = spreads.firstIndex(where: { $0 == spread }) else { return }
+        let prevSpreadIdx = currentSpreadIdx - 1
+        if prevSpreadIdx >= 0 {
+            masterIndex = spreads[prevSpreadIdx].first ?? masterIndex
+            currentStrideIndex = -1
+        }
+    }
+
+    // MARK: - Logic & Analysis
+
+    private func loadImagesAndAnalyze() {
+        let idx0 = spread[0]
+        if image0 == nil {
+            image0 = cache.cachedImage(at: idx0) ?? cache.getImage(at: idx0)
+        }
+        if spread.count > 1 {
+            let idx1 = spread[1]
+            if image1 == nil {
+                image1 = cache.cachedImage(at: idx1) ?? cache.getImage(at: idx1)
+            }
+        }
+        analyzeStrides()
+    }
+
+    private func analyzeStrides() {
+        guard !isAnalyzing else { return }
+        guard let img0 = image0 else { return }
+        if spread.count == 2 && image1 == nil { return }
+        isAnalyzing = true
+
+        let idx0 = spread[0]
+        let idx1 = spread.count > 1 ? spread[1] : nil
+        let img1 = image1
+        let manga = isMangaMode
+        let docID = pdfID
+
+        Task.detached(priority: .userInitiated) {
+            let isDualSpread = (spread.count == 2)
+            let saved0 = PageModelStore.shared.legacyVisionPanels(for: docID, pageIndex: idx0)
+            let p0: [PanelExtractor.Panel]
+            if !saved0.isEmpty {
+                p0 = saved0
+            } else {
+                p0 = await PanelExtractor.detectPanelsOrSmartStrides(in: img0, isDualPage: isDualSpread, mangaMode: manga)
+            }
+
+            let p1: [PanelExtractor.Panel]
+            if let idx1 = idx1, let img1 = img1 {
+                let saved1 = PageModelStore.shared.legacyVisionPanels(for: docID, pageIndex: idx1)
+                if !saved1.isEmpty {
+                    p1 = saved1
+                } else {
+                    p1 = await PanelExtractor.detectPanelsOrSmartStrides(in: img1, isDualPage: isDualSpread, mangaMode: manga)
+                }
+            } else {
+                p1 = []
+            }
+
+            var builtStrides: [SpreadStride] = []
+            if spread.count == 2, let idx1 = idx1 {
+                let firstIdx = manga ? idx1 : idx0
+                let firstPanels = manga ? p1 : p0
+                let secondIdx = manga ? idx0 : idx1
+                let secondPanels = manga ? p0 : p1
+
+                for (i, panel) in firstPanels.enumerated() {
+                    let lbl: String
+                    if firstPanels.count > 3 {
+                        lbl = "Panel \(i + 1) of \(firstPanels.count)"
+                    } else if firstPanels.count == 3 {
+                        lbl = i == 0 ? "Top Tier" : (i == 1 ? "Middle Tier" : "Bottom Tier")
+                    } else {
+                        lbl = i == 0 ? "Top Section" : "Bottom Section"
+                    }
+                    builtStrides.append(SpreadStride(pageIndex: firstIdx, panel: panel, label: lbl, subIndex: i, totalForPage: firstPanels.count))
+                }
+                for (i, panel) in secondPanels.enumerated() {
+                    let lbl: String
+                    if secondPanels.count > 3 {
+                        lbl = "Panel \(i + 1) of \(secondPanels.count)"
+                    } else if secondPanels.count == 3 {
+                        lbl = i == 0 ? "Top Tier" : (i == 1 ? "Middle Tier" : "Bottom Tier")
+                    } else {
+                        lbl = i == 0 ? "Top Section" : "Bottom Section"
+                    }
+                    builtStrides.append(SpreadStride(pageIndex: secondIdx, panel: panel, label: lbl, subIndex: i, totalForPage: secondPanels.count))
+                }
+            } else {
+                for (i, panel) in p0.enumerated() {
+                    let lbl: String
+                    if p0.count > 3 {
+                        lbl = "Panel \(i + 1) of \(p0.count)"
+                    } else if p0.count == 3 {
+                        lbl = i == 0 ? "Top Tier" : (i == 1 ? "Middle Tier" : "Bottom Tier")
+                    } else {
+                        lbl = i == 0 ? "Top Section" : "Bottom Section"
+                    }
+                    builtStrides.append(SpreadStride(pageIndex: idx0, panel: panel, label: lbl, subIndex: i, totalForPage: p0.count))
+                }
+            }
+
+            await MainActor.run {
+                self.strides = builtStrides
+                self.isAnalyzing = false
+            }
+        }
+    }
+
+    private func calculateMetrics(for proxy: CGSize, image: UIImage, panel: PanelExtractor.Panel) -> ViewMetrics {
         let imgSize = image.size
         guard imgSize.width > 0, imgSize.height > 0 else {
             return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
         }
-        
-        // Convert Vision Normalized Rect to Image Pixel Rect (UIKit / Top-Left origin)
+
         let rect = CGRect(
             x: panel.boundingBox.minX * imgSize.width,
             y: (1.0 - panel.boundingBox.maxY) * imgSize.height,
             width: panel.boundingBox.width * imgSize.width,
             height: panel.boundingBox.height * imgSize.height
         )
-        
-        // 1. Calculate how the image fits perfectly on screen at scale=1
+
         let imageRatio = imgSize.width / imgSize.height
         let screenRatio = proxy.width / proxy.height
         guard imageRatio > 0, !imageRatio.isNaN, screenRatio > 0, !screenRatio.isNaN else {
             return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
         }
-        
+
         var renderW: CGFloat
         var renderH: CGFloat
         if imageRatio > screenRatio {
@@ -3275,8 +3526,7 @@ struct ComicGuidedPageView: View {
             renderH = proxy.height
             renderW = proxy.height * imageRatio
         }
-        
-        // 2. Map pixel rect to render rect
+
         let mappedX = (rect.minX / imgSize.width) * renderW
         let mappedY = (rect.minY / imgSize.height) * renderH
         let mappedW = (rect.width / imgSize.width) * renderW
@@ -3284,46 +3534,23 @@ struct ComicGuidedPageView: View {
         guard mappedW > 0, mappedH > 0, !mappedW.isNaN, !mappedH.isNaN else {
             return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
         }
-        
-        // 3. Target Scale to fit the panel perfectly (with 5% breathing room)
+
         let scaleX = proxy.width / mappedW
         let scaleY = proxy.height / mappedH
-        let scale = min(scaleX, scaleY) * 0.95
-        
-        // 4. Calculate Offset to center the panel
-        // Center of the physical screen representation
+        let scale = min(scaleX, scaleY) * 0.96
+
         let panelCenter = CGPoint(x: mappedX + mappedW / 2, y: mappedY + mappedH / 2)
         let imageRenderCenter = CGPoint(x: renderW / 2, y: renderH / 2)
-        
-        // SwiftUI offsets are post-scale transform
+
         let tx = (imageRenderCenter.x - panelCenter.x) * scale
         let ty = (imageRenderCenter.y - panelCenter.y) * scale
-        
+
         return ViewMetrics(scale: scale, offsetX: tx, offsetY: ty)
     }
-    
-    private func advance() {
-        if currentPanelIndex < panels.count - 1 {
-            currentPanelIndex += 1
-        } else {
-            if masterIndex < totalPages - 1 {
-                currentPanelIndex = -1 // Reset for return
-                masterIndex += 1
-            }
-        }
-    }
-    
-    private func rewind() {
-        if currentPanelIndex > -1 {
-            currentPanelIndex -= 1
-        } else {
-            if masterIndex > 0 {
-                currentPanelIndex = -1
-                masterIndex -= 1
-            }
-        }
-    }
 }
+
+/// Backward compatibility alias
+typealias ComicGuidedPageView = ComicSpreadGuidedView
 
 // MARK: - Visual Scrubber (Premium redesign)
 struct VisualComicScrubber: View {

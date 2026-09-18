@@ -230,4 +230,205 @@ struct PanelExtractor {
         }
         return panels
     }
+
+    // MARK: - Smart Gutter Detection & Overlapping Strides (Option C.1 & C.2)
+
+    /// Option C.1: Scans the specified height range of the page to find horizontal gutters.
+    /// Returns sorted normalized split ratios from the top (0.0...1.0) in UIKit coordinates.
+    static func findHorizontalGutterRatios(in image: UIImage, startRatio: Double = 0.20, endRatio: Double = 0.80, maxGutters: Int = 2) -> [CGFloat] {
+        guard let cgImage = image.cgImage else { return [] }
+        guard let thumbnail = SmartCropper.createLowResThumbnail(from: cgImage, maxDimension: 256) else { return [] }
+
+        let width = thumbnail.width
+        let height = thumbnail.height
+        guard width > 20 && height > 20 else { return [] }
+
+        let colorSpace = CGColorSpaceCreateDeviceGray()
+        var rawData = [UInt8](repeating: 0, count: width * height)
+        guard let context = CGContext(
+            data: &rawData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return [] }
+
+        context.draw(thumbnail, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let startY = max(0, Int(Double(height) * startRatio))
+        let endY = min(height - 1, Int(Double(height) * endRatio))
+
+        struct GutterBand {
+            let startY: Int
+            let endY: Int
+            var height: Int { endY - startY + 1 }
+            var centerY: Int { startY + (height / 2) }
+        }
+
+        var candidateBands: [GutterBand] = []
+        var currentBandStart: Int? = nil
+
+        for y in startY...endY {
+            let rowOffset = y * width
+            var rowMin = 255
+            var rowMax = 0
+            var sum = 0
+
+            for x in 0..<width {
+                let val = Int(rawData[rowOffset + x])
+                if val < rowMin { rowMin = val }
+                if val > rowMax { rowMax = val }
+                sum += val
+            }
+
+            let spread = rowMax - rowMin
+            let avg = sum / width
+            // Gutter row: uniform light, uniform dark, or very low variance
+            let isGutterRow = (avg > 215 && spread < 50) || (avg < 40 && spread < 40) || spread < 22
+
+            if isGutterRow {
+                if currentBandStart == nil { currentBandStart = y }
+            } else {
+                if let start = currentBandStart {
+                    let bandHeight = y - start
+                    if bandHeight >= 3 { // At least 3px in 256px thumbnail (~1.2% page height)
+                        candidateBands.append(GutterBand(startY: start, endY: y - 1))
+                    }
+                    currentBandStart = nil
+                }
+            }
+        }
+
+        if let start = currentBandStart {
+            let bandHeight = (endY + 1) - start
+            if bandHeight >= 3 {
+                candidateBands.append(GutterBand(startY: start, endY: endY))
+            }
+        }
+
+        guard !candidateBands.isEmpty else { return [] }
+
+        // Sort candidate bands by height descending (thickest gutters first)
+        let sortedBands = candidateBands.sorted { $0.height > $1.height }
+
+        var selectedCenters: [Int] = []
+        let minSeparationPx = Int(Double(height) * 0.16) // Bands must be separated by at least 16% height
+
+        for band in sortedBands {
+            let center = band.centerY
+            let tooClose = selectedCenters.contains { abs($0 - center) < minSeparationPx }
+            if !tooClose {
+                selectedCenters.append(center)
+                if selectedCenters.count >= maxGutters { break }
+            }
+        }
+
+        // Convert selected Y centers to top-down UIKit normalized coordinates
+        let topDownRatios = selectedCenters.map { yCenter -> CGFloat in
+            let topDownY = height - 1 - yCenter
+            return CGFloat(topDownY) / CGFloat(height)
+        }.sorted()
+
+        return topDownRatios
+    }
+
+    /// Single gutter convenience for mid-page division
+    static func findHorizontalGutterRatio(in image: UIImage) -> CGFloat? {
+        let ratios = findHorizontalGutterRatios(in: image, startRatio: 0.35, endRatio: 0.65, maxGutters: 1)
+        return ratios.first
+    }
+
+    /// Generates smart reading strides for a page (Option C.1 & C.2).
+    /// Tailored variation for dual pages vs nondual single pages:
+    /// - Dual pages: Divided into 2 natural sections per page (Top Section & Bottom Section)
+    ///   using mid-page gutter (C.1) or 20% overlapping safe zone (C.2).
+    /// - Nondual single pages: Divided into 3 tiers if 2 gutters found (C.1) for optimal 2:1 landscape screen fit,
+    ///   2 halves if 1 gutter found, or 3 overlapping strides (C.2) with 20% safe zone so speech bubbles are never sliced.
+    /// - Double-page splash scans: Divided into Left/Right halves with reading direction respect.
+    static func generateSmartStrides(for image: UIImage, isDualPage: Bool = false, mangaMode: Bool = false) -> [Panel] {
+        let imgSize = image.size
+        let isWideDoubleSpread = imgSize.width > imgSize.height * 1.18
+
+        if isWideDoubleSpread {
+            // Wide Double-Page Spread in a single image:
+            // Divide into Left Half (Page 1 in LTR) and Right Half (Page 1 in RTL)
+            let leftBox = CGRect(x: 0.0, y: 0.0, width: 0.52, height: 1.0)
+            let rightBox = CGRect(x: 0.48, y: 0.0, width: 0.52, height: 1.0)
+
+            let firstBox = mangaMode ? rightBox : leftBox
+            let secondBox = mangaMode ? leftBox : rightBox
+
+            // Top and Bottom strides for each half (20% overlap zone vertically)
+            let firstTop = Panel(boundingBox: CGRect(x: firstBox.minX, y: 0.40, width: firstBox.width, height: 0.60))
+            let firstBot = Panel(boundingBox: CGRect(x: firstBox.minX, y: 0.00, width: firstBox.width, height: 0.60))
+            let secondTop = Panel(boundingBox: CGRect(x: secondBox.minX, y: 0.40, width: secondBox.width, height: 0.60))
+            let secondBot = Panel(boundingBox: CGRect(x: secondBox.minX, y: 0.00, width: secondBox.width, height: 0.60))
+
+            return [firstTop, firstBot, secondTop, secondBot]
+        }
+
+        if isDualPage {
+            // Dual-Page Variation:
+            // 2 sections per page for smooth 4-step spread cadence (Page 1 Top/Bot -> Page 2 Top/Bot)
+            if let gutterRatio = findHorizontalGutterRatio(in: image) {
+                // Option C.1: Clean split at detected gutter
+                let topH = Double(gutterRatio)
+                let botH = 1.0 - topH
+                let topPanel = Panel(boundingBox: CGRect(x: 0, y: 1.0 - topH, width: 1.0, height: topH))
+                let botPanel = Panel(boundingBox: CGRect(x: 0, y: 0, width: 1.0, height: botH))
+                return [topPanel, botPanel]
+            } else {
+                // Option C.2: 20% overlapping safe zone
+                let topPanel = Panel(boundingBox: CGRect(x: 0, y: 0.40, width: 1.0, height: 0.60))
+                let botPanel = Panel(boundingBox: CGRect(x: 0, y: 0.00, width: 1.0, height: 0.60))
+                return [topPanel, botPanel]
+            }
+        } else {
+            // Nondual Single Page Variation:
+            // Multi-tier detection for optimal landscape phone magnification
+            let gutters = findHorizontalGutterRatios(in: image, startRatio: 0.22, endRatio: 0.78, maxGutters: 2)
+
+            if gutters.count == 2 {
+                // Option C.1: 3 clean tiers (Top Tier, Middle Tier, Bottom Tier)
+                let g1 = Double(gutters[0])
+                let g2 = Double(gutters[1])
+
+                let tier1 = Panel(boundingBox: CGRect(x: 0, y: 1.0 - g1, width: 1.0, height: g1))
+                let tier2 = Panel(boundingBox: CGRect(x: 0, y: 1.0 - g2, width: 1.0, height: g2 - g1))
+                let tier3 = Panel(boundingBox: CGRect(x: 0, y: 0.0, width: 1.0, height: 1.0 - g2))
+                return [tier1, tier2, tier3]
+            } else if gutters.count == 1 {
+                // Option C.1: 2 clean halves
+                let g = Double(gutters[0])
+                let topPanel = Panel(boundingBox: CGRect(x: 0, y: 1.0 - g, width: 1.0, height: g))
+                let botPanel = Panel(boundingBox: CGRect(x: 0, y: 0, width: 1.0, height: 1.0 - g))
+                return [topPanel, botPanel]
+            } else {
+                // Option C.2: 3 overlapping strides with 20% safe zones
+                // Gives 3x magnification on iPhone landscape with zero bisected speech bubbles
+                let strideTop = Panel(boundingBox: CGRect(x: 0, y: 0.55, width: 1.0, height: 0.45))
+                let strideMid = Panel(boundingBox: CGRect(x: 0, y: 0.28, width: 1.0, height: 0.44))
+                let strideBot = Panel(boundingBox: CGRect(x: 0, y: 0.00, width: 1.0, height: 0.45))
+                return [strideTop, strideMid, strideBot]
+            }
+        }
+    }
+
+    /// Option A + Option C Hybrid:
+    /// Attempts Vision panel detection (Option A). If 2 or more panels are detected,
+    /// returns them sorted in reading order. Otherwise falls back to Smart Gutter / Overlap strides (Option C.1/C.2)
+    /// specialized for dual pages or nondual single pages.
+    static func detectPanelsOrSmartStrides(
+        in image: UIImage,
+        isDualPage: Bool = false,
+        mangaMode: Bool = false
+    ) async -> [Panel] {
+        let detected = await detectPanels(in: image, mode: .automatic, mangaMode: mangaMode)
+        if detected.count >= 2 {
+            return detected
+        }
+        return generateSmartStrides(for: image, isDualPage: isDualPage, mangaMode: mangaMode)
+    }
 }

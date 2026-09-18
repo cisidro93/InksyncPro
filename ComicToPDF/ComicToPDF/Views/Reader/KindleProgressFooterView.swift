@@ -15,6 +15,18 @@ struct InksyncProgressFooterView: View {
     @ObservedObject private var prefs = EBookPreferences.shared
     @Environment(\.colorScheme) private var colorScheme
 
+    @State private var isExpanded: Bool = false
+    @State private var collapseTask: Task<Void, Never>? = nil
+
+    private var isPhoneLandscape: Bool {
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                return scene.interfaceOrientation.isLandscape
+            }
+        }
+        return false
+    }
+
     private var progressPercentage: Int {
         if isBookSection && chapterTotalPages > 1 && totalPages > 0 {
             let sectionFraction = Double(max(0, currentPage - 1)) / Double(totalPages)
@@ -39,6 +51,35 @@ struct InksyncProgressFooterView: View {
 
     private var pagesLeftInBook: Int {
         max(0, totalPages - currentPage)
+    }
+
+    private var condensedText: String {
+        switch prefs.progressMode {
+        case 1:
+            let left = isBookSection && chapterTotalPages > 1 ? pagesLeftInChapter : pagesLeftInBook
+            return left == 1 ? "1 left" : "\(left) left"
+        case 2:
+            if let mins = estimatedMinutesLeft, mins > 0 {
+                if mins < 60 {
+                    return "~\(mins)m"
+                } else {
+                    let hrs = mins / 60
+                    let rem = mins % 60
+                    return rem > 0 ? "~\(hrs)h \(rem)m" : "~\(hrs)h"
+                }
+            } else {
+                return "\(progressPercentage)%"
+            }
+        case 3:
+            let currentWPM = Int(prefs.readingSpeedWPM)
+            return "\(currentWPM) WPM"
+        default:
+            if chapterTotalPages > 1 {
+                return "\(sanitizedChapterPage + 1) / \(chapterTotalPages)"
+            } else {
+                return "\(currentPage) / \(totalPages)"
+            }
+        }
     }
 
     private var primaryText: String {
@@ -100,54 +141,70 @@ struct InksyncProgressFooterView: View {
             Spacer()
             HStack {
                 if prefs.progressMode == ReadingProgressMode.hidden.rawValue || prefs.progressMode == 4 {
-                    // Invisible 140x44pt bottom-left tap zone so tapping unhides the tracker
+                    // Invisible tap zone so tapping unhides the tracker
                     Color.clear
                         .frame(width: 140, height: 44)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             HapticEngine.selection()
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                prefs.progressMode = 0
-                            }
+                            triggerModeCycle()
                         }
                 } else {
-                    HStack(spacing: 8) {
-                        // Pulsing/glowing active status indicator dot
+                    let shouldShowExpanded = isExpanded && !isPhoneLandscape
+                    HStack(spacing: shouldShowExpanded ? 7 : 5) {
+                        // Pulsing active status indicator dot
                         Circle()
                             .fill(accentColor)
-                            .frame(width: 5, height: 5)
+                            .frame(width: shouldShowExpanded ? 5 : 4, height: shouldShowExpanded ? 5 : 4)
                             .shadow(color: accentColor.opacity(0.6), radius: 3, x: 0, y: 0)
 
-                        Text(primaryText)
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundStyle(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(colorScheme == .dark ? 0.78 : 0.88))
+                        Text(shouldShowExpanded ? primaryText : condensedText)
+                            .font(.system(size: shouldShowExpanded ? 11 : 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.92) : Color.black.opacity(0.85))
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .frame(maxWidth: 240, alignment: .leading)
+                            .frame(maxWidth: shouldShowExpanded ? 240 : nil, alignment: .leading)
 
                         if prefs.progressMode != 2 && prefs.progressMode != 3 {
                             Text("\(progressPercentage)%")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                                .foregroundStyle(accentColor.opacity(0.85))
+                                .font(.system(size: shouldShowExpanded ? 10 : 9.5, weight: .bold, design: .rounded))
+                                .foregroundStyle(accentColor.opacity(0.95))
                         }
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
+                    .padding(.horizontal, shouldShowExpanded ? 13 : 9)
+                    .padding(.vertical, shouldShowExpanded ? 6 : 4)
                     .background(
                         Capsule()
-                            .fill(prefs.activeTheme.background(colorScheme: colorScheme).opacity(colorScheme == .dark ? 0.85 : 0.92))
-                            .background(.ultraThinMaterial, in: Capsule())
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Capsule()
+                                    .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.03))
+                            )
                     )
                     .overlay(
                         Capsule()
-                            .stroke(colorScheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.08), lineWidth: 0.5)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        colorScheme == .dark ? Color.white.opacity(0.25) : Color.white.opacity(0.65),
+                                        colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 0.5
+                            )
                     )
-                    .shadow(color: colorScheme == .dark ? Color.black.opacity(0.28) : Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
+                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.28 : 0.08), radius: 8, x: 0, y: 2)
+                    .opacity(isExpanded ? 1.0 : 0.82)
                     .contentShape(Capsule())
                     .onTapGesture {
-                        HapticEngine.selection()
+                        triggerModeCycle()
+                    }
+                    .onLongPressGesture {
+                        HapticEngine.impact(style: .medium)
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                            prefs.progressMode = (prefs.progressMode + 1) % 5
+                            isExpanded.toggle()
                         }
                     }
                 }
@@ -157,6 +214,23 @@ struct InksyncProgressFooterView: View {
             .padding(.horizontal, 16)
         }
         .padding(.bottom, 6)
+    }
+
+    private func triggerModeCycle() {
+        HapticEngine.selection()
+        collapseTask?.cancel()
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+            prefs.progressMode = (prefs.progressMode + 1) % 5
+            isExpanded = true
+        }
+        // Auto-condense back to compact pill after 3.2 seconds
+        collapseTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_200_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                isExpanded = false
+            }
+        }
     }
 }
 

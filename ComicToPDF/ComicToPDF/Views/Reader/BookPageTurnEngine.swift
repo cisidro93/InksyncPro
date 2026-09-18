@@ -925,7 +925,8 @@ extension SmartMidSpineCurlReader {
         // MARK: - Gesture Handlers
 
         @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
-            // Cooperative gesture helper
+            HapticEngine.selection()
+            NotificationCenter.default.post(name: NSNotification.Name("ComicReader_ToggleGuidedInspection"), object: nil)
         }
 
         private var tapZoneStyle: TapZoneStyle {

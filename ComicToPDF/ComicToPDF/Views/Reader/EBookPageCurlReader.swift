@@ -207,8 +207,9 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             }
         }
 
-        if let currentVC = uiViewController.viewControllers?.first as? EBookPageContentViewController {
-            if currentVC.pageIndex == targetIndex && context.coordinator.currentPageIndex == targetIndex {
+        if let currentVCs = uiViewController.viewControllers as? [EBookPageContentViewController] {
+            let displayedIndices = currentVCs.map { $0.pageIndex }
+            if displayedIndices.contains(targetIndex) {
                 // Ensure primaryWebView is framed to valid bounds and mounted to root on initial layout
                 if uiViewController.view.bounds.width > 1 && uiViewController.view.bounds.height > 1 {
                     context.coordinator.mountPrimaryWebViewOnRoot()
@@ -216,11 +217,12 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                 return // Target page is ALREADY displayed on screen — do NOT touch setViewControllers!
             }
 
+            let currentVC = currentVCs.first
             context.coordinator.currentPageIndex = targetIndex
             context.coordinator.primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetIndex));")
 
             let vcs = context.coordinator.spreadViewControllers(for: targetIndex)
-            let isForward = targetIndex >= currentVC.pageIndex
+            let isForward = targetIndex >= (currentVC?.pageIndex ?? 0)
             let direction: UIPageViewController.NavigationDirection = isForward ? .forward : .reverse
             context.coordinator.safeSetViewControllers(vcs, direction: direction, animated: false) { _ in
                 context.coordinator.mountPrimaryWebViewOnRoot()
@@ -905,9 +907,9 @@ extension EBookPageCurlReader {
             previousViewControllers: [UIViewController],
             transitionCompleted completed: Bool
         ) {
-            isTransitioning = false
             guard let activeVCs = pageViewController.viewControllers as? [EBookPageContentViewController],
                   let currentVC = activeVCs.first else {
+                isTransitioning = false
                 return
             }
 
@@ -921,7 +923,11 @@ extension EBookPageCurlReader {
                 parent.currentPage = newPageIndex
                 reportScrollFraction()
             } else {
-                parent.currentPage = currentPageIndex
+                let actualIndex = currentVC.pageIndex
+                lastCompletedControllerIndex = actualIndex
+                if parent.currentPage != actualIndex {
+                    parent.currentPage = actualIndex
+                }
             }
 
             let targetPage = completed ? newPageIndex : currentPageIndex
@@ -934,6 +940,7 @@ extension EBookPageCurlReader {
             // preventing any momentary flash of the wrong column position.
             primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage));") { [weak self, weak pageViewController] _, _ in
                 DispatchQueue.main.async {
+                    self?.isTransitioning = false
                     self?.primaryWebView?.isHidden = false
                     self?.pencilCanvas?.isHidden = false
                     if let activeVCs = pageViewController?.viewControllers {
@@ -1602,7 +1609,6 @@ extension EBookPageCurlReader {
                 safeSetViewControllers(vcs, direction: .forward, animated: false)
                 reportScrollFraction()
             } else {
-                primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(currentPageIndex), false);")
                 reportScrollFraction()
             }
 

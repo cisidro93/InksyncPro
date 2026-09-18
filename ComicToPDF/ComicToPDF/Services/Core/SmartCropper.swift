@@ -98,7 +98,7 @@ struct SmartCropper {
     
     // MARK: - Pixel Helpers
     
-    private static func createLowResThumbnail(from cgImage: CGImage, maxDimension: CGFloat) -> CGImage? {
+    static func createLowResThumbnail(from cgImage: CGImage, maxDimension: CGFloat) -> CGImage? {
         let width = CGFloat(cgImage.width)
         let height = CGFloat(cgImage.height)
         
