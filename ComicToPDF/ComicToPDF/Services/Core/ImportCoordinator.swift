@@ -74,27 +74,14 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
         let picker: UIDocumentPickerViewController
 
-        switch type {
-        case .folder:
-            // Point of truth: asCopy: false and allowsMultipleSelection: false.
-            // In iOS, setting allowsMultipleSelection = false for directories enables the
-            // top-right "Open" button to target the active directory itself, returning immediately
-            // with zero spinning circle or fileproviderd deadlock on both iPad and iPhone.
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
-            picker.allowsMultipleSelection = false
-        case .unified:
-            // Unified picker also uses allowsMultipleSelection = false so folder open functions.
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
-            picker.allowsMultipleSelection = false
-        case .files:
-            // Standalone files picker uses asCopy: false and allowsMultipleSelection: true
-            // so individual comic files can be multi-selected with selection checkmarks,
-            // while preserving original directory context and eliminating double-copy sandbox bloat.
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
-            picker.allowsMultipleSelection = true
-        case .json, .smartList:
+        if type == .json || type == .smartList {
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
             picker.allowsMultipleSelection = false
+        } else {
+            // Point of truth from e22462f:
+            // Unified Picker handles BOTH parent folders AND individual comic files simultaneously.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
+            picker.allowsMultipleSelection = true
         }
 
         picker.delegate = coordinator
