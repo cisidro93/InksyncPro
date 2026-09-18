@@ -3428,7 +3428,7 @@ struct ComicSpreadGuidedView: View {
 
         Task.detached(priority: .userInitiated) {
             let isDualSpread = (spread.count == 2)
-            let saved0 = PageModelStore.shared.legacyVisionPanels(for: docID, pageIndex: idx0)
+            let saved0 = await PageModelStore.shared.legacyVisionPanels(for: docID, pageIndex: idx0)
             let p0: [PanelExtractor.Panel]
             if !saved0.isEmpty {
                 p0 = saved0
@@ -3438,7 +3438,7 @@ struct ComicSpreadGuidedView: View {
 
             let p1: [PanelExtractor.Panel]
             if let idx1 = idx1, let img1 = img1 {
-                let saved1 = PageModelStore.shared.legacyVisionPanels(for: docID, pageIndex: idx1)
+                let saved1 = await PageModelStore.shared.legacyVisionPanels(for: docID, pageIndex: idx1)
                 if !saved1.isEmpty {
                     p1 = saved1
                 } else {

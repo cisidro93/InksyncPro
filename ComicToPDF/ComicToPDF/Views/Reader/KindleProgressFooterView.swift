@@ -136,6 +136,87 @@ struct InksyncProgressFooterView: View {
         }
     }
 
+    private var isExpandedActive: Bool {
+        isExpanded && !isPhoneLandscape
+    }
+
+    private var statusDot: some View {
+        let dotSize: CGFloat = isExpandedActive ? 5 : 4
+        return Circle()
+            .fill(accentColor)
+            .frame(width: dotSize, height: dotSize)
+            .shadow(color: accentColor.opacity(0.6), radius: 3, x: 0, y: 0)
+    }
+
+    private var labelText: some View {
+        let title = isExpandedActive ? primaryText : condensedText
+        let fontSize: CGFloat = isExpandedActive ? 11 : 10
+        let maxW: CGFloat? = isExpandedActive ? 240 : nil
+        let fgColor = colorScheme == .dark ? Color.white.opacity(0.92) : Color.black.opacity(0.85)
+
+        return Text(title)
+            .font(.system(size: fontSize, weight: .semibold, design: .rounded))
+            .foregroundStyle(fgColor)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: maxW, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var percentageText: some View {
+        if prefs.progressMode != 2 && prefs.progressMode != 3 {
+            let fontSize: CGFloat = isExpandedActive ? 10 : 9.5
+            Text("\(progressPercentage)%")
+                .font(.system(size: fontSize, weight: .bold, design: .rounded))
+                .foregroundStyle(accentColor.opacity(0.95))
+        }
+    }
+
+    private var pillBorderGradient: LinearGradient {
+        let c1 = colorScheme == .dark ? Color.white.opacity(0.25) : Color.white.opacity(0.65)
+        let c2 = colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08)
+        return LinearGradient(colors: [c1, c2], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    private var pillBackground: some View {
+        let innerTint = colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.03)
+        return Capsule()
+            .fill(.ultraThinMaterial)
+            .overlay(Capsule().fill(innerTint))
+    }
+
+    private var pillBorder: some View {
+        Capsule().strokeBorder(pillBorderGradient, lineWidth: 0.5)
+    }
+
+    private var visiblePill: some View {
+        let hPad: CGFloat = isExpandedActive ? 13 : 9
+        let vPad: CGFloat = isExpandedActive ? 6 : 4
+        let shadowColor = Color.black.opacity(colorScheme == .dark ? 0.28 : 0.08)
+
+        return HStack(spacing: isExpandedActive ? 7 : 5) {
+            statusDot
+            labelText
+            percentageText
+        }
+        .padding(.horizontal, hPad)
+        .padding(.vertical, vPad)
+        .background(pillBackground)
+        .overlay(pillBorder)
+        .shadow(color: shadowColor, radius: 8, x: 0, y: 2)
+        .opacity(isExpanded ? 1.0 : 0.82)
+        .contentShape(Capsule())
+        .onTapGesture {
+            triggerModeCycle()
+        }
+        .onLongPressGesture {
+            HapticEngine.impact(style: .medium)
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                isExpanded.toggle()
+            }
+        }
+    }
+
     var body: some View {
         VStack {
             Spacer()
@@ -150,63 +231,7 @@ struct InksyncProgressFooterView: View {
                             triggerModeCycle()
                         }
                 } else {
-                    let shouldShowExpanded = isExpanded && !isPhoneLandscape
-                    HStack(spacing: shouldShowExpanded ? 7 : 5) {
-                        // Pulsing active status indicator dot
-                        Circle()
-                            .fill(accentColor)
-                            .frame(width: shouldShowExpanded ? 5 : 4, height: shouldShowExpanded ? 5 : 4)
-                            .shadow(color: accentColor.opacity(0.6), radius: 3, x: 0, y: 0)
-
-                        Text(shouldShowExpanded ? primaryText : condensedText)
-                            .font(.system(size: shouldShowExpanded ? 11 : 10, weight: .semibold, design: .rounded))
-                            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.92) : Color.black.opacity(0.85))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: shouldShowExpanded ? 240 : nil, alignment: .leading)
-
-                        if prefs.progressMode != 2 && prefs.progressMode != 3 {
-                            Text("\(progressPercentage)%")
-                                .font(.system(size: shouldShowExpanded ? 10 : 9.5, weight: .bold, design: .rounded))
-                                .foregroundStyle(accentColor.opacity(0.95))
-                        }
-                    }
-                    .padding(.horizontal, shouldShowExpanded ? 13 : 9)
-                    .padding(.vertical, shouldShowExpanded ? 6 : 4)
-                    .background(
-                        Capsule()
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                Capsule()
-                                    .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.03))
-                            )
-                    )
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [
-                                        colorScheme == .dark ? Color.white.opacity(0.25) : Color.white.opacity(0.65),
-                                        colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 0.5
-                            )
-                    )
-                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.28 : 0.08), radius: 8, x: 0, y: 2)
-                    .opacity(isExpanded ? 1.0 : 0.82)
-                    .contentShape(Capsule())
-                    .onTapGesture {
-                        triggerModeCycle()
-                    }
-                    .onLongPressGesture {
-                        HapticEngine.impact(style: .medium)
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                            isExpanded.toggle()
-                        }
-                    }
+                    visiblePill
                 }
 
                 Spacer()
