@@ -1457,6 +1457,7 @@ struct ComicReaderEngine: View {
     @State private var jumpToPageText = ""
     @State private var sessionStartTime: Date? = nil
     @State private var readingMode: ComicReadingMode = .pageHorizontal
+    @State private var lastPageTurnReadingMode: ComicReadingMode = .pageHorizontal
     @AppStorage("prefersTwoUpSpreads") private var prefersTwoUpSpreads = true
     @State private var activeFilterPreset: ReadingFilterPreset = .original
     @State private var showingFilterHUD = false
@@ -1500,6 +1501,10 @@ struct ComicReaderEngine: View {
     var isMangaComic: Bool {
         pdf.metadata.isManga == true || pdf.contentType == .manga
     }
+
+    var isMangaActive: Bool {
+        isMangaComic || readingMode == .mangaRTL || lastPageTurnReadingMode == .mangaRTL
+    }
     
     func shouldShowTwoUpSpread(for size: CGSize) -> Bool {
         let isLandscape = size.width > size.height
@@ -1509,7 +1514,7 @@ struct ComicReaderEngine: View {
         let pdfDual = EBookPreferences.shared.pdfDualPage || (EBookPreferences.shared.autoLandscapeDualPage && isLandscape)
         let isDual = prefersTwoUpSpreads || pdfDual
         guard isDual else { return false }
-        guard readingMode == .pageHorizontal || readingMode == .mangaRTL else { return false }
+        guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .panelNavigation else { return false }
         return true
     }
 
@@ -1522,7 +1527,7 @@ struct ComicReaderEngine: View {
             let pdfDual = EBookPreferences.shared.pdfDualPage || (EBookPreferences.shared.autoLandscapeDualPage && isLandscape)
             let isDual = prefersTwoUpSpreads || pdfDual
             guard isDual else { return false }
-            guard readingMode == .pageHorizontal || readingMode == .mangaRTL else { return false }
+            guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .panelNavigation else { return false }
             return true
         }
         return false
@@ -1579,6 +1584,7 @@ struct ComicReaderEngine: View {
         let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
         let defaultMode: ComicReadingMode = isMangaComic ? .mangaRTL : .pageHorizontal
         self._readingMode = State(initialValue: defaultMode)
+        self._lastPageTurnReadingMode = State(initialValue: defaultMode)
     }
 
     var body: some View {
@@ -1655,7 +1661,7 @@ struct ComicReaderEngine: View {
                             cache: cache,
                             readingMode: readingMode,
                             activeFilterPreset: activeFilterPreset,
-                            isMangaRTL: isMangaComic,
+                            isMangaRTL: isMangaActive,
                             onChromeTap: {
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                     chromeVisible.toggle()
@@ -1737,13 +1743,13 @@ struct ComicReaderEngine: View {
             KeyCommandHandler { command in
                 let input = command.input
                 if input == UIKeyCommand.inputLeftArrow {
-                    if isMangaComic || readingMode == .mangaRTL {
+                    if isMangaActive {
                         nextPage()
                     } else {
                         prevPage()
                     }
                 } else if input == UIKeyCommand.inputRightArrow {
-                    if isMangaComic || readingMode == .mangaRTL {
+                    if isMangaActive {
                         prevPage()
                     } else {
                         nextPage()
@@ -1777,8 +1783,10 @@ struct ComicReaderEngine: View {
                 }
                 if let prefersManga = saved.prefersMangaMode {
                     readingMode = prefersManga ? .mangaRTL : .pageHorizontal
+                    lastPageTurnReadingMode = readingMode
                 } else {
                     readingMode = isMangaComic ? .mangaRTL : .pageHorizontal
+                    lastPageTurnReadingMode = readingMode
                 }
                 if let wasDual = saved.wasInDualPageMode {
                     prefersTwoUpSpreads = wasDual
@@ -1787,6 +1795,7 @@ struct ComicReaderEngine: View {
                 let isMangaComic = pdf.metadata.isManga == true || pdf.contentType == .manga
                 if isMangaComic {
                     readingMode = .mangaRTL
+                    lastPageTurnReadingMode = .mangaRTL
                 }
             }
             // Connect OCR engine to the reader's image cache
@@ -1849,6 +1858,9 @@ struct ComicReaderEngine: View {
             activity.becomeCurrent()
         }
         .onChange(of: readingMode) { _, newMode in
+            if newMode == .mangaRTL || newMode == .pageHorizontal {
+                lastPageTurnReadingMode = newMode
+            }
             if newMode == .mangaRTL {
                 if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
                     conversionManager.convertedPDFs[idx].metadata.isManga = true
@@ -1862,8 +1874,16 @@ struct ComicReaderEngine: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ComicReader_ToggleGuidedInspection"))) { _ in
+            HapticEngine.medium()
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                readingMode = (readingMode == .panelNavigation) ? (isMangaComic ? .mangaRTL : .pageHorizontal) : .panelNavigation
+                if readingMode == .panelNavigation {
+                    readingMode = isMangaActive ? .mangaRTL : .pageHorizontal
+                } else {
+                    if readingMode == .mangaRTL || readingMode == .pageHorizontal {
+                        lastPageTurnReadingMode = readingMode
+                    }
+                    readingMode = .panelNavigation
+                }
             }
         }
 
@@ -2018,11 +2038,12 @@ struct ComicReaderEngine: View {
             masterIndex: $currentIndex,
             spreads: spreads,
             activeFilterPreset: activeFilterPreset,
-            isMangaMode: isMangaComic || readingMode == .mangaRTL,
+            isMangaMode: isMangaActive,
             onTapChrome: { chromeVisible.toggle() },
             onToggleReadingMode: {
+                HapticEngine.medium()
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    readingMode = isMangaComic ? .mangaRTL : .pageHorizontal
+                    readingMode = isMangaActive ? .mangaRTL : .pageHorizontal
                 }
             }
         )
@@ -2078,7 +2099,7 @@ struct ComicReaderEngine: View {
             cache: cache,
             activeFilterPreset: activeFilterPreset,
             readingMode: readingMode,
-            isMangaRTL: isMangaComic || readingMode == .mangaRTL,
+            isMangaRTL: isMangaActive,
             onChromeTap: { chromeVisible.toggle() },
             onFlipPastEnd: { attemptComicSeriesContinuation() }
         )
@@ -2386,7 +2407,7 @@ struct ComicReaderEngine: View {
         progress.currentPageIndex = currentIndex
         progress.lastOpenedAt = Date()
         progress.completionFraction = Double(currentIndex + 1) / Double(total)
-        progress.prefersMangaMode = isMangaComic || (readingMode == .mangaRTL)
+        progress.prefersMangaMode = isMangaActive
         progress.colorFilter = activeFilterPreset.rawValue
         progress.lastCanonicalLeadIndex = currentIndex
         progress.wasInDualPageMode = prefersTwoUpSpreads
@@ -3147,7 +3168,7 @@ struct ComicSpreadGuidedView: View {
 
     @State private var image0: UIImage? = nil
     @State private var image1: UIImage? = nil
-    @State private var currentStrideIndex: Int = -1 // -1 = Macro Overview (full physical spread or full page)
+    @State private var currentStrideIndex: Int = 0 // 0 = Focused Inspection View (first panel/section)
     @State private var strides: [SpreadStride] = []
     @State private var isAnalyzing: Bool = false
 
@@ -3175,31 +3196,19 @@ struct ComicSpreadGuidedView: View {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                if currentStrideIndex == -1 {
-                    // ── Macro Physical Spread Overview (Feels like holding a comic) ──
-                    macroSpreadView(for: geo.size)
-                } else if currentStrideIndex >= 0 && currentStrideIndex < strides.count {
+                if currentStrideIndex >= 0 && currentStrideIndex < strides.count {
                     // ── Focused Inspection View (Smart Gutter / Panel Zoom) ──
                     inspectionStrideView(for: geo.size)
                 } else {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                    // ── Macro Physical Spread Overview (Feels like holding a comic) ──
+                    macroSpreadView(for: geo.size)
                 }
-
-                // ── Liquid Glass Stride HUD Overlay ──
-                hudOverlay
             }
             .contentShape(Rectangle())
             .onTapGesture(count: 2) {
-                // Double-tap to smoothly toggle between Macro Overview & Inspection Zoom
-                HapticEngine.selection()
-                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                    if currentStrideIndex == -1 {
-                        currentStrideIndex = 0
-                    } else {
-                        currentStrideIndex = -1
-                    }
-                }
+                // Double-tap anywhere to disable panel reading mode and return to page curl reading mode
+                HapticEngine.medium()
+                onToggleReadingMode?()
             }
             .onTapGesture(count: 1) { loc in
                 handleTap(loc: loc, width: geo.size.width)
@@ -3273,68 +3282,7 @@ struct ComicSpreadGuidedView: View {
 
     @ViewBuilder
     private var hudOverlay: some View {
-        VStack {
-            Spacer()
-            if currentStrideIndex == -1 {
-                HStack(spacing: 6) {
-                    Image(systemName: "book.pages")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.85))
-                    Text(spread.count == 2 ? "Physical Spread • Tap to read" : "Single Page • Tap to read")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.9))
-                }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 6.5)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(
-                    Capsule()
-                        .strokeBorder(Color.white.opacity(0.2), lineWidth: 0.5)
-                )
-                .shadow(color: Color.black.opacity(0.25), radius: 8, y: 2)
-                .contentShape(Capsule())
-                .onTapGesture {
-                    HapticEngine.selection()
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                        currentStrideIndex = 0
-                    }
-                }
-                .padding(.bottom, 60)
-                .transition(.opacity)
-            } else if currentStrideIndex >= 0 && currentStrideIndex < strides.count {
-                let activeStride = strides[currentStrideIndex]
-                VStack(spacing: 5) {
-                    HStack(spacing: 4) {
-                        ForEach(0..<strides.count, id: \.self) { i in
-                            Capsule()
-                                .fill(i <= currentStrideIndex ? Color.white : Color.white.opacity(0.3))
-                                .frame(width: i == currentStrideIndex ? 18 : 6, height: 4)
-                                .animation(.spring(response: 0.25), value: currentStrideIndex)
-                        }
-                    }
-                    Text("Page \(activeStride.pageIndex + 1) · \(activeStride.label)")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(
-                    Capsule()
-                        .strokeBorder(Color.white.opacity(0.2), lineWidth: 0.5)
-                )
-                .shadow(color: Color.black.opacity(0.25), radius: 8, y: 2)
-                .contentShape(Capsule())
-                .onTapGesture {
-                    HapticEngine.selection()
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                        currentStrideIndex = -1
-                    }
-                }
-                .padding(.bottom, 60)
-                .transition(.opacity)
-            }
-        }
+        EmptyView()
     }
 
     // MARK: - Gesture Handling
@@ -3371,10 +3319,6 @@ struct ComicSpreadGuidedView: View {
             withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
                 currentStrideIndex -= 1
             }
-        } else if currentStrideIndex == 0 {
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                currentStrideIndex = -1
-            }
         } else {
             goToPrevSpread()
         }
@@ -3385,7 +3329,7 @@ struct ComicSpreadGuidedView: View {
         let nextSpreadIdx = currentSpreadIdx + 1
         if nextSpreadIdx < spreads.count {
             masterIndex = spreads[nextSpreadIdx].first ?? masterIndex
-            currentStrideIndex = -1
+            currentStrideIndex = 0
         }
     }
 
@@ -3394,7 +3338,7 @@ struct ComicSpreadGuidedView: View {
         let prevSpreadIdx = currentSpreadIdx - 1
         if prevSpreadIdx >= 0 {
             masterIndex = spreads[prevSpreadIdx].first ?? masterIndex
-            currentStrideIndex = -1
+            currentStrideIndex = 0
         }
     }
 
@@ -3450,10 +3394,13 @@ struct ComicSpreadGuidedView: View {
 
             var builtStrides: [SpreadStride] = []
             if spread.count == 2, let idx1 = idx1 {
-                let firstIdx = manga ? idx1 : idx0
-                let firstPanels = manga ? p1 : p0
-                let secondIdx = manga ? idx0 : idx1
-                let secondPanels = manga ? p0 : p1
+                // In both Western and Manga, idx0 (the lower page number) is read first:
+                // Western: idx0 is left page, idx1 is right page -> read left (idx0) then right (idx1)
+                // Manga: idx0 is right page, idx1 is left page -> read right (idx0) then left (idx1)
+                let firstIdx = idx0
+                let firstPanels = p0
+                let secondIdx = idx1
+                let secondPanels = p1
 
                 for (i, panel) in firstPanels.enumerated() {
                     let lbl: String
@@ -3494,6 +3441,9 @@ struct ComicSpreadGuidedView: View {
             await MainActor.run {
                 self.strides = builtStrides
                 self.isAnalyzing = false
+                if self.currentStrideIndex < 0 && !builtStrides.isEmpty {
+                    self.currentStrideIndex = 0
+                }
             }
         }
     }

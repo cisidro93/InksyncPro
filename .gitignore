@@ -38,3 +38,4 @@ ExportOptions.plist
 
 # Stale source dumps
 full_source_code.txt
+scratch/
