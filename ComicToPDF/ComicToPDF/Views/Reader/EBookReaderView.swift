@@ -1206,6 +1206,8 @@ struct EBookReaderView: View {
         progress.currentChapterIndex = currentIndex
         if totalChapters > 1 {
             progress.completionFraction = Double(currentIndex) / Double(totalChapters - 1)
+        } else {
+            progress.completionFraction = 1.0
         }
         if !progress.readingSessionDates.contains(where: { Calendar.current.isDateInToday($0) }) {
             progress.readingSessionDates.append(Date())

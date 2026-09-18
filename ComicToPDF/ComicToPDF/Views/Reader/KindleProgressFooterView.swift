@@ -20,7 +20,7 @@ struct InksyncProgressFooterView: View {
 
     private var isPhoneLandscape: Bool {
         if UIDevice.current.userInterfaceIdiom == .phone {
-            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: { $0.activationState == .foregroundActive }) ?? (UIApplication.shared.connectedScenes.first as? UIWindowScene) {
                 return scene.interfaceOrientation.isLandscape
             }
         }
@@ -28,13 +28,15 @@ struct InksyncProgressFooterView: View {
     }
 
     private var progressPercentage: Int {
-        if isBookSection && chapterTotalPages > 1 && totalPages > 0 {
+        guard totalPages > 0 else { return 0 }
+        if isBookSection && chapterTotalPages > 1 {
             let sectionFraction = Double(max(0, currentPage - 1)) / Double(totalPages)
             let pageFraction = (Double(sanitizedChapterPage) / Double(max(1, chapterTotalPages))) / Double(totalPages)
             let total = min(1.0, max(0.0, sectionFraction + pageFraction))
             return Int(total * 100)
         } else {
-            return Int((Double(min(totalPages, max(1, currentPage))) / Double(max(1, totalPages))) * 100)
+            let safeCurrent = min(totalPages, max(1, currentPage))
+            return Int((Double(safeCurrent) / Double(totalPages)) * 100)
         }
     }
 
@@ -46,11 +48,13 @@ struct InksyncProgressFooterView: View {
     }
 
     private var pagesLeftInChapter: Int {
-        max(0, chapterTotalPages - (sanitizedChapterPage + 1))
+        guard chapterTotalPages > 0 else { return 0 }
+        return max(0, chapterTotalPages - (sanitizedChapterPage + 1))
     }
 
     private var pagesLeftInBook: Int {
-        max(0, totalPages - currentPage)
+        guard totalPages > 0 else { return 0 }
+        return max(0, totalPages - max(1, currentPage))
     }
 
     private var condensedText: String {
@@ -60,24 +64,28 @@ struct InksyncProgressFooterView: View {
             return left == 1 ? "1 left" : "\(left) left"
         case 2:
             if let mins = estimatedMinutesLeft, mins > 0 {
-                if mins < 60 {
-                    return "~\(mins)m"
+                let safeMins = min(mins, 99_999)
+                if safeMins < 60 {
+                    return "~\(safeMins)m"
                 } else {
-                    let hrs = mins / 60
-                    let rem = mins % 60
+                    let hrs = safeMins / 60
+                    let rem = safeMins % 60
                     return rem > 0 ? "~\(hrs)h \(rem)m" : "~\(hrs)h"
                 }
             } else {
                 return "\(progressPercentage)%"
             }
         case 3:
-            let currentWPM = Int(prefs.readingSpeedWPM)
+            let wpm = prefs.readingSpeedWPM
+            let currentWPM = max(50, min(1500, wpm.isFinite && wpm > 0 ? Int(wpm) : 250))
             return "\(currentWPM) WPM"
         default:
+            guard totalPages > 0 else { return "Loading..." }
             if chapterTotalPages > 1 {
                 return "\(sanitizedChapterPage + 1) / \(chapterTotalPages)"
             } else {
-                return "\(currentPage) / \(totalPages)"
+                let safePage = min(totalPages, max(1, currentPage))
+                return "\(safePage) / \(totalPages)"
             }
         }
     }
@@ -102,11 +110,12 @@ struct InksyncProgressFooterView: View {
         case 2:
             // Mode 2: Estimated time remaining
             if let mins = estimatedMinutesLeft, mins > 0 {
-                if mins < 60 {
-                    return "~\(mins) min\(mins == 1 ? "" : "s") left in book"
+                let safeMins = min(mins, 99_999)
+                if safeMins < 60 {
+                    return "~\(safeMins) min\(safeMins == 1 ? "" : "s") left in book"
                 } else {
-                    let hrs = mins / 60
-                    let rem = mins % 60
+                    let hrs = safeMins / 60
+                    let rem = safeMins % 60
                     return rem > 0 ? "~\(hrs)h \(rem)m left in book" : "~\(hrs)h left in book"
                 }
             } else {
@@ -114,24 +123,27 @@ struct InksyncProgressFooterView: View {
             }
         case 3:
             // Mode 3: Reading Pace WPM & Completion
-            let currentWPM = Int(prefs.readingSpeedWPM)
+            let wpm = prefs.readingSpeedWPM
+            let currentWPM = max(50, min(1500, wpm.isFinite && wpm > 0 ? Int(wpm) : 250))
             return "\(currentWPM) WPM · Reading Pace"
         default:
             // Mode 0: Semantic Chapter Title & Page Indicator
+            guard totalPages > 0 else { return "Loading..." }
+            let safePage = min(totalPages, max(1, currentPage))
             if let title = trimmedTitle, !title.isEmpty {
                 if chapterTotalPages > 1 {
                     return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)  ·  \(title)"
                 } else {
-                    return "\(title)  ·  Page \(currentPage) of \(totalPages)"
+                    return "\(title)  ·  Page \(safePage) of \(totalPages)"
                 }
             } else if chapterTotalPages > 1 {
                 if isBookSection {
-                    return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)  ·  Section \(currentPage) of \(totalPages)"
+                    return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)  ·  Section \(safePage) of \(totalPages)"
                 } else {
                     return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)"
                 }
             } else {
-                return "Page \(currentPage) of \(totalPages)"
+                return "Page \(safePage) of \(totalPages)"
             }
         }
     }
@@ -245,7 +257,7 @@ struct InksyncProgressFooterView: View {
         HapticEngine.selection()
         collapseTask?.cancel()
         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-            prefs.progressMode = (prefs.progressMode + 1) % 5
+            prefs.progressMode = max(0, prefs.progressMode + 1) % 5
             isExpanded = true
         }
         // Auto-condense back to compact pill after 3.2 seconds
