@@ -1932,7 +1932,13 @@ struct ComicReaderEngine: View {
             HapticEngine.medium()
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 if readingMode == .panelNavigation {
-                    readingMode = lastPageTurnReadingMode
+                    let targetMode: ComicReadingMode
+                    if lastPageTurnReadingMode != .panelNavigation && lastPageTurnReadingMode != .webtoonScroll {
+                        targetMode = lastPageTurnReadingMode
+                    } else {
+                        targetMode = isMangaActive ? .mangaRTL : .pageHorizontal
+                    }
+                    readingMode = targetMode
                 } else {
                     if readingMode == .mangaRTL || readingMode == .pageHorizontal {
                         lastPageTurnReadingMode = readingMode
@@ -2101,7 +2107,13 @@ struct ComicReaderEngine: View {
                 lastGuidedToggleTime = now
                 HapticEngine.medium()
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    readingMode = lastPageTurnReadingMode
+                    let targetMode: ComicReadingMode
+                    if lastPageTurnReadingMode != .panelNavigation && lastPageTurnReadingMode != .webtoonScroll {
+                        targetMode = lastPageTurnReadingMode
+                    } else {
+                        targetMode = isMangaActive ? .mangaRTL : .pageHorizontal
+                    }
+                    readingMode = targetMode
                 }
             }
         )
@@ -3360,17 +3372,23 @@ struct ComicSpreadGuidedView: View {
             .gesture(
                 DragGesture(minimumDistance: 15)
                     .onChanged { value in
+                        pendingSingleTapWorkItem?.cancel()
+                        pendingSingleTapWorkItem = nil
+                        lastTapTime = .distantPast
                         dragOffset = value.translation
                     }
                     .onEnded { value in
+                        pendingSingleTapWorkItem?.cancel()
+                        pendingSingleTapWorkItem = nil
+                        lastTapTime = .distantPast
                         let horizontalSwipe = value.predictedEndTranslation.width
                         let threshold: CGFloat = 80
                         if horizontalSwipe < -threshold {
                             dragOffset = .zero
-                            if isMangaMode { advance() } else { rewind() }
+                            if isMangaMode { rewind() } else { advance() }
                         } else if horizontalSwipe > threshold {
                             dragOffset = .zero
-                            if isMangaMode { rewind() } else { advance() }
+                            if isMangaMode { advance() } else { rewind() }
                         } else {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 dragOffset = .zero
@@ -3384,6 +3402,9 @@ struct ComicSpreadGuidedView: View {
         }
         .onAppear {
             loadImagesAndAnalyze()
+        }
+        .onChange(of: currentStrideIndex) { _, _ in
+            dragOffset = .zero
         }
         .onDisappear {
             pendingSingleTapWorkItem?.cancel()
@@ -3644,21 +3665,33 @@ struct ComicSpreadGuidedView: View {
     }
 
     private func calculateMetrics(for proxy: CGSize, image: UIImage, panel: PanelExtractor.Panel) -> ViewMetrics {
+        guard proxy.width > 0, proxy.height > 0, proxy.width.isFinite, proxy.height.isFinite else {
+            return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
+        }
         let imgSize = image.size
-        guard imgSize.width > 0, imgSize.height > 0 else {
+        guard imgSize.width > 0, imgSize.height > 0, imgSize.width.isFinite, imgSize.height.isFinite else {
             return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
         }
 
+        // Clamp normalized bounding box to valid [0..1] range defensively
+        let b = panel.boundingBox
+        let rawMinX = max(0.0, min(1.0, b.minX.isFinite ? b.minX : 0.0))
+        let rawMinY = max(0.0, min(1.0, b.minY.isFinite ? b.minY : 0.0))
+        let rawMaxX = max(rawMinX, min(1.0, b.maxX.isFinite ? b.maxX : 1.0))
+        let rawMaxY = max(rawMinY, min(1.0, b.maxY.isFinite ? b.maxY : 1.0))
+        let normW = max(0.02, rawMaxX - rawMinX)
+        let normH = max(0.02, rawMaxY - rawMinY)
+
         let rect = CGRect(
-            x: panel.boundingBox.minX * imgSize.width,
-            y: (1.0 - panel.boundingBox.maxY) * imgSize.height,
-            width: panel.boundingBox.width * imgSize.width,
-            height: panel.boundingBox.height * imgSize.height
+            x: rawMinX * imgSize.width,
+            y: (1.0 - rawMaxY) * imgSize.height,
+            width: normW * imgSize.width,
+            height: normH * imgSize.height
         )
 
         let imageRatio = imgSize.width / imgSize.height
         let screenRatio = proxy.width / proxy.height
-        guard imageRatio > 0, !imageRatio.isNaN, screenRatio > 0, !screenRatio.isNaN else {
+        guard imageRatio > 0, imageRatio.isFinite, screenRatio > 0, screenRatio.isFinite else {
             return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
         }
 
@@ -3672,16 +3705,24 @@ struct ComicSpreadGuidedView: View {
             renderW = proxy.height * imageRatio
         }
 
+        guard renderW > 0, renderH > 0, renderW.isFinite, renderH.isFinite else {
+            return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
+        }
+
         let mappedX = (rect.minX / imgSize.width) * renderW
         let mappedY = (rect.minY / imgSize.height) * renderH
         let mappedW = (rect.width / imgSize.width) * renderW
         let mappedH = (rect.height / imgSize.height) * renderH
-        guard mappedW > 0, mappedH > 0, !mappedW.isNaN, !mappedH.isNaN else {
+        guard mappedW > 1.0, mappedH > 1.0, mappedW.isFinite, mappedH.isFinite else {
             return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
         }
 
         let scaleX = proxy.width / mappedW
         let scaleY = proxy.height / mappedH
+        guard scaleX > 0, scaleY > 0, scaleX.isFinite, scaleY.isFinite else {
+            return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
+        }
+
         let fitMode = EBookPreferences.shared.comicPageFitMode
 
         let targetScale: CGFloat
@@ -3706,13 +3747,18 @@ struct ComicSpreadGuidedView: View {
             targetScale = min(fill, base * 1.35)
         }
 
-        let scale = max(0.5, min(targetScale, max(scaleX, scaleY) * 1.6))
+        // Cap scale safely between 0.5x and 5.0x
+        let scale = max(0.5, min(targetScale, 5.0))
 
         let panelCenter = CGPoint(x: mappedX + mappedW / 2, y: mappedY + mappedH / 2)
         let imageRenderCenter = CGPoint(x: renderW / 2, y: renderH / 2)
 
         let tx = (imageRenderCenter.x - panelCenter.x) * scale
         let ty = (imageRenderCenter.y - panelCenter.y) * scale
+
+        guard tx.isFinite, ty.isFinite else {
+            return ViewMetrics(scale: scale, offsetX: 0, offsetY: 0)
+        }
 
         return ViewMetrics(scale: scale, offsetX: tx, offsetY: ty)
     }
