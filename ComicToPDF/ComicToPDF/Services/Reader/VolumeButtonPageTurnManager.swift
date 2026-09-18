@@ -52,12 +52,14 @@ public final class VolumeButtonPageTurnManager: ObservableObject {
             }
         }
 
-        // Configure audio session
+        // Configure audio session to ambient + mixWithOthers so background audio (Spotify, Apple Music, podcasts) is NEVER interrupted.
         do {
-            try AVAudioSession.sharedInstance().setActive(true)
-            initialVolume = AVAudioSession.sharedInstance().outputVolume
-            // Center volume to prevent hitting 0.0 or 1.0 min/max bounds
-            if initialVolume < 0.1 || initialVolume > 0.9 {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true, options: [])
+            initialVolume = session.outputVolume
+            // Center volume to prevent hitting 0.0 or 1.0 bounds only if user is NOT listening to music
+            if !session.isOtherAudioPlaying && (initialVolume < 0.1 || initialVolume > 0.9) {
                 setVolume(0.5)
                 initialVolume = 0.5
             }
@@ -89,6 +91,8 @@ public final class VolumeButtonPageTurnManager: ObservableObject {
         hiddenVolumeView = nil
         volumeSlider = nil
         isListening = false
+
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     @objc private func handleVolumeChanged(_ notification: Notification) {
@@ -110,18 +114,21 @@ public final class VolumeButtonPageTurnManager: ObservableObject {
             initialVolume = newVolume
         }
 
-        // If approaching volume bounds (0.0 or 1.0), immediately re-center to prevent hardware clipping
-        if newVolume < 0.15 || newVolume > 0.85 {
-            setVolume(0.5)
-            initialVolume = 0.5
-        } else {
-            // Re-center volume after short delay to allow continuous page turns
-            resetTask?.cancel()
-            resetTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 350_000_000)
-                guard !Task.isCancelled else { return }
-                self.setVolume(0.5)
-                self.initialVolume = 0.5
+        // Only re-center volume slider when other background audio is NOT playing,
+        // so we never alter the user's active music/podcast listening volume!
+        if !AVAudioSession.sharedInstance().isOtherAudioPlaying {
+            if newVolume < 0.15 || newVolume > 0.85 {
+                setVolume(0.5)
+                initialVolume = 0.5
+            } else {
+                // Re-center volume after short delay to allow continuous page turns
+                resetTask?.cancel()
+                resetTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    guard !Task.isCancelled else { return }
+                    self.setVolume(0.5)
+                    self.initialVolume = 0.5
+                }
             }
         }
     }

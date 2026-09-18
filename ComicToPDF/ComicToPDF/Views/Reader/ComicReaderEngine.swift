@@ -1240,8 +1240,7 @@ final class ComicImageCache: ObservableObject {
             let totalPages = self.pageCount
             guard totalPages > 0 else { return [] }
 
-            allSpreads.append([0])
-            var i = 1
+            var i = 0
             while i < totalPages {
                 let isL = isPageLandscape(i, landscapeArray: landscapeArray)
                 if isL {
@@ -1544,8 +1543,7 @@ struct ComicReaderEngine: View {
         let landscapeArray = cache.isLandscapeArray
         let pageCount = cache.pageCount
 
-        allSpreads.append([0]) // Page 0 is the cover, keep it solo
-        var i = 1
+        var i = 0
         while i < pageCount {
             let isL = isPageLandscape(i, landscapeArray: landscapeArray)
             if isL {

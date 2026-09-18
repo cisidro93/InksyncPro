@@ -3126,12 +3126,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         let prefs = EBookPreferences.shared
         let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
-        let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
+        let isDual = (isPad ? prefs.pdfDualPage : (isLandscape && prefs.pdfDualPage)) || (prefs.autoLandscapeDualPage && isLandscape)
 
         let inkingState = InksyncInkingState.shared
         let currentToolMode = inkingState.activeToolMode
         let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
-        let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let autoPencilActive = isPad && prefs.applePencilAutoDraw
         let isDrawingMode = (isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive
         let isCanvasMarkupActive = isDrawingMode || (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
@@ -3146,7 +3145,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // threshold crossings which can miss pages when scrolling quickly.
         pdfView.usePageViewController(false)
         pdfView.displayMode = isDual ? .twoUp : .singlePage
-        pdfView.displaysAsBook = isDual && !prefs.linkCoverAsSpread
+        pdfView.displaysAsBook = false // Pair 2 pages from page 0 regardless without empty left flyleaf void
 
         // Panels & Boox Parity: In dual mode, eliminate spine and edge gaps so spreads fill 100% of available screen space.
         // On iPhone in single-page mode, zero out page break margins so the book fills the full screen width cleanly.
@@ -3343,14 +3342,15 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if context.coordinator.fingerGlide?.minimumPressDuration != targetPressDuration {
             context.coordinator.fingerGlide?.minimumPressDuration = targetPressDuration
         }
+        let isPhone = UIDevice.current.userInterfaceIdiom == .phone
         let isLandscape = uiView.bounds.width > uiView.bounds.height
-        let isDual = prefs.pdfDualPage || (prefs.autoLandscapeDualPage && isLandscape)
+        let isDual = (!isPhone ? prefs.pdfDualPage : (isLandscape && prefs.pdfDualPage)) || (prefs.autoLandscapeDualPage && isLandscape)
         let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
 
         if uiView.displayMode != targetDisplayMode {
             uiView.displayMode = targetDisplayMode
         }
-        let targetDisplaysAsBook = isDual && !prefs.linkCoverAsSpread
+        let targetDisplaysAsBook = false
         if uiView.displaysAsBook != targetDisplaysAsBook {
             uiView.displaysAsBook = targetDisplaysAsBook
         }

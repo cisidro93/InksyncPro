@@ -63,7 +63,7 @@ public struct ComicSpreadLayoutEngine: Sendable {
     /// Computes sequential spreads from a list of comic pages.
     public func computeSpreads(
         pages: [ComicPageItem],
-        isCoverOffsetEnabled: Bool = true,
+        isCoverOffsetEnabled: Bool = false,
         isRTL: Bool = false
     ) -> [ComicSpread] {
         guard !pages.isEmpty else { return [] }

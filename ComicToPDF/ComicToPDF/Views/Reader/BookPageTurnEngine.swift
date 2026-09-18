@@ -31,58 +31,24 @@ struct PageCurlReader: UIViewControllerRepresentable {
         let landscapeArray = cache.isLandscapeArray
         let linkCover = EBookPreferences.shared.linkCoverAsSpread
 
-        if linkCover {
-            var i = 0
-            while i < totalPages {
-                let isL = isPageLandscape(i, landscapeArray: landscapeArray)
-                if isL {
-                    allSpreads.append([i])
-                    i += 1
-                } else if i + 1 < totalPages {
-                    let nextIsL = isPageLandscape(i + 1, landscapeArray: landscapeArray)
-                    if nextIsL {
-                        allSpreads.append([i])
-                        i += 1
-                    } else {
-                        allSpreads.append([i, i + 1])
-                        i += 2
-                    }
-                } else {
-                    allSpreads.append([i])
-                    i += 1
-                }
-            }
-        } else {
-            // Page 0: Standalone Cover
-            allSpreads.append([0])
-            
-            // Page 1: Standalone Page 1 (Right in Western, Left in Manga)
-            if totalPages > 1 {
-                allSpreads.append([1])
-            }
-            
-            // Natural (2+3, 4+5) facing spread pairing
-            var i = 2
-            while i < totalPages {
-                let isL = isPageLandscape(i, landscapeArray: landscapeArray)
-                if isL {
+        var i = 0
+        while i < totalPages {
+            let isL = isPageLandscape(i, landscapeArray: landscapeArray)
+            if isL {
+                allSpreads.append([i])
+                i += 1
+            } else if i + 1 < totalPages {
+                let nextIsL = isPageLandscape(i + 1, landscapeArray: landscapeArray)
+                if nextIsL {
                     allSpreads.append([i])
                     i += 1
                 } else {
-                    if i + 1 < totalPages {
-                        let nextIsL = isPageLandscape(i + 1, landscapeArray: landscapeArray)
-                        if nextIsL {
-                            allSpreads.append([i])
-                            i += 1
-                        } else {
-                            allSpreads.append([i, i + 1])
-                            i += 2
-                        }
-                    } else {
-                        allSpreads.append([i])
-                        i += 1
-                    }
+                    allSpreads.append([i, i + 1])
+                    i += 2
                 }
+            } else {
+                allSpreads.append([i])
+                i += 1
             }
         }
         return allSpreads
@@ -658,54 +624,22 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
             return false
         }
 
-        if linkCover {
-            var i = 0
-            while i < pageCount {
-                if isPageL(i) {
-                    allSpreads.append([i])
-                    i += 1
-                } else if i + 1 < pageCount {
-                    if isPageL(i + 1) {
-                        allSpreads.append([i])
-                        i += 1
-                    } else {
-                        allSpreads.append([i, i + 1])
-                        i += 2
-                    }
-                } else {
-                    allSpreads.append([i])
-                    i += 1
-                }
-            }
-        } else {
-            // Page 0: Standalone Cover
-            allSpreads.append([0])
-            
-            // Page 1: Standalone Page 1
-            if pageCount > 1 {
-                allSpreads.append([1])
-            }
-            
-            // Natural (2+3, 4+5) facing spread pairing
-            var i = 2
-            while i < pageCount {
-                if isPageL(i) {
+        var i = 0
+        while i < pageCount {
+            if isPageL(i) {
+                allSpreads.append([i])
+                i += 1
+            } else if i + 1 < pageCount {
+                if isPageL(i + 1) {
                     allSpreads.append([i])
                     i += 1
                 } else {
-                    if i + 1 < pageCount {
-                        if isPageL(i + 1) {
-                            allSpreads.append([i])
-                            i += 1
-                        } else {
-                            allSpreads.append([i, i + 1])
-                            i += 2
-                        }
-                    } else {
-                        allSpreads.append([i])
-                        i += 1
-                    }
+                    allSpreads.append([i, i + 1])
+                    i += 2
                 }
+            } else {
+                allSpreads.append([i])
+                i += 1
             }
         }
         return allSpreads

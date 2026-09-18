@@ -309,13 +309,15 @@ struct ReaderView: View {
             }
             .onAppear {
                 ReaderIdleTimerManager.shared.enterReader()
-                VolumeButtonPageTurnManager.shared.onVolumeUp = {
-                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+                if EBookPreferences.shared.volumeButtonsTurnPages {
+                    VolumeButtonPageTurnManager.shared.onVolumeUp = {
+                        NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+                    }
+                    VolumeButtonPageTurnManager.shared.onVolumeDown = {
+                        NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+                    }
+                    VolumeButtonPageTurnManager.shared.startListening()
                 }
-                VolumeButtonPageTurnManager.shared.onVolumeDown = {
-                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
-                }
-                VolumeButtonPageTurnManager.shared.startListening()
             }
             .onDisappear {
                 ReaderIdleTimerManager.shared.leaveReader()
@@ -607,14 +609,6 @@ struct ReaderView: View {
                 }
                 .animation(.easeInOut(duration: 1.0), value: warmthLevel)
                 .animation(.easeInOut(duration: 1.5), value: ambientBrightness.recommendedWarmth)
-
-                // Hardware Button Binding (dual-page aware)
-                VolumeHook(onUp: {
-                    if isMangaMode { nextPage() } else { prevPage() }
-                }, onDown: {
-                    if isMangaMode { prevPage() } else { nextPage() }
-                })
-                .frame(width: 0, height: 0)
                 
                 // ✅ Immersive UI OSD — bottom micro-pill while toolbar is hidden
                 if !isVerticalScroll && !pages.isEmpty && !isLoading && !isToolbarVisible {
@@ -1797,65 +1791,5 @@ struct ReaderScrubber: View {
                 }
             }
         }
-    }
-}
-
-import MediaPlayer
-import AVFoundation
-
-struct VolumeHook: UIViewControllerRepresentable {
-    var onUp: () -> Void
-    var onDown: () -> Void
-    
-    func makeUIViewController(context: Context) -> VolumeObserverController {
-        return VolumeObserverController(onUp: onUp, onDown: onDown)
-    }
-    func updateUIViewController(_ uiViewController: VolumeObserverController, context: Context) {}
-}
-
-class VolumeObserverController: UIViewController {
-    var onUp: () -> Void
-    var onDown: () -> Void
-    private var baseVolume: Float = 0.5
-    private var audioSession = AVAudioSession.sharedInstance()
-    private var observation: NSKeyValueObservation?
-    private let volumeView = MPVolumeView() // Native iOS 17 trick to perfectly hide the Volume HUD
-    
-    init(onUp: @escaping () -> Void, onDown: @escaping () -> Void) {
-        self.onUp = onUp
-        self.onDown = onDown
-        super.init(nibName: nil, bundle: nil)
-    }
-    
-    required init?(coder: NSCoder) { fatalError() }
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.addSubview(volumeView)
-        volumeView.frame = CGRect(x: -1000, y: -1000, width: 1, height: 1)
-        volumeView.isHidden = false
-        
-        try? audioSession.setCategory(.ambient) // Extremely important! Allows background music to keep playing while reading comic
-        try? audioSession.setActive(true)
-        baseVolume = audioSession.outputVolume
-        
-        observation = audioSession.observe(\.outputVolume, options: [.new]) { _, change in
-            guard let newVolume = change.newValue else { return }
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                if newVolume > self.baseVolume || newVolume == 1.0 {
-                    self.onUp()
-                } else if newVolume < self.baseVolume || newVolume == 0.0 {
-                    self.onDown()
-                }
-                self.baseVolume = newVolume
-            }
-        }
-    }
-    
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        observation?.invalidate()
-        try? audioSession.setActive(false)
     }
 }

@@ -2,8 +2,15 @@ import SwiftUI
 import BackgroundTasks
 import SwiftData
 import CoreSpotlight
+import AVFoundation
 
 class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
+        // Guarantee app default audio session is ambient + mixWithOthers so background audio (Spotify, Apple Music, podcasts) is NEVER interrupted.
+        try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+        return true
+    }
+
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         return OrientationLockManager.shared.lockedOrientation
     }

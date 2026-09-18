@@ -212,46 +212,18 @@ class PageBufferManager: ObservableObject {
         let total = pageURLs.count
         guard total > 0 else { return [] }
         var spreads: [ReaderSpread] = []
-        let linkCover = EBookPreferences.shared.linkCoverAsSpread
-        
-        if linkCover {
-            var i = 0
-            while i < total {
-                if i + 1 < total {
-                    if isMangaMode {
-                        spreads.append(.dual(leftIndex: i + 1, rightIndex: i))
-                    } else {
-                        spreads.append(.dual(leftIndex: i, rightIndex: i + 1))
-                    }
-                    i += 2
+        var i = 0
+        while i < total {
+            if i + 1 < total {
+                if isMangaMode {
+                    spreads.append(.dual(leftIndex: i + 1, rightIndex: i))
                 } else {
-                    spreads.append(.single(pageIndex: i, isLandscape: false))
-                    i += 1
+                    spreads.append(.dual(leftIndex: i, rightIndex: i + 1))
                 }
-            }
-        } else {
-            // Page 0: Standalone Cover
-            spreads.append(.single(pageIndex: 0, isLandscape: false))
-            
-            // Page 1: Standalone Page 1 (Right page in Western, Left in Manga)
-            if total > 1 {
-                spreads.append(.single(pageIndex: 1, isLandscape: false))
-            }
-            
-            // Natural (2+3, 4+5) spread sequence
-            var i = 2
-            while i < total {
-                if i + 1 < total {
-                    if isMangaMode {
-                        spreads.append(.dual(leftIndex: i + 1, rightIndex: i))
-                    } else {
-                        spreads.append(.dual(leftIndex: i, rightIndex: i + 1))
-                    }
-                    i += 2
-                } else {
-                    spreads.append(.single(pageIndex: i, isLandscape: false))
-                    i += 1
-                }
+                i += 2
+            } else {
+                spreads.append(.single(pageIndex: i, isLandscape: false))
+                i += 1
             }
         }
         return spreads
@@ -282,69 +254,28 @@ class PageBufferManager: ObservableObject {
         }
         
         var spreads: [ReaderSpread] = []
-        let linkCover = EBookPreferences.shared.linkCoverAsSpread
-        
-        if linkCover {
-            var i = 0
-            while i < total {
-                let isL = isLandscapeArray[i]
-                if isL {
-                    spreads.append(.single(pageIndex: i, isLandscape: true))
-                    i += 1
-                } else if i + 1 < total {
-                    let nextIsL = isLandscapeArray[i + 1]
-                    if nextIsL {
-                        spreads.append(.single(pageIndex: i, isLandscape: false))
-                        i += 1
-                    } else {
-                        if isMangaMode {
-                            spreads.append(.dual(leftIndex: i + 1, rightIndex: i))
-                        } else {
-                            spreads.append(.dual(leftIndex: i, rightIndex: i + 1))
-                        }
-                        i += 2
-                    }
-                } else {
+        var i = 0
+        while i < total {
+            let isL = isLandscapeArray[i]
+            if isL {
+                spreads.append(.single(pageIndex: i, isLandscape: true))
+                i += 1
+            } else if i + 1 < total {
+                let nextIsL = isLandscapeArray[i + 1]
+                if nextIsL {
                     spreads.append(.single(pageIndex: i, isLandscape: false))
                     i += 1
-                }
-            }
-        } else {
-            // Page 0: Standalone Cover
-            if total > 0 {
-                spreads.append(.single(pageIndex: 0, isLandscape: isLandscapeArray[0]))
-            }
-            
-            // Page 1: Standalone Page 1 if not landscape
-            if total > 1 {
-                spreads.append(.single(pageIndex: 1, isLandscape: isLandscapeArray[1]))
-            }
-            
-            var i = 2
-            while i < total {
-                let isL = isLandscapeArray[i]
-                if isL {
-                    spreads.append(.single(pageIndex: i, isLandscape: true))
-                    i += 1
                 } else {
-                    if i + 1 < total {
-                        let nextIsL = isLandscapeArray[i + 1]
-                        if nextIsL {
-                            spreads.append(.single(pageIndex: i, isLandscape: false))
-                            i += 1
-                        } else {
-                            if isMangaMode {
-                                spreads.append(.dual(leftIndex: i + 1, rightIndex: i))
-                            } else {
-                                spreads.append(.dual(leftIndex: i, rightIndex: i + 1))
-                            }
-                            i += 2
-                        }
+                    if isMangaMode {
+                        spreads.append(.dual(leftIndex: i + 1, rightIndex: i))
                     } else {
-                        spreads.append(.single(pageIndex: i, isLandscape: false))
-                        i += 1
+                        spreads.append(.dual(leftIndex: i, rightIndex: i + 1))
                     }
+                    i += 2
                 }
+            } else {
+                spreads.append(.single(pageIndex: i, isLandscape: false))
+                i += 1
             }
         }
         return spreads
@@ -790,10 +721,6 @@ class PageBufferManager: ObservableObject {
     func buildSpreadPair(leadIndex: Int, totalPages: Int, isMangaMode: Bool) -> (leftIndex: Int?, rightIndex: Int?) {
         guard leadIndex >= 0, leadIndex < totalPages else { return (nil, nil) }
 
-        if leadIndex == 0 {
-            return isMangaMode ? (nil, 0) : (0, nil)
-        }
-
         let rightIndex = leadIndex + 1 < totalPages ? leadIndex + 1 : nil
         return isMangaMode ? (rightIndex, leadIndex) : (leadIndex, rightIndex)
     }
@@ -804,10 +731,8 @@ class PageBufferManager: ObservableObject {
     }
 
     static func canonicalLeadIndex(for rawIndex: Int, isMangaMode: Bool) -> Int {
-        if rawIndex <= 0 { return 0 }
-        let offset = rawIndex - 1
-        let leadOffset = (offset / 2) * 2
-        return 1 + leadOffset
+        guard rawIndex >= 0 else { return 0 }
+        return (rawIndex / 2) * 2
     }
 
     // MARK: - Private Helpers

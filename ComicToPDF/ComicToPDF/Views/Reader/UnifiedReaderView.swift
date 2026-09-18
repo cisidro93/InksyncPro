@@ -346,13 +346,15 @@ struct UnifiedReaderView: View {
             logReaderRouting(trigger: "onAppear")
 
             // Hardware volume buttons page turning (iPhone 1-handed & iPad hands-free)
-            VolumeButtonPageTurnManager.shared.onVolumeUp = {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            if EBookPreferences.shared.volumeButtonsTurnPages {
+                VolumeButtonPageTurnManager.shared.onVolumeUp = {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+                }
+                VolumeButtonPageTurnManager.shared.onVolumeDown = {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+                }
+                VolumeButtonPageTurnManager.shared.startListening()
             }
-            VolumeButtonPageTurnManager.shared.onVolumeDown = {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
-            }
-            VolumeButtonPageTurnManager.shared.startListening()
         }
         .onDisappear {
             ReaderIdleTimerManager.shared.leaveReader()
