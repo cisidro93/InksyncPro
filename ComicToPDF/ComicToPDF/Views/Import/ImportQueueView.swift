@@ -74,7 +74,7 @@ struct ImportQueueView: View {
                     pendingDuplicates = []
                 }
             } message: {
-                Text("\(pendingDuplicates.count) file(s) already exist in your queue. Import anyway?")
+                Text("\(pendingDuplicates.count) file(s) already exist in your library or queue. Import anyway?")
             }
             // Series name conflict sheet
             .sheet(isPresented: $showSeriesConflict) {

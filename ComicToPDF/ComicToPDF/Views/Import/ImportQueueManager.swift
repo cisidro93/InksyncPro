@@ -56,44 +56,110 @@ class ImportQueueManager: ObservableObject {
 
     // MARK: - Smart Stage (primary entry point)
 
-    /// Stages new files after dedup check. Returns what was skipped.
-    /// Stages new files into the import queue.
+    /// Stages new files into the import queue with smart active-library duplicate detection.
     /// Deduplication rules:
-    /// 1. Intra-batch dedup: skips identical URLs selected multiple times in same batch.
+    /// 1. Intra-batch dedup: skips identical file URLs selected multiple times in the same selection batch.
     /// 2. In-queue dedup: skips files that are already staged in the active queue session.
-    /// 3. Invariant: NEVER drop files based on chapter numbers (e.g. variant covers like Cover A, Cover B).
-    /// 4. Invariant: Do NOT reject files from entering the staging queue because of library/database tracking.
-    ///    The user has explicitly selected them to stage; ImportOrchestrator handles byte-level disk skipping safely at commit time.
+    /// 3. Active Library dedup: checks what files are ACTIVELY present on physical disk in the app library
+    ///    (matching by same series + filename, or same file size + filename).
+    /// 4. Invariant: NEVER drop files based on chapter numbers (e.g. variant covers like Cover A, Cover B
+    ///    have different filenames/sizes and are preserved with 100% fidelity).
+    /// 5. Detected duplicates are cleanly separated into `duplicateURLs` so the UI can prompt the user
+    ///    to "Skip Duplicates" or "Import Anyway", preventing duplicate clutter in the library.
     func stageWithDuplicateCheck(_ incomingURLs: [URL]) async -> StageResult {
         let currentSnapshot = stagedURLs
         
         // Build staged keys: (seriesFolder/filename) and full paths of items already in the active queue
         let existingStagedKeys = Set(currentSnapshot.map { url -> String in
-            let series = url.deletingLastPathComponent().lastPathComponent.lowercased()
+            let series = url.deletingLastPathComponent().lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return "\(series)/\(url.lastPathComponent.lowercased())"
         })
         let existingStagedPaths = Set(currentSnapshot.map { $0.path })
+        let existingStagedSizes = Set(currentSnapshot.compactMap { url -> String? in
+            let series = url.deletingLastPathComponent().lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !Self.isGenericFolder(series) && !series.isEmpty else { return nil }
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+            guard size > 0 else { return nil }
+            return "\(series)||\(size)"
+        })
+
+        // Build active library lookup:
+        // Key 1: activeSeriesKeys ("series/filename")
+        // Key 2: activeSeriesSizes ("series||fileSize") -> catches renamed duplicates (e.g. "1.1" matching "1" by size)
+        // Key 3: activeFingerprints ("fileSize||filename")
+        let (activeSeriesKeys, activeSeriesSizes, activeFingerprints) = await MainActor.run {
+            var sKeys = Set<String>()
+            var sSizes = Set<String>()
+            var fingerprints = Set<String>()
+            let fm = FileManager.default
+            for item in LibraryService.shared.items {
+                // Ensure the file is ACTIVELY on physical disk.
+                // If it was deleted on disk, it is a ghost entry and must NOT block re-importing!
+                guard fm.fileExists(atPath: item.url.path) else { continue }
+                
+                let series = (item.metadata.series ?? item.url.deletingLastPathComponent().lastPathComponent).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let fn = item.url.lastPathComponent.lowercased()
+                if !Self.isGenericFolder(series) && !series.isEmpty {
+                    sKeys.insert("\(series)/\(fn)")
+                    if item.fileSize > 0 {
+                        sSizes.insert("\(series)||\(item.fileSize)")
+                    }
+                }
+                if item.fileSize > 0 {
+                    fingerprints.insert("\(item.fileSize)||\(fn)")
+                }
+            }
+            return (sKeys, sSizes, fingerprints)
+        }
 
         // Move loop off the main thread
-        let result = await Task.detached(priority: .userInitiated) { [existingStagedKeys, existingStagedPaths] () -> (toStage: [URL], dupes: [URL]) in
+        let result = await Task.detached(priority: .userInitiated) { [existingStagedKeys, existingStagedPaths, existingStagedSizes, activeSeriesKeys, activeSeriesSizes, activeFingerprints] () -> (toStage: [URL], dupes: [URL]) in
             var seenPaths = Set<String>()
             let dedupedIncoming = incomingURLs.filter { seenPaths.insert($0.path).inserted }
+
+            var batchSeriesFiles = Set<String>()
+            var batchSeriesSizes = Set<String>()
 
             var toStage: [URL] = []
             var dupes: [URL] = []
 
             for url in dedupedIncoming {
                 let filename = url.lastPathComponent.lowercased()
-                let seriesFolder = url.deletingLastPathComponent().lastPathComponent.lowercased()
+                let seriesFolder = url.deletingLastPathComponent().lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let isGeneric = Self.isGenericFolder(seriesFolder)
                 let stagedKey = "\(seriesFolder)/\(filename)"
+                let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+                let seriesSizeKey = (!isGeneric && !seriesFolder.isEmpty && fileSize > 0) ? "\(seriesFolder)||\(fileSize)" : ""
 
-                // Only skip if the exact file is ALREADY staged in the current queue session
-                if existingStagedKeys.contains(stagedKey) || existingStagedPaths.contains(url.path) {
+                // 1. Check if already staged in current queue session or earlier in this batch (exact file)
+                if existingStagedKeys.contains(stagedKey) || existingStagedPaths.contains(url.path) || batchSeriesFiles.contains(stagedKey) {
+                    dupes.append(url)
+                    continue
+                }
+
+                // 2. Check if already actively in the app library under the same series by filename
+                if !isGeneric && !seriesFolder.isEmpty && activeSeriesKeys.contains(stagedKey) {
+                    dupes.append(url)
+                    continue
+                }
+
+                // 3. Check for renamed duplicate copies in the same series (e.g. "1.1" or "Issue 1 (1)" matching "1" by size)
+                if !seriesSizeKey.isEmpty && (activeSeriesSizes.contains(seriesSizeKey) || existingStagedSizes.contains(seriesSizeKey) || batchSeriesSizes.contains(seriesSizeKey)) {
+                    dupes.append(url)
+                    continue
+                }
+
+                // 4. Check if exact file (matching byte-size and filename) actively exists in library
+                if fileSize > 0 && activeFingerprints.contains("\(fileSize)||\(filename)") {
                     dupes.append(url)
                     continue
                 }
 
                 toStage.append(url)
+                batchSeriesFiles.insert(stagedKey)
+                if !seriesSizeKey.isEmpty {
+                    batchSeriesSizes.insert(seriesSizeKey)
+                }
             }
             return (toStage, dupes)
         }.value
