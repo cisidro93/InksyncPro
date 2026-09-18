@@ -291,10 +291,10 @@ struct StudyNotebookView: View {
                     .padding(8)
                     .background(
                         speechEngine.isActive
-                        ? AnyView(LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        : AnyView(Color.primary.opacity(0.08)),
-                        in: Circle()
+                        ? AnyShapeStyle(LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        : AnyShapeStyle(Color.primary.opacity(0.08))
                     )
+                    .clipShape(Circle())
             }
             
             let paperStyleMenu = Menu {
