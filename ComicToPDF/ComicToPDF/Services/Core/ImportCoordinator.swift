@@ -53,26 +53,22 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             supportedTypes = [.folder, .directory]
         case .files:
             supportedTypes = [
-                .pdf, .zip, .archive,
+                .pdf, .zip,
                 UTType(filenameExtension: "epub") ?? .epub,
                 UTType(filenameExtension: "cbz") ?? .zip,
                 UTType(filenameExtension: "cbr") ?? .archive,
-                UTType(filenameExtension: "cb7") ?? .archive,
                 UTType(filenameExtension: "cbt") ?? .archive,
-                UTType(filenameExtension: "rar") ?? .archive,
-                UTType(filenameExtension: "7z") ?? .archive
+                UTType(filenameExtension: "rar") ?? .archive
             ].compactMap { $0 }
         default:
-            // Unified Legacy Forward-Port (0bb6b38)
+            // Unified Legacy Forward-Port
             supportedTypes = [
-                .pdf, .zip, .folder, .directory, .archive,
+                .pdf, .zip, .folder, .directory,
                 UTType(filenameExtension: "epub") ?? .epub,
                 UTType(filenameExtension: "cbz") ?? .zip,
                 UTType(filenameExtension: "cbr") ?? .archive,
-                UTType(filenameExtension: "cb7") ?? .archive,
                 UTType(filenameExtension: "cbt") ?? .archive,
-                UTType(filenameExtension: "rar") ?? .archive,
-                UTType(filenameExtension: "7z") ?? .archive
+                UTType(filenameExtension: "rar") ?? .archive
             ].compactMap { $0 }
         }
 
@@ -87,13 +83,14 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
             picker.allowsMultipleSelection = false
         case .unified:
-            // Unified picker must also use allowsMultipleSelection = false so folder open functions.
+            // Unified picker also uses allowsMultipleSelection = false so folder open functions.
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
             picker.allowsMultipleSelection = false
         case .files:
-            // Standalone files picker uses asCopy: true and allowsMultipleSelection: true
-            // so individual comic files can be multi-selected with selection checkmarks.
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
+            // Standalone files picker uses asCopy: false and allowsMultipleSelection: true
+            // so individual comic files can be multi-selected with selection checkmarks,
+            // while preserving original directory context and eliminating double-copy sandbox bloat.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
             picker.allowsMultipleSelection = true
         case .json, .smartList:
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
@@ -153,7 +150,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
             // --- Parallel Staging: Phase 1 enumerate, Phase 2 concurrent copy ---
             let fm = FileManager.default
-            let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z"]
+            let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cbt", "zip", "rar"]
 
             let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
             try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
