@@ -113,7 +113,8 @@ final class PageOCRService: Sendable {
             
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
-            request.recognitionLanguages = ["en-US"]
+            request.automaticallyDetectsLanguage = true
+            request.recognitionLanguages = ["en-US", "ja", "fr", "de", "es", "it"]
             
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             do {
