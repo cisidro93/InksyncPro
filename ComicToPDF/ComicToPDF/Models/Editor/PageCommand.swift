@@ -6,6 +6,8 @@ enum PageCommand {
     case movePanel(index: Int, oldRect: NormalizedRect, newRect: NormalizedRect)
     case resizePanel(index: Int, oldRect: NormalizedRect, newRect: NormalizedRect)
     case commitProposals([NormalizedRect]) // Turning AI suggestions into real panels
+    case splitPanel(index: Int, original: NormalizedRect, first: NormalizedRect, second: NormalizedRect)
+    case mergePanels(indices: [Int], originals: [NormalizedRect], merged: NormalizedRect)
 
     // In a real Command pattern, we might have execute/undo methods here,
     // but since we are using struct-based state (PageModel), we can just have a function
@@ -39,6 +41,20 @@ enum PageCommand {
         case .commitProposals(let proposals):
             model.panels.append(contentsOf: proposals)
             model.proposedPanels.removeAll()
+
+        case .splitPanel(let index, _, let first, let second):
+            guard index >= 0 && index < model.panels.count else { return }
+            model.panels[index] = first
+            model.panels.insert(second, at: index + 1)
+            let size = CGSize(width: second.width, height: second.height)
+            Task { @MainActor in AdaptiveLearningManager.shared.recordUserAddedPanel(size: size) }
+
+        case .mergePanels(let indices, _, let merged):
+            let sorted = indices.sorted(by: >)
+            for idx in sorted where idx >= 0 && idx < model.panels.count {
+                model.panels.remove(at: idx)
+            }
+            model.panels.append(merged)
         }
     }
 
@@ -79,6 +95,26 @@ enum PageCommand {
                 model.panels.removeSubrange(start..<model.panels.count)
             }
             model.proposedPanels = proposals
+
+        case .splitPanel(let index, let original, _, _):
+            if index + 1 < model.panels.count {
+                model.panels.remove(at: index + 1)
+            }
+            if index < model.panels.count {
+                model.panels[index] = original
+            }
+
+        case .mergePanels(let indices, let originals, _):
+            if !model.panels.isEmpty {
+                model.panels.removeLast()
+            }
+            for (idx, orig) in zip(indices, originals) {
+                if idx <= model.panels.count {
+                    model.panels.insert(orig, at: idx)
+                } else {
+                    model.panels.append(orig)
+                }
+            }
         }
     }
 }

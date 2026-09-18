@@ -27,6 +27,10 @@ struct PrecisionCanvasView: View {
     @State private var currentDragRect: NormalizedRect?
     @State private var cropBox: NormalizedRect? = nil
     @State private var guideOpacity: Double = 0.0
+
+    // Touch & Precision Reticle State
+    @State private var currentTouchPoint: CGPoint? = nil
+    @State private var isMagneticSnapped: Bool = false
     
     private var isPreviewPresented: Binding<Bool> {
         Binding(
@@ -287,6 +291,12 @@ struct PrecisionCanvasView: View {
                 panelOverlayCanvas(displayedRect: displayedRect)
                     .gesture(canvasGesture(in: displayedRect))
 
+                // 1-Tap Floating Quick HUD
+                selectedPanelHUDOverlay(displayedRect: displayedRect)
+
+                // Precision Loupe Reticle
+                magnifierLoupeOverlay(image: image, displayedRect: displayedRect)
+
                 devWatermarkOverlay
                 devLogHUD(geoWidth: geo.size.width)
             }
@@ -493,6 +503,154 @@ struct PrecisionCanvasView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Floating HUD & Precision Reticle Overlays
+
+    @ViewBuilder
+    private func selectedPanelHUDOverlay(displayedRect: CGRect) -> some View {
+        if let index = editorState.selectedPanelIndex,
+           selectedTool == .edit,
+           activeHandle == nil,
+           currentDragRect == nil,
+           index < editorState.pageModel.panels.count {
+            let panel = editorState.pageModel.panels[index]
+            let panelRect = CoordinateConverter.denormalize(rect: panel, in: displayedRect)
+            PanelQuickActionHUDView(
+                panelIndex: index,
+                panelRect: panelRect,
+                displayedRect: displayedRect,
+                canMerge: editorState.pageModel.panels.count > 1,
+                onSplit: { performAutoSplit(for: index) },
+                onMerge: { performAutoMerge(for: index) },
+                onDelete: { performDelete(for: index) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func magnifierLoupeOverlay(image: UIImage, displayedRect: CGRect) -> some View {
+        if let touch = currentTouchPoint,
+           (activeHandle != nil || (selectedTool == .anchor && currentDragRect != nil)) {
+            MagnifierLoupeView(
+                image: image,
+                touchPoint: touch,
+                displayedRect: displayedRect,
+                isSnapped: isMagneticSnapped
+            )
+        }
+    }
+
+    // MARK: - 1-Tap Panel Actions
+
+    private func performAutoSplit(for index: Int) {
+        guard let image = pageImage,
+              index < editorState.pageModel.panels.count else { return }
+        let original = editorState.pageModel.panels[index]
+
+        if let splitResult = SnapEngine.shared.findInternalSplitLine(for: original, in: image) {
+            let first: NormalizedRect
+            let second: NormalizedRect
+
+            switch splitResult.axis {
+            case .horizontal:
+                let splitY = splitResult.splitPosition
+                first = NormalizedRect(
+                    x: original.x,
+                    y: original.y,
+                    width: original.width,
+                    height: max(10, splitY - original.y)
+                )
+                second = NormalizedRect(
+                    x: original.x,
+                    y: splitY,
+                    width: original.width,
+                    height: max(10, original.maxY - splitY)
+                )
+            case .vertical:
+                let splitX = splitResult.splitPosition
+                first = NormalizedRect(
+                    x: original.x,
+                    y: original.y,
+                    width: max(10, splitX - original.x),
+                    height: original.height
+                )
+                second = NormalizedRect(
+                    x: splitX,
+                    y: original.y,
+                    width: max(10, original.maxX - splitX),
+                    height: original.height
+                )
+            }
+
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                editorState.execute(.splitPanel(index: index, original: original, first: first, second: second))
+                editorState.selectedPanelIndex = index
+                editorState.log("✂️ Auto-Split panel \(index + 1) along \(splitResult.axis == .horizontal ? "horizontal" : "vertical") gutter")
+            }
+            HapticEngine.success()
+        } else {
+            editorState.log("⚠️ No clear gutter found inside panel \(index + 1)")
+            HapticEngine.light()
+        }
+    }
+
+    private func performAutoMerge(for index: Int) {
+        let panels = editorState.pageModel.panels
+        guard index < panels.count && panels.count > 1 else { return }
+        let target = panels[index]
+
+        var bestNeighborIdx: Int? = nil
+        var minDistance: Double = Double.infinity
+
+        for (i, other) in panels.enumerated() where i != index {
+            let c1 = CGPoint(x: target.x + target.width / 2, y: target.y + target.height / 2)
+            let c2 = CGPoint(x: other.x + other.width / 2, y: other.y + other.height / 2)
+            let dist = hypot(c1.x - c2.x, c1.y - c2.y)
+
+            if dist < minDistance {
+                minDistance = dist
+                bestNeighborIdx = i
+            }
+        }
+
+        guard let neighborIdx = bestNeighborIdx else { return }
+        let neighbor = panels[neighborIdx]
+
+        let unionMinX = min(target.minX, neighbor.minX)
+        let unionMinY = min(target.minY, neighbor.minY)
+        let unionMaxX = max(target.maxX, neighbor.maxX)
+        let unionMaxY = max(target.maxY, neighbor.maxY)
+
+        let mergedRect = NormalizedRect(
+            x: unionMinX,
+            y: unionMinY,
+            width: unionMaxX - unionMinX,
+            height: unionMaxY - unionMinY
+        )
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            editorState.execute(.mergePanels(
+                indices: [index, neighborIdx],
+                originals: [target, neighbor],
+                merged: mergedRect
+            ))
+            editorState.selectedPanelIndex = max(0, min(index, editorState.pageModel.panels.count - 1))
+            editorState.log("🔗 Merged panel \(index + 1) with panel \(neighborIdx + 1)")
+        }
+        HapticEngine.medium()
+    }
+
+    private func performDelete(for index: Int) {
+        guard index < editorState.pageModel.panels.count else { return }
+        let rect = editorState.pageModel.panels[index]
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+            editorState.execute(.removePanel(index: index, rect: rect))
+            editorState.selectedPanelIndex = nil
+            currentDragRect = nil
+            editorState.log("🗑️ Deleted panel \(index + 1)")
+        }
+        HapticEngine.light()
     }
 
     @State private var activeSnapGuides: [SnapGuide] = []
@@ -827,6 +985,7 @@ struct PreviewMaskShape: Shape {
     private func canvasGesture(in rect: CGRect) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                currentTouchPoint = value.location
                 let point = CoordinateConverter.normalize(point: value.location, in: rect)
                 
                 switch selectedTool {
@@ -877,12 +1036,6 @@ struct PreviewMaskShape: Shape {
                                      currentDragRect = editorState.pageModel.panels[newSelection]
                                      editorState.log("Selected Panel \(newSelection + 1) (Cycling \(nextIdx + 1)/\(hits.count))")
                                  } else {
-                                     // Select the top-most (first in reversed list is visually top)
-                                     // hitTestAll returns indices. We want the one that is "highest" in Z-order.
-                                     // The basic hitTest returns the *last* one (highest index).
-                                     // Let's verify hitTestAll order.
-                                     
-                                     // If we just pick the first one from our new hitTestAll...
                                      if let newSelection = hits.first {
                                         editorState.selectedPanelIndex = newSelection
                                         currentDragRect = editorState.pageModel.panels[newSelection]
@@ -899,12 +1052,8 @@ struct PreviewMaskShape: Shape {
                              }
                          } else if let index = editorState.selectedPanelIndex, let start = dragStart, currentDragRect != nil {
                          
-                         
                          // Determine mode: Resize or Move
                          if let handle = activeHandle {
-                             // Determining mode: Resize or Move
-                             // We should apply to `original` panel state to prevent cumulative delta drifting
-
                              let original = editorState.pageModel.panels[index]
                              var targetRect = original
                              
@@ -941,11 +1090,64 @@ struct PreviewMaskShape: Shape {
                              }
                              
                              // Resolve negative sizes
-                             if targetRect.width < 10 { targetRect.size.width = 10; targetRect.origin.x = original.maxX - 10 } // Simplified
+                             if targetRect.width < 10 { targetRect.size.width = 10; targetRect.origin.x = original.maxX - 10 }
                              if targetRect.height < 10 { targetRect.size.height = 10; targetRect.origin.y = original.maxY - 10 }
                              
-                             // Snap Resize?
-                             // ... (Omitted for brevity, good enough for now)
+                             // 🧲 Content-Aware Magnetic Ink Snapping
+                             if let image = pageImage {
+                                 let handlePt: CGPoint
+                                 switch handle {
+                                 case .topLeft:     handlePt = CGPoint(x: targetRect.minX, y: targetRect.minY)
+                                 case .topEdge:     handlePt = CGPoint(x: targetRect.midX, y: targetRect.minY)
+                                 case .topRight:    handlePt = CGPoint(x: targetRect.maxX, y: targetRect.minY)
+                                 case .rightEdge:   handlePt = CGPoint(x: targetRect.maxX, y: targetRect.midY)
+                                 case .bottomRight: handlePt = CGPoint(x: targetRect.maxX, y: targetRect.maxY)
+                                 case .bottomEdge:  handlePt = CGPoint(x: targetRect.midX, y: targetRect.maxY)
+                                 case .bottomLeft:  handlePt = CGPoint(x: targetRect.minX, y: targetRect.maxY)
+                                 case .leftEdge:    handlePt = CGPoint(x: targetRect.minX, y: targetRect.midY)
+                                 }
+
+                                 let (snappedPt, guide) = SnapEngine.shared.findMagneticInkEdge(near: handlePt, in: image, searchRadius: 18.0)
+                                 if let g = guide {
+                                     switch handle {
+                                     case .topLeft:
+                                         targetRect.origin.x = snappedPt.x
+                                         targetRect.size.width = max(10, original.maxX - snappedPt.x)
+                                         targetRect.origin.y = snappedPt.y
+                                         targetRect.size.height = max(10, original.maxY - snappedPt.y)
+                                     case .topEdge:
+                                         targetRect.origin.y = snappedPt.y
+                                         targetRect.size.height = max(10, original.maxY - snappedPt.y)
+                                     case .topRight:
+                                         targetRect.origin.y = snappedPt.y
+                                         targetRect.size.height = max(10, original.maxY - snappedPt.y)
+                                         targetRect.size.width = max(10, snappedPt.x - original.minX)
+                                     case .rightEdge:
+                                         targetRect.size.width = max(10, snappedPt.x - original.minX)
+                                     case .bottomRight:
+                                         targetRect.size.width = max(10, snappedPt.x - original.minX)
+                                         targetRect.size.height = max(10, snappedPt.y - original.minY)
+                                     case .bottomEdge:
+                                         targetRect.size.height = max(10, snappedPt.y - original.minY)
+                                     case .bottomLeft:
+                                         targetRect.origin.x = snappedPt.x
+                                         targetRect.size.width = max(10, original.maxX - snappedPt.x)
+                                         targetRect.size.height = max(10, snappedPt.y - original.minY)
+                                     case .leftEdge:
+                                         targetRect.origin.x = snappedPt.x
+                                         targetRect.size.width = max(10, original.maxX - snappedPt.x)
+                                     }
+
+                                     if !isMagneticSnapped {
+                                         HapticEngine.selection()
+                                         isMagneticSnapped = true
+                                     }
+                                     activeSnapGuides = [g]
+                                 } else {
+                                     isMagneticSnapped = false
+                                     activeSnapGuides = []
+                                 }
+                             }
                              
                              currentDragRect = targetRect
                              
@@ -974,7 +1176,10 @@ struct PreviewMaskShape: Shape {
                              
                              // Haptics
                              if !guides.isEmpty && activeSnapGuides.isEmpty {
-                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                 HapticEngine.selection()
+                                 isMagneticSnapped = true
+                             } else if guides.isEmpty {
+                                 isMagneticSnapped = false
                              }
                              activeSnapGuides = guides
                          }
@@ -1002,8 +1207,11 @@ struct PreviewMaskShape: Shape {
                     currentDragRect = snapped
                     activeSnapGuides = guides
                     
-                    if !guides.isEmpty {
-                        UIImpactFeedbackGenerator(style: .rigid).impactOccurred() // Rigid for structural snap
+                    if !guides.isEmpty && !isMagneticSnapped {
+                        HapticEngine.selection()
+                        isMagneticSnapped = true
+                    } else if guides.isEmpty {
+                        isMagneticSnapped = false
                     }
                 }
             }
@@ -1013,6 +1221,8 @@ struct PreviewMaskShape: Shape {
                     currentDragRect = nil
                     activeSnapGuides = []
                     activeHandle = nil
+                    currentTouchPoint = nil
+                    isMagneticSnapped = false
                 }
                 
                 if selectedTool == .anchor, let rect = currentDragRect {
