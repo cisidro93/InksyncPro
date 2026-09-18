@@ -210,7 +210,7 @@ struct InksyncProgressFooterView: View {
             triggerModeCycle()
         }
         .onLongPressGesture {
-            HapticEngine.impact(style: .medium)
+            HapticEngine.medium()
             withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                 isExpanded.toggle()
             }
