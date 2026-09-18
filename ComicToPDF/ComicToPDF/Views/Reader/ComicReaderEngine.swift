@@ -1473,6 +1473,8 @@ struct ComicReaderEngine: View {
     @StateObject private var narrationEngine = PageOCREngine()
     /// On-device Comic Dialogue Speech Narration Engine
     @StateObject private var speechEngine = ComicDialogueSpeechEngine.shared
+    /// Cooldown timer to prevent double-tap bouncing when toggling panel navigation
+    @State private var lastGuidedToggleTime: Date = .distantPast
     
     /// SwiftData context
     @Environment(\.modelContext) private var modelContext
@@ -1924,10 +1926,13 @@ struct ComicReaderEngine: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ComicReader_ToggleGuidedInspection"))) { _ in
+            let now = Date()
+            guard now.timeIntervalSince(lastGuidedToggleTime) > 0.35 else { return }
+            lastGuidedToggleTime = now
             HapticEngine.medium()
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 if readingMode == .panelNavigation {
-                    readingMode = isMangaActive ? .mangaRTL : .pageHorizontal
+                    readingMode = lastPageTurnReadingMode
                 } else {
                     if readingMode == .mangaRTL || readingMode == .pageHorizontal {
                         lastPageTurnReadingMode = readingMode
@@ -2091,9 +2096,12 @@ struct ComicReaderEngine: View {
             isMangaMode: isMangaActive,
             onTapChrome: { chromeVisible.toggle() },
             onToggleReadingMode: {
+                let now = Date()
+                guard now.timeIntervalSince(lastGuidedToggleTime) > 0.35 else { return }
+                lastGuidedToggleTime = now
                 HapticEngine.medium()
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    readingMode = isMangaActive ? .mangaRTL : .pageHorizontal
+                    readingMode = lastPageTurnReadingMode
                 }
             }
         )
@@ -3312,6 +3320,9 @@ struct ComicSpreadGuidedView: View {
     @State private var currentStrideIndex: Int = 0 // 0 = Focused Inspection View (first panel/section)
     @State private var strides: [SpreadStride] = []
     @State private var isAnalyzing: Bool = false
+    @State private var lastTapTime: Date = .distantPast
+    @State private var pendingSingleTapWorkItem: DispatchWorkItem? = nil
+    @State private var dragOffset: CGSize = .zero
 
     private var tapZoneStyle: TapZoneStyle {
         TapZoneStyle(rawValue: UserDefaults.standard.string(forKey: "tapZoneStyle") ?? "") ?? .classic
@@ -3346,17 +3357,37 @@ struct ComicSpreadGuidedView: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) {
-                // Double-tap anywhere to disable panel reading mode and return to page curl reading mode
-                HapticEngine.medium()
-                onToggleReadingMode?()
-            }
+            .gesture(
+                DragGesture(minimumDistance: 15)
+                    .onChanged { value in
+                        dragOffset = value.translation
+                    }
+                    .onEnded { value in
+                        let horizontalSwipe = value.predictedEndTranslation.width
+                        let threshold: CGFloat = 80
+                        if horizontalSwipe < -threshold {
+                            dragOffset = .zero
+                            if isMangaMode { advance() } else { rewind() }
+                        } else if horizontalSwipe > threshold {
+                            dragOffset = .zero
+                            if isMangaMode { rewind() } else { advance() }
+                        } else {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                dragOffset = .zero
+                            }
+                        }
+                    }
+            )
             .onTapGesture(count: 1) { loc in
-                handleTap(loc: loc, width: geo.size.width)
+                handleTapWithDebounce(loc: loc, width: geo.size.width)
             }
         }
         .onAppear {
             loadImagesAndAnalyze()
+        }
+        .onDisappear {
+            pendingSingleTapWorkItem?.cancel()
+            pendingSingleTapWorkItem = nil
         }
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
             guard let userInfo = notification.userInfo,
@@ -3416,7 +3447,8 @@ struct ComicSpreadGuidedView: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: size.width, height: size.height)
                 .scaleEffect(metrics.scale)
-                .offset(x: metrics.offsetX, y: metrics.offsetY)
+                .offset(x: metrics.offsetX + dragOffset.width, y: metrics.offsetY + dragOffset.height)
+                .clipped()
                 .animation(.spring(response: 0.38, dampingFraction: 0.82), value: currentStrideIndex)
         }
     }
@@ -3427,6 +3459,26 @@ struct ComicSpreadGuidedView: View {
     }
 
     // MARK: - Gesture Handling
+
+    private func handleTapWithDebounce(loc: CGPoint, width: CGFloat) {
+        let now = Date()
+        if now.timeIntervalSince(lastTapTime) < 0.35 {
+            // ✅ Double-tap detected! Cancel pending single-tap to prevent unwanted panel advancement or chrome toggle
+            pendingSingleTapWorkItem?.cancel()
+            pendingSingleTapWorkItem = nil
+            lastTapTime = .distantPast
+            HapticEngine.medium()
+            onToggleReadingMode?()
+        } else {
+            lastTapTime = now
+            pendingSingleTapWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [loc, width] in
+                handleTap(loc: loc, width: width)
+            }
+            pendingSingleTapWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.26, execute: workItem)
+        }
+    }
 
     private func handleTap(loc: CGPoint, width: CGFloat) {
         let zones = tapZoneStyle.zones
@@ -3441,6 +3493,7 @@ struct ComicSpreadGuidedView: View {
 
     private func advance() {
         HapticEngine.light()
+        dragOffset = .zero
         if strides.isEmpty {
             goToNextSpread()
             return
@@ -3456,6 +3509,7 @@ struct ComicSpreadGuidedView: View {
 
     private func rewind() {
         HapticEngine.light()
+        dragOffset = .zero
         if currentStrideIndex > 0 {
             withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
                 currentStrideIndex -= 1
@@ -3628,7 +3682,31 @@ struct ComicSpreadGuidedView: View {
 
         let scaleX = proxy.width / mappedW
         let scaleY = proxy.height / mappedH
-        let scale = min(scaleX, scaleY) * 0.96
+        let fitMode = EBookPreferences.shared.comicPageFitMode
+
+        let targetScale: CGFloat
+        switch fitMode {
+        case .fitWidth:
+            // Matches screen width edge-to-edge for maximum text clarity & immersion.
+            // If the panel is unusually tall, allow it to scale up to 1.35x screen height
+            // so it fills available space without losing the top/bottom captions.
+            let maxAllowedScale = scaleY * 1.35
+            targetScale = min(scaleX, max(scaleY, maxAllowedScale))
+        case .fillScreen:
+            // True edge-to-edge full bleed filling 100% of display
+            targetScale = max(scaleX, scaleY)
+        case .fitPage:
+            // Clean aspect fit with zero arbitrary 0.96 downscale penalty
+            targetScale = min(scaleX, scaleY)
+        case .smartFit:
+            // Smart fit: dynamically expand into available screen space up to 35% beyond base fit,
+            // or match width if wide, filling available space while preventing excessive off-screen overflow
+            let base = min(scaleX, scaleY)
+            let fill = max(scaleX, scaleY)
+            targetScale = min(fill, base * 1.35)
+        }
+
+        let scale = max(0.5, min(targetScale, max(scaleX, scaleY) * 1.6))
 
         let panelCenter = CGPoint(x: mappedX + mappedW / 2, y: mappedY + mappedH / 2)
         let imageRenderCenter = CGPoint(x: renderW / 2, y: renderH / 2)

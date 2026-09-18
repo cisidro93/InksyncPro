@@ -79,13 +79,14 @@ struct PageCurlReader: UIViewControllerRepresentable {
         
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
-        doubleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         doubleTap.cancelsTouchesInView = false
+        doubleTap.delegate = context.coordinator
         view.addGestureRecognizer(doubleTap)
 
         let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSingleTap(_:)))
         singleTap.numberOfTapsRequired = 1
-        singleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        singleTap.cancelsTouchesInView = false
+        singleTap.delegate = context.coordinator
         singleTap.require(toFail: doubleTap)
         view.addGestureRecognizer(singleTap)
 
@@ -167,7 +168,7 @@ struct PageCurlReader: UIViewControllerRepresentable {
 
 extension PageCurlReader {
     @MainActor
-    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
+    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIGestureRecognizerDelegate {
         var parent: PageCurlReader
         weak var pageViewController: UIPageViewController?
         var isTransitioning: Bool = false
@@ -391,6 +392,16 @@ extension PageCurlReader {
                     gesture.isEnabled = !isZoomed
                 }
             }
+        }
+
+        // MARK: - UIGestureRecognizerDelegate
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            return true
         }
     }
 }
@@ -674,13 +685,14 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
         
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
-        doubleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         doubleTap.cancelsTouchesInView = false
+        doubleTap.delegate = context.coordinator
         view.addGestureRecognizer(doubleTap)
 
         let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSingleTap(_:)))
         singleTap.numberOfTapsRequired = 1
-        singleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        singleTap.cancelsTouchesInView = false
+        singleTap.delegate = context.coordinator
         singleTap.require(toFail: doubleTap)
         view.addGestureRecognizer(singleTap)
 
@@ -720,7 +732,7 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
 
 extension SmartMidSpineCurlReader {
     @MainActor
-    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
+    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIGestureRecognizerDelegate {
         var parent: SmartMidSpineCurlReader
         weak var pageViewController: UIPageViewController?
         var isTransitioning: Bool = false
@@ -1005,6 +1017,16 @@ extension SmartMidSpineCurlReader {
                     gesture.isEnabled = !isZoomed
                 }
             }
+        }
+
+        // MARK: - UIGestureRecognizerDelegate
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            return true
         }
     }
 }
