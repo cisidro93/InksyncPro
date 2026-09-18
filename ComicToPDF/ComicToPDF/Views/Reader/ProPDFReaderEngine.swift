@@ -3119,6 +3119,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // Horizontal paging feels most natural for a reader app on iOS
         pdfView.displayDirection = .horizontal
         let isPhone = UIDevice.current.userInterfaceIdiom == .phone
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
         // Disable page shadows on phone so document pages utilize 100% of the screen width edge-to-edge
         pdfView.pageShadowsEnabled = !isPhone
         pdfView.backgroundColor = UIColor(themeBgColor)
@@ -3355,7 +3356,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             uiView.displaysAsBook = targetDisplaysAsBook
         }
 
-        let isPhone = UIDevice.current.userInterfaceIdiom == .phone
         if uiView.pageShadowsEnabled != !isPhone {
             uiView.pageShadowsEnabled = !isPhone
         }
