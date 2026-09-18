@@ -57,50 +57,25 @@ class ImportQueueManager: ObservableObject {
     // MARK: - Smart Stage (primary entry point)
 
     /// Stages new files after dedup check. Returns what was skipped.
-    /// Dedup order: (1) intra-batch dedup, (2) filename fast check,
-    /// (3) chapter-key fast check, (4) SHA-256 hash check vs library.
+    /// Stages new files into the import queue.
+    /// Deduplication rules:
+    /// 1. Intra-batch dedup: skips identical URLs selected multiple times in same batch.
+    /// 2. In-queue dedup: skips files that are already staged in the active queue session.
+    /// 3. Invariant: NEVER drop files based on chapter numbers (e.g. variant covers like Cover A, Cover B).
+    /// 4. Invariant: Do NOT reject files from entering the staging queue because of library/database tracking.
+    ///    The user has explicitly selected them to stage; ImportOrchestrator handles byte-level disk skipping safely at commit time.
     func stageWithDuplicateCheck(_ incomingURLs: [URL]) async -> StageResult {
         let currentSnapshot = stagedURLs
         
-        // Build staged keys: (seriesFolder/filename)
+        // Build staged keys: (seriesFolder/filename) and full paths of items already in the active queue
         let existingStagedKeys = Set(currentSnapshot.map { url -> String in
             let series = url.deletingLastPathComponent().lastPathComponent.lowercased()
             return "\(series)/\(url.lastPathComponent.lowercased())"
         })
-        
-        // Build library items lookup:
-        // Key 1: series/filename
-        // Key 2: exact size + filename (for generic containers)
-        let (librarySeriesKeys, libraryExactFingerprints) = await MainActor.run {
-            var sKeys = Set<String>()
-            var fingerprints = Set<String>()
-            let fm = FileManager.default
-            for item in LibraryService.shared.items {
-                // Ensure the file actually exists on physical disk.
-                // If it was deleted, it is a ghost entry and must NOT block re-importing the file!
-                guard fm.fileExists(atPath: item.url.path) else { continue }
-                
-                let series = item.url.deletingLastPathComponent().lastPathComponent.lowercased()
-                let fn = item.url.lastPathComponent.lowercased()
-                if !Self.isGenericFolder(series) {
-                    sKeys.insert("\(series)/\(fn)")
-                }
-                if item.fileSize > 0 {
-                    fingerprints.insert("\(item.fileSize)||\(fn)")
-                }
-            }
-            return (sKeys, fingerprints)
-        }
-
-        // Fast pre-filter for chapter keys within same series in current queue
-        let existingChapterKeys: Set<String> = Set(currentSnapshot.compactMap { url -> String? in
-            let series = url.deletingLastPathComponent().lastPathComponent
-            guard !Self.isGenericFolder(series), let ch = SeriesNameParser.chapterKey(from: url.lastPathComponent) else { return nil }
-            return "\(series.lowercased()):\(ch)"
-        })
+        let existingStagedPaths = Set(currentSnapshot.map { $0.path })
 
         // Move loop off the main thread
-        let result = await Task.detached(priority: .userInitiated) { [existingStagedKeys, librarySeriesKeys, libraryExactFingerprints, existingChapterKeys] () -> (toStage: [URL], dupes: [URL]) in
+        let result = await Task.detached(priority: .userInitiated) { [existingStagedKeys, existingStagedPaths] () -> (toStage: [URL], dupes: [URL]) in
             var seenPaths = Set<String>()
             let dedupedIncoming = incomingURLs.filter { seenPaths.insert($0.path).inserted }
 
@@ -110,34 +85,10 @@ class ImportQueueManager: ObservableObject {
             for url in dedupedIncoming {
                 let filename = url.lastPathComponent.lowercased()
                 let seriesFolder = url.deletingLastPathComponent().lastPathComponent.lowercased()
-                let isGeneric = Self.isGenericFolder(seriesFolder)
                 let stagedKey = "\(seriesFolder)/\(filename)"
 
-                // 1. Check if already staged in current queue
-                if existingStagedKeys.contains(stagedKey) {
-                    dupes.append(url)
-                    continue
-                }
-
-                // 2. Check if already exists in library in the same series folder
-                if !isGeneric && librarySeriesKeys.contains(stagedKey) {
-                    dupes.append(url)
-                    continue
-                }
-
-                // 3. For generic folders, check exact size + filename
-                if isGeneric {
-                    let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-                    if fileSize > 0 && libraryExactFingerprints.contains("\(fileSize)||\(filename)") {
-                        dupes.append(url)
-                        continue
-                    }
-                }
-
-                // 4. Chapter collision check within same series in current queue
-                if !isGeneric,
-                   let ch = SeriesNameParser.chapterKey(from: url.lastPathComponent),
-                   existingChapterKeys.contains("\(seriesFolder):\(ch)") {
+                // Only skip if the exact file is ALREADY staged in the current queue session
+                if existingStagedKeys.contains(stagedKey) || existingStagedPaths.contains(url.path) {
                     dupes.append(url)
                     continue
                 }

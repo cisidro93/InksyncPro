@@ -252,7 +252,10 @@ struct ImportQueueView: View {
                     queue.isStagingFiles = false
                     if result.skippedDuplicates > 0 {
                         pendingDuplicates = result.duplicateURLs
-                        showDuplicateAlert = true
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 400_000_000)
+                            showDuplicateAlert = true
+                        }
                     }
                 }
             }
@@ -272,7 +275,10 @@ struct ImportQueueView: View {
                     queue.isStagingFiles = false
                     if result.skippedDuplicates > 0 {
                         pendingDuplicates = result.duplicateURLs
-                        showDuplicateAlert = true
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 400_000_000)
+                            showDuplicateAlert = true
+                        }
                     }
                 }
             }
@@ -334,7 +340,7 @@ struct ImportQueueView: View {
 
     private func iconFor(_ url: URL) -> String {
         switch url.pathExtension.lowercased() {
-        case "cbz", "cbr", "cb7", "cbt", "zip": return "doc.zipper"
+        case "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z": return "doc.zipper"
         case "epub": return "book"
         case "pdf": return "doc.richtext"
         default: return "doc"

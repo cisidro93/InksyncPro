@@ -58,7 +58,9 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 UTType(filenameExtension: "cbz") ?? .zip,
                 UTType(filenameExtension: "cbr") ?? .archive,
                 UTType(filenameExtension: "cb7") ?? .archive,
-                UTType(filenameExtension: "cbt") ?? .archive
+                UTType(filenameExtension: "cbt") ?? .archive,
+                UTType(filenameExtension: "rar") ?? .archive,
+                UTType(filenameExtension: "7z") ?? .archive
             ].compactMap { $0 }
         default:
             // Unified Legacy Forward-Port (0bb6b38)
@@ -68,7 +70,9 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
                 UTType(filenameExtension: "cbz") ?? .zip,
                 UTType(filenameExtension: "cbr") ?? .archive,
                 UTType(filenameExtension: "cb7") ?? .archive,
-                UTType(filenameExtension: "cbt") ?? .archive
+                UTType(filenameExtension: "cbt") ?? .archive,
+                UTType(filenameExtension: "rar") ?? .archive,
+                UTType(filenameExtension: "7z") ?? .archive
             ].compactMap { $0 }
         }
 
@@ -149,7 +153,7 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
             // --- Parallel Staging: Phase 1 enumerate, Phase 2 concurrent copy ---
             let fm = FileManager.default
-            let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
+            let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z"]
 
             let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
             try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
