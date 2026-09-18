@@ -2302,9 +2302,7 @@ struct HighlightQuickPopoverView: View {
 
                 Button(action: {
                     if let text = annotation.selectedText, !text.isEmpty {
-                        let utterance = AVSpeechUtterance(string: text)
-                        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-                        AVSpeechSynthesizer().speak(utterance)
+                        PDFSpeechNarrationEngine.shared.playSingle(text: text, pageIndex: annotation.pageIndex)
                     }
                 }) {
                     Image(systemName: "speaker.wave.2.fill")

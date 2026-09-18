@@ -1471,6 +1471,8 @@ struct ComicReaderEngine: View {
     @State private var ambientColorTask: Task<Void, Never>? = nil
     /// AI Dialogue Lens Layout-aware OCR Engine
     @StateObject private var narrationEngine = PageOCREngine()
+    /// On-device Comic Dialogue Speech Narration Engine
+    @StateObject private var speechEngine = ComicDialogueSpeechEngine.shared
     
     /// SwiftData context
     @Environment(\.modelContext) private var modelContext
@@ -1704,6 +1706,48 @@ struct ComicReaderEngine: View {
             // Dialogue Lens HUD and Loading indicators
             dialogueHUDView
             
+            // Spatial Speech Bubble Tracker Highlight
+            if let activeBlock = speechEngine.activeBlock, let image = cache.getImage(at: currentIndex) {
+                let rect = screenRect(for: activeBlock.boundingBox, in: geo.size, imageSize: image.size)
+                if rect.width > 0 && rect.height > 0 {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.purple, Color.cyan],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 3
+                        )
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.purple.opacity(0.12))
+                        )
+                        .shadow(color: Color.purple.opacity(0.7), radius: 10)
+                        .frame(width: max(24, rect.width + 12), height: max(24, rect.height + 12))
+                        .position(x: rect.midX, y: rect.midY)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: activeBlock.id)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                        .zIndex(15)
+                }
+            }
+
+            // Floating Non-Blocking Speech Narration HUD
+            if speechEngine.isActive {
+                VStack {
+                    Spacer()
+                    ComicSpeechHUDView(engine: speechEngine) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            speechEngine.stop()
+                        }
+                    }
+                    .padding(.bottom, chromeVisible ? 140 : 44)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(30)
+            }
+            
             if showToast {
                 Text(toastMessage)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -1810,7 +1854,13 @@ struct ComicReaderEngine: View {
             NotificationCenter.default.post(name: NSNotification.Name("Reader_ForceKeyFocus"), object: nil)
             isReaderFocused = true
         }
+        .onDisappear {
+            speechEngine.stop()
+        }
         .onChange(of: currentIndex) { oldIndex, newIndex in
+            if speechEngine.isActive && speechEngine.activePageIndex != newIndex {
+                speechEngine.stop()
+            }
             let elapsed = Date().timeIntervalSince(pageEntryTime)
             pageEntryTime = Date()
             if newIndex > maxPageIndexVisited {
@@ -2287,6 +2337,9 @@ struct ComicReaderEngine: View {
                 }
                 HapticEngine.light()
             },
+            onReadAloudToggle: {
+                startPageNarration()
+            },
             currentProgress: Binding(
                 get: { Double(currentIndex) / Double(max(1, cache.pageCount - 1)) },
                 set: { currentIndex = Int($0 * Double(max(1, cache.pageCount - 1))) }
@@ -2690,6 +2743,63 @@ struct ComicReaderEngine: View {
         return nil
     }
 
+    private func screenRect(for boundingBox: CGRect, in viewSize: CGSize, imageSize: CGSize) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return .zero }
+        let imageRatio = imageSize.width / imageSize.height
+        let viewRatio = viewSize.width / viewSize.height
+        
+        var renderWidth: CGFloat
+        var renderHeight: CGFloat
+        var offsetX: CGFloat = 0
+        var offsetY: CGFloat = 0
+        
+        if imageRatio > viewRatio {
+            renderWidth = viewSize.width
+            renderHeight = viewSize.width / imageRatio
+            offsetY = (viewSize.height - renderHeight) / 2
+        } else {
+            renderHeight = viewSize.height
+            renderWidth = viewSize.height * imageRatio
+            offsetX = (viewSize.width - renderWidth) / 2
+        }
+        
+        let x = offsetX + (boundingBox.minX * renderWidth)
+        let y = offsetY + ((1.0 - boundingBox.maxY) * renderHeight)
+        let w = boundingBox.width * renderWidth
+        let h = boundingBox.height * renderHeight
+        
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+
+    private func startPageNarration() {
+        dialogueOCRTask?.cancel()
+        dialogueOCRTask = Task {
+            if currentDialogueBlocks.isEmpty {
+                await prewarmOCR(for: currentIndex)
+            }
+            guard !currentDialogueBlocks.isEmpty else {
+                showToastMessage("No dialogue detected on page")
+                return
+            }
+            speechEngine.startReading(
+                blocks: currentDialogueBlocks,
+                startIndex: 0,
+                pageIndex: currentIndex,
+                title: pdf.name,
+                onPageAdvanceRequested: {
+                    if currentIndex + 1 < cache.pageCount {
+                        nextPage()
+                        Task {
+                            try? await Task.sleep(nanoseconds: 300_000_000)
+                            startPageNarration()
+                        }
+                    }
+                }
+            )
+            HapticEngine.medium()
+        }
+    }
+
     @ViewBuilder
     private var dialogueHUDView: some View {
         if let block = selectedTextBlock {
@@ -2732,6 +2842,37 @@ struct ComicReaderEngine: View {
                     .frame(maxHeight: 120)
                     
                     HStack(spacing: 12) {
+                        Button {
+                            HapticEngine.medium()
+                            let startIndex = currentDialogueBlocks.firstIndex(of: block) ?? 0
+                            speechEngine.startReading(
+                                blocks: currentDialogueBlocks.isEmpty ? [block] : currentDialogueBlocks,
+                                startIndex: startIndex,
+                                pageIndex: currentIndex,
+                                title: pdf.name,
+                                onPageAdvanceRequested: {
+                                    if currentIndex + 1 < cache.pageCount {
+                                        nextPage()
+                                        Task {
+                                            try? await Task.sleep(nanoseconds: 300_000_000)
+                                            startPageNarration()
+                                        }
+                                    }
+                                }
+                            )
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "speaker.wave.2.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                Text("Speak")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing), in: Capsule())
+                        }
+
                         Button {
                             UIPasteboard.general.string = block.text
                             showToastMessage("Copied to clipboard")

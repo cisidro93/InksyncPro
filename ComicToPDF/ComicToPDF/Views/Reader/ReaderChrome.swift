@@ -29,6 +29,7 @@ struct ReaderChrome: View {
     var onSearchToggle: (() -> Void)? = nil
     var isDialogueLensEnabled: Bool = false
     var onDialogueLensToggle: (() -> Void)? = nil
+    var onReadAloudToggle: (() -> Void)? = nil
 
     // Scrubber
     @Binding var currentProgress: Double
@@ -90,6 +91,7 @@ struct ReaderChrome: View {
         onSearchToggle: (() -> Void)? = nil,
         isDialogueLensEnabled: Bool = false,
         onDialogueLensToggle: (() -> Void)? = nil,
+        onReadAloudToggle: (() -> Void)? = nil,
         currentProgress: Binding<Double>,
         totalPages: Int,
         customScrubber: AnyView? = nil,
@@ -129,6 +131,7 @@ struct ReaderChrome: View {
         self.onSearchToggle = onSearchToggle
         self.isDialogueLensEnabled = isDialogueLensEnabled
         self.onDialogueLensToggle = onDialogueLensToggle
+        self.onReadAloudToggle = onReadAloudToggle
         self._currentProgress = currentProgress
         self.totalPages = totalPages
         self.customScrubber = customScrubber
@@ -321,6 +324,11 @@ struct ReaderChrome: View {
                     if let onDialogueLens = onDialogueLensToggle {
                         Button(action: onDialogueLens) {
                             Label(isDialogueLensEnabled ? "Disable Dialogue Lens" : "AI Dialogue Lens", systemImage: "sparkle.magnifyingglass")
+                        }
+                    }
+                    if let onReadAloud = onReadAloudToggle {
+                        Button(action: onReadAloud) {
+                            Label("Read Aloud (Speech)", systemImage: "speaker.wave.3")
                         }
                     }
                 }

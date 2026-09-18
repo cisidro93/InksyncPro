@@ -553,8 +553,8 @@ struct EBookReaderView: View {
                     }
                     Button { toggleNarration() } label: {
                         Label(
-                            narrationEngine.isPlaying ? "Stop Read Aloud" : "Read Aloud (TTS)",
-                            systemImage: narrationEngine.isPlaying ? "speaker.slash.fill" : "speaker.wave.3"
+                            narrationEngine.isActive ? "Stop Read Aloud" : "Read Aloud (TTS)",
+                            systemImage: narrationEngine.isActive ? "speaker.slash.fill" : "speaker.wave.3"
                         )
                     }
                     Button {
@@ -1375,7 +1375,7 @@ struct EBookReaderView: View {
                     .ignoresSafeArea(edges: .vertical)
                 }
                 
-                if narrationEngine.isPlaying {
+                if narrationEngine.isActive {
                     VStack(spacing: 0) {
                         Spacer()
                         narrationFloatingHUD
@@ -1383,6 +1383,7 @@ struct EBookReaderView: View {
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                     .ignoresSafeArea(edges: .bottom)
+                    .zIndex(30)
                 }
                 
                 if !showHUD {
@@ -1879,7 +1880,8 @@ struct EBookReaderView: View {
     }
 
     private func toggleNarration() {
-        if narrationEngine.isPlaying {
+        if narrationEngine.isActive {
+            clearSentenceHighlightInWebKit()
             narrationEngine.stop()
         } else {
             startNarration()
@@ -1893,8 +1895,14 @@ struct EBookReaderView: View {
                 if let text = result as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     narrationEngine.startReading(
                         chapterText: text,
-                        onSentenceHighlight: { _, _ in },
+                        voiceLanguage: Locale.current.language.languageCode?.identifier ?? "en-US",
+                        title: title,
+                        chapterName: currentChapterTitle ?? "",
+                        onSentenceHighlight: { _, sentence in
+                            highlightSentenceInWebKit(sentence)
+                        },
                         onChapterFinished: {
+                            clearSentenceHighlightInWebKit()
                             nextChapter()
                         }
                     )
@@ -1903,121 +1911,29 @@ struct EBookReaderView: View {
         }
     }
 
+    private func highlightSentenceInWebKit(_ sentence: String) {
+        guard let wv = resolveActiveWebView() ?? webViewReference else { return }
+        let clean = sentence.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+
+        // Automatically select and scroll to the active sentence in the multi-column WebKit layout
+        let js = "window.find(\"\(clean.prefix(80))\", false, false, true, false, true, false);"
+        wv.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    private func clearSentenceHighlightInWebKit() {
+        guard let wv = resolveActiveWebView() ?? webViewReference else { return }
+        wv.evaluateJavaScript("window.getSelection()?.removeAllRanges();", completionHandler: nil)
+    }
+
     // MARK: - Narration Floating HUD
     @ViewBuilder private var narrationFloatingHUD: some View {
-        HStack(spacing: 12) {
-            Image(systemName: narrationEngine.isPaused ? "waveform.badge.pause" : "waveform")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.orange)
-                .symbolEffect(.variableColor.iterative, isActive: !narrationEngine.isPaused)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(narrationEngine.isPaused ? "Narration Paused" : "Reading Aloud")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.white)
-                Text(narrationEngine.totalSentences > 0
-                     ? "Sentence \(narrationEngine.currentSentenceIndex + 1) of \(narrationEngine.totalSentences)"
-                     : "Preparing…")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.7))
-            }
-            .frame(minWidth: 90, alignment: .leading)
-
-            Spacer()
-
-            // Previous Sentence
-            Button {
-                HapticEngine.selection()
-                narrationEngine.previousSentence()
-            } label: {
-                Image(systemName: "backward.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.white.opacity(0.9))
-                    .frame(width: 30, height: 30)
-                    .background(Color.white.opacity(0.12), in: Circle())
-            }
-
-            // Play / Pause
-            Button {
-                HapticEngine.selection()
-                if narrationEngine.isPaused {
-                    narrationEngine.resume()
-                } else {
-                    narrationEngine.pause()
-                }
-            } label: {
-                Image(systemName: narrationEngine.isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.orange)
-                    .frame(width: 34, height: 34)
-                    .background(Color.orange.opacity(0.2), in: Circle())
-            }
-
-            // Next Sentence
-            Button {
-                HapticEngine.selection()
-                narrationEngine.nextSentence()
-            } label: {
-                Image(systemName: "forward.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.white.opacity(0.9))
-                    .frame(width: 30, height: 30)
-                    .background(Color.white.opacity(0.12), in: Circle())
-            }
-
-            // Speech Rate Toggle
-            Button {
-                HapticEngine.light()
-                cycleSpeechRate()
-            } label: {
-                Text(speechRateLabel)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.orange)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(Color.orange.opacity(0.15), in: Capsule())
-            }
-
-            // Close / Stop
-            Button {
-                HapticEngine.selection()
-                narrationEngine.stop()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(Color.white.opacity(0.6))
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: Color.black.opacity(0.4), radius: 12, y: 5)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.15), lineWidth: 1)
-        )
-        .padding(.horizontal, 16)
-    }
-
-    private var speechRateLabel: String {
-        let base = AVSpeechUtteranceDefaultSpeechRate
-        let ratio = narrationEngine.speechRate / base
-        if abs(ratio - 1.0) < 0.05 { return "1.0x" }
-        return String(format: "%.1fx", ratio)
-    }
-
-    private func cycleSpeechRate() {
-        let base = AVSpeechUtteranceDefaultSpeechRate
-        let currentRatio = narrationEngine.speechRate / base
-        let rates: [Float] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
-        if let idx = rates.firstIndex(where: { abs($0 - currentRatio) < 0.1 }) {
-            let nextIdx = (idx + 1) % rates.count
-            narrationEngine.speechRate = base * rates[nextIdx]
-        } else {
-            narrationEngine.speechRate = base
+        EPUBSpeechHUDView(engine: narrationEngine) {
+            clearSentenceHighlightInWebKit()
+            narrationEngine.stop()
         }
     }
 }

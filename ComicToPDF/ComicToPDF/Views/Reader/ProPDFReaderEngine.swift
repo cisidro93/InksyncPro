@@ -36,7 +36,7 @@ struct ProPDFReaderEngine: View {
     @State private var activeTappedAnnotationID: UUID? = nil
     @State private var activeTappedAnnotation: PDFAnnotation? = nil
     @State private var activeTappedAnnotationBounds: CGRect? = nil
-    @State private var speechSynthesizer = AVSpeechSynthesizer()
+    @StateObject private var speechEngine = PDFSpeechNarrationEngine.shared
 
     // Environment & Preferences
     @ObservedObject private var prefs = EBookPreferences.shared
@@ -61,7 +61,6 @@ struct ProPDFReaderEngine: View {
     @State private var showZoomPill = false
     @State private var zoomPillTask: Task<Void, Never>? = nil
     @State private var articleColumnStep: Int = 0
-    @State private var isNarratingPDF: Bool = false
     @State private var chromeIdleTask: Task<Void, Never>? = nil
     @State private var loadTask: Task<Void, Never>? = nil
     @State private var accessedSecurityScopedURL: URL? = nil
@@ -388,6 +387,8 @@ struct ProPDFReaderEngine: View {
 
             mainContentView
 
+            pdfNarrationSpatialOverlay
+
             EdgeBrightnessGestureZone()
                 .allowsHitTesting(!isPencilMode)
 
@@ -435,7 +436,7 @@ struct ProPDFReaderEngine: View {
         zoomPillTask?.cancel()
         chromeIdleTask?.cancel()
         ambientColorTask?.cancel()
-        speechSynthesizer.stopSpeaking(at: .immediate)
+        speechEngine.stop()
         pdfViewReference?.document = nil
         pdfViewReference = nil
         accessedSecurityScopedURL?.stopAccessingSecurityScopedResource()
@@ -621,9 +622,8 @@ struct ProPDFReaderEngine: View {
                 pdfViewReference?.clearSelection()
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
-                // Suspend narration and release transient UI resources when entering background
-                if isNarratingPDF {
-                    speechSynthesizer.pauseSpeaking(at: .word)
+                if speechEngine.isPlaying {
+                    speechEngine.pause()
                 }
                 selectedTextForHUD = nil
                 activeSelectionSnapshot = nil
@@ -1105,61 +1105,51 @@ struct ProPDFReaderEngine: View {
         }
     }
 
+    @ViewBuilder private var pdfNarrationSpatialOverlay: some View {
+        if speechEngine.isActive,
+           let pdfView = pdfViewReference,
+           let page = pdfView.currentPage,
+           let activeSentence = speechEngine.activeSentence,
+           activeSentence.boundsInPage != .zero {
+            let lineRectsInPage = activeSentence.lineRectsInPage.isEmpty ? [activeSentence.boundsInPage] : activeSentence.lineRectsInPage
+            ForEach(0..<lineRectsInPage.count, id: \.self) { idx in
+                let pageRect = lineRectsInPage[idx]
+                let viewRect = pdfView.convert(pageRect, from: page)
+                if viewRect.width > 0 && viewRect.height > 0 {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.purple, Color.cyan],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            lineWidth: 2.5
+                        )
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Color.purple.opacity(0.18))
+                        )
+                        .shadow(color: Color.purple.opacity(0.6), radius: 6)
+                        .frame(width: max(16, viewRect.width + 6), height: max(12, viewRect.height + 4))
+                        .position(x: viewRect.midX, y: viewRect.midY)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: activeSentence.id)
+            .zIndex(15)
+        }
+    }
+
     @ViewBuilder private var pdfNarrationHUD: some View {
-        if isNarratingPDF {
+        if speechEngine.isActive {
             VStack {
                 Spacer()
-                HStack(spacing: 12) {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color.orange)
-                        .symbolEffect(.variableColor.iterative, isActive: isNarratingPDF)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Reading Aloud (Page \(currentPageIndex + 1))")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                        Text("Auto-advances on page completion")
-                            .font(.system(size: 11, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.75))
-                    }
-
-                    Spacer()
-
-                    Button {
-                        HapticEngine.selection()
-                        advancePage(forward: true)
-                    } label: {
-                        Image(systemName: "forward.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.white)
-                            .padding(8)
-                            .background(Color.white.opacity(0.15), in: Circle())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        HapticEngine.selection()
+                PDFSpeechHUDView(engine: speechEngine) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         stopPDFNarration()
-                    } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Color.orange)
-                            .padding(8)
-                            .background(Color.orange.opacity(0.2), in: Circle())
                     }
-                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule()
-                        .fill(Color.black.opacity(0.85))
-                        .background(.ultraThinMaterial, in: Capsule())
-                )
-                .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
-                .padding(.horizontal, 24)
                 .padding(.bottom, chromeVisible ? 100 : 36)
             }
             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1500,6 +1490,9 @@ struct ProPDFReaderEngine: View {
             },
             onSearchToggle: {
                 showingInspector = true
+            },
+            onReadAloudToggle: {
+                togglePDFNarration()
             },
             currentProgress: Binding(
                 get: { Double(currentPageIndex) / Double(max(1, totalPages - 1)) },
@@ -1985,7 +1978,7 @@ struct ProPDFReaderEngine: View {
         HapticEngine.selection()
 
         // If continuous narration active, read new page
-        if isNarratingPDF {
+        if speechEngine.isActive {
             startPDFNarration()
         }
     }
@@ -2006,7 +1999,7 @@ struct ProPDFReaderEngine: View {
     }
 
     private func togglePDFNarration() {
-        if isNarratingPDF {
+        if speechEngine.isActive {
             stopPDFNarration()
         } else {
             startPDFNarration()
@@ -2014,22 +2007,35 @@ struct ProPDFReaderEngine: View {
     }
 
     private func startPDFNarration() {
-        guard let pdfView = pdfViewReference, let page = pdfView.currentPage, let text = page.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let pdfView = pdfViewReference, let page = pdfView.currentPage else {
+            showToastMessage("No page loaded")
+            return
+        }
+        guard let text = page.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             showToastMessage("No readable text on this page")
             return
         }
-        speechSynthesizer.stopSpeaking(at: .immediate)
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        isNarratingPDF = true
-        showToastMessage("Read Aloud Active")
-        speechSynthesizer.speak(utterance)
+        speechEngine.startReading(
+            page: page,
+            pageIndex: currentPageIndex,
+            title: pdf.name,
+            startIndex: 0,
+            onSentenceChanged: { _ in },
+            onPageAdvanceRequested: {
+                if currentPageIndex + 1 < totalPages {
+                    advancePage(forward: true)
+                    Task {
+                        try? await Task.sleep(nanoseconds: 350_000_000)
+                        startPDFNarration()
+                    }
+                }
+            }
+        )
+        HapticEngine.medium()
     }
 
     private func stopPDFNarration() {
-        speechSynthesizer.stopSpeaking(at: .immediate)
-        isNarratingPDF = false
-        showToastMessage("Read Aloud Stopped")
+        speechEngine.stop()
     }
 
     // MARK: - Highlight Annotation Pipeline
@@ -2858,12 +2864,7 @@ struct ProPDFReaderEngine: View {
     }
 
     private func speakText(_ text: String) {
-        if speechSynthesizer.isSpeaking {
-            speechSynthesizer.stopSpeaking(at: .immediate)
-        }
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        speechSynthesizer.speak(utterance)
+        speechEngine.playSingle(text: text, pageIndex: currentPageIndex, title: pdf.name)
     }
 
     private func createZettelkastenCard(text: String) {
