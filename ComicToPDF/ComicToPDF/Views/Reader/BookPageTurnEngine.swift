@@ -867,8 +867,8 @@ extension SmartMidSpineCurlReader {
             let targetSpread = spreads.first(where: { $0.contains(pageIndex) }) ?? spreads.first ?? [max(0, pageIndex)]
             
             if targetSpread == [0] {
-                let coverVC = SingleLeafViewController(pageIndex: 0, parent: parent, alignment: parent.isMangaRTL ? .leading : .trailing)
-                let blankVC = SingleLeafViewController(pageIndex: -1, parent: parent)
+                let coverVC = SingleLeafViewController(pageIndex: 0, parent: parent, alignment: .center)
+                let blankVC = SingleLeafViewController(pageIndex: -1, parent: parent, companionIndex: 0)
                 return parent.isMangaRTL ? [coverVC, blankVC] : [blankVC, coverVC]
             } else if targetSpread.count == 1 {
                 let singleIdx = targetSpread[0]
@@ -882,8 +882,8 @@ extension SmartMidSpineCurlReader {
                     let rightVC = SingleLeafViewController(pageIndex: singleIdx, parent: parent, alignment: .leading, cropHalf: parent.isMangaRTL ? .left : .right)
                     return parent.isMangaRTL ? [rightVC, leftVC] : [leftVC, rightVC]
                 } else {
-                    let pageVC = SingleLeafViewController(pageIndex: singleIdx, parent: parent, alignment: parent.isMangaRTL ? .leading : .trailing)
-                    let blankVC = SingleLeafViewController(pageIndex: -1, parent: parent)
+                    let pageVC = SingleLeafViewController(pageIndex: singleIdx, parent: parent, alignment: .center)
+                    let blankVC = SingleLeafViewController(pageIndex: -1, parent: parent, companionIndex: singleIdx)
                     return parent.isMangaRTL ? [pageVC, blankVC] : [blankVC, pageVC]
                 }
             } else {
@@ -914,8 +914,10 @@ extension SmartMidSpineCurlReader {
                 if let size = parent.cache.peekImageSize(at: targetPage), size.width > size.height * 1.1 { return true }
                 return false
             }()
+            let isSingle = (targetPages.count == 1 && !isL)
+            let alignment: Alignment = isSingle ? .center : (parent.isMangaRTL ? .leading : .trailing)
             let cropHalf: CropHalf = isL ? (parent.isMangaRTL ? .left : .right) : .none
-            return SingleLeafViewController(pageIndex: targetPage, parent: parent, alignment: parent.isMangaRTL ? .leading : .trailing, cropHalf: cropHalf)
+            return SingleLeafViewController(pageIndex: targetPage, parent: parent, alignment: alignment, cropHalf: cropHalf)
         }
 
         func pageViewController(
@@ -935,8 +937,10 @@ extension SmartMidSpineCurlReader {
                 if let size = parent.cache.peekImageSize(at: targetPage), size.width > size.height * 1.1 { return true }
                 return false
             }()
+            let isSingle = (targetPages.count == 1 && !isL)
+            let alignment: Alignment = isSingle ? .center : (parent.isMangaRTL ? .trailing : .leading)
             let cropHalf: CropHalf = isL ? (parent.isMangaRTL ? .right : .left) : .none
-            return SingleLeafViewController(pageIndex: targetPage, parent: parent, alignment: parent.isMangaRTL ? .trailing : .leading, cropHalf: cropHalf)
+            return SingleLeafViewController(pageIndex: targetPage, parent: parent, alignment: alignment, cropHalf: cropHalf)
         }
 
         // MARK: - UIPageViewControllerDelegate
@@ -1075,6 +1079,57 @@ enum CropHalf {
     case right
 }
 
+// MARK: - Book Flyleaf View
+/// Premium physical book flyleaf presented beside solo covers and standalone front-matter pages.
+/// Displays an ambient, softly blurred cover tone with subtle spine fold shadow instead of a stark dead black void.
+struct BookFlyleafView: View {
+    let companionIndex: Int
+    let cache: ComicImageCache
+    let isLeftLeaf: Bool
+
+    @State private var companionImage: UIImage? = nil
+
+    var body: some View {
+        ZStack {
+            Color(hex: "#0c0c0e")
+
+            if let img = companionImage ?? cache.cachedImage(at: companionIndex) {
+                Image(uiImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .blur(radius: 45)
+                    .opacity(0.18)
+                    .saturation(0.65)
+            }
+
+            // Physical spine fold gradient shadow
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.55),
+                    Color.black.opacity(0.15),
+                    Color.clear
+                ],
+                startPoint: isLeftLeaf ? .trailing : .leading,
+                endPoint: isLeftLeaf ? .leading : .trailing
+            )
+
+            // Subtle vignette for book-cloth aesthetic
+            RadialGradient(
+                colors: [Color.clear, Color.black.opacity(0.40)],
+                center: .center,
+                startRadius: 100,
+                endRadius: 500
+            )
+        }
+        .clipped()
+        .task(id: companionIndex) {
+            if companionImage == nil {
+                companionImage = cache.getImage(at: companionIndex)
+            }
+        }
+    }
+}
+
 // MARK: - Single Leaf VC
 @MainActor
 class SingleLeafViewController: UIViewController {
@@ -1082,16 +1137,18 @@ class SingleLeafViewController: UIViewController {
     let activeFilterPreset: ReadingFilterPreset
     let alignment: Alignment
     let cropHalf: CropHalf
-    
-    init(pageIndex: Int, parent: SmartMidSpineCurlReader, alignment: Alignment = .center, cropHalf: CropHalf = .none) {
+    let companionIndex: Int?
+
+    init(pageIndex: Int, parent: SmartMidSpineCurlReader, alignment: Alignment = .center, cropHalf: CropHalf = .none, companionIndex: Int? = nil) {
         self.pageIndex = pageIndex
         self.activeFilterPreset = parent.activeFilterPreset
         self.alignment = alignment
         self.cropHalf = cropHalf
+        self.companionIndex = companionIndex
         super.init(nibName: nil, bundle: nil)
-        
+
         view.backgroundColor = .black
-        
+
         let leafContent: AnyView
         if pageIndex >= 0 && pageIndex < parent.totalPages {
             leafContent = AnyView(
@@ -1103,6 +1160,15 @@ class SingleLeafViewController: UIViewController {
                     cropHalf: cropHalf
                 )
                 .background(Color.black)
+                .ignoresSafeArea()
+            )
+        } else if let companion = companionIndex, companion >= 0, companion < parent.totalPages {
+            leafContent = AnyView(
+                BookFlyleafView(
+                    companionIndex: companion,
+                    cache: parent.cache,
+                    isLeftLeaf: parent.isMangaRTL ? false : true
+                )
                 .ignoresSafeArea()
             )
         } else {

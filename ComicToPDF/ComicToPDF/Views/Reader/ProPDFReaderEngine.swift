@@ -3118,7 +3118,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         }
         // Horizontal paging feels most natural for a reader app on iOS
         pdfView.displayDirection = .horizontal
-        pdfView.pageShadowsEnabled = true
+        let isPhone = UIDevice.current.userInterfaceIdiom == .phone
+        // Disable page shadows on phone so document pages utilize 100% of the screen width edge-to-edge
+        pdfView.pageShadowsEnabled = !isPhone
         pdfView.backgroundColor = UIColor(themeBgColor)
         pdfView.isOpaque = false
 
@@ -3146,8 +3148,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.displayMode = isDual ? .twoUp : .singlePage
         pdfView.displaysAsBook = isDual && !prefs.linkCoverAsSpread
 
-        // Panels & Boox Parity: In dual mode, eliminate spine and edge gaps so spreads fill 100% of available screen space
-        let margin = max(0, prefs.textMargin)
+        // Panels & Boox Parity: In dual mode, eliminate spine and edge gaps so spreads fill 100% of available screen space.
+        // On iPhone in single-page mode, zero out page break margins so the book fills the full screen width cleanly.
+        let margin = isPhone ? 0 : max(0, prefs.textMargin)
         let dualMargins = UIEdgeInsets(top: 0, left: 1, bottom: 0, right: 1)
         let singleMargins = UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)
         pdfView.pageBreakMargins = isDual ? dualMargins : singleMargins
@@ -3352,7 +3355,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             uiView.displaysAsBook = targetDisplaysAsBook
         }
 
-        let margin = max(0, prefs.textMargin)
+        let isPhone = UIDevice.current.userInterfaceIdiom == .phone
+        if uiView.pageShadowsEnabled != !isPhone {
+            uiView.pageShadowsEnabled = !isPhone
+        }
+        let margin = isPhone ? 0 : max(0, prefs.textMargin)
         let targetMargins = isDual ? UIEdgeInsets(top: 0, left: 1, bottom: 0, right: 1) : UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)
         if uiView.pageBreakMargins != targetMargins {
             uiView.pageBreakMargins = targetMargins

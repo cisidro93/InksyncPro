@@ -2366,8 +2366,8 @@ struct EBookWebReader: View {
 
         let paddingLeft = m
         let paddingRight = m
-        let topPadding: CGFloat = isPhone ? 48.0 : 64.0
-        let bottomPadding: CGFloat = isPhone ? 48.0 : 64.0
+        let topPadding: CGFloat = isPhone ? 28.0 : 64.0
+        let bottomPadding: CGFloat = isPhone ? 32.0 : 64.0
 
         return """
         @font-face {

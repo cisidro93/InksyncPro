@@ -2005,10 +2005,13 @@ extension EBookPageCurlReader {
 
             let windowScene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
             let safeArea = windowScene?.windows.first?.safeAreaInsets ?? .zero
-            let safeTop = max(safeArea.top, 24.0)
-            let safeBottom = max(safeArea.bottom, 20.0)
-            let paddingTop = safeTop + max(20.0, prefs.textMarginTop)
-            let paddingBottom = safeBottom + max(52.0, prefs.textMarginBottom + 24.0)
+            let safeTop = max(safeArea.top, isPhone ? 0.0 : 24.0)
+            let safeBottom = max(safeArea.bottom, isPhone ? 0.0 : 20.0)
+            // iPhone optimization (Apple Books parity): safeArea.top already clears the Dynamic Island/notch;
+            // provide 8pt breathing room. Reclaims 45-50pt of vertical space for 2-3 extra lines of book text.
+            let paddingTop = isPhone ? (safeArea.top + 8.0) : (safeTop + max(16.0, prefs.textMarginTop))
+            // Progress footer is a 26pt floating pill in the home indicator area; 20pt above safeArea.bottom clears it cleanly.
+            let paddingBottom = isPhone ? (safeArea.bottom + 20.0) : (safeBottom + max(48.0, prefs.textMarginBottom + 20.0))
 
             return """
             @font-face { font-family: 'Literata'; src: local('Literata-Regular'); font-weight: normal; font-style: normal; }
