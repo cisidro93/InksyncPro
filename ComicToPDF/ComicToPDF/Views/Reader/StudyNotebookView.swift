@@ -25,6 +25,7 @@ struct StudyNotebookView: View {
     @State private var activeNoteAnnotation: SDAnnotation?
     @ObservedObject private var progressTracker = ReaderProgressTracker.shared
     @State private var referencedPageIndices: Set<Int> = []
+    @StateObject private var speechEngine = NotebookSpeechNarrationEngine.shared
 
     private var activeReaderPageIndex: Int? {
         var targetUUID: UUID? = UUID(uuidString: bookID)
@@ -281,6 +282,21 @@ struct StudyNotebookView: View {
             }
             .keyboardShortcut("d", modifiers: [.command])
             
+            let readAloudButton = Button {
+                toggleNotebookNarration()
+            } label: {
+                Image(systemName: speechEngine.isPlaying ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(speechEngine.isActive ? .white : .primary)
+                    .padding(8)
+                    .background(
+                        speechEngine.isActive
+                        ? AnyView(LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        : AnyView(Color.primary.opacity(0.08)),
+                        in: Circle()
+                    )
+            }
+            
             let paperStyleMenu = Menu {
                 Section("Paper Style") {
                     Picker("Style", selection: $paperStyle) {
@@ -478,6 +494,7 @@ struct StudyNotebookView: View {
                             if inputMode == .markdown {
                                 micButton
                             }
+                            readAloudButton
                             
                             paperStyleMenu
                             summaryButton
@@ -512,6 +529,7 @@ struct StudyNotebookView: View {
                                     }
                                     Button { generateAISummary() } label: { Label("Generate AI Summary", systemImage: "sparkles") }
                                     Button { showWritingAssistant = true } label: { Label("Writing Assistant", systemImage: "checkmark.bubble") }
+                                    Button { toggleNotebookNarration() } label: { Label(speechEngine.isActive ? "Stop Read Aloud" : "Read Notes Aloud", systemImage: "speaker.wave.2") }
                                     if inputMode == .markdown {
                                         Button { toggleSpeechDictation() } label: { Label(speechManager.isRecording ? "Stop Dictation" : "Start Dictation", systemImage: "mic") }
                                     }
@@ -560,6 +578,7 @@ struct StudyNotebookView: View {
                                 Section("Tools") {
                                     Button { generateAISummary() } label: { Label("Generate AI Summary", systemImage: "sparkles") }
                                     Button { showWritingAssistant = true } label: { Label("Writing Assistant", systemImage: "checkmark.bubble") }
+                                    Button { toggleNotebookNarration() } label: { Label(speechEngine.isActive ? "Stop Read Aloud" : "Read Notes Aloud", systemImage: "speaker.wave.2") }
                                     if inputMode == .markdown {
                                         Button { toggleSpeechDictation() } label: { Label(speechManager.isRecording ? "Stop Dictation" : "Start Dictation", systemImage: "mic") }
                                     }
@@ -737,6 +756,17 @@ struct StudyNotebookView: View {
                     .padding(.bottom, 20)
                 }
                 
+                if speechEngine.isActive {
+                    NotebookSpeechHUDView(engine: speechEngine) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            speechEngine.stop()
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 20)
+                    .zIndex(40)
+                }
+                
                 // MARK: Interactive Page Preview Modal Overlay
                 if showPreviewModal {
                     pagePreviewModalOverlay
@@ -839,6 +869,7 @@ struct StudyNotebookView: View {
                 }
             }
             .onDisappear {
+                speechEngine.stop()
                 // Final explicit sync flush layer
                 Logger.shared.log("StudyNotebook disappearing — flushing note to SwiftData for '\(bookTitle)'", category: "Notebook", type: .info)
                 saveTask?.cancel()
@@ -1385,6 +1416,14 @@ struct StudyNotebookView: View {
                     }
                 }
             }
+        }
+    }
+
+    private func toggleNotebookNarration() {
+        if speechEngine.isActive {
+            speechEngine.stop()
+        } else {
+            speechEngine.startReading(text: localNotes, title: bookTitle)
         }
     }
 

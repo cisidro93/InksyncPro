@@ -1,50 +1,44 @@
 import Foundation
 import AVFoundation
 import MediaPlayer
+import NaturalLanguage
 import UIKit
+import Combine
 
-/// High-performance, on-device Text-to-Speech narration engine tailored for Comic/Manga dialogue.
-///
-/// Features:
-/// - Sequences dialogue bubbles extracted via Apple Vision contour/OCR detection.
-/// - Full playback transport controls: Play, Pause, Rewind, Fast-Forward, Speed (0.75x - 2.0x), Voice selection, Stop.
-/// - Background audio playback via `AVAudioSession` (.playback, .spokenAudio, .duckOthers).
-/// - Lock screen & Control Center media command integration (`MPRemoteCommandCenter`).
-/// - Auto-page advance callback when all dialogue bubbles on a comic page finish playing.
-/// - Conforms to `ReaderSpeechEngineProtocol` to drive the unified `ReaderSpeechHUDView`.
+/// On-device Text-to-Speech narration engine for the Study Notebook, Cornell notes, and Zettelkasten cards.
+/// Conforms to `ReaderSpeechEngineProtocol` to seamlessly share the unified `ReaderSpeechHUDView`.
 @MainActor
-final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynthesizerDelegate, ReaderSpeechEngineProtocol {
-    static let shared = ComicDialogueSpeechEngine()
+final class NotebookSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizerDelegate, ReaderSpeechEngineProtocol {
+    static let shared = NotebookSpeechNarrationEngine()
 
     // MARK: - Published State
     @Published private(set) var isPlaying: Bool = false
     @Published private(set) var isPaused: Bool = false
     @Published private(set) var currentBlockIndex: Int? = nil
-    @Published private(set) var activeBlock: TextBlock? = nil
-    @Published private(set) var currentWordRange: NSRange = NSRange(location: 0, length: 0)
+    @Published private(set) var activeSentenceText: String = ""
     @Published var speechRate: Float = 1.0 // Multiplier against AVSpeechUtteranceDefaultSpeechRate
     @Published var selectedVoice: AVSpeechSynthesisVoice? = nil
-    @Published private(set) var activePageIndex: Int = 0
-    @Published private(set) var bookTitle: String = ""
+    @Published private(set) var noteTitle: String = "Study Notes"
 
     var isActive: Bool {
-        isPlaying || isPaused || activeBlock != nil
+        isPlaying || isPaused || !sentences.isEmpty
     }
 
     var totalBlocksCount: Int {
-        dialogueBlocks.count
+        sentences.count
     }
 
     var activeDisplayIndex: Int {
-        (currentBlockIndex ?? 0) + 1
+        guard let index = currentBlockIndex else { return 0 }
+        return index + 1
     }
 
     var unitLabel: String {
-        "Bubble"
+        "Sentence"
     }
 
     var activeTextSnippet: String {
-        activeBlock?.text ?? ""
+        activeSentenceText
     }
 
     // MARK: - Voices
@@ -61,11 +55,12 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
         return []
     }
 
-    // MARK: - Internal Engine State
+    // MARK: - Internal State
     private let synthesizer = AVSpeechSynthesizer()
-    private var dialogueBlocks: [TextBlock] = []
+    private var sentences: [String] = []
     private var activeUtterance: AVSpeechUtterance?
-    var onPageAdvanceRequested: (() -> Void)? = nil
+    var onSentenceChanged: ((Int, String) -> Void)? = nil
+    var onFinished: (() -> Void)? = nil
 
     override private init() {
         super.init()
@@ -73,44 +68,69 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
         setupRemoteCommandCenter()
     }
 
-    // MARK: - Playback API
+    // MARK: - Playback Control API
 
-    /// Starts sequential narration for a collection of dialogue blocks on a comic page.
+    /// Parses markdown/plain note text into clean sentences and begins synchronized reading aloud.
     func startReading(
-        blocks: [TextBlock],
+        text: String,
+        title: String = "Study Notes",
         startIndex: Int = 0,
-        pageIndex: Int,
-        title: String = "Comic Dialogue",
-        onPageAdvanceRequested: (() -> Void)? = nil
+        onSentenceChanged: ((Int, String) -> Void)? = nil,
+        onFinished: (() -> Void)? = nil
     ) {
-        guard !blocks.isEmpty else { return }
         stop()
 
-        self.dialogueBlocks = blocks
-        self.activePageIndex = pageIndex
-        self.bookTitle = title
-        self.onPageAdvanceRequested = onPageAdvanceRequested
-        self.currentBlockIndex = max(0, min(startIndex, blocks.count - 1))
-        self.activeBlock = dialogueBlocks[self.currentBlockIndex!]
+        let cleaned = Self.cleanMarkdown(text)
+        let tokenized = Self.tokenizeSentences(from: cleaned)
+        guard !tokenized.isEmpty else { return }
+
+        self.sentences = tokenized
+        self.noteTitle = title
+        self.onSentenceChanged = onSentenceChanged
+        self.onFinished = onFinished
+        self.currentBlockIndex = max(0, min(startIndex, sentences.count - 1))
 
         configureAudioSession()
         speakCurrentBlock()
     }
 
-    /// Plays a single isolated dialogue block (e.g. from the AI Dialogue Lens tap).
-    func playSingle(block: TextBlock, pageIndex: Int, title: String = "Comic Dialogue") {
+    /// Reads a collection of study card items (e.g. flashcards or quotes) sequentially.
+    func startReadingCards(
+        cards: [String],
+        title: String = "Flashcards",
+        startIndex: Int = 0,
+        onSentenceChanged: ((Int, String) -> Void)? = nil,
+        onFinished: (() -> Void)? = nil
+    ) {
         stop()
-        self.dialogueBlocks = [block]
-        self.activePageIndex = pageIndex
-        self.bookTitle = title
+
+        let validCards = cards.map { Self.cleanMarkdown($0) }.filter { !$0.isEmpty }
+        guard !validCards.isEmpty else { return }
+
+        self.sentences = validCards
+        self.noteTitle = title
+        self.onSentenceChanged = onSentenceChanged
+        self.onFinished = onFinished
+        self.currentBlockIndex = max(0, min(startIndex, sentences.count - 1))
+
+        configureAudioSession()
+        speakCurrentBlock()
+    }
+
+    /// Reads a single quote or excerpt.
+    func playSingle(text: String, title: String = "Quote") {
+        stop()
+        let cleaned = Self.cleanMarkdown(text)
+        guard !cleaned.isEmpty else { return }
+
+        self.sentences = [cleaned]
+        self.noteTitle = title
         self.currentBlockIndex = 0
-        self.activeBlock = block
 
         configureAudioSession()
         speakCurrentBlock()
     }
 
-    /// Pauses active narration.
     func pause() {
         if synthesizer.isSpeaking && !synthesizer.isPaused {
             synthesizer.pauseSpeaking(at: .immediate)
@@ -120,19 +140,17 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
         updateNowPlayingInfo()
     }
 
-    /// Resumes paused narration.
     func resume() {
         if synthesizer.isPaused {
             synthesizer.continueSpeaking()
             isPaused = false
             isPlaying = true
             updateNowPlayingInfo()
-        } else if let index = currentBlockIndex, index < dialogueBlocks.count {
+        } else if let index = currentBlockIndex, index < sentences.count {
             speakCurrentBlock()
         }
     }
 
-    /// Toggles play / pause.
     func togglePlayPause() {
         if isPlaying {
             pause()
@@ -141,35 +159,25 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
         }
     }
 
-    /// Skips to the next dialogue bubble.
     func nextBlock() {
         guard let currentIndex = currentBlockIndex else { return }
-        if currentIndex + 1 < dialogueBlocks.count {
+        if currentIndex + 1 < sentences.count {
             synthesizer.stopSpeaking(at: .immediate)
             currentBlockIndex = currentIndex + 1
-            activeBlock = dialogueBlocks[currentBlockIndex!]
             speakCurrentBlock()
         } else {
-            // End of page dialogue: notify page advance or stop
-            if let onPageAdvance = onPageAdvanceRequested {
-                stop()
-                onPageAdvance()
-            } else {
-                stop()
-            }
+            stop()
+            onFinished?()
         }
     }
 
-    /// Skips back to the previous dialogue bubble.
     func previousBlock() {
         guard let currentIndex = currentBlockIndex, currentIndex > 0 else { return }
         synthesizer.stopSpeaking(at: .immediate)
         currentBlockIndex = currentIndex - 1
-        activeBlock = dialogueBlocks[currentBlockIndex!]
         speakCurrentBlock()
     }
 
-    /// Sets playback speech rate (0.75x to 2.0x).
     func setRate(_ rate: Float) {
         self.speechRate = max(0.5, min(2.5, rate))
         if isPlaying {
@@ -178,7 +186,6 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
         }
     }
 
-    /// Sets voice for speech synthesis.
     func setVoice(_ voice: AVSpeechSynthesisVoice) {
         self.selectedVoice = voice
         if isPlaying {
@@ -187,7 +194,6 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
         }
     }
 
-    /// Stops playback completely, deactivates audio session, and clears highlights.
     func stop() {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
@@ -195,27 +201,26 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
         isPlaying = false
         isPaused = false
         currentBlockIndex = nil
-        activeBlock = nil
-        dialogueBlocks.removeAll()
-        currentWordRange = NSRange(location: 0, length: 0)
+        activeSentenceText = ""
+        sentences.removeAll()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    // MARK: - Speech Synthesis
+    // MARK: - Speaking Routine
 
     private func speakCurrentBlock() {
-        guard let index = currentBlockIndex, index >= 0, index < dialogueBlocks.count else { return }
-        let block = dialogueBlocks[index]
-        let rawText = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !rawText.isEmpty else {
+        guard let index = currentBlockIndex, index >= 0, index < sentences.count else { return }
+        let text = sentences[index].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
             nextBlock()
             return
         }
 
-        self.activeBlock = block
+        self.activeSentenceText = text
+        onSentenceChanged?(index, text)
 
-        let utterance = AVSpeechUtterance(string: rawText)
+        let utterance = AVSpeechUtterance(string: text)
         let baseRate = AVSpeechUtteranceDefaultSpeechRate
         utterance.rate = min(AVSpeechUtteranceMaximumSpeechRate, max(AVSpeechUtteranceMinimumSpeechRate, baseRate * speechRate))
         utterance.pitchMultiplier = 1.0
@@ -226,11 +231,10 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
         } else if let personal = personalVoices.first {
             utterance.voice = personal
         } else {
-            // Auto-detect Japanese if Japanese characters are present
-            let isJapanese = rawText.unicodeScalars.contains { scalar in
-                (0x3040...0x309F).contains(scalar.value) || // Hiragana
-                (0x30A0...0x30FF).contains(scalar.value) || // Katakana
-                (0x4E00...0x9FAF).contains(scalar.value)    // Kanji
+            let isJapanese = text.unicodeScalars.contains { scalar in
+                (0x3040...0x309F).contains(scalar.value) ||
+                (0x30A0...0x30FF).contains(scalar.value) ||
+                (0x4E00...0x9FAF).contains(scalar.value)
             }
             let lang = isJapanese ? "ja-JP" : (Locale.current.language.languageCode?.identifier ?? "en-US")
             utterance.voice = AVSpeechSynthesisVoice(language: lang) ?? AVSpeechSynthesisVoice(language: "en-US")
@@ -255,18 +259,7 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in
-            // Move to next dialogue block
             self.nextBlock()
-        }
-    }
-
-    nonisolated func speechSynthesizer(
-        _ synthesizer: AVSpeechSynthesizer,
-        willSpeakRangeOfSpeechString characterRange: NSRange,
-        utterance: AVSpeechUtterance
-    ) {
-        Task { @MainActor in
-            self.currentWordRange = characterRange
         }
     }
 
@@ -278,7 +271,7 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
             try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
             try session.setActive(true)
         } catch {
-            Logger.shared.log("ComicDialogueSpeechEngine: Audio session failed: \(error.localizedDescription)", category: "Audio", type: .error)
+            Logger.shared.log("NotebookSpeechNarrationEngine: Audio session setup failed: \(error.localizedDescription)", category: "Audio", type: .error)
         }
     }
 
@@ -318,13 +311,43 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
 
     private func updateNowPlayingInfo() {
         var info: [String: Any] = [:]
-        let activeText = activeBlock?.text ?? "Comic Dialogue"
-        info[MPMediaItemPropertyTitle] = activeText
-        info[MPMediaItemPropertyAlbumTitle] = bookTitle.isEmpty ? "Inksync Pro" : bookTitle
-        info[MPMediaItemPropertyArtist] = "Page \(activePageIndex + 1)"
+        info[MPMediaItemPropertyTitle] = activeSentenceText.isEmpty ? "Notebook Text" : activeSentenceText
+        info[MPMediaItemPropertyAlbumTitle] = noteTitle
+        info[MPMediaItemPropertyArtist] = "Inksync Pro Notes"
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? Double(speechRate) : 0.0
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = Double(currentBlockIndex ?? 0)
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    // MARK: - Text Processing Helpers
+
+    private static func cleanMarkdown(_ text: String) -> String {
+        var result = text
+        // Remove markdown headers #, ##, etc.
+        result = result.replacingOccurrences(of: #"(?m)^#{1,6}\s*"#, with: "", options: .regularExpression)
+        // Remove markdown bold/italic **text**, *text*
+        result = result.replacingOccurrences(of: #"\*{1,2}([^\*]+)\*{1,2}"#, with: "$1", options: .regularExpression)
+        // Remove page link stamps like [📍 Page 3](page:2)
+        result = result.replacingOccurrences(of: #"\[📍\s*Page\s*\d+\]\(page:\d+\)"#, with: "", options: .regularExpression)
+        // Remove bullet markers
+        result = result.replacingOccurrences(of: #"(?m)^\s*[\*\-\+]\s+"#, with: "", options: .regularExpression)
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func tokenizeSentences(from text: String) -> [String] {
+        var results: [String] = []
+        let tokenizer = NLTokenizer(unit: .sentence)
+        tokenizer.string = text
+
+        tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { tokenRange, _ in
+            let sentence = String(text[tokenRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !sentence.isEmpty {
+                results.append(sentence)
+            }
+            return true
+        }
+
+        return results
     }
 }

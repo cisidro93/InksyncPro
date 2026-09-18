@@ -11,47 +11,47 @@ import UIKit
 /// via `AVSpeechSynthesizerDelegate`, and coordinates automatic column page turns.
 /// Conforms to `ReaderSpeechEngineProtocol` for full cross-engine HUD parity.
 @MainActor
-public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizerDelegate, ReaderSpeechEngineProtocol {
+final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizerDelegate, ReaderSpeechEngineProtocol {
     
-    public static let shared = EPUBNarrationEngine()
+    static let shared = EPUBNarrationEngine()
     
     // MARK: - Published State
-    @Published public private(set) var isPlaying: Bool = false
-    @Published public private(set) var isPaused: Bool = false
-    @Published public var speechRate: Float = 1.0 // Normalized multiplier against default rate
-    @Published public var selectedVoice: AVSpeechSynthesisVoice? = nil
-    @Published public private(set) var currentSentenceIndex: Int = 0
-    @Published public private(set) var totalSentences: Int = 0
-    @Published public private(set) var bookTitle: String = ""
-    @Published public private(set) var chapterTitle: String = ""
+    @Published private(set) var isPlaying: Bool = false
+    @Published private(set) var isPaused: Bool = false
+    @Published var speechRate: Float = 1.0 // Normalized multiplier against default rate
+    @Published var selectedVoice: AVSpeechSynthesisVoice? = nil
+    @Published private(set) var currentSentenceIndex: Int = 0
+    @Published private(set) var totalSentences: Int = 0
+    @Published private(set) var bookTitle: String = ""
+    @Published private(set) var chapterTitle: String = ""
 
-    public var isActive: Bool {
+    var isActive: Bool {
         isPlaying || isPaused || !sentences.isEmpty
     }
 
-    public var activeDisplayIndex: Int {
+    var activeDisplayIndex: Int {
         totalSentences > 0 ? (currentSentenceIndex + 1) : 0
     }
 
-    public var totalBlocksCount: Int {
+    var totalBlocksCount: Int {
         totalSentences
     }
 
-    public var unitLabel: String {
+    var unitLabel: String {
         "Sentence"
     }
 
-    public var activeTextSnippet: String {
+    var activeTextSnippet: String {
         guard currentSentenceIndex >= 0 && currentSentenceIndex < sentences.count else { return "" }
         return sentences[currentSentenceIndex]
     }
 
     // MARK: - Voices
-    public var availableVoices: [AVSpeechSynthesisVoice] {
+    var availableVoices: [AVSpeechSynthesisVoice] {
         AVSpeechSynthesisVoice.speechVoices().sorted { $0.language < $1.language }
     }
 
-    public var personalVoices: [AVSpeechSynthesisVoice] {
+    var personalVoices: [AVSpeechSynthesisVoice] {
         if #available(iOS 17.0, *) {
             return AVSpeechSynthesisVoice.speechVoices().filter {
                 $0.voiceTraits.contains(.isPersonalVoice)
@@ -72,10 +72,10 @@ public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynt
         setupRemoteCommandCenter()
     }
     
-    // MARK: - Public Playback Control API
+    // MARK: - Playback Control API
     
     /// Splits chapter plain text into sentences and begins synchronized on-device narration.
-    public func startReading(
+    func startReading(
         chapterText: String,
         startingAt sentenceIndex: Int = 0,
         voiceLanguage: String = "en-US",
@@ -104,7 +104,7 @@ public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynt
         speakCurrentSentence()
     }
     
-    public func pause() {
+    func pause() {
         guard isPlaying && !isPaused else { return }
         synthesizer.pauseSpeaking(at: .immediate)
         isPaused = true
@@ -112,7 +112,7 @@ public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynt
         updateNowPlayingInfo()
     }
     
-    public func resume() {
+    func resume() {
         if isPaused {
             synthesizer.continueSpeaking()
             isPaused = false
@@ -123,7 +123,7 @@ public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynt
         }
     }
 
-    public func togglePlayPause() {
+    func togglePlayPause() {
         if isPlaying {
             pause()
         } else {
@@ -131,7 +131,7 @@ public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynt
         }
     }
     
-    public func stop() {
+    func stop() {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
@@ -146,15 +146,15 @@ public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynt
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
     
-    public func nextBlock() {
+    func nextBlock() {
         nextSentence()
     }
 
-    public func previousBlock() {
+    func previousBlock() {
         previousSentence()
     }
 
-    public func nextSentence() {
+    func nextSentence() {
         guard currentSentenceIndex < sentences.count - 1 else {
             stop()
             onChapterFinished?()
@@ -165,14 +165,14 @@ public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynt
         speakCurrentSentence()
     }
     
-    public func previousSentence() {
+    func previousSentence() {
         guard currentSentenceIndex > 0 else { return }
         currentSentenceIndex -= 1
         synthesizer.stopSpeaking(at: .immediate)
         speakCurrentSentence()
     }
 
-    public func setRate(_ rate: Float) {
+    func setRate(_ rate: Float) {
         self.speechRate = max(0.5, min(2.5, rate))
         if isPlaying {
             synthesizer.stopSpeaking(at: .immediate)
@@ -180,7 +180,7 @@ public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynt
         }
     }
 
-    public func setVoice(_ voice: AVSpeechSynthesisVoice) {
+    func setVoice(_ voice: AVSpeechSynthesisVoice) {
         self.selectedVoice = voice
         if isPlaying {
             synthesizer.stopSpeaking(at: .immediate)
@@ -228,7 +228,7 @@ public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynt
     
     // MARK: - AVSpeechSynthesizerDelegate
 
-    nonisolated public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
         Task { @MainActor in
             self.isPlaying = true
             self.isPaused = false
@@ -236,7 +236,7 @@ public final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynt
         }
     }
     
-    nonisolated public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor [weak self] in
             self?.handleUtteranceDidFinish()
         }

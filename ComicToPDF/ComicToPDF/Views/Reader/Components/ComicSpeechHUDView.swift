@@ -9,16 +9,16 @@ import AVFoundation
 /// - Speed adjustment menu (0.75x, 1.0x, 1.25x, 1.5x, 2.0x)
 /// - Voice picker menu with iOS system voices & Personal Voices
 /// - Live text snippet subtitle preview
-public struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
-    @ObservedObject public var engine: Engine
-    public var onClose: () -> Void
+struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
+    @ObservedObject var engine: Engine
+    var onClose: () -> Void
 
     @State private var isExpanded: Bool = false
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
     private let speedOptions: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
 
-    public init(engine: Engine, onClose: @escaping () -> Void) {
+    init(engine: Engine, onClose: @escaping () -> Void) {
         self.engine = engine
         self.onClose = onClose
     }
@@ -110,9 +110,22 @@ public struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
 
                 // Voice Picker Menu
                 Menu {
-                    Section("Personal Voices") {
+                    Section("Personal Voices (On-Device)") {
                         if engine.personalVoices.isEmpty {
-                            Text("No Personal Voices created")
+                            if #available(iOS 17.0, *) {
+                                let status = AVSpeechSynthesizer.personalVoiceAuthorizationStatus
+                                if status == .notDetermined {
+                                    Button {
+                                        AVSpeechSynthesizer.requestPersonalVoiceAuthorization { _ in }
+                                    } label: {
+                                        Label("Enable Personal Voice (Private)...", systemImage: "hand.raised.fill")
+                                    }
+                                } else {
+                                    Text("Record in iOS Settings > Accessibility > Personal Voice")
+                                }
+                            } else {
+                                Text("Requires iOS 17+")
+                            }
                         } else {
                             ForEach(engine.personalVoices, id: \.identifier) { voice in
                                 Button {
@@ -213,6 +226,8 @@ public struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
 }
 
 // Backward-compatibility typealiases
-public typealias ComicSpeechHUDView = ReaderSpeechHUDView<ComicDialogueSpeechEngine>
-public typealias PDFSpeechHUDView = ReaderSpeechHUDView<PDFSpeechNarrationEngine>
-public typealias EPUBSpeechHUDView = ReaderSpeechHUDView<EPUBNarrationEngine>
+typealias ComicSpeechHUDView = ReaderSpeechHUDView<ComicDialogueSpeechEngine>
+typealias PDFSpeechHUDView = ReaderSpeechHUDView<PDFSpeechNarrationEngine>
+typealias EPUBNarrationHUDView = ReaderSpeechHUDView<EPUBNarrationEngine>
+typealias EPUBSpeechHUDView = ReaderSpeechHUDView<EPUBNarrationEngine>
+typealias NotebookSpeechHUDView = ReaderSpeechHUDView<NotebookSpeechNarrationEngine>

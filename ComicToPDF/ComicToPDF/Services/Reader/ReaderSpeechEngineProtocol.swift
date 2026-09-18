@@ -4,7 +4,7 @@ import AVFoundation
 /// Universal contract for all InksyncPro text-to-speech reading engines.
 /// Guarantees architectural and UI parity across Comic/Manga, PDF, and EPUB reading modes.
 @MainActor
-public protocol ReaderSpeechEngineProtocol: AnyObject, ObservableObject {
+protocol ReaderSpeechEngineProtocol: AnyObject, ObservableObject {
     // MARK: - State
     var isPlaying: Bool { get }
     var isPaused: Bool { get }

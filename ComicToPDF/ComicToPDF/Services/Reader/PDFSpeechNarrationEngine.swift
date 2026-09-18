@@ -16,18 +16,18 @@ import Combine
 /// - Lock screen & Control Center media command integration (`MPRemoteCommandCenter`).
 /// - Automatic page-turn continuity when reading reaches the bottom of the page.
 @MainActor
-public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizerDelegate, ReaderSpeechEngineProtocol {
-    public static let shared = PDFSpeechNarrationEngine()
+final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizerDelegate, ReaderSpeechEngineProtocol {
+    static let shared = PDFSpeechNarrationEngine()
 
     // MARK: - Sentence Block Model
-    public struct PDFSentenceBlock: Identifiable, Equatable, Sendable {
-        public let id: UUID
-        public let text: String
-        public let range: NSRange
-        public let boundsInPage: CGRect
-        public let lineRectsInPage: [CGRect]
+    struct PDFSentenceBlock: Identifiable, Equatable, Sendable {
+        let id: UUID
+        let text: String
+        let range: NSRange
+        let boundsInPage: CGRect
+        let lineRectsInPage: [CGRect]
 
-        public init(
+        init(
             id: UUID = UUID(),
             text: String,
             range: NSRange,
@@ -43,44 +43,44 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     }
 
     // MARK: - Published State
-    @Published public private(set) var isPlaying: Bool = false
-    @Published public private(set) var isPaused: Bool = false
-    @Published public private(set) var currentBlockIndex: Int? = nil
-    @Published public private(set) var activeSentence: PDFSentenceBlock? = nil
-    @Published public private(set) var activeSentenceBoundsInPage: CGRect? = nil
-    @Published public private(set) var activeSentenceLineRectsInPage: [CGRect] = []
-    @Published public private(set) var currentWordRange: NSRange = NSRange(location: 0, length: 0)
-    @Published public var speechRate: Float = 1.0 // Multiplier against AVSpeechUtteranceDefaultSpeechRate
-    @Published public var selectedVoice: AVSpeechSynthesisVoice? = nil
-    @Published public private(set) var activePageIndex: Int = 0
-    @Published public private(set) var bookTitle: String = ""
+    @Published private(set) var isPlaying: Bool = false
+    @Published private(set) var isPaused: Bool = false
+    @Published private(set) var currentBlockIndex: Int? = nil
+    @Published private(set) var activeSentence: PDFSentenceBlock? = nil
+    @Published private(set) var activeSentenceBoundsInPage: CGRect? = nil
+    @Published private(set) var activeSentenceLineRectsInPage: [CGRect] = []
+    @Published private(set) var currentWordRange: NSRange = NSRange(location: 0, length: 0)
+    @Published var speechRate: Float = 1.0 // Multiplier against AVSpeechUtteranceDefaultSpeechRate
+    @Published var selectedVoice: AVSpeechSynthesisVoice? = nil
+    @Published private(set) var activePageIndex: Int = 0
+    @Published private(set) var bookTitle: String = ""
 
-    public var isActive: Bool {
+    var isActive: Bool {
         isPlaying || isPaused || activeSentence != nil
     }
 
-    public var totalBlocksCount: Int {
+    var totalBlocksCount: Int {
         sentenceBlocks.count
     }
 
-    public var activeDisplayIndex: Int {
+    var activeDisplayIndex: Int {
         (currentBlockIndex ?? 0) + 1
     }
 
-    public var unitLabel: String {
+    var unitLabel: String {
         "Sentence"
     }
 
-    public var activeTextSnippet: String {
+    var activeTextSnippet: String {
         activeSentence?.text ?? ""
     }
 
     // MARK: - Voices
-    public var availableVoices: [AVSpeechSynthesisVoice] {
+    var availableVoices: [AVSpeechSynthesisVoice] {
         AVSpeechSynthesisVoice.speechVoices().sorted { $0.language < $1.language }
     }
 
-    public var personalVoices: [AVSpeechSynthesisVoice] {
+    var personalVoices: [AVSpeechSynthesisVoice] {
         if #available(iOS 17.0, *) {
             return AVSpeechSynthesisVoice.speechVoices().filter {
                 $0.voiceTraits.contains(.isPersonalVoice)
@@ -93,8 +93,8 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     private let synthesizer = AVSpeechSynthesizer()
     private var sentenceBlocks: [PDFSentenceBlock] = []
     private var activeUtterance: AVSpeechUtterance?
-    public var onSentenceChanged: ((PDFSentenceBlock) -> Void)? = nil
-    public var onPageAdvanceRequested: (() -> Void)? = nil
+    var onSentenceChanged: ((PDFSentenceBlock) -> Void)? = nil
+    var onPageAdvanceRequested: (() -> Void)? = nil
 
     override private init() {
         super.init()
@@ -105,7 +105,7 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     // MARK: - Sentence Extraction Pipeline
 
     /// Tokenizes a PDFPage into natural sentences with exact PDF page coordinates.
-    public static func extractSentenceBlocks(from page: PDFPage) -> [PDFSentenceBlock] {
+    static func extractSentenceBlocks(from page: PDFPage) -> [PDFSentenceBlock] {
         guard let fullText = page.string, !fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return []
         }
@@ -150,7 +150,7 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     // MARK: - Public Playback Control API
 
     /// Starts sequential narration for an entire PDF page.
-    public func startReading(
+    func startReading(
         page: PDFPage,
         pageIndex: Int,
         title: String = "Document",
@@ -175,7 +175,7 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     }
 
     /// Plays a single isolated text snippet (e.g. from user selection HUD).
-    public func playSingle(
+    func playSingle(
         text: String,
         boundsInPage: CGRect = .zero,
         pageIndex: Int,
@@ -201,7 +201,7 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     }
 
     /// Pauses active narration.
-    public func pause() {
+    func pause() {
         if synthesizer.isSpeaking && !synthesizer.isPaused {
             synthesizer.pauseSpeaking(at: .immediate)
         }
@@ -211,7 +211,7 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     }
 
     /// Resumes paused narration.
-    public func resume() {
+    func resume() {
         if synthesizer.isPaused {
             synthesizer.continueSpeaking()
             isPaused = false
@@ -223,7 +223,7 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     }
 
     /// Toggles play / pause.
-    public func togglePlayPause() {
+    func togglePlayPause() {
         if isPlaying {
             pause()
         } else {
@@ -232,7 +232,7 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     }
 
     /// Skips to next sentence block.
-    public func nextBlock() {
+    func nextBlock() {
         guard let currentIndex = currentBlockIndex else { return }
         if currentIndex + 1 < sentenceBlocks.count {
             synthesizer.stopSpeaking(at: .immediate)
@@ -250,7 +250,7 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     }
 
     /// Skips back to previous sentence block.
-    public func previousBlock() {
+    func previousBlock() {
         guard let currentIndex = currentBlockIndex, currentIndex > 0 else { return }
         synthesizer.stopSpeaking(at: .immediate)
         currentBlockIndex = currentIndex - 1
@@ -258,7 +258,7 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     }
 
     /// Sets playback speech rate (0.5x to 2.0x).
-    public func setRate(_ rate: Float) {
+    func setRate(_ rate: Float) {
         self.speechRate = max(0.5, min(2.5, rate))
         if isPlaying {
             synthesizer.stopSpeaking(at: .immediate)
@@ -267,7 +267,7 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     }
 
     /// Sets voice for speech synthesis.
-    public func setVoice(_ voice: AVSpeechSynthesisVoice) {
+    func setVoice(_ voice: AVSpeechSynthesisVoice) {
         self.selectedVoice = voice
         if isPlaying {
             synthesizer.stopSpeaking(at: .immediate)
@@ -276,7 +276,7 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
     }
 
     /// Stops playback completely, deactivates audio session, and clears highlights.
-    public func stop() {
+    func stop() {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
@@ -337,7 +337,7 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
 
     // MARK: - AVSpeechSynthesizerDelegate
 
-    nonisolated public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
         Task { @MainActor in
             self.isPlaying = true
             self.isPaused = false
@@ -345,13 +345,13 @@ public final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeec
         }
     }
 
-    nonisolated public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in
             self.nextBlock()
         }
     }
 
-    nonisolated public func speechSynthesizer(
+    nonisolated func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         willSpeakRangeOfSpeechString characterRange: NSRange,
         utterance: AVSpeechUtterance
