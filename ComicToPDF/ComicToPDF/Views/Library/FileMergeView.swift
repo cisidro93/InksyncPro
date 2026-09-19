@@ -36,13 +36,14 @@ struct FileMergeView: View {
                     if viewModel.mergeOrder.isEmpty {
                         Label("Tap files below to add them here", systemImage: "arrow.up.doc")
                             .font(.callout)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Color.inkSecondary)
                             .padding(.vertical, 6)
+                            .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                     } else {
                         ForEach(viewModel.mergeOrder) { pdf in
                             HStack(spacing: 12) {
                                 Image(systemName: "line.3.horizontal")
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(Color.inkSecondary)
                                     .font(.caption)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(pdf.name)
@@ -50,17 +51,19 @@ struct FileMergeView: View {
                                         .lineLimit(1)
                                     Text(pdf.formattedSize)
                                         .font(.caption)
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(Color.inkSecondary)
                                 }
                                 Spacer()
                                 Button(role: .destructive) {
+                                    HapticEngine.selection()
                                     viewModel.mergeOrder.removeAll { $0.id == pdf.id }
                                 } label: {
                                     Image(systemName: "minus.circle.fill")
-                                        .foregroundColor(.red)
+                                        .foregroundColor(.inkRed)
                                 }
                                 .buttonStyle(.borderless)
                             }
+                            .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                         }
                         .onMove { indices, offset in
                             viewModel.mergeOrder.move(fromOffsets: indices, toOffset: offset)
@@ -68,42 +71,51 @@ struct FileMergeView: View {
                     }
                 } header: {
                     HStack {
-                        Text("Merge Order")
+                        InkSectionHeader("Merge Order")
                         Spacer()
                         if !viewModel.mergeOrder.isEmpty {
                             Text("\(viewModel.mergeOrder.count) files")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Color.inkSecondary)
                         }
                     }
                 } footer: {
                     if !viewModel.mergeOrder.isEmpty {
                         Text("Drag to reorder chapters. The merged file will follow this exact sequence.")
                             .font(.caption)
+                            .foregroundColor(Color.inkSecondary)
                     }
                 }
                 
                 // MARK: - Output Settings
-                Section(header: Text("Output Options")) {
+                Section(header: InkSectionHeader("Output Options")) {
                     TextField("Collection Name (e.g., My Omnibus)", text: $viewModel.outputName)
+                        .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                     TextField("Author / Writer (e.g., Frank Miller)", text: $viewModel.author)
+                        .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                     Toggle("Manga Mode (Right-to-Left)", isOn: $viewModel.mangaMode)
+                        .tint(.inkBlue)
+                        .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Toggle("Pair Front Cover with Page 1", isOn: $settingsManager.conversionSettings.linkCoverAsSpread)
+                            .tint(.inkBlue)
                         Text("Keep OFF for standalone front cover (recommended)")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Color.inkSecondary)
                     }
                     .padding(.vertical, 2)
+                    .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Toggle("Slice Landscape Spreads into 2 Pages", isOn: $settingsManager.conversionSettings.splitSpreads)
+                            .tint(.inkBlue)
                         Text("Keep OFF for native full-bleed landscape on Kindle & Reader")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Color.inkSecondary)
                     }
                     .padding(.vertical, 2)
+                    .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                     
                     Picker("Target Device", selection: $settingsManager.conversionSettings.targetDeviceProfile) {
                         ForEach(TargetDeviceProfile.allCases) { device in
@@ -111,14 +123,18 @@ struct FileMergeView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                     
                     Toggle("E-Ink High Contrast Filter", isOn: $settingsManager.conversionSettings.optimizeForDevice)
+                        .tint(.inkBlue)
+                        .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                     
                     Picker("Image Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
                         ForEach(CompressionPreset.allCases) { preset in
                             Text(preset.displayName).tag(preset)
                         }
                     }
+                    .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                     
                     if settingsManager.conversionSettings.compressionQuality == .customTarget {
                         VStack(alignment: .leading, spacing: 6) {
@@ -129,11 +145,13 @@ struct FileMergeView: View {
                                 Text("\(Int(settingsManager.conversionSettings.targetFileSizeMB)) MB")
                                     .font(.subheadline)
                                     .bold()
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(.inkBlue)
                             }
                             Slider(value: $settingsManager.conversionSettings.targetFileSizeMB, in: 10...1000, step: 10)
+                                .tint(.inkBlue)
                         }
                         .padding(.vertical, 4)
+                        .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                     }
                     
                     Picker("Smart File Splitting", selection: $settingsManager.conversionSettings.splitMode) {
@@ -141,22 +159,25 @@ struct FileMergeView: View {
                             Text(mode.rawValue).tag(mode)
                         }
                     }
+                    .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                 }
                 
                 // MARK: - Available Files
-                Section(header: Text("Available Files — Tap to Add")) {
+                Section(header: InkSectionHeader("Available Files — Tap to Add")) {
                     if availableFiles.isEmpty {
                         Text("All files have been added to the merge order.")
                             .font(.callout)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Color.inkSecondary)
+                            .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                     } else {
                         ForEach(availableFiles) { pdf in
                             Button {
+                                HapticEngine.selection()
                                 viewModel.mergeOrder.append(pdf)
                             } label: {
                                 HStack {
                                     Image(systemName: "plus.circle")
-                                        .foregroundColor(.blue)
+                                        .foregroundColor(.inkBlue)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(pdf.name)
                                             .font(.subheadline)
@@ -164,24 +185,32 @@ struct FileMergeView: View {
                                             .lineLimit(1)
                                         Text(pdf.formattedSize)
                                             .font(.caption)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(Color.inkSecondary)
                                     }
                                 }
                             }
+                            .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
                         }
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.inkBackground.ignoresSafeArea())
             .navigationTitle("Merge Files")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     if !viewModel.isProcessing {
-                        Button("Cancel") { dismiss() }
+                        Button("Cancel") {
+                            HapticEngine.selection()
+                            dismiss()
+                        }
+                        .foregroundColor(Color.inkSecondary)
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if !viewModel.isProcessing {
                         Button("Merge") {
+                            HapticEngine.selection()
                             let name = viewModel.outputName.trimmingCharacters(in: .whitespaces).isEmpty ? "Merged Collection" : viewModel.outputName
                             viewModel.isProcessing = true
                             Task {
@@ -198,6 +227,7 @@ struct FileMergeView: View {
                             }
                         }
                         .fontWeight(.bold)
+                        .foregroundColor(viewModel.mergeOrder.count < 2 ? .gray : .inkBlue)
                         .disabled(viewModel.mergeOrder.count < 2)
                     }
                 }

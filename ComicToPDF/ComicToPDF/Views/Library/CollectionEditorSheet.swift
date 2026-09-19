@@ -7,30 +7,31 @@ import SwiftUI
 private struct CollectionGlassCard<Content: View>: View {
     let title: String
     let icon: String
+    var accentColor: Color = Color.inkBlue
     @ViewBuilder let content: Content
+    
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .foregroundColor(Theme.blue)
+                    .font(.system(size: isPad ? 18 : 15, weight: .semibold))
+                    .foregroundColor(accentColor)
                 Text(title)
-                    .font(.headline)
-                    .foregroundColor(.primary)
+                    .font(.system(size: isPad ? 17 : 15, weight: .semibold, design: .rounded))
+                    .foregroundColor(Color.inkText)
             }
             .padding(.bottom, 4)
             
             content
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                )
-        )
+        .padding(isPad ? 22 : 18)
+        .background(Color.inkSurfaceRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .inkSpecularBorder(cornerRadius: 16)
     }
 }
 
@@ -73,50 +74,55 @@ struct CollectionEditorSheet: View {
         }
     }
     
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
+                    InkSheetDragPill()
+                        .padding(.top, 4)
                     
                     // MARK: - Live Preview Header
                     VStack(spacing: 12) {
                         Image(systemName: selectedIcon)
-                            .font(.system(size: 60))
+                            .font(.system(size: isPad ? 72 : 56))
                             .foregroundColor(colorFromName(selectedColor))
-                            .shadow(color: colorFromName(selectedColor).opacity(0.5), radius: 10, x: 0, y: 5)
-                            .padding(.top, 20)
+                            .shadow(color: colorFromName(selectedColor).opacity(0.4), radius: 12, x: 0, y: 6)
+                            .padding(.top, 12)
                         
                         Text(name.isEmpty ? "New Collection" : name)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
+                            .font(.system(size: isPad ? 24 : 20, weight: .bold, design: .rounded))
+                            .foregroundColor(Color.inkText)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 6)
                     
                     // MARK: - Name Input
-                    CollectionGlassCard(title: "Collection Name", icon: "pencil") {
+                    CollectionGlassCard(title: "Collection Name", icon: "pencil", accentColor: colorFromName(selectedColor)) {
                         TextField("Enter name...", text: $name)
-                            .font(.headline)
+                            .font(.system(size: isPad ? 17 : 15, weight: .medium))
                             .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, isPad ? 14 : 12)
                             .background(Color.inkSurface)
                             .cornerRadius(10)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
-                                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                                    .stroke(Color.inkSecondary.opacity(0.15), lineWidth: 1)
                              )
-                            .foregroundColor(.primary)
+                            .foregroundColor(Color.inkText)
                             .tint(colorFromName(selectedColor))
                             .focused($isNameFocused)
                             .onSubmit {
                                 let trimmed = name.trimmingCharacters(in: .whitespaces)
                                 if !trimmed.isEmpty {
+                                    HapticEngine.success()
                                     onSave(trimmed, selectedIcon, selectedColor)
                                     dismiss()
                                 }
                             }
-
                     }
                     
                     // MARK: - Choose Existing Collection
@@ -214,9 +220,10 @@ struct CollectionEditorSheet: View {
                     }
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 24)
+                .padding(.vertical, 20)
+                .frame(maxWidth: isPad ? 660 : .infinity)
             }
-            .background(Color(UIColor.systemBackground).ignoresSafeArea())
+            .background(Color.inkBackground.ignoresSafeArea())
             .navigationTitle(isEditing ? "Edit Collection" : "New Collection")
             .background(
                 Group {
@@ -230,22 +237,23 @@ struct CollectionEditorSheet: View {
             .onAppear {
                 isNameFocused = true
             }
-
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundColor(Theme.textSecondary)
+                        .font(.system(size: isPad ? 16 : 15))
+                        .foregroundColor(Color.inkSecondary)
                 }
                 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        HapticEngine.success()
                         onSave(name, selectedIcon, selectedColor)
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .fontWeight(.bold)
-                    .foregroundColor(name.trimmingCharacters(in: .whitespaces).isEmpty ? Theme.textSecondary : colorFromName(selectedColor))
+                    .font(.system(size: isPad ? 16 : 15, weight: .bold))
+                    .foregroundColor(name.trimmingCharacters(in: .whitespaces).isEmpty ? Color.inkSecondary.opacity(0.5) : colorFromName(selectedColor))
                 }
             }
         }

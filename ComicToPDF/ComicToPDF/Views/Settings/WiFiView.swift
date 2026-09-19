@@ -29,8 +29,11 @@ struct WiFiView: View {
             .font(.system(size: 14, weight: .semibold))
             .foregroundColor(.white)
             .frame(width: 28, height: 28)
-            .background(color)
-            .cornerRadius(6)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(color)
+            )
+            .inkSpecularBorder(cornerRadius: 8)
     }
 
     @ViewBuilder
@@ -39,22 +42,31 @@ struct WiFiView: View {
             VStack(spacing: 20) {
                 Image(systemName: "wifi.circle.fill")
                     .font(.system(size: 72))
-                    .foregroundColor(server.isRunning ? .green : .gray)
+                    .foregroundColor(server.isRunning ? .inkGreen : .inkSecondary)
                     .symbolEffect(.pulse, isActive: server.isRunning)
                 
                 Text(server.isRunning ? "Wi-Fi Server Active" : "Server Offline")
                     .font(.title2).bold()
+                    .foregroundColor(Color.inkText)
                 
                 Button(action: {
+                    HapticEngine.selection()
                     if server.isRunning { server.stop() } else { server.start() }
                 }) {
-                    Text(server.isRunning ? "Stop Server" : "Start Server")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(server.isRunning ? Color.red : Color.green)
-                        .cornerRadius(12)
+                    HStack(spacing: 8) {
+                        Image(systemName: server.isRunning ? "stop.fill" : "play.fill")
+                        Text(server.isRunning ? "Stop Server" : "Start Server")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(server.isRunning ? Color.inkRed : Color.inkGreen)
+                    )
+                    .inkSpecularBorder(cornerRadius: 12)
+                    .shadow(color: (server.isRunning ? Color.inkRed : Color.inkGreen).opacity(0.3), radius: 8, y: 4)
                 }
             }
             .padding(.vertical)
@@ -66,11 +78,11 @@ struct WiFiView: View {
     private var stagedFilesList: some View {
         let sizeString = queueManager.formattedTotalSize()
         let headerText = "Staged Files (\(sizeString))"
-        Section(header: Text(headerText)) {
+        Section(header: InkSectionHeader(headerText)) {
             ForEach(queueManager.stagedFiles) { file in
                 HStack {
                     Image(systemName: "doc.text")
-                        .foregroundColor(.blue)
+                        .foregroundColor(.inkBlue)
                     Text(file.name)
                         .font(.subheadline)
                         .lineLimit(1)
@@ -82,9 +94,10 @@ struct WiFiView: View {
     @ViewBuilder
     private var discoveredPeersList: some View {
         if !peerManager.availablePeers.isEmpty {
-            Section(header: Text("Direct Send to Device (High Speed)")) {
+            Section(header: InkSectionHeader("Direct Send to Device (High Speed)")) {
                 ForEach(peerManager.availablePeers) { peer in
                     Button(action: {
+                        HapticEngine.selection()
                         selectedTransferPeer = peer
                         transferPin = ""
                         showingTransferAlert = true
@@ -101,9 +114,10 @@ struct WiFiView: View {
                             Spacer()
                             if localSendClient.isTransferring {
                                 ProgressView()
+                                    .tint(.inkBlue)
                             } else {
                                 Image(systemName: "paperplane.fill")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(.inkBlue)
                             }
                         }
                     }
@@ -111,6 +125,7 @@ struct WiFiView: View {
                     
                     // ✅ NEW: P2P Database Sync Button
                     Button(action: {
+                        HapticEngine.selection()
                         selectedSyncPeer = peer
                         syncPin = ""
                         showingSyncAlert = true
@@ -126,7 +141,7 @@ struct WiFiView: View {
                             }
                             Spacer()
                             Image(systemName: "arrow.triangle.2.circlepath")
-                                .foregroundColor(.orange)
+                                .foregroundColor(.inkOrange)
                         }
                     }
                     .disabled(localSendClient.isTransferring || syncCoordinator.isSyncing)
@@ -149,7 +164,7 @@ struct WiFiView: View {
     private var browserFallbackSection: some View {
         Group {
             if server.isRunning {
-                Section(header: Text("Browser Fallback Options (Scan or Type)")) {
+                Section(header: InkSectionHeader("Browser Fallback Options (Scan or Type)")) {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Type this URL into your browser:")
                             .font(.subheadline)
@@ -158,10 +173,13 @@ struct WiFiView: View {
                         Text(server.serverURL ?? "http://unknown-ip")
                             .font(.system(.title3, design: .monospaced))
                             .fontWeight(.bold)
-                            .padding(10)
+                            .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(UIColor.tertiarySystemFill))
-                            .cornerRadius(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color.inkSurfaceRaised)
+                            )
+                            .inkSpecularBorder(cornerRadius: 10)
                             .textSelection(.enabled)
                     }
                     .padding(.vertical, 4)
@@ -174,25 +192,27 @@ struct WiFiView: View {
                         
                         Text(server.securityCode)
                             .font(.system(size: 34, weight: .heavy, design: .monospaced))
-                            .foregroundColor(.blue)
+                            .foregroundColor(.inkBlue)
                     }
                     .padding(.vertical, 4)
                     
                     HStack {
-                        settingsIcon("network", color: server.activeConnections > 0 ? .green : .gray)
+                        settingsIcon("network", color: server.activeConnections > 0 ? .inkGreen : .gray)
                         Text("\(server.activeConnections) Active Connection\(server.activeConnections == 1 ? "" : "s")")
                     }
                 }
                 
                 if let qr = qrCodeImage {
-                    Section(header: Text("Quick Connect")) {
+                    Section(header: InkSectionHeader("Quick Connect")) {
                         VStack(spacing: 12) {
                             Image(uiImage: qr)
                                 .resizable()
                                 .interpolation(.none)
                                 .scaledToFit()
                                 .frame(width: 140, height: 140)
-                                .cornerRadius(12)
+                                .background(Color.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .inkSpecularBorder(cornerRadius: 12)
                             
                             Text("Scan with your mobile device")
                                 .font(.caption)
@@ -210,14 +230,14 @@ struct WiFiView: View {
     private var progressSection: some View {
         Group {
             if server.isUploading {
-                Section(header: Text("In Progress")) {
+                Section(header: InkSectionHeader("In Progress")) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Uploading: \(server.currentUploadFilename)")
                             .font(.caption)
                             .lineLimit(1)
                         
                         ProgressView(value: server.uploadProgress)
-                            .progressViewStyle(LinearProgressViewStyle(tint: .orange))
+                            .progressViewStyle(LinearProgressViewStyle(tint: .inkOrange))
                         
                         Text("\(Int(server.uploadProgress * 100))%")
                             .font(.caption.bold())
@@ -228,14 +248,14 @@ struct WiFiView: View {
             }
             
             if localSendClient.isTransferring {
-                Section(header: Text("Direct Transfer Progress")) {
+                Section(header: InkSectionHeader("Direct Transfer Progress")) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Sending: \(localSendClient.currentFileName)")
                             .font(.caption)
                             .lineLimit(1)
                         
                         ProgressView(value: localSendClient.progress)
-                            .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                            .progressViewStyle(LinearProgressViewStyle(tint: .inkBlue))
                         
                         Text("\(Int(localSendClient.progress * 100))%")
                             .font(.caption.bold())
@@ -249,7 +269,7 @@ struct WiFiView: View {
     
     @ViewBuilder
     private var alternativeTransferSection: some View {
-        Section(header: Text("Alternative: USB Transfer")) {
+        Section(header: InkSectionHeader("Alternative: USB Transfer")) {
             HStack(alignment: .top, spacing: 16) {
                 settingsIcon("cable.connector", color: .gray)
                 VStack(alignment: .leading, spacing: 6) {
@@ -265,23 +285,32 @@ struct WiFiView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                serverStatusSection
-                stagedFilesSection
-                progressSection
-                successfulImportsSection
-                browserFallbackSection
-                alternativeTransferSection
+            ZStack {
+                Color.inkBackground.ignoresSafeArea()
+                
+                Form {
+                    serverStatusSection
+                    stagedFilesSection
+                    progressSection
+                    successfulImportsSection
+                    browserFallbackSection
+                    alternativeTransferSection
+                }
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
+                .listRowBackground(Color.inkSurfaceRaised.opacity(0.6))
+                .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad ? 680 : .infinity)
             }
-            .scrollContentBackground(.hidden)
-            .background(Color.clear)
-            .listRowBackground(Color.inkSurface.opacity(0.4))
             .navigationTitle("Transfer Files")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Close") { 
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { 
+                        HapticEngine.selection()
                         dismiss() 
                     }
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.inkBlue)
                 }
             }
             .onAppear {
@@ -354,17 +383,22 @@ struct WiFiView: View {
             .overlay {
                 if syncCoordinator.isSyncing {
                     ZStack {
-                        Color(.systemBackground).opacity(0.85).ignoresSafeArea()
+                        Color.inkBackground.opacity(0.85).ignoresSafeArea()
                         VStack(spacing: 20) {
                             ProgressView()
                                 .scaleEffect(1.5)
+                                .tint(Color.inkBlue)
                             Text(syncCoordinator.syncStatus)
                                 .font(.headline)
+                                .foregroundColor(Color.inkText)
                         }
                         .padding(30)
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(16)
-                        .shadow(radius: 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Color.inkSurfaceRaised)
+                        )
+                        .inkSpecularBorder(cornerRadius: 16)
+                        .shadow(color: Color.black.opacity(0.25), radius: 15)
                     }
                 }
             }
@@ -398,18 +432,19 @@ struct WiFiView: View {
     private var successfulImportsSection: some View {
         let events = transferLog.recentEvents().filter { $0.succeeded }
         if !events.isEmpty {
-            Section(header: Text("Successfully Transferred")) {
+            Section(header: InkSectionHeader("Successfully Transferred")) {
                 ForEach(events) { event in
                     HStack(spacing: 12) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(.inkGreen)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(event.filename)
                                 .font(.subheadline)
+                                .foregroundColor(Color.inkText)
                                 .lineLimit(1)
                             Text("Masked IP: \(event.maskedIP) • \(formatBytes(event.sizeBytes))")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Color.inkSecondary)
                         }
                     }
                     .padding(.vertical, 2)

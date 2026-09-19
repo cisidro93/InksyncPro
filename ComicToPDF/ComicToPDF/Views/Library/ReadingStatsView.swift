@@ -11,36 +11,36 @@ struct ReadingStatsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    InkSheetDragPill()
+                        .padding(.top, 4)
                     
                     // ── Streak & Daily Goal ──────────────────────────────
                     HStack(spacing: 16) {
                         StatCard(
                             icon: "flame.fill",
-                            iconColor: .orange,
+                            iconColor: .inkOrange,
                             title: "\(tracker.readingStreak())",
                             subtitle: "Day Streak"
                         )
                         
                         StatCard(
                             icon: "book.fill",
-                            iconColor: Theme.blue,
+                            iconColor: .inkBlue,
                             title: "\(totalPagesRead)",
                             subtitle: "Pages Read"
                         )
                         
                         StatCard(
                             icon: "books.vertical.fill",
-                            iconColor: .purple,
+                            iconColor: .inkViolet,
                             title: "\(totalItemsStarted)",
                             subtitle: "Items Started"
                         )
                     }
                     
                     // ── Weekly Activity Chart ────────────────────────────
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("This Week")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(Theme.text)
+                    VStack(alignment: .leading, spacing: 10) {
+                        InkSectionHeader("This Week")
                         
                         Chart(weeklyData, id: \.day) { item in
                             BarMark(
@@ -49,7 +49,7 @@ struct ReadingStatsView: View {
                             )
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [Theme.blue, Theme.purple],
+                                    colors: [.inkBlue, .inkViolet],
                                     startPoint: .bottom,
                                     endPoint: .top
                                 )
@@ -75,14 +75,13 @@ struct ReadingStatsView: View {
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color(UIColor.secondarySystemGroupedBackground))
+                            .fill(Color.inkSurfaceRaised)
                     )
+                    .inkSpecularBorder(cornerRadius: 16)
                     
                     // ── Library Overview ─────────────────────────────────
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Library Overview")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(Theme.text)
+                    VStack(alignment: .leading, spacing: 14) {
+                        InkSectionHeader("Library Overview")
                         
                         HStack {
                             OverviewStat(label: "Total Files", value: "\(conversionManager.convertedPDFs.count)")
@@ -103,14 +102,13 @@ struct ReadingStatsView: View {
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color(UIColor.secondarySystemGroupedBackground))
+                            .fill(Color.inkSurfaceRaised)
                     )
+                    .inkSpecularBorder(cornerRadius: 16)
                     
                     // ── Series Completion Rings ──────────────────────────
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Series Progress")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(Theme.text)
+                    VStack(alignment: .leading, spacing: 14) {
+                        InkSectionHeader("Series Progress")
                         
                         let seriesGroups = buildSeriesGroups()
                         
@@ -129,7 +127,7 @@ struct ReadingStatsView: View {
                                         Circle()
                                             .trim(from: 0, to: CGFloat(series.progress))
                                             .stroke(
-                                                series.progress >= 1.0 ? Color.green : Theme.blue,
+                                                series.progress >= 1.0 ? Color.inkGreen : Color.inkBlue,
                                                 style: StrokeStyle(lineWidth: 4, lineCap: .round)
                                             )
                                             .rotationEffect(.degrees(-90))
@@ -147,8 +145,8 @@ struct ReadingStatsView: View {
                                                     .font(.system(size: 9, weight: .bold))
                                                     .padding(.horizontal, 4)
                                                     .padding(.vertical, 1)
-                                                    .background(Color.purple.opacity(0.12))
-                                                    .foregroundColor(.purple)
+                                                    .background(Color.inkViolet.opacity(0.15))
+                                                    .foregroundColor(.inkViolet)
                                                     .cornerRadius(3)
                                             }
                                         }
@@ -161,7 +159,7 @@ struct ReadingStatsView: View {
                                     
                                     Text("\(Int(series.progress * 100))%")
                                         .font(.system(size: 13, weight: .bold, design: .rounded))
-                                        .foregroundColor(series.progress >= 1.0 ? .green : Theme.textSecondary)
+                                        .foregroundColor(series.progress >= 1.0 ? .inkGreen : Theme.textSecondary)
                                 }
                                 .padding(.vertical, 4)
                             }
@@ -170,20 +168,18 @@ struct ReadingStatsView: View {
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color(UIColor.secondarySystemGroupedBackground))
+                            .fill(Color.inkSurfaceRaised)
                     )
+                    .inkSpecularBorder(cornerRadius: 16)
 
                     // ── Reading Velocity Forecast ────────────────────────────────
                     if let report = velocityVM.report, !report.books.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 14) {
                             HStack {
                                 Image(systemName: "gauge.with.needle")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(Theme.blue)
-                                Text("READING VELOCITY")
-                                    .font(.system(size: 12, weight: .black, design: .rounded))
-                                    .tracking(1.2)
-                                    .foregroundColor(Theme.text)
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(.inkBlue)
+                                InkSectionHeader("Reading Velocity")
                                 Spacer()
                                 if report.global.pagesPerDay > 0 {
                                     Text(String(format: "%.0f p/day", report.global.pagesPerDay))
@@ -198,20 +194,20 @@ struct ReadingStatsView: View {
                                     value: String(format: "%.0f", report.global.pagesPerDay),
                                     unit: "pages/day",
                                     icon: "gauge.medium",
-                                    color: Theme.blue
+                                    color: .inkBlue
                                 )
                                 velocityStatChip(
                                     value: String(format: "%.0f", report.global.pagesPerSession),
                                     unit: "per session",
                                     icon: "bolt.fill",
-                                    color: .purple
+                                    color: .inkViolet
                                 )
                                 if let days = report.global.projectedLibraryFinishDays, days > 0 {
                                     velocityStatChip(
                                         value: days < 365 ? "\(days)d" : "\(days/365)yr",
                                         unit: "to finish all",
                                         icon: "calendar.badge.clock",
-                                        color: Theme.orange
+                                        color: .inkOrange
                                     )
                                 }
                             }
@@ -222,7 +218,7 @@ struct ReadingStatsView: View {
                             ForEach(report.books.prefix(6)) { book in
                                 HStack(spacing: 12) {
                                     Circle()
-                                        .fill(book.finishDate != nil ? Theme.blue : Color.gray.opacity(0.4))
+                                        .fill(book.finishDate != nil ? Color.inkBlue : Color.gray.opacity(0.4))
                                         .frame(width: 8, height: 8)
 
                                     VStack(alignment: .leading, spacing: 2) {
@@ -243,7 +239,7 @@ struct ReadingStatsView: View {
                                         .padding(.vertical, 3)
                                         .background(
                                             Capsule().fill(
-                                                book.finishDate != nil ? Theme.blue.opacity(0.85) : Color.gray.opacity(0.5)
+                                                book.finishDate != nil ? Color.inkBlue.opacity(0.85) : Color.gray.opacity(0.5)
                                             )
                                         )
                                 }
@@ -252,15 +248,14 @@ struct ReadingStatsView: View {
                         .padding()
                         .background(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(Color(UIColor.secondarySystemGroupedBackground))
+                                .fill(Color.inkSurfaceRaised)
                         )
+                        .inkSpecularBorder(cornerRadius: 16)
                     }
                     
                     // ── Format Distribution ──────────────────────────────
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Format Distribution")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(Theme.text)
+                    VStack(alignment: .leading, spacing: 14) {
+                        InkSectionHeader("Format Distribution")
                         
                         let formatData = buildFormatDistribution()
                         
@@ -294,16 +289,22 @@ struct ReadingStatsView: View {
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color(UIColor.secondarySystemGroupedBackground))
+                            .fill(Color.inkSurfaceRaised)
                     )
+                    .inkSpecularBorder(cornerRadius: 16)
                 }
                 .padding()
             }
-            .background(Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all))
+            .background(Color.inkBackground.ignoresSafeArea())
             .navigationTitle("Reading Stats")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }.bold()
+                    Button("Done") {
+                        HapticEngine.selection()
+                        dismiss()
+                    }
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.inkBlue)
                 }
             }
             .onAppear {
@@ -487,8 +488,9 @@ private struct StatCard: View {
         .padding(.vertical, 16)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(UIColor.secondarySystemGroupedBackground))
+                .fill(Color.inkSurfaceRaised)
         )
+        .inkSpecularBorder(cornerRadius: 14)
     }
 }
 

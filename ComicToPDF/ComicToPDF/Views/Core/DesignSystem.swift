@@ -75,6 +75,11 @@ extension Color {
     static let inkAccentNavigation  = inkAmber
     /// Research, annotation, writing, Zettelkasten — the "mind" colour
     static let inkAccentKnowledge   = inkViolet
+    /// Convenient short aliases
+    static let inkText              = inkTextPrimary
+    static let inkSecondary         = inkTextSecondary
+    static let inkTertiary          = inkTextTertiary
+    static let inkYellow            = inkAmber
 
     // MARK: - Hex Initializers
     init(hex: String) {
@@ -94,8 +99,78 @@ extension Color {
         let r = Float(components[0])
         let g = Float(components[1])
         let b = Float(components[2])
-        return String(format: "#%02lX%02lX%02lX", lroundf(r * 255), lroundf(g * 255), lroundf(b * 255))
+        return String(format: "#%02lX%02lX%02lX", lroundf(r * 255), lroundf(g * 255), lroundf(g * 255))
     }
 }
+
+// MARK: - Reusable Inksync UI Primitives
+
+/// Signature uppercase tracked section header used across all Inksync Pro menus and HUDs.
+/// Differentiates iPhone (11pt, 0.8 tracking) vs iPad (13pt, 1.0 tracking) for native ergonomics.
+struct InkSectionHeader: View {
+    let title: String
+    
+    init(_ title: String) {
+        self.title = title
+    }
+    
+    var body: some View {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        HStack {
+            Text(title.uppercased())
+                .font(.system(size: isPad ? 13 : 11, weight: .semibold, design: .rounded))
+                .foregroundColor(Color.inkTextSecondary)
+                .tracking(isPad ? 1.0 : 0.8)
+            Spacer()
+        }
+    }
+}
+
+/// Standardized translucent top drag handle capsule for Inksync Pro modal sheets.
+/// Features adaptive contrast for Light & Dark mode and tailored width for iPhone vs iPad.
+struct InkSheetDragPill: View {
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        Capsule()
+            .fill(colorScheme == .dark ? Color.white.opacity(0.25) : Color.black.opacity(0.18))
+            .frame(width: isPad ? 48 : 36, height: isPad ? 5 : 4)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+    }
+}
+
+/// Adaptive specular border modifier that provides clean highlight gradients in both Light and Dark mode.
+struct AdaptiveSpecularBorderModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    var cornerRadius: CGFloat
+    var lineWidth: CGFloat
+
+    func body(content: Content) -> some View {
+        content.overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color.white.opacity(0.18), Color.white.opacity(0.04)]
+                            : [Color.black.opacity(0.09), Color.black.opacity(0.02)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: lineWidth
+                )
+        )
+    }
+}
+
+extension View {
+    /// Applies the signature Inksync Pro specular highlight stroke border to cards and modal containers.
+    /// Automatically adapts highlights for both Light and Dark modes.
+    func inkSpecularBorder(cornerRadius: CGFloat = 14, lineWidth: CGFloat = 0.8) -> some View {
+        modifier(AdaptiveSpecularBorderModifier(cornerRadius: cornerRadius, lineWidth: lineWidth))
+    }
+}
+
 // Note: UIColor(hex:) is defined in BookReaderEngine.swift and is available app-wide.
 // The adaptive dynamic-provider closures in the extension above call that existing init.

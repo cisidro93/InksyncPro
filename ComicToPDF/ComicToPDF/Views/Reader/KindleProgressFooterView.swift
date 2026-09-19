@@ -18,8 +18,12 @@ struct InksyncProgressFooterView: View {
     @State private var isExpanded: Bool = false
     @State private var collapseTask: Task<Void, Never>? = nil
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     private var isPhoneLandscape: Bool {
-        if UIDevice.current.userInterfaceIdiom == .phone {
+        if !isPad {
             if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: { $0.activationState == .foregroundActive }) ?? (UIApplication.shared.connectedScenes.first as? UIWindowScene) {
                 return scene.interfaceOrientation.isLandscape
             }
@@ -152,19 +156,34 @@ struct InksyncProgressFooterView: View {
         isExpanded && !isPhoneLandscape
     }
 
+    // MARK: - Subcomponents (iPhone vs iPad Idiom Differentiated)
+
     private var statusDot: some View {
-        let dotSize: CGFloat = isExpandedActive ? 5 : 4
+        let dotSize: CGFloat = isPad
+            ? (isExpandedActive ? 7.0 : 5.5)
+            : (isExpandedActive ? 5.0 : 4.0)
+            
         return Circle()
             .fill(accentColor)
             .frame(width: dotSize, height: dotSize)
-            .shadow(color: accentColor.opacity(0.6), radius: 3, x: 0, y: 0)
+            .shadow(color: accentColor.opacity(colorScheme == .dark ? 0.7 : 0.4), radius: isPad ? 4 : 3, x: 0, y: 0)
     }
 
     private var labelText: some View {
         let title = isExpandedActive ? primaryText : condensedText
-        let fontSize: CGFloat = isExpandedActive ? 11 : 10
-        let maxW: CGFloat? = isExpandedActive ? 240 : nil
-        let fgColor = colorScheme == .dark ? Color.white.opacity(0.92) : Color.black.opacity(0.85)
+        
+        // Exact Device Scale: iPhone (11-12pt) vs iPad (14-15.5pt)
+        let fontSize: CGFloat = isPad
+            ? (isExpandedActive ? 15.5 : 14.0)
+            : (isExpandedActive ? 12.0 : 11.0)
+            
+        let maxW: CGFloat? = isPad
+            ? (isExpandedActive ? 540 : nil)
+            : (isExpandedActive ? (isPhoneLandscape ? 320 : 250) : nil)
+            
+        let fgColor = colorScheme == .dark
+            ? Color.white.opacity(0.94)
+            : Color(hex: "#16161F")
 
         return Text(title)
             .font(.system(size: fontSize, weight: .semibold, design: .rounded))
@@ -177,36 +196,52 @@ struct InksyncProgressFooterView: View {
     @ViewBuilder
     private var percentageText: some View {
         if prefs.progressMode != 2 && prefs.progressMode != 3 {
-            let fontSize: CGFloat = isExpandedActive ? 10 : 9.5
+            let fontSize: CGFloat = isPad
+                ? (isExpandedActive ? 14.5 : 13.5)
+                : (isExpandedActive ? 11.0 : 10.0)
+                
             Text("\(progressPercentage)%")
                 .font(.system(size: fontSize, weight: .bold, design: .rounded))
-                .foregroundStyle(accentColor.opacity(0.95))
+                .foregroundStyle(accentColor.opacity(colorScheme == .dark ? 0.95 : 1.0))
         }
     }
 
     private var pillBorderGradient: LinearGradient {
-        let c1 = colorScheme == .dark ? Color.white.opacity(0.25) : Color.white.opacity(0.65)
-        let c2 = colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08)
+        let c1 = colorScheme == .dark ? Color.white.opacity(0.24) : Color.black.opacity(0.12)
+        let c2 = colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04)
         return LinearGradient(colors: [c1, c2], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     private var pillBackground: some View {
-        let innerTint = colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.03)
+        let innerTint = colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.65)
         return Capsule()
             .fill(.ultraThinMaterial)
             .overlay(Capsule().fill(innerTint))
     }
 
     private var pillBorder: some View {
-        Capsule().strokeBorder(pillBorderGradient, lineWidth: 0.5)
+        Capsule().strokeBorder(pillBorderGradient, lineWidth: 0.6)
     }
 
     private var visiblePill: some View {
-        let hPad: CGFloat = isExpandedActive ? 13 : 9
-        let vPad: CGFloat = isExpandedActive ? 6 : 4
-        let shadowColor = Color.black.opacity(colorScheme == .dark ? 0.28 : 0.08)
+        // Ergonomic padding calibrated for touch targets and visual proportion
+        let hPad: CGFloat = isPad
+            ? (isExpandedActive ? 18 : 13)
+            : (isExpandedActive ? 13 : 9.5)
+            
+        let vPad: CGFloat = isPad
+            ? (isExpandedActive ? 9.5 : 7.0)
+            : (isExpandedActive ? 6.0 : 4.5)
+            
+        let spacing: CGFloat = isPad
+            ? (isExpandedActive ? 10 : 8)
+            : (isExpandedActive ? 7 : 5)
+            
+        let shadowColor = Color.black.opacity(colorScheme == .dark ? 0.32 : 0.08)
+        let shadowRadius: CGFloat = isPad ? 12 : 8
+        let shadowY: CGFloat = isPad ? 3 : 2
 
-        return HStack(spacing: isExpandedActive ? 7 : 5) {
+        return HStack(spacing: spacing) {
             statusDot
             labelText
             percentageText
@@ -215,8 +250,8 @@ struct InksyncProgressFooterView: View {
         .padding(.vertical, vPad)
         .background(pillBackground)
         .overlay(pillBorder)
-        .shadow(color: shadowColor, radius: 8, x: 0, y: 2)
-        .opacity(isExpanded ? 1.0 : 0.82)
+        .shadow(color: shadowColor, radius: shadowRadius, x: 0, y: shadowY)
+        .opacity(isExpanded ? 1.0 : 0.85)
         .contentShape(Capsule())
         .onTapGesture {
             triggerModeCycle()
@@ -234,9 +269,9 @@ struct InksyncProgressFooterView: View {
             Spacer()
             HStack {
                 if prefs.progressMode == ReadingProgressMode.hidden.rawValue || prefs.progressMode == 4 {
-                    // Invisible tap zone so tapping unhides the tracker
+                    // Invisible tap zone calibrated for thumb on iPhone vs finger/pencil on iPad
                     Color.clear
-                        .frame(width: 140, height: 44)
+                        .frame(width: isPad ? 220 : 140, height: isPad ? 54 : 44)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             HapticEngine.selection()
@@ -248,9 +283,9 @@ struct InksyncProgressFooterView: View {
 
                 Spacer()
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, isPad ? 28 : 16)
         }
-        .padding(.bottom, 6)
+        .padding(.bottom, isPad ? 14 : (isPhoneLandscape ? 4 : 8))
     }
 
     private func triggerModeCycle() {

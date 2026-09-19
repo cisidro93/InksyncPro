@@ -23,7 +23,7 @@ struct LibraryControlCenterView: View {
     ]
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     // Quick Stats Banner
@@ -31,10 +31,8 @@ struct LibraryControlCenterView: View {
                         .padding(.horizontal)
                     
                     // Section 1: Quick Actions (Grid of Cards)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Quick Actions")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        InkSectionHeader("Quick Actions")
                             .padding(.horizontal)
                         
                         LazyVGrid(columns: columns, spacing: 12) {
@@ -43,7 +41,7 @@ struct LibraryControlCenterView: View {
                                 title: "Wi-Fi Sync",
                                 subtitle: "Transfer files wirelessly",
                                 icon: "wifi",
-                                gradient: Gradient(colors: [Color.blue, Color.cyan]),
+                                gradient: Gradient(colors: [Color.inkBlue, Color(hex: "#4facfe")]),
                                 action: {
                                     transitionToSheet(.wifi)
                                 }
@@ -54,7 +52,7 @@ struct LibraryControlCenterView: View {
                                 title: "Create Volume",
                                 subtitle: "Combine issue lists",
                                 icon: "books.vertical.fill",
-                                gradient: Gradient(colors: [Color.purple, Color.indigo]),
+                                gradient: Gradient(colors: [Color.inkViolet, Color(hex: "#7928ca")]),
                                 action: {
                                     let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                                     let sortedItems = items.sorted {
@@ -87,7 +85,7 @@ struct LibraryControlCenterView: View {
                                 title: "Cloud Library",
                                 subtitle: dropbox.isConnected ? "Dropbox: Connected" : "Dropbox: Tap to Link",
                                 icon: dropbox.isConnected ? "icloud.and.arrow.down.fill" : "icloud.and.arrow.down",
-                                gradient: Gradient(colors: [Color.teal, Color.emerald]),
+                                gradient: Gradient(colors: [Color.inkGreen, Color(hex: "#059669")]),
                                 action: {
                                     transitionToSheet(.cloudBrowser)
                                 }
@@ -98,7 +96,7 @@ struct LibraryControlCenterView: View {
                                 title: "Smart List Import",
                                 subtitle: "Import CBL/CSV lists",
                                 icon: "list.star",
-                                gradient: Gradient(colors: [Color.orange, Color.pink]),
+                                gradient: Gradient(colors: [Color.inkOrange, Color.inkAmber]),
                                 action: {
                                     transitionToSheet(.smartListImporter)
                                 }
@@ -108,10 +106,8 @@ struct LibraryControlCenterView: View {
                     }
                     
                     // Section 2: Sorting & Filter Settings
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Library Display & Filters")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        InkSectionHeader("Library Display & Filters")
                             .padding(.horizontal)
                         
                         VStack(spacing: 16) {
@@ -133,6 +129,7 @@ struct LibraryControlCenterView: View {
                             .padding(.top, 4)
                             
                             Divider()
+                                .background(Color.inkBorderSubtle)
                                 .padding(.horizontal)
                             
                             // On Tap Gesture Picker
@@ -152,19 +149,21 @@ struct LibraryControlCenterView: View {
                             .padding(.horizontal)
                             
                             Divider()
+                                .background(Color.inkBorderSubtle)
                                 .padding(.horizontal)
                             
                             // Filter Pills Scroll
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Filter Items")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .foregroundColor(Color.inkTextSecondary)
                                     .padding(.horizontal)
                                 
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 8) {
                                         ForEach(LibraryFilterState.allCases) { state in
                                             Button(action: {
+                                                HapticEngine.selection()
                                                 withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                                                     filterState = state
                                                 }
@@ -176,7 +175,11 @@ struct LibraryControlCenterView: View {
                                                     .padding(.vertical, 8)
                                                     .background(
                                                         Capsule()
-                                                            .fill(filterState == state ? Color.inkBlue : Color(UIColor.secondarySystemBackground))
+                                                            .fill(filterState == state ? Color.inkBlue : Color.inkSurface)
+                                                    )
+                                                    .overlay(
+                                                        Capsule()
+                                                            .stroke(filterState == state ? Color.inkBlue : Color.inkBorderSubtle, lineWidth: 0.8)
                                                     )
                                                     .foregroundColor(filterState == state ? .white : .primary)
                                             }
@@ -187,6 +190,7 @@ struct LibraryControlCenterView: View {
                             }
                             
                             Divider()
+                                .background(Color.inkBorderSubtle)
                                 .padding(.horizontal)
                             
                             // Visual Layout & Options Grid
@@ -197,6 +201,7 @@ struct LibraryControlCenterView: View {
                                     icon: viewStyle == .grid ? "list.bullet" : "square.grid.2x2",
                                     isActive: false,
                                     action: {
+                                        HapticEngine.light()
                                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                             viewStyle = viewStyle == .grid ? .list : .grid
                                         }
@@ -209,6 +214,7 @@ struct LibraryControlCenterView: View {
                                     icon: "checkmark.circle",
                                     isActive: isBatchMode,
                                     action: {
+                                        HapticEngine.medium()
                                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                             isBatchMode.toggle()
                                         }
@@ -220,8 +226,9 @@ struct LibraryControlCenterView: View {
                                     title: settingsManager.isVaultUnlocked ? "Lock Vault" : "Unlock Vault",
                                     icon: settingsManager.isVaultUnlocked ? "lock.open.fill" : "lock.fill",
                                     isActive: settingsManager.isVaultUnlocked,
-                                    color: settingsManager.isVaultUnlocked ? .red : .green,
+                                    color: settingsManager.isVaultUnlocked ? .inkRed : .inkGreen,
                                     action: {
+                                        HapticEngine.selection()
                                         handleVaultToggle()
                                     }
                                 )
@@ -229,22 +236,23 @@ struct LibraryControlCenterView: View {
                             .padding(.horizontal)
                             .padding(.bottom, 8)
                         }
-                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                        .padding(.vertical, 12)
+                        .background(Color.inkSurfaceRaised)
                         .cornerRadius(16)
-                        .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
+                        .inkSpecularBorder(cornerRadius: 16)
+                        .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 3)
                         .padding(.horizontal)
                     }
                     
                     // Section 3: AI & Metadata Operations
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("AI & Metadata Engine")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        InkSectionHeader("AI & Metadata Engine")
                             .padding(.horizontal)
                         
                         VStack(spacing: 12) {
                             // Auto Match Progress Button
                             Button(action: {
+                                HapticEngine.medium()
                                 if bgEngine.isRunning {
                                     bgEngine.cancel()
                                 } else {
@@ -256,7 +264,7 @@ struct LibraryControlCenterView: View {
                                 HStack {
                                     Image(systemName: bgEngine.isRunning ? "stop.fill" : "wand.and.stars.inverse")
                                         .font(.title3)
-                                        .foregroundColor(bgEngine.isRunning ? .red : .purple)
+                                        .foregroundColor(bgEngine.isRunning ? .inkRed : .inkViolet)
                                         .frame(width: 32)
                                     
                                     VStack(alignment: .leading, spacing: 2) {
@@ -287,8 +295,9 @@ struct LibraryControlCenterView: View {
                                     }
                                 }
                                 .padding()
-                                .background(Color(UIColor.secondarySystemGroupedBackground))
+                                .background(Color.inkSurfaceRaised)
                                 .cornerRadius(12)
+                                .inkSpecularBorder(cornerRadius: 12)
                             }
                             
                             // Review Missing Metadata (conditional)
@@ -297,7 +306,7 @@ struct LibraryControlCenterView: View {
                                     title: "Review Missing Metadata",
                                     subtitle: "\(conversionManager.failedMetadataPDFs.count) issues need manual matching",
                                     icon: "exclamationmark.triangle.fill",
-                                    color: .orange,
+                                    color: .inkAmber,
                                     action: {
                                         transitionToSheet(.reviewMetadata)
                                     }
@@ -309,7 +318,7 @@ struct LibraryControlCenterView: View {
                                 title: "AI Vision Rename",
                                 subtitle: isBatchMode ? "Rename \(multiSelection.count) selected issues" : "Select issues to automatically rename",
                                 icon: "sparkles.tv",
-                                color: .purple,
+                                color: .inkViolet,
                                 disabled: isBatchMode && multiSelection.isEmpty,
                                 action: {
                                     if isBatchMode && !multiSelection.isEmpty {
@@ -328,7 +337,7 @@ struct LibraryControlCenterView: View {
                                 title: "Grid Metadata Editor",
                                 subtitle: isBatchMode ? "Edit metadata spreadsheet for \(multiSelection.count) items" : "Select issues to open in spreadsheet grid",
                                 icon: "tablecells",
-                                color: .blue,
+                                color: .inkBlue,
                                 disabled: isBatchMode && multiSelection.isEmpty,
                                 action: {
                                     if isBatchMode && !multiSelection.isEmpty {
@@ -347,10 +356,8 @@ struct LibraryControlCenterView: View {
                     }
                     
                     // Section 4: File Operations & Utilities
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("File Operations & Utilities")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        InkSectionHeader("File Operations & Utilities")
                             .padding(.horizontal)
                         
                         VStack(spacing: 12) {
@@ -358,7 +365,7 @@ struct LibraryControlCenterView: View {
                                 title: "PDF Merge Tool",
                                 subtitle: "Merge existing PDFs together",
                                 icon: "arrow.triangle.merge",
-                                color: .teal,
+                                color: .inkGreen,
                                 action: {
                                     transitionToSheet(.merge)
                                 }
@@ -368,11 +375,10 @@ struct LibraryControlCenterView: View {
                                 title: "Convert & Merge",
                                 subtitle: isBatchMode ? "Convert & merge \(multiSelection.count) selected issues" : "Select multiple zip/cbr/cbz to convert & merge",
                                 icon: "arrow.triangle.2.circlepath.doc",
-                                color: .pink,
+                                color: .inkOrange,
                                 action: {
                                     if isBatchMode && multiSelection.count >= 2 {
                                         dismiss()
-                                        // ModernLibraryView handles presenting the reorder modal via binding
                                         NotificationCenter.default.post(name: NSNotification.Name("TriggerBatchMergeReorder"), object: nil)
                                     } else {
                                         withAnimation { isBatchMode = true }
@@ -385,12 +391,13 @@ struct LibraryControlCenterView: View {
                             HStack(spacing: 12) {
                                 // Stats Card
                                 Button(action: {
+                                    HapticEngine.selection()
                                     transitionToSheet(.stats)
                                 }) {
                                     VStack(alignment: .leading, spacing: 8) {
                                         Image(systemName: "chart.bar.fill")
                                             .font(.title2)
-                                            .foregroundColor(.blue)
+                                            .foregroundColor(.inkBlue)
                                         Text("Library Stats")
                                             .font(.subheadline)
                                             .fontWeight(.semibold)
@@ -401,20 +408,21 @@ struct LibraryControlCenterView: View {
                                     }
                                     .padding()
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color(UIColor.secondarySystemGroupedBackground))
+                                    .background(Color.inkSurfaceRaised)
                                     .cornerRadius(12)
+                                    .inkSpecularBorder(cornerRadius: 12)
                                 }
                                 
                                 // Settings Card
                                 Button(action: {
+                                    HapticEngine.selection()
                                     dismiss()
-                                    // Trigger setting inspector pane
                                     NotificationCenter.default.post(name: NSNotification.Name("ShowSettingsInspector"), object: nil)
                                 }) {
                                     VStack(alignment: .leading, spacing: 8) {
                                         Image(systemName: "gearshape.fill")
                                             .font(.title2)
-                                            .foregroundColor(.gray)
+                                            .foregroundColor(.inkTextSecondary)
                                         Text("Settings")
                                             .font(.subheadline)
                                             .fontWeight(.semibold)
@@ -425,8 +433,9 @@ struct LibraryControlCenterView: View {
                                     }
                                     .padding()
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color(UIColor.secondarySystemGroupedBackground))
+                                    .background(Color.inkSurfaceRaised)
                                     .cornerRadius(12)
+                                    .inkSpecularBorder(cornerRadius: 12)
                                 }
                             }
                         }
@@ -435,17 +444,17 @@ struct LibraryControlCenterView: View {
                 }
                 .padding(.vertical)
             }
-            .background(Color(UIColor.systemGroupedBackground))
+            .background(Color.inkBackground.ignoresSafeArea())
             .navigationTitle("Library Dashboard")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundColor(.gray)
-                            .font(.title3)
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        HapticEngine.light()
+                        dismiss()
                     }
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.inkBlue)
                 }
             }
         }
@@ -460,30 +469,33 @@ struct LibraryControlCenterView: View {
                 value: "\(conversionManager.convertedPDFs.count)",
                 title: "Total Files",
                 icon: "doc.text.fill",
-                color: .blue
+                color: .inkBlue
             )
             Divider()
+                .background(Color.inkBorderSubtle)
                 .frame(height: 40)
             statItem(
                 value: "\(conversionManager.collections.count)",
                 title: "Collections",
                 icon: "folder.fill.badge.plus",
-                color: .purple
+                color: .inkViolet
             )
             Divider()
+                .background(Color.inkBorderSubtle)
                 .frame(height: 40)
             statItem(
                 value: "\(conversionManager.failedMetadataPDFs.count)",
                 title: "Unmatched",
                 icon: "questionmark.circle.fill",
-                color: conversionManager.failedMetadataPDFs.isEmpty ? .secondary : .orange
+                color: conversionManager.failedMetadataPDFs.isEmpty ? .secondary : .inkAmber
             )
         }
         .padding()
         .frame(maxWidth: .infinity)
-        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .background(Color.inkSurfaceRaised)
         .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
+        .inkSpecularBorder(cornerRadius: 16)
+        .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 3)
     }
     
     @ViewBuilder
@@ -496,17 +508,21 @@ struct LibraryControlCenterView: View {
                 Text(value)
                     .font(.title3)
                     .fontWeight(.bold)
+                    .foregroundColor(.inkTextPrimary)
             }
             Text(title)
                 .font(.caption2)
-                .foregroundColor(.secondary)
+                .foregroundColor(.inkTextSecondary)
         }
         .frame(maxWidth: .infinity)
     }
     
     @ViewBuilder
     private func cardButton(title: String, subtitle: String, icon: String, gradient: Gradient, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: {
+            HapticEngine.selection()
+            action()
+        }) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Image(systemName: icon)
@@ -536,6 +552,7 @@ struct LibraryControlCenterView: View {
                 LinearGradient(gradient: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
             )
             .cornerRadius(16)
+            .inkSpecularBorder(cornerRadius: 16)
             .shadow(color: gradient.stops.first?.color.opacity(0.3) ?? Color.black.opacity(0.1), radius: 6, x: 0, y: 3)
         }
     }
@@ -555,15 +572,22 @@ struct LibraryControlCenterView: View {
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isActive ? color : Color(UIColor.secondarySystemBackground))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isActive ? color : Color.inkSurface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isActive ? color : Color.inkBorderSubtle, lineWidth: 0.8)
             )
         }
     }
     
     @ViewBuilder
     private func listActionButton(title: String, subtitle: String, icon: String, color: Color, disabled: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: {
+            HapticEngine.selection()
+            action()
+        }) {
             HStack {
                 Image(systemName: icon)
                     .font(.title3)
@@ -587,8 +611,9 @@ struct LibraryControlCenterView: View {
                     .font(.caption)
             }
             .padding()
-            .background(Color(UIColor.secondarySystemGroupedBackground))
+            .background(Color.inkSurfaceRaised)
             .cornerRadius(12)
+            .inkSpecularBorder(cornerRadius: 12)
         }
         .disabled(disabled)
         .opacity(disabled ? 0.6 : 1.0)
@@ -616,10 +641,5 @@ struct LibraryControlCenterView: View {
             }
         }
     }
-}
-
-// Custom emerald color
-extension Color {
-    fileprivate static let emerald = Color(red: 16/255, green: 185/255, blue: 129/255)
 }
 

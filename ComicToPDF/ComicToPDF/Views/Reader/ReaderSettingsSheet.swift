@@ -38,10 +38,17 @@ struct ReaderSettingsSheet: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
+                    InkSheetDragPill()
+                        .padding(.top, 4)
+
                     readingModeSection
                     layoutSection
                     pageTurnSection
@@ -55,15 +62,20 @@ struct ReaderSettingsSheet: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 32)
+                .frame(maxWidth: isPad ? 640 : .infinity)
             }
             .background(Color.inkBackground.ignoresSafeArea())
             .navigationTitle("Reader Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { onDone(); dismiss() }
-                        .fontWeight(.semibold)
-                        .foregroundStyle(Color.orange)
+                    Button("Done") {
+                        HapticEngine.selection()
+                        onDone()
+                        dismiss()
+                    }
+                    .font(.system(size: isPad ? 16 : 15, weight: .semibold))
+                    .foregroundStyle(Color.orange)
                 }
             }
         }
@@ -469,23 +481,29 @@ private struct SettingsSection<Content: View>: View {
     let icon: String
     @ViewBuilder let content: () -> Content
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: isPad ? 14 : 12, weight: .semibold))
                     .foregroundStyle(Color.orange)
                 Text(title.uppercased())
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: isPad ? 13 : 11, weight: .bold))
                     .foregroundStyle(Color.inkTextSecondary)
-                    .tracking(0.8)
+                    .tracking(isPad ? 1.0 : 0.8)
             }
             .padding(.horizontal, 4)
 
             VStack(spacing: 0) {
                 content()
             }
-            .background(Color.inkSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(Color.inkSurfaceRaised)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .inkSpecularBorder(cornerRadius: 14)
         }
     }
 }
@@ -495,22 +513,26 @@ private struct SettingsToggleRow: View {
     let icon: String
     @Binding var isOn: Bool
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: isPad ? 17 : 15, weight: .medium))
                 .foregroundStyle(isOn ? Color.orange : Color.inkTextSecondary)
                 .frame(width: 28)
             Text(label)
-                .font(.system(size: 15))
+                .font(.system(size: isPad ? 17 : 15))
                 .foregroundStyle(Color.inkTextPrimary)
             Spacer()
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .tint(Color.orange)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, isPad ? 18 : 16)
+        .padding(.vertical, isPad ? 14 : 12)
     }
 }
 
@@ -519,23 +541,27 @@ private struct SettingsActionRow: View {
     let icon: String
     let action: () -> Void
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: isPad ? 17 : 15, weight: .medium))
                     .foregroundStyle(Color.inkTextSecondary)
                     .frame(width: 28)
                 Text(label)
-                    .font(.system(size: 15))
+                    .font(.system(size: isPad ? 17 : 15))
                     .foregroundStyle(Color.inkTextPrimary)
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: isPad ? 14 : 12, weight: .semibold))
                     .foregroundStyle(Color.inkTextTertiary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, isPad ? 18 : 16)
+            .padding(.vertical, isPad ? 14 : 12)
         }
         .buttonStyle(.plain)
     }
@@ -622,28 +648,32 @@ private struct SettingsSliderRow: View {
     let step: Double
     let displayFormat: (Double) -> String
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: isPad ? 17 : 15, weight: .medium))
                 .foregroundStyle(Color.inkTextSecondary)
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(label)
-                        .font(.system(size: 15))
+                        .font(.system(size: isPad ? 17 : 15))
                         .foregroundStyle(Color.inkTextPrimary)
                     Spacer()
                     Text(displayFormat(value))
-                        .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                        .font(.system(size: isPad ? 15 : 13, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundStyle(Color.orange)
                 }
                 Slider(value: $value, in: range, step: step)
                     .tint(Color.orange)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, isPad ? 18 : 16)
+        .padding(.vertical, isPad ? 14 : 12)
     }
 }
 
@@ -652,21 +682,25 @@ private struct TapZoneStyleCard: View {
     let isSelected: Bool
     let action: () -> Void
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         Button(action: action) {
             VStack(spacing: 8) {
                 Image(systemName: style.icon)
-                    .font(.system(size: 20, weight: .medium))
+                    .font(.system(size: isPad ? 24 : 20, weight: .medium))
                     .foregroundStyle(isSelected ? Color.orange : Color.inkTextSecondary)
                 Text(style.label)
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: isPad ? 11 : 9, weight: .semibold))
                     .foregroundStyle(isSelected ? Color.orange : Color.inkTextSecondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 70)
+            .frame(height: isPad ? 80 : 70)
             .padding(.vertical, 8)
             .padding(.horizontal, 4)
             .background(
@@ -677,6 +711,7 @@ private struct TapZoneStyleCard: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(isSelected ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
             )
+            .inkSpecularBorder(cornerRadius: 12)
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)

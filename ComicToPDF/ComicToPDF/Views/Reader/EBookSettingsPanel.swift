@@ -38,9 +38,17 @@ struct EBookSettingsPanel: View {
         return PanelTab.allCases
     }
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                InkSheetDragPill()
+                    .padding(.top, 4)
+                    .padding(.bottom, 6)
+
                 // ── Live Preview Strip ────────────────────────────────────────
                 if !isPDF || prefs.pdfReflowMode {
                     livePreviewStrip
@@ -65,7 +73,7 @@ struct EBookSettingsPanel: View {
                                 .frame(width: 6, height: 6)
                                 .shadow(color: Color.inkGreen.opacity(0.8), radius: 3)
                             Text(isPDF ? "InkSync Pro v1.1  •  Pro PDF & Live Reflow Active" : "InkSync Pro v1.1  •  EPUB Typography & Themes Active")
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .font(.system(size: isPad ? 12.5 : 11, weight: .medium, design: .rounded))
                                 .foregroundStyle(Color.inkTextSecondary)
                         }
                         .padding(.top, 12)
@@ -73,6 +81,7 @@ struct EBookSettingsPanel: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 20)
                     .padding(.bottom, 40)
+                    .frame(maxWidth: isPad ? 640 : .infinity)
                 }
             }
             .onAppear {
@@ -85,9 +94,12 @@ struct EBookSettingsPanel: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                        .fontWeight(.semibold)
-                        .foregroundStyle(Color.orange)
+                    Button("Done") {
+                        HapticEngine.selection()
+                        dismiss()
+                    }
+                    .font(.system(size: isPad ? 16 : 15, weight: .semibold))
+                    .foregroundStyle(Color.orange)
                 }
             }
         }
@@ -141,13 +153,13 @@ struct EBookSettingsPanel: View {
                 } label: {
                     VStack(spacing: 4) {
                         Image(systemName: tab.icon)
-                            .font(.system(size: 14, weight: activeTab == tab ? .semibold : .regular))
+                            .font(.system(size: isPad ? 17 : 14, weight: activeTab == tab ? .semibold : .regular))
                         Text(tab.rawValue)
-                            .font(.system(size: 11, weight: activeTab == tab ? .semibold : .regular))
+                            .font(.system(size: isPad ? 13 : 11, weight: activeTab == tab ? .semibold : .regular))
                     }
                     .foregroundStyle(activeTab == tab ? Color.orange : Color.inkTextSecondary)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, isPad ? 12 : 10)
                     .background(
                         activeTab == tab
                             ? Color.orange.opacity(0.08)
@@ -1215,27 +1227,29 @@ struct ReaderSettingsSection<Content: View>: View {
     let icon: String
     @ViewBuilder let content: () -> Content
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: isPad ? 14 : 12, weight: .semibold))
                     .foregroundStyle(Color.orange)
                 Text(title.uppercased())
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: isPad ? 13 : 11, weight: .bold))
                     .foregroundStyle(Color.inkTextSecondary)
-                    .tracking(0.8)
+                    .tracking(isPad ? 1.0 : 0.8)
             }
             .padding(.horizontal, 4)
 
             VStack(spacing: 0) {
                 content()
             }
-            .background(Color.inkSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
-            )
+            .background(Color.inkSurfaceRaised)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .inkSpecularBorder(cornerRadius: 14)
         }
     }
 }
@@ -1246,22 +1260,26 @@ struct ReaderSettingsToggleRow: View {
     let icon: String
     @Binding var isOn: Bool
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: isPad ? 17 : 15, weight: .medium))
                 .foregroundStyle(isOn ? Color.orange : Color.inkTextSecondary)
                 .frame(width: 28)
             Text(label)
-                .font(.system(size: 15))
+                .font(.system(size: isPad ? 17 : 15))
                 .foregroundStyle(Color.inkTextPrimary)
             Spacer()
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .tint(Color.orange)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, isPad ? 18 : 16)
+        .padding(.vertical, isPad ? 14 : 12)
     }
 }
 
@@ -1274,28 +1292,32 @@ private struct SliderRow: View {
     let step: Double
     let displayFormat: (Double) -> String
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: isPad ? 17 : 15, weight: .medium))
                 .foregroundStyle(Color.inkTextSecondary)
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(label)
-                        .font(.system(size: 15))
+                        .font(.system(size: isPad ? 17 : 15))
                         .foregroundStyle(Color.inkTextPrimary)
                     Spacer()
                     Text(displayFormat(value))
-                        .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                        .font(.system(size: isPad ? 15 : 13, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundStyle(Color.orange)
                 }
                 Slider(value: $value, in: range, step: step)
                     .tint(Color.orange)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, isPad ? 18 : 16)
+        .padding(.vertical, isPad ? 14 : 12)
     }
 }
 

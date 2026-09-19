@@ -7,28 +7,28 @@ struct CustomGlassCard<Content: View>: View {
     let icon: String
     @ViewBuilder let content: Content
     
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .foregroundColor(Theme.blue)
+                    .font(.system(size: isPad ? 18 : 15, weight: .semibold))
+                    .foregroundColor(Color.inkBlue)
                 Text(title)
-                    .font(.headline)
-                    .foregroundColor(.primary)
+                    .font(.system(size: isPad ? 17 : 15, weight: .semibold, design: .rounded))
+                    .foregroundColor(Color.inkText)
             }
             .padding(.bottom, 4)
             
             content
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                )
-        )
+        .padding(isPad ? 22 : 18)
+        .background(Color.inkSurfaceRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .inkSpecularBorder(cornerRadius: 16)
     }
 }
 
@@ -39,25 +39,30 @@ struct GlassTextField: View {
     @Binding var text: String
     var keyboardType: UIKeyboardType = .default
     
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(Theme.textSecondary)
+                .font(.system(size: isPad ? 12.5 : 11, weight: .semibold))
+                .foregroundColor(Color.inkSecondary)
                 .textCase(.uppercase)
+                .tracking(0.6)
             
             TextField(placeholder, text: $text)
                 .keyboardType(keyboardType)
+                .font(.system(size: isPad ? 16 : 14))
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.vertical, isPad ? 14 : 12)
                 .background(Color.inkSurface)
                 .cornerRadius(10)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                        .stroke(Color.inkSecondary.opacity(0.15), lineWidth: 1)
                 )
-                .foregroundColor(.primary)
+                .foregroundColor(Color.inkText)
         }
     }
 }
@@ -82,30 +87,42 @@ struct AdvancedMetadataEditorView: View {
     @State private var customCoverImage: UIImage? = nil
     @State private var currentCoverImage: UIImage? = nil
     
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
+                    InkSheetDragPill()
+                        .padding(.top, 4)
+
                     coverImageSection
                     coreMetadataSection
                     organizationSection
                     tagsSection
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 24)
+                .padding(.vertical, 20)
+                .frame(maxWidth: isPad ? 660 : .infinity)
             }
-            .background(Color(UIColor.systemBackground).ignoresSafeArea())
+            .background(Color.inkBackground.ignoresSafeArea())
             .navigationTitle("Edit Metadata")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundColor(Theme.textSecondary)
+                        .font(.system(size: isPad ? 16 : 15))
+                        .foregroundColor(Color.inkSecondary)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") { saveMetadata() }
-                        .fontWeight(.bold)
-                        .foregroundColor(Theme.blue)
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        HapticEngine.success()
+                        saveMetadata()
+                    }
+                    .font(.system(size: isPad ? 16 : 15, weight: .bold))
+                    .foregroundColor(Color.inkBlue)
                 }
             }
             .onAppear { loadInitialData() }
@@ -151,8 +168,8 @@ struct AdvancedMetadataEditorView: View {
                     
                     PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
                         Image(systemName: "camera.circle.fill")
-                            .font(.system(size: 34))
-                            .foregroundStyle(.white, Theme.blue)
+                            .font(.system(size: isPad ? 38 : 34))
+                            .foregroundStyle(.white, Color.inkBlue)
                             .shadow(radius: 4)
                             .offset(x: 12, y: 12)
                     }

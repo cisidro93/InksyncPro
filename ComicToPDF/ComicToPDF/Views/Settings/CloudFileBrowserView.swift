@@ -23,6 +23,10 @@ struct CloudFileBrowserView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) private var dismiss
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var breadcrumb: String {
         folderStack.map { $0.name }.joined(separator: " › ")
     }
@@ -30,7 +34,11 @@ struct CloudFileBrowserView: View {
     var body: some View {
         NavigationStack {
             ZStack {
+                Color.inkBackground.ignoresSafeArea()
+
                 mainList
+                    .frame(maxWidth: isPad ? 720 : .infinity)
+
                 if addingToLibrary {
                     loadingOverlay
                 }
@@ -254,14 +262,18 @@ struct CloudFileBrowserView: View {
         if showingSuccessBanner {
             HStack(spacing: 12) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
+                    .font(.system(size: isPad ? 22 : 18))
+                    .foregroundColor(.inkGreen)
                 Text("\(addedCount) file(s) added to Library — stream or download anytime.")
-                    .font(.subheadline.bold())
+                    .font(.system(size: isPad ? 15 : 13.5, weight: .semibold))
+                    .foregroundColor(Color.inkText)
             }
-            .padding()
-            .background(Color(UIColor.systemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .shadow(radius: 8, y: 4)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color.inkSurfaceRaised)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .inkSpecularBorder(cornerRadius: 14)
+            .shadow(color: Color.black.opacity(0.25), radius: 12, y: 6)
             .padding(.horizontal)
             .padding(.bottom, 20)
             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -270,13 +282,16 @@ struct CloudFileBrowserView: View {
 
     @ToolbarContentBuilder
     private var toolbarItems: some ToolbarContent {
-        ToolbarItem(placement: .navigationBarLeading) {
+        ToolbarItem(placement: .cancellationAction) {
             Button("Close") { dismiss() }
+                .font(.system(size: isPad ? 16 : 15))
+                .foregroundColor(Color.inkSecondary)
         }
-        ToolbarItem(placement: .navigationBarTrailing) {
+        ToolbarItem(placement: .confirmationAction) {
             let totalSelected = selectedFiles.count + selectedFolders.count
             if totalSelected > 0 {
                 Button {
+                    HapticEngine.selection()
                     Task { await addSelectedToLibrary() }
                 } label: {
                     if selectedFolders.isEmpty {
@@ -287,7 +302,8 @@ struct CloudFileBrowserView: View {
                         Text("Add \(totalSelected) Items")
                     }
                 }
-                .fontWeight(.semibold)
+                .font(.system(size: isPad ? 16 : 15, weight: .semibold))
+                .foregroundColor(Color.inkBlue)
             }
         }
     }
@@ -511,6 +527,10 @@ struct CloudBrowserPickerView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.dismiss) private var dismiss
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     var body: some View {
         if dropbox.isConnected {
             // Single provider — present browser immediately
@@ -519,40 +539,51 @@ struct CloudBrowserPickerView: View {
         } else {
             // Nothing connected — onboarding prompt
             NavigationStack {
-                VStack(spacing: 28) {
-                    Spacer()
-                    Image(systemName: "cloud.slash.fill")
-                        .font(.system(size: 64))
-                        .foregroundColor(.secondary)
-                    VStack(spacing: 12) {
-                        Text("No Cloud Accounts Connected")
-                            .font(.title2.bold())
-                        Text("Connect Dropbox or Google Drive in Settings to stream and import comics directly — no file picker required.")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
+                VStack(spacing: 0) {
+                    InkSheetDragPill()
+                        .padding(.top, 8)
+
+                    VStack(spacing: 28) {
+                        Spacer()
+                        Image(systemName: "cloud.slash.fill")
+                            .font(.system(size: isPad ? 72 : 56))
+                            .foregroundColor(Color.inkSecondary)
+                        VStack(spacing: 12) {
+                            Text("No Cloud Accounts Connected")
+                                .font(.system(size: isPad ? 22 : 18, weight: .bold, design: .rounded))
+                                .foregroundColor(Color.inkText)
+                            Text("Connect Dropbox or Google Drive in Settings to stream and import comics directly — no file picker required.")
+                                .font(.system(size: isPad ? 15 : 13.5))
+                                .foregroundColor(Color.inkSecondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
+                        }
+                        Button {
+                            HapticEngine.selection()
+                            dismiss()
+                            NotificationCenter.default.post(name: NSNotification.Name("OpenCloudSettings"), object: nil)
+                        } label: {
+                            Label("Connect in Settings", systemImage: "gear")
+                                .font(.system(size: isPad ? 16 : 15, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 32)
+                                .padding(.vertical, 14)
+                                .background(Color.inkBlue)
+                                .clipShape(Capsule())
+                                .shadow(color: Color.inkBlue.opacity(0.35), radius: 10, y: 4)
+                        }
+                        Spacer()
                     }
-                    Button {
-                        dismiss()
-                        // Post notification so settings can deep-link to Cloud Storage
-                        NotificationCenter.default.post(name: NSNotification.Name("OpenCloudSettings"), object: nil)
-                    } label: {
-                        Label("Connect in Settings", systemImage: "gear")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 32)
-                            .padding(.vertical, 14)
-                            .background(Color.blue)
-                            .clipShape(Capsule())
-                    }
-                    Spacer()
+                    .frame(maxWidth: isPad ? 580 : .infinity)
                 }
+                .background(Color.inkBackground.ignoresSafeArea())
                 .navigationTitle("Cloud Storage")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
+                    ToolbarItem(placement: .cancellationAction) {
                         Button("Close") { dismiss() }
+                            .font(.system(size: isPad ? 16 : 15))
+                            .foregroundColor(Color.inkSecondary)
                     }
                 }
             }

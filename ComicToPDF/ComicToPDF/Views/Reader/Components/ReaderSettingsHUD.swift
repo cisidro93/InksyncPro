@@ -16,16 +16,19 @@ struct ReaderSettingsHUD: View {
     
     @AppStorage("isAutoCropEnabled") private var isAutoCropEnabled = false
     @ObservedObject private var prefs = EBookPreferences.shared
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
                 // ── Drag pill ───────────────────────────────────────────────────────
-                Capsule()
-                    .fill(Color.white.opacity(0.25))
-                    .frame(width: 36, height: 4)
-                    .padding(.top, 12)
-                    .padding(.bottom, 18)
+                InkSheetDragPill()
+                    .padding(.top, 4)
+                    .padding(.bottom, 12)
 
                 // ── Reader Engine Switcher (When PDF is loaded in Comic engine) ─────
                 if isPDF || onSwitchToProPDF != nil {
@@ -44,30 +47,30 @@ struct ReaderSettingsHUD: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "doc.richtext.fill")
-                                    .font(.system(size: 18, weight: .bold))
+                                    .font(.system(size: isPad ? 20 : 18, weight: .bold))
                                     .foregroundColor(.inkGreen)
-                                    .frame(width: 32, height: 32)
+                                    .frame(width: isPad ? 36 : 32, height: isPad ? 36 : 32)
                                     .background(Color.inkGreen.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
                                 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Switch to Pro PDF Reader")
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                        .foregroundColor(.white)
+                                        .font(.system(size: isPad ? 15 : 14, weight: .semibold, design: .rounded))
+                                        .foregroundColor(Color.inkText)
                                     Text("Native text selection, highlighting, typography, & live reflow")
-                                        .font(.system(size: 11, weight: .regular))
-                                        .foregroundColor(.white.opacity(0.65))
+                                        .font(.system(size: isPad ? 12 : 11, weight: .regular))
+                                        .foregroundColor(Color.inkSecondary)
                                 }
                                 
                                 Spacer()
                                 
                                 Image(systemName: "arrow.right.circle.fill")
-                                    .font(.system(size: 16))
+                                    .font(.system(size: isPad ? 18 : 16))
                                     .foregroundColor(.inkGreen)
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
-                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.inkGreen.opacity(0.35), lineWidth: 0.8))
+                            .background(Color.inkSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
+                            .inkSpecularBorder(cornerRadius: 12)
                         }
                         .padding(.horizontal, 14)
                         .padding(.bottom, 16)
@@ -107,8 +110,8 @@ struct ReaderSettingsHUD: View {
                     }
                     
                     Text(prefs.panelInspectionStyle.subtitle)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundColor(.white.opacity(0.55))
+                        .font(.system(size: isPad ? 12 : 11, weight: .regular))
+                        .foregroundColor(Color.inkSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
                 }
@@ -156,31 +159,32 @@ struct ReaderSettingsHUD: View {
                             HStack(spacing: 12) {
                                 ZStack {
                                     Circle()
-                                        .fill(Color.orange.opacity(0.2))
-                                        .frame(width: 36, height: 36)
+                                        .fill(Color.inkOrange.opacity(0.2))
+                                        .frame(width: isPad ? 40 : 36, height: isPad ? 40 : 36)
                                     Image(systemName: "viewfinder")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundColor(.orange)
+                                        .font(.system(size: isPad ? 18 : 16, weight: .semibold))
+                                        .foregroundColor(Color.inkOrange)
                                 }
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Visual Crop Editor...")
-                                        .font(.system(size: 15, weight: .medium))
-                                        .foregroundColor(.white)
+                                        .font(.system(size: isPad ? 16 : 15, weight: .medium))
+                                        .foregroundColor(Color.inkText)
                                     Text("Interactive live boundary trimming with visual guides")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.white.opacity(0.5))
+                                        .font(.system(size: isPad ? 13 : 12))
+                                        .foregroundColor(Color.inkSecondary)
                                 }
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.white.opacity(0.4))
+                                    .foregroundColor(Color.inkSecondary)
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .background(
                                 RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                    .fill(Color.white.opacity(0.08))
+                                    .fill(Color.inkSurfaceRaised)
                             )
+                            .inkSpecularBorder(cornerRadius: 13)
                         }
                         .buttonStyle(.plain)
                     }
@@ -217,14 +221,12 @@ struct ReaderSettingsHUD: View {
                 .padding(.bottom, 28)
             }
         }
-        .frame(maxHeight: min(540, UIScreen.main.bounds.height * 0.75))
-        .background(.ultraThinMaterial)
+        .frame(maxWidth: isPad ? 580 : .infinity)
+        .frame(maxHeight: min(560, UIScreen.main.bounds.height * 0.78))
+        .background(Color.inkSurfaceRaised)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.45), radius: 30, y: -10)
+        .inkSpecularBorder(cornerRadius: 28)
+        .shadow(color: Color.black.opacity(0.35), radius: 30, y: -10)
     }
 
     // MARK: - Section Header
@@ -233,9 +235,9 @@ struct ReaderSettingsHUD: View {
     private func sectionHeader(_ title: String) -> some View {
         HStack {
             Text(title.uppercased())
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundColor(.white.opacity(0.45))
-                .tracking(0.8)
+                .font(.system(size: isPad ? 13 : 11, weight: .semibold, design: .rounded))
+                .foregroundColor(Color.inkSecondary)
+                .tracking(isPad ? 1.0 : 0.8)
             Spacer()
         }
         .padding(.horizontal, 20)
@@ -257,28 +259,28 @@ struct ReaderSettingsHUD: View {
             HStack(spacing: 14) {
                 ZStack {
                     Circle()
-                        .fill(isActive ? Color.white : Color.white.opacity(0.1))
-                        .frame(width: 36, height: 36)
+                        .fill(isActive ? Color.inkText : Color.inkSecondary.opacity(0.12))
+                        .frame(width: isPad ? 42 : 36, height: isPad ? 42 : 36)
                     Image(systemName: mode.hudIcon)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(isActive ? .black : .white)
+                        .font(.system(size: isPad ? 18 : 16, weight: .medium))
+                        .foregroundColor(isActive ? (colorScheme == .dark ? Color.black : Color.white) : Color.inkText)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(mode.hudLabel)
-                        .font(.system(size: 15, weight: isActive ? .semibold : .regular))
-                        .foregroundColor(.white)
+                        .font(.system(size: isPad ? 17 : 15, weight: isActive ? .semibold : .regular))
+                        .foregroundColor(Color.inkText)
                     Text(mode.hudDescription)
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.5))
+                        .font(.system(size: isPad ? 13.5 : 12))
+                        .foregroundColor(Color.inkSecondary)
                 }
 
                 Spacer()
 
                 if isActive {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.white, Color.blue)
+                        .font(.system(size: isPad ? 22 : 20))
+                        .foregroundStyle(Color.white, Color.inkBlue)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
@@ -286,7 +288,7 @@ struct ReaderSettingsHUD: View {
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(isActive ? Color.white.opacity(0.15) : Color.clear)
+                    .fill(isActive ? Color.inkText.opacity(0.08) : Color.clear)
             )
             .contentShape(Rectangle())
         }
@@ -308,23 +310,23 @@ struct ReaderSettingsHUD: View {
             HStack(spacing: 14) {
                 ZStack {
                     Circle()
-                        .fill(isActive ? preset.hudTint : Color.white.opacity(0.1))
-                        .frame(width: 36, height: 36)
+                        .fill(isActive ? preset.hudTint : Color.inkSecondary.opacity(0.12))
+                        .frame(width: isPad ? 42 : 36, height: isPad ? 42 : 36)
                     Image(systemName: preset.icon)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white)
+                        .font(.system(size: isPad ? 18 : 16, weight: .medium))
+                        .foregroundColor(isActive ? .white : Color.inkText)
                 }
 
                 Text(preset.rawValue)
-                    .font(.system(size: 15, weight: isActive ? .semibold : .regular))
-                    .foregroundColor(.white)
+                    .font(.system(size: isPad ? 17 : 15, weight: isActive ? .semibold : .regular))
+                    .foregroundColor(Color.inkText)
 
                 Spacer()
 
                 if isActive {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.white, preset.hudTint)
+                        .font(.system(size: isPad ? 22 : 20))
+                        .foregroundStyle(Color.white, preset.hudTint)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
@@ -351,28 +353,28 @@ struct ReaderSettingsHUD: View {
             HStack(spacing: 14) {
                 ZStack {
                     Circle()
-                        .fill(isOn.wrappedValue ? Color.orange : Color.white.opacity(0.1))
-                        .frame(width: 36, height: 36)
+                        .fill(isOn.wrappedValue ? Color.inkOrange : Color.inkSecondary.opacity(0.12))
+                        .frame(width: isPad ? 42 : 36, height: isPad ? 42 : 36)
                     Image(systemName: icon)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(isOn.wrappedValue ? .white : .white)
+                        .font(.system(size: isPad ? 18 : 16, weight: .medium))
+                        .foregroundColor(isOn.wrappedValue ? .white : Color.inkText)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 15, weight: isOn.wrappedValue ? .semibold : .regular))
-                        .foregroundColor(.white)
+                        .font(.system(size: isPad ? 17 : 15, weight: isOn.wrappedValue ? .semibold : .regular))
+                        .foregroundColor(Color.inkText)
                     Text(description)
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.5))
+                        .font(.system(size: isPad ? 13.5 : 12))
+                        .foregroundColor(Color.inkSecondary)
                 }
 
                 Spacer()
 
                 if isOn.wrappedValue {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.white, Color.orange)
+                        .font(.system(size: isPad ? 22 : 20))
+                        .foregroundStyle(Color.white, Color.inkOrange)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
@@ -380,7 +382,7 @@ struct ReaderSettingsHUD: View {
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(isOn.wrappedValue ? Color.white.opacity(0.15) : Color.clear)
+                    .fill(isOn.wrappedValue ? Color.inkOrange.opacity(0.12) : Color.clear)
             )
             .contentShape(Rectangle())
         }
@@ -394,29 +396,29 @@ struct ReaderSettingsHUD: View {
         VStack(spacing: 6) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color.orange)
+                    .font(.system(size: isPad ? 16 : 14, weight: .medium))
+                    .foregroundColor(Color.inkOrange)
                     .frame(width: 24)
                 
                 Text(label)
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundColor(.white)
+                    .font(.system(size: isPad ? 16 : 14, weight: .regular))
+                    .foregroundColor(Color.inkText)
                 
                 Spacer()
                 
                 Text(String(format: "%.1f%%", value.wrappedValue * 100))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundColor(Color.orange)
+                    .font(.system(size: isPad ? 15 : 13, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundColor(Color.inkOrange)
             }
             
             Slider(value: value, in: range, step: step)
-                .tint(Color.orange)
+                .tint(Color.inkOrange)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.inkSecondary.opacity(0.08))
         )
     }
 
@@ -436,20 +438,20 @@ struct ReaderSettingsHUD: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: isPad ? 15 : 13, weight: .medium))
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: isPad ? 14 : 12, weight: .semibold))
             }
-            .foregroundStyle(isSelected ? Color.orange : Color.white.opacity(0.7))
+            .foregroundStyle(isSelected ? Color.inkOrange : Color.inkSecondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? Color.orange.opacity(0.18) : Color.white.opacity(0.08))
+                    .fill(isSelected ? Color.inkOrange.opacity(0.18) : Color.inkSecondary.opacity(0.08))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isSelected ? Color.orange.opacity(0.6) : Color.white.opacity(0.06), lineWidth: 1.5)
+                    .stroke(isSelected ? Color.inkOrange.opacity(0.6) : Color.inkSecondary.opacity(0.15), lineWidth: 1.5)
             )
         }
         .buttonStyle(.plain)
@@ -473,16 +475,16 @@ struct ReaderSettingsHUD: View {
         } label: {
             VStack(spacing: 5) {
                 Image(systemName: mode.icon)
-                    .font(.system(size: 15, weight: isSelected ? .bold : .medium))
+                    .font(.system(size: isPad ? 18 : 15, weight: isSelected ? .bold : .medium))
                 Text(mode.title)
-                    .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+                    .font(.system(size: isPad ? 13 : 11, weight: isSelected ? .bold : .medium))
             }
-            .foregroundStyle(isSelected ? Color.inkGreen : Color.white.opacity(0.8))
+            .foregroundStyle(isSelected ? Color.inkGreen : Color.inkSecondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(isSelected ? Color.inkGreen.opacity(0.2) : Color.white.opacity(0.08))
+                    .fill(isSelected ? Color.inkGreen.opacity(0.2) : Color.inkSecondary.opacity(0.08))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -505,16 +507,16 @@ struct ReaderSettingsHUD: View {
         } label: {
             VStack(spacing: 5) {
                 Image(systemName: style.icon)
-                    .font(.system(size: 15, weight: isSelected ? .bold : .medium))
+                    .font(.system(size: isPad ? 18 : 15, weight: isSelected ? .bold : .medium))
                 Text(style.title)
-                    .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+                    .font(.system(size: isPad ? 13 : 11, weight: isSelected ? .bold : .medium))
             }
-            .foregroundStyle(isSelected ? Color.inkGreen : Color.white.opacity(0.8))
+            .foregroundStyle(isSelected ? Color.inkGreen : Color.inkSecondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(isSelected ? Color.inkGreen.opacity(0.2) : Color.white.opacity(0.08))
+                    .fill(isSelected ? Color.inkGreen.opacity(0.2) : Color.inkSecondary.opacity(0.08))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)

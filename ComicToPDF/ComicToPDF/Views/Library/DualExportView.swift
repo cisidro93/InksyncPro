@@ -26,172 +26,203 @@ struct DualExportView: View {
             ZStack {
                 Color.inkBackground.ignoresSafeArea()
                 
-                VStack(spacing: 24) {
-                    // Header
-                VStack(spacing: 8) {
-                    Text("Export '\(pdf.name)'")
-                        .font(.headline)
-                    Text("Choose an export method")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.top)
-                
-                // Export Summary
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Export Settings Summary")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.secondary)
-                    
-                    HStack {
-                        Text("Format: \(settingsManager.conversionSettings.outputFormat.rawValue)")
-                        Spacer()
-                        Text("Quality: \(settingsManager.conversionSettings.compressionQuality.rawValue)")
-                    }
-                    .font(.caption2)
-                    
-                    if settingsManager.conversionSettings.optimizeForDevice {
-                        Text("Target Device: \(settingsManager.conversionSettings.targetDeviceProfile.rawValue)")
-                            .font(.caption2)
-                    }
-                    if settingsManager.conversionSettings.imageEnhancement.grayscale || settingsManager.conversionSettings.imageEnhancement.autoContrast {
-                        Text("Filters: E-Ink Optimized")
-                            .font(.caption2)
-                            .foregroundStyle(.green)
-                    }
-                }
-                .padding()
-                .background(Color.inkSurface.opacity(0.8))
-                .cornerRadius(8)
-                .cornerRadius(8)
-                .padding(.horizontal)
-                
-                // Option A: Cloud Sync
-                Button {
-                    handleCloudExport()
-                } label: {
-                    HStack(spacing: 16) {
-                        Image(systemName: "icloud.and.arrow.up")
-                            .font(.system(size: 30))
-                            .foregroundStyle(.blue)
-                            .frame(width: 40)
+                ScrollView {
+                    VStack(spacing: 20) {
+                        InkSheetDragPill()
+                            .padding(.top, 4)
                         
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Cloud Sync (Send to Kindle)")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                            Text("Standard EPUB. Amazon may strip advanced layout data.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        // Header
+                        VStack(spacing: 6) {
+                            Text("Export '\(pdf.name)'")
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.inkText)
+                                .multilineTextAlignment(.center)
+                            Text("Select your preferred transfer destination")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color.inkSecondary)
                         }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding()
-                    .background(Color.inkSurface.opacity(0.8))
-                    .cornerRadius(12)
-                }
-                
-                // Option B: Local Direct
-                Button {
-                    handleLocalExport()
-                } label: {
-                    HStack(spacing: 16) {
-                        Image(systemName: "wifi")
-                            .font(.system(size: 30))
-                            .foregroundStyle(.orange)
-                            .frame(width: 40)
+                        .padding(.top, 4)
                         
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Local High-Quality")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                            Text("Best for Guided View. Preserves 1:1 layout via Wi-Fi.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding()
-                    .background(Color.inkSurface.opacity(0.8))
-                    .cornerRadius(12)
-                }
-
-                // Option C: Save to Files
-                Button {
-                    handleSaveToFiles()
-                } label: {
-                    HStack(spacing: 16) {
-                        Image(systemName: "folder.fill")
-                            .font(.system(size: 30))
-                            .foregroundStyle(.yellow)
-                            .frame(width: 40)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Save to Files")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                            Text("Copy the original file to iCloud Drive, On My iPhone, or any Files location.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding()
-                    .background(Color.inkSurface.opacity(0.8))
-                    .cornerRadius(12)
-                }
-
-                // Option D: Email to Kindle
-                if !kindleEmail.isEmpty {
-                    Button {
-                        if MFMailComposeViewController.canSendMail() {
-                            handleEmailExport()
-                        } else {
-                            showingMailAlert = true
-                        }
-                    } label: {
-                        HStack(spacing: 16) {
-                            Image(systemName: "envelope.fill")
-                                .font(.system(size: 30))
-                                .foregroundStyle(.black)
-                                .frame(width: 40)
+                        // Export Summary
+                        VStack(alignment: .leading, spacing: 8) {
+                            InkSectionHeader("Export Settings Summary")
                             
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Email to Kindle")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                Text("Send directly to \(kindleEmail)")
-                                    .font(.caption)
-                                    .lineLimit(1)
-                                    .foregroundStyle(.secondary)
+                            HStack {
+                                Text("Format: \(settingsManager.conversionSettings.outputFormat.rawValue)")
+                                Spacer()
+                                Text("Quality: \(settingsManager.conversionSettings.compressionQuality.rawValue)")
                             }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.secondary)
+                            .font(.caption2)
+                            .foregroundStyle(Color.inkSecondary)
+                            
+                            if settingsManager.conversionSettings.optimizeForDevice {
+                                Text("Target Device: \(settingsManager.conversionSettings.targetDeviceProfile.rawValue)")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.inkSecondary)
+                            }
+                            if settingsManager.conversionSettings.imageEnhancement.grayscale || settingsManager.conversionSettings.imageEnhancement.autoContrast {
+                                Text("Filters: E-Ink Optimized")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.inkGreen)
+                            }
                         }
                         .padding()
-                        .background(Color.inkSurface.opacity(0.8))
-                        .cornerRadius(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(Color.inkSurfaceRaised)
+                        )
+                        .inkSpecularBorder(cornerRadius: 14)
+                        
+                        // Section Header
+                        VStack(alignment: .leading, spacing: 12) {
+                            InkSectionHeader("Export Methods")
+                            
+                            // Option A: Cloud Sync
+                            Button {
+                                HapticEngine.selection()
+                                handleCloudExport()
+                            } label: {
+                                HStack(spacing: 16) {
+                                    Image(systemName: "icloud.and.arrow.up")
+                                        .font(.system(size: 26))
+                                        .foregroundStyle(Color.inkBlue)
+                                        .frame(width: 36)
+                                    
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("Cloud Sync (Send to Kindle)")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundStyle(Color.inkText)
+                                        Text("Standard EPUB. Amazon may strip advanced layout data.")
+                                            .font(.caption)
+                                            .foregroundStyle(Color.inkSecondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(Color.inkSecondary.opacity(0.6))
+                                }
+                                .padding()
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color.inkSurfaceRaised)
+                                )
+                                .inkSpecularBorder(cornerRadius: 14)
+                            }
+                            
+                            // Option B: Local Direct
+                            Button {
+                                HapticEngine.selection()
+                                handleLocalExport()
+                            } label: {
+                                HStack(spacing: 16) {
+                                    Image(systemName: "wifi")
+                                        .font(.system(size: 26))
+                                        .foregroundStyle(Color.inkOrange)
+                                        .frame(width: 36)
+                                    
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("Local High-Quality")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundStyle(Color.inkText)
+                                        Text("Best for Guided View. Preserves 1:1 layout via Wi-Fi.")
+                                            .font(.caption)
+                                            .foregroundStyle(Color.inkSecondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(Color.inkSecondary.opacity(0.6))
+                                }
+                                .padding()
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color.inkSurfaceRaised)
+                                )
+                                .inkSpecularBorder(cornerRadius: 14)
+                            }
+
+                            // Option C: Save to Files
+                            Button {
+                                HapticEngine.selection()
+                                handleSaveToFiles()
+                            } label: {
+                                HStack(spacing: 16) {
+                                    Image(systemName: "folder.fill")
+                                        .font(.system(size: 26))
+                                        .foregroundStyle(Color.inkYellow)
+                                        .frame(width: 36)
+
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("Save to Files")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundStyle(Color.inkText)
+                                        Text("Copy the original file to iCloud Drive, On My iPhone, or Files.")
+                                            .font(.caption)
+                                            .foregroundStyle(Color.inkSecondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(Color.inkSecondary.opacity(0.6))
+                                }
+                                .padding()
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color.inkSurfaceRaised)
+                                )
+                                .inkSpecularBorder(cornerRadius: 14)
+                            }
+
+                            // Option D: Email to Kindle
+                            if !kindleEmail.isEmpty {
+                                Button {
+                                    HapticEngine.selection()
+                                    if MFMailComposeViewController.canSendMail() {
+                                        handleEmailExport()
+                                    } else {
+                                        showingMailAlert = true
+                                    }
+                                } label: {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "envelope.fill")
+                                            .font(.system(size: 26))
+                                            .foregroundStyle(Color.inkViolet)
+                                            .frame(width: 36)
+                                        
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text("Email to Kindle")
+                                                .font(.system(size: 15, weight: .semibold))
+                                                .foregroundStyle(Color.inkText)
+                                            Text("Send directly to \(kindleEmail)")
+                                                .font(.caption)
+                                                .lineLimit(1)
+                                                .foregroundStyle(Color.inkSecondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundStyle(Color.inkSecondary.opacity(0.6))
+                                    }
+                                    .padding()
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .fill(Color.inkSurfaceRaised)
+                                    )
+                                    .inkSpecularBorder(cornerRadius: 14)
+                                }
+                            }
+                        }
+                        
+                        if isProcessing {
+                            ProgressView("Preparing file...")
+                                .tint(Color.inkBlue)
+                                .padding()
+                        }
                     }
+                    .frame(maxWidth: 580)
+                    .padding()
                 }
-                
-                if isProcessing {
-                    ProgressView("Preparing file...")
-                        .padding()
-                }
-                
-                Spacer()
-                
-                }
-                .frame(maxWidth: 580)
-                .padding()
 
                 // Success toast for Save to Files
                 if saveToFilesSuccessToast {
@@ -199,14 +230,19 @@ struct DualExportView: View {
                         Spacer()
                         HStack(spacing: 10) {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Color.inkGreen)
                             Text("Saved to Files")
-                                .fontWeight(.medium)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color.inkText)
                         }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(20)
+                        .background(
+                            Capsule()
+                                .fill(Color.inkSurfaceRaised)
+                        )
+                        .inkSpecularBorder(cornerRadius: 20)
+                        .shadow(color: Color.black.opacity(0.2), radius: 12, y: 6)
                         .padding(.bottom, 32)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
@@ -215,12 +251,16 @@ struct DualExportView: View {
             .navigationDestination(isPresented: $navigateToSync) {
                 WiFiView()
             }
-            .padding()
             .navigationTitle("Export Options")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Close") { dismiss() }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        HapticEngine.selection()
+                        dismiss()
+                    }
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.inkBlue)
                 }
             }
             .sheet(isPresented: $showingShareSheet) {

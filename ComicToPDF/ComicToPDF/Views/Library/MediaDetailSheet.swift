@@ -12,7 +12,9 @@ struct MediaDetailSheet: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: 20) {
+                // Drag Pill
+                InkSheetDragPill()
                 
                 // MARK: - Header (Cover & Meta)
                 HStack(alignment: .top, spacing: 16) {
@@ -29,7 +31,7 @@ struct MediaDetailSheet: View {
                                  .aspectRatio(contentMode: .fill)
                          } else {
                              Rectangle()
-                                 .fill(Color(white: 0.2))
+                                 .fill(Color.inkSurfaceRaised)
                              Image(systemName: pdf.contentType.icon)
                                  .font(.largeTitle)
                                  .foregroundColor(.gray)
@@ -39,8 +41,9 @@ struct MediaDetailSheet: View {
                         width: hSizeClass == .regular ? 120 : 100,
                         height: hSizeClass == .regular ? 180 : 150
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .inkSpecularBorder(cornerRadius: 12)
+                    .shadow(color: .black.opacity(0.35), radius: 10, y: 5)
                     .task {
                         if let img = conversionManager.getThumbnail(for: pdf) {
                             await MainActor.run { self.coverImage = img }
@@ -51,19 +54,19 @@ struct MediaDetailSheet: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(pdf.name)
                             .font(.system(size: hSizeClass == .regular ? 22 : 19, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(Color.inkTextPrimary)
                             .lineLimit(3)
                             
                         if let series = pdf.metadata.series, !series.isEmpty {
                             Text("\(series) \(pdf.metadata.issueNumber.map { "Issue #\($0)" } ?? "")")
                                 .font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(.blue)
+                                .foregroundColor(.inkBlue)
                         }
                         
                         if let pub = pdf.metadata.publisher, !pub.isEmpty {
                             Text(pub)
                                 .font(.caption)
-                                .foregroundColor(.gray)
+                                .foregroundColor(Color.inkTextSecondary)
                         }
                         
                         Spacer(minLength: 4)
@@ -83,7 +86,7 @@ struct MediaDetailSheet: View {
                                 .padding(.horizontal, hSizeClass == .regular ? 8 : 6)
                                 .padding(.vertical, hSizeClass == .regular ? 5 : 4)
                                 .background(.ultraThinMaterial)
-                                .foregroundColor(.white)
+                                .foregroundColor(Color.inkTextPrimary)
                                 .clipShape(Capsule())
                                 
                             // Add Time Left Pill here if there's progress!
@@ -97,7 +100,7 @@ struct MediaDetailSheet: View {
                                 .padding(.horizontal, hSizeClass == .regular ? 8 : 6)
                                 .padding(.vertical, hSizeClass == .regular ? 5 : 4)
                                 .background(.ultraThinMaterial)
-                                .foregroundColor(Color.orange)
+                                .foregroundColor(Color.inkOrange)
                                 .clipShape(Capsule())
                             }
                         }
@@ -107,13 +110,14 @@ struct MediaDetailSheet: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal)
-                .padding(.top, 24)
+                .padding(.top, 8)
                 
                 // MARK: - Action Grid
                 
                 VStack(spacing: 12) {
                     // Primary — Read
                     Button {
+                        HapticEngine.selection()
                         handle(.read)
                     } label: {
                         HStack {
@@ -127,16 +131,18 @@ struct MediaDetailSheet: View {
                         .foregroundColor(.white)
                         .padding()
                         .background(
-                            LinearGradient(colors: [Color.blue, Color(red: 0.1, green: 0.5, blue: 1.0)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            LinearGradient(colors: [Color.inkBlue, Color(hex: "#4facfe")], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .shadow(color: .blue.opacity(0.3), radius: 5, y: 3)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .inkSpecularBorder(cornerRadius: 14)
+                        .shadow(color: Color.inkBlue.opacity(0.3), radius: 6, y: 3)
                     }
 
                     // Cloud files: smart Download vs Download & Convert CTA
                     if case .cloud = pdf.sourceMode {
                         let settingsReady = AppSettingsManager.shared.conversionSettings.isConfigured
                         Button {
+                            HapticEngine.medium()
                             handle(.convert)
                         } label: {
                             HStack {
@@ -151,12 +157,13 @@ struct MediaDetailSheet: View {
                             .padding()
                             .background(
                                 LinearGradient(
-                                    colors: [Color(red: 0.3, green: 0.7, blue: 0.3), Color(red: 0.1, green: 0.55, blue: 0.3)],
+                                    colors: [Color.inkGreen, Color(hex: "#059669")],
                                     startPoint: .topLeading, endPoint: .bottomTrailing
                                 )
                             )
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                            .shadow(color: Color.green.opacity(0.3), radius: 5, y: 3)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .inkSpecularBorder(cornerRadius: 14)
+                            .shadow(color: Color.inkGreen.opacity(0.3), radius: 6, y: 3)
                         }
                         if !settingsReady {
                             Text("Configure conversion settings first to enable auto-convert on download.")
@@ -168,11 +175,10 @@ struct MediaDetailSheet: View {
                     }
 
                     // Local files: Convert to EPUB for any non-EPUB format.
-                    // The handleDetailAction .convert case routes local files directly
-                    // to ConversionOrchestrator.convertComic() — the button was simply missing.
                     let localExt = pdf.url.pathExtension.lowercased()
                     if case .local = pdf.sourceMode, localExt != "epub" {
                         Button {
+                            HapticEngine.medium()
                             handle(.convert)
                         } label: {
                             HStack {
@@ -187,17 +193,19 @@ struct MediaDetailSheet: View {
                             .padding()
                             .background(
                                 LinearGradient(
-                                    colors: [Color(red: 0.3, green: 0.7, blue: 0.3), Color(red: 0.1, green: 0.55, blue: 0.3)],
+                                    colors: [Color.inkGreen, Color(hex: "#059669")],
                                     startPoint: .topLeading, endPoint: .bottomTrailing
                                 )
                             )
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                            .shadow(color: Color.green.opacity(0.3), radius: 5, y: 3)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .inkSpecularBorder(cornerRadius: 14)
+                            .shadow(color: Color.inkGreen.opacity(0.3), radius: 6, y: 3)
                         }
                     }
 
                     // Send to Kindle — prominent dedicated button
                     Button {
+                        HapticEngine.medium()
                         handle(.sendToKindle)
                     } label: {
                         HStack {
@@ -212,33 +220,35 @@ struct MediaDetailSheet: View {
                         .padding()
                         .background(
                             LinearGradient(
-                                colors: [Color(red: 0.98, green: 0.60, blue: 0.0), Color(red: 0.95, green: 0.35, blue: 0.0)],
+                                colors: [Color.inkOrange, Color.inkAmber],
                                 startPoint: .topLeading, endPoint: .bottomTrailing
                             )
                         )
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .shadow(color: Color.orange.opacity(0.35), radius: 5, y: 3)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .inkSpecularBorder(cornerRadius: 14)
+                        .shadow(color: Color.inkOrange.opacity(0.35), radius: 6, y: 3)
                     }
 
                     // Secondary Duo
                     HStack(spacing: 12) {
-                        actionButton(title: "Cover Studio", icon: "paintbrush.pointed.fill", color: .purple, action: .covers)
-                        actionButton(title: "Fetch Meta", icon: "magnifyingglass", color: .orange, action: .fetchMetadata)
+                        actionButton(title: "Cover Studio", icon: "paintbrush.pointed.fill", color: .inkViolet, action: .covers)
+                        actionButton(title: "Fetch Meta", icon: "magnifyingglass", color: .inkAmber, action: .fetchMetadata)
                     }
                     
                     // Utilities Grid
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        squareButton(title: "Manual Edit", icon: "pencil.and.list.clipboard", color: Color(white: 0.3), action: .editMetadata)
-                        squareButton(title: "Export Tools", icon: "square.and.arrow.up", color: Color(white: 0.3), action: .export)
-                        squareButton(title: "AirDrop", icon: "airplayaudio", color: Color(white: 0.3), action: .share)
+                        squareButton(title: "Manual Edit", icon: "pencil.and.list.clipboard", action: .editMetadata)
+                        squareButton(title: "Export Tools", icon: "square.and.arrow.up", action: .export)
+                        squareButton(title: "AirDrop", icon: "airplayaudio", action: .share)
                         
-                        squareButton(title: "Cloud Sync", icon: "icloud.and.arrow.up", color: Color(white: 0.3), action: .sync)
-                        squareButton(title: "Add to Series", icon: "books.vertical", color: Color(white: 0.3), action: .addToSeries)
-                        squareButton(title: "Rename", icon: "pencil", color: Color(white: 0.3), action: .rename)
+                        squareButton(title: "Cloud Sync", icon: "icloud.and.arrow.up", action: .sync)
+                        squareButton(title: "Add to Series", icon: "books.vertical", action: .addToSeries)
+                        squareButton(title: "Rename", icon: "pencil", action: .rename)
                     }
                     
                     // Destructive
                     Button {
+                        HapticEngine.warning()
                         handle(.delete)
                     } label: {
                         HStack {
@@ -248,10 +258,14 @@ struct MediaDetailSheet: View {
                             Spacer()
                         }
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.red)
+                        .foregroundColor(.inkRed)
                         .padding()
-                        .background(Color.red.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .background(Color.inkRed.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.inkRed.opacity(0.3), lineWidth: 0.8)
+                        )
                     }
                     .padding(.top, 8)
                 }
@@ -264,7 +278,7 @@ struct MediaDetailSheet: View {
         }
         .background(
             ZStack {
-                Color(red: 20/255, green: 20/255, blue: 22/255).ignoresSafeArea()
+                Color.inkBackground.ignoresSafeArea()
                 if let img = self.coverImage ?? conversionManager.thumbnailCache.object(forKey: pdf.id.uuidString as NSString) {
                     GeometryReader { geo in
                         Image(uiImage: img)
@@ -272,11 +286,11 @@ struct MediaDetailSheet: View {
                             .aspectRatio(contentMode: .fill)
                             .frame(width: geo.size.width, height: geo.size.height * 0.45)
                             .blur(radius: 40)
-                            .opacity(0.6)
+                            .opacity(0.35)
                             .clipped()
                             .overlay(
                                 LinearGradient(
-                                    colors: [Color.clear, Color(red: 20/255, green: 20/255, blue: 22/255)],
+                                    colors: [Color.clear, Color.inkBackground],
                                     startPoint: .top, endPoint: .bottom
                                 )
                             )
@@ -296,6 +310,7 @@ struct MediaDetailSheet: View {
     @ViewBuilder
     private func actionButton(title: String, icon: String, color: Color, action: LibraryRowAction) -> some View {
         Button {
+            HapticEngine.selection()
             handle(action)
         } label: {
             VStack(spacing: 6) {
@@ -308,29 +323,33 @@ struct MediaDetailSheet: View {
             .padding(.vertical, 16)
             .foregroundColor(.white)
             .background(color)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .inkSpecularBorder(cornerRadius: 14)
         }
     }
     
     @ViewBuilder
-    private func squareButton(title: String, icon: String, color: Color, action: LibraryRowAction) -> some View {
+    private func squareButton(title: String, icon: String, action: LibraryRowAction) -> some View {
         Button {
+            HapticEngine.selection()
             handle(action)
         } label: {
             VStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.system(size: 20))
+                    .foregroundColor(Color.inkTextPrimary)
                 Text(title)
                     .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Color.inkTextPrimary)
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 70)
-            .foregroundColor(.white)
-            .background(color)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .background(Color.inkSurfaceRaised)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .inkSpecularBorder(cornerRadius: 14)
         }
     }
 }
