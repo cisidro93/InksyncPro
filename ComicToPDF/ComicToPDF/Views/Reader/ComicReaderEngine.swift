@@ -3687,7 +3687,6 @@ struct ComicSpreadGuidedView: View {
         let idx1 = spread.count > 1 ? spread[1] : nil
         let img1 = image1
         let manga = isMangaMode
-        let docID = pdfID
 
         Task.detached(priority: .userInitiated) {
             let isDualSpread = (spread.count == 2)

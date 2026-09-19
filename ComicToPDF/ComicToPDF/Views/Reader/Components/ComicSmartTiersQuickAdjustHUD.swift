@@ -133,15 +133,8 @@ struct ComicSmartTiersQuickAdjustHUD: View {
                         let imgRatio = imgSize.width / max(1, imgSize.height)
                         let cardRatio = cardW / max(1, cardH)
 
-                        let renderW: CGFloat
-                        let renderH: CGFloat
-                        if imgRatio > cardRatio {
-                            renderW = cardW
-                            renderH = cardW / imgRatio
-                        } else {
-                            renderH = cardH
-                            renderW = cardH * imgRatio
-                        }
+                        let renderW: CGFloat = (imgRatio > cardRatio) ? cardW : (cardH * imgRatio)
+                        let renderH: CGFloat = (imgRatio > cardRatio) ? (cardW / imgRatio) : cardH
 
                         let originX = (cardW - renderW) / 2.0
                         let originY = (cardH - renderH) / 2.0
