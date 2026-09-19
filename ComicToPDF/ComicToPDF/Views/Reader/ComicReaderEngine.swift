@@ -3091,34 +3091,6 @@ struct ComicPageView: View {
         }
     }
 
-    private func toggleDoubleTapZoom(at loc: CGPoint, containerSize: CGSize, renderedSize: CGSize) {
-        HapticEngine.selection()
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-            if currentScale > 1.05 {
-                currentScale = 1.0
-                lastScale = 1.0
-                offset = .zero
-                lastOffset = .zero
-            } else {
-                let targetScale: CGFloat = 2.5
-                currentScale = targetScale
-                lastScale = targetScale
-                let centerX = containerSize.width / 2
-                let centerY = containerSize.height / 2
-                let dx = (centerX - loc.x) * (targetScale - 1)
-                let dy = (centerY - loc.y) * (targetScale - 1)
-                
-                let maxW = max(0, (renderedSize.width * targetScale - containerSize.width) / 2)
-                let maxH = max(0, (renderedSize.height * targetScale - containerSize.height) / 2)
-                offset = CGSize(
-                    width: min(maxW, max(-maxW, dx)),
-                    height: min(maxH, max(-maxH, dy))
-                )
-                lastOffset = offset
-            }
-        }
-    }
-
     private func updateDisplayImage() {
         cropTask?.cancel()
         cropTask = nil
@@ -3214,14 +3186,33 @@ struct ComicPageView: View {
                                 }
                             )
                             .onTapGesture(count: 2) { loc in
-                                toggleDoubleTapZoom(at: loc, containerSize: geo.size, renderedSize: rendered)
-                            }
-                            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ComicReader_DoubleTapZoom"))) { notification in
-                                if let targetIndex = notification.userInfo?["pageIndex"] as? Int, targetIndex != index {
-                                    return
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    if currentScale > 1.05 {
+                                        currentScale = 1.0
+                                        lastScale = 1.0
+                                        offset = .zero
+                                        lastOffset = .zero
+                                    } else {
+                                        if prefs.comicPageFitMode == .fitPage {
+                                            prefs.comicPageFitMode = .fillScreen
+                                        } else {
+                                            currentScale = 2.0
+                                            lastScale = 2.0
+                                            let centerX = geo.size.width / 2
+                                            let centerY = geo.size.height / 2
+                                            let dx = (centerX - loc.x) * (currentScale - 1)
+                                            let dy = (centerY - loc.y) * (currentScale - 1)
+                                            
+                                            let maxW = max(0, (rendered.width * currentScale - geo.size.width) / 2)
+                                            let maxH = max(0, (rendered.height * currentScale - geo.size.height) / 2)
+                                            offset = CGSize(
+                                                width: min(maxW, max(-maxW, dx)),
+                                                height: min(maxH, max(-maxH, dy))
+                                            )
+                                            lastOffset = offset
+                                        }
+                                    }
                                 }
-                                let loc = (notification.userInfo?["location"] as? CGPoint) ?? CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
-                                toggleDoubleTapZoom(at: loc, containerSize: geo.size, renderedSize: rendered)
                             }
                     }
                     .onDisappear {

@@ -284,20 +284,8 @@ extension PageCurlReader {
         
         @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
             guard !isTransitioning else { return }
-            guard let view = gesture.view else { return }
-            let point = gesture.location(in: view)
-            HapticEngine.selection()
-            
-            let activeIndex = (pageViewController?.viewControllers?.first as? PageContentViewController)?.index ?? parent.currentIndex
-            NotificationCenter.default.post(
-                name: NSNotification.Name("ComicReader_DoubleTapZoom"),
-                object: nil,
-                userInfo: [
-                    "pageIndex": activeIndex,
-                    "location": point,
-                    "containerSize": view.bounds.size
-                ]
-            )
+            HapticEngine.medium()
+            NotificationCenter.default.post(name: NSNotification.Name("ComicReader_ToggleGuidedInspection"), object: nil)
         }
         
         private var tapZoneStyle: TapZoneStyle {
@@ -952,28 +940,8 @@ extension SmartMidSpineCurlReader {
 
         @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
             guard !isTransitioning else { return }
-            guard let view = gesture.view else { return }
-            let point = gesture.location(in: view)
-            HapticEngine.selection()
-
-            let activeIndex: Int
-            let visibleVCs = (pageViewController?.viewControllers as? [SingleLeafViewController]) ?? []
-            if visibleVCs.count == 2 {
-                let isLeft = point.x < (view.bounds.width / 2.0)
-                activeIndex = isLeft ? visibleVCs[0].pageIndex : visibleVCs[1].pageIndex
-            } else {
-                activeIndex = visibleVCs.first?.pageIndex ?? parent.currentIndex
-            }
-
-            NotificationCenter.default.post(
-                name: NSNotification.Name("ComicReader_DoubleTapZoom"),
-                object: nil,
-                userInfo: [
-                    "pageIndex": activeIndex,
-                    "location": point,
-                    "containerSize": view.bounds.size
-                ]
-            )
+            HapticEngine.medium()
+            NotificationCenter.default.post(name: NSNotification.Name("ComicReader_ToggleGuidedInspection"), object: nil)
         }
 
         private var tapZoneStyle: TapZoneStyle {
@@ -1222,10 +1190,6 @@ struct TwoUpPageCell: View {
     
     @State private var image: UIImage? = nil
     @State private var croppedImage: UIImage? = nil
-    @State private var currentScale: CGFloat = 1.0
-    @State private var lastScale: CGFloat = 1.0
-    @State private var offset: CGSize = .zero
-    @State private var lastOffset: CGSize = .zero
     
     private func updateCroppedImage(from source: UIImage?) {
         guard let source = source else {
@@ -1256,116 +1220,32 @@ struct TwoUpPageCell: View {
         self.croppedImage = source
     }
     
-    private func toggleDoubleTapZoom(at loc: CGPoint, containerSize: CGSize) {
-        HapticEngine.selection()
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-            if currentScale > 1.05 {
-                currentScale = 1.0
-                lastScale = 1.0
-                offset = .zero
-                lastOffset = .zero
-            } else {
-                let targetScale: CGFloat = 2.5
-                currentScale = targetScale
-                lastScale = targetScale
-                let centerX = containerSize.width / 2
-                let centerY = containerSize.height / 2
-                let dx = (centerX - loc.x) * (targetScale - 1)
-                let dy = (centerY - loc.y) * (targetScale - 1)
-                let maxW = max(0, (containerSize.width * targetScale - containerSize.width) / 2)
-                let maxH = max(0, (containerSize.height * targetScale - containerSize.height) / 2)
-                offset = CGSize(
-                    width: min(maxW, max(-maxW, dx)),
-                    height: min(maxH, max(-maxH, dy))
-                )
-                lastOffset = offset
-            }
-        }
-    }
-    
     var body: some View {
         let currentImage = croppedImage ?? image ?? cache.cachedImage(at: index)
         
-        GeometryReader { geo in
-            let isPannable = (currentScale > 1.01)
-            ZStack {
-                Color.black
-                if let displayImg = currentImage {
-                    if cropHalf != .none {
+        ZStack {
+            Color.black
+            if let displayImg = currentImage {
+                if cropHalf != .none {
+                    GeometryReader { geo in
                         Image(uiImage: displayImg)
                             .resizable()
                             .applyFilterPreset(activeFilterPreset)
                             .aspectRatio(contentMode: .fit)
                             .frame(width: geo.size.width * 2, height: geo.size.height, alignment: .center)
                             .offset(x: cropHalf == .left ? 0 : -geo.size.width)
-                            .scaleEffect(currentScale)
-                            .offset(offset)
-                    } else {
-                        Image(uiImage: displayImg)
-                            .resizable()
-                            .applyFilterPreset(activeFilterPreset)
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-                            .scaleEffect(currentScale)
-                            .offset(offset)
                     }
+                    .clipped()
                 } else {
-                    Color.black
+                    Image(uiImage: displayImg)
+                        .resizable()
+                        .applyFilterPreset(activeFilterPreset)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+                        .clipped()
                 }
-            }
-            .frame(width: geo.size.width, height: geo.size.height)
-            .clipped()
-            .contentShape(Rectangle())
-            .gesture(
-                MagnificationGesture()
-                    .onChanged { val in
-                        let nextScale = lastScale * val
-                        currentScale = min(max(1.0, nextScale), 5.0)
-                    }
-                    .onEnded { _ in
-                        lastScale = currentScale
-                        if currentScale <= 1.01 {
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                offset = .zero
-                                lastOffset = .zero
-                            }
-                        }
-                    }
-            )
-            .simultaneousGesture(
-                isPannable ?
-                DragGesture()
-                    .onChanged { val in
-                        offset = CGSize(
-                            width: lastOffset.width + val.translation.width,
-                            height: lastOffset.height + val.translation.height
-                        )
-                    }
-                    .onEnded { _ in
-                        lastOffset = offset
-                    }
-                : nil
-            )
-            .onTapGesture(count: 2) { loc in
-                toggleDoubleTapZoom(at: loc, containerSize: geo.size)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ComicReader_DoubleTapZoom"))) { notification in
-                if let targetIndex = notification.userInfo?["pageIndex"] as? Int, targetIndex != index {
-                    return
-                }
-                let loc = (notification.userInfo?["location"] as? CGPoint) ?? CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
-                toggleDoubleTapZoom(at: loc, containerSize: geo.size)
-            }
-            .onChange(of: currentScale) { oldScale, newScale in
-                let wasZoomed = oldScale > 1.0
-                let isZoomed = newScale > 1.0
-                if wasZoomed != isZoomed {
-                    NotificationCenter.default.post(
-                        name: .readerZoomStateChanged,
-                        object: nil,
-                        userInfo: ["isZoomed": isZoomed]
-                    )
-                }
+            } else {
+                Color.black
             }
         }
         .clipped()
