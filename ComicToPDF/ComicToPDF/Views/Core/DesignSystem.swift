@@ -80,6 +80,7 @@ extension Color {
     static let inkSecondary         = inkTextSecondary
     static let inkTertiary          = inkTextTertiary
     static let inkYellow            = inkAmber
+    static let inkPurple            = inkViolet
 
     // MARK: - Hex Initializers
     init(hex: String) {
