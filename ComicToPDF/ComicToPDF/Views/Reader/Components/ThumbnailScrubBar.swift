@@ -161,18 +161,18 @@ struct ThumbnailScrubBar: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 36, height: 48)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
             
             VStack(alignment: .leading, spacing: 2) {
                 Text("Page \(scrubIndex + 1) of \(totalPages)")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(Color.inkText)
                 
                 if let doc = document, let page = doc.page(at: scrubIndex), let label = page.label, !label.isEmpty {
                     Text(label)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundColor(Color.inkSecondary)
                         .lineLimit(1)
                 }
             }
@@ -181,8 +181,8 @@ struct ThumbnailScrubBar: View {
         .padding(.vertical, 8)
         .background(Color.inkSurfaceRaised.opacity(0.95).background(.ultraThinMaterial))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.12), lineWidth: 1))
-        .shadow(color: Color.black.opacity(0.3), radius: 10, y: 4)
+        .inkSpecularBorder(cornerRadius: 14)
+        .shadow(color: Color.black.opacity(0.2), radius: 10, y: 4)
     }
     
     // MARK: - Thumbnail Preloading

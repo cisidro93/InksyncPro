@@ -433,16 +433,17 @@ struct EBookReaderView: View {
             Button { if let onExit = onExit { onExit() } else { dismiss() } } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.inkText)
                     .frame(width: 36, height: 36)
                     .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
             
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.inkText)
                 .lineLimit(1)
-                .shadow(color: .black.opacity(0.6), radius: 3)
+                .shadow(color: colorScheme == .dark ? .black.opacity(0.6) : .clear, radius: 3)
             
             Spacer()
             
@@ -458,6 +459,7 @@ struct EBookReaderView: View {
                     .foregroundStyle(Color.green)
                     .padding(.horizontal, 8).padding(.vertical, 5)
                     .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
                 }
             }
 
@@ -471,6 +473,7 @@ struct EBookReaderView: View {
                     .foregroundStyle(Color.orange)
                     .padding(.horizontal, 8).padding(.vertical, 5)
                     .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
                 }
             }
 
@@ -478,9 +481,10 @@ struct EBookReaderView: View {
             Button { toggleBookmark() } label: {
                 Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(isBookmarked ? Color.orange : .white)
+                    .foregroundStyle(isBookmarked ? Color.orange : Color.inkText)
                     .frame(width: 34, height: 34)
                     .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
 
             // Orientation lock (iPad regular width)
@@ -488,9 +492,10 @@ struct EBookReaderView: View {
                 Button { orientationLock.toggleLock(current: deviceOrientation) } label: {
                     Image(systemName: orientationLock.isLocked ? "lock.rotation" : "lock.rotation.open")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(orientationLock.isLocked ? Color.orange : .white)
+                        .foregroundStyle(orientationLock.isLocked ? Color.orange : Color.inkText)
                         .frame(width: 34, height: 34)
                         .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
                 }
             }
 
@@ -501,9 +506,10 @@ struct EBookReaderView: View {
             } label: {
                 Image(systemName: "textformat.size")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(showingSettingsPanel ? Color.orange : .white)
+                    .foregroundStyle(showingSettingsPanel ? Color.orange : Color.inkText)
                     .frame(width: 34, height: 34)
                     .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
             .help("Typography, Font, Themes & Layout")
             .accessibilityLabel("Typography and Reader Settings")
@@ -576,9 +582,10 @@ struct EBookReaderView: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.inkText)
                     .frame(width: 34, height: 34)
                     .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
         }
         .padding(.horizontal, 14)
@@ -586,7 +593,9 @@ struct EBookReaderView: View {
         .padding(.bottom, 10)
         .background(
             LinearGradient(
-                colors: [Color.black.opacity(0.55), Color.clear],
+                colors: colorScheme == .dark
+                    ? [Color.black.opacity(0.65), Color.clear]
+                    : [Color.white.opacity(0.92), Color.white.opacity(0.4), Color.clear],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -602,7 +611,7 @@ struct EBookReaderView: View {
                 HStack(spacing: 10) {
                     Text("1")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(Color.inkSecondary)
                         .frame(width: 16, alignment: .leading)
                     Slider(
                         value: Binding(
@@ -619,7 +628,7 @@ struct EBookReaderView: View {
                     .tint(Color(hex: "#B39DDB"))
                     Text("\(totalChapters)")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(Color.inkSecondary)
                         .frame(width: 16, alignment: .trailing)
                 }
                 .padding(.horizontal, 20)
@@ -627,7 +636,7 @@ struct EBookReaderView: View {
                 .padding(.bottom, 4)
                 
                 Rectangle()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(Color.inkBorderSubtle)
                     .frame(height: 0.5)
                     .padding(.horizontal, 16)
             }
@@ -637,29 +646,29 @@ struct EBookReaderView: View {
                 Button { prevChapter() } label: {
                     Image(systemName: "chevron.left.circle.fill")
                         .font(.system(size: 32))
-                        .foregroundStyle(currentIndex == 0 ? .white.opacity(0.2) : .white.opacity(0.9))
+                        .foregroundStyle(currentIndex == 0 ? Color.inkSecondary.opacity(0.25) : Color.inkText)
                 }
                 .disabled(currentIndex == 0)
                 
                 VStack(spacing: 2) {
                     Text("Page \(sanitizedChapterPage) of \(max(1, chapterTotalPages))")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.inkText)
                     if let title = currentChapterTitle {
                         Text(title)
                             .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.75))
+                            .foregroundStyle(Color.inkSecondary)
                             .lineLimit(1)
                     } else if totalChapters > 1 {
                         Text("Section \(currentIndex + 1) / \(totalChapters)")
                             .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundStyle(Color.inkSecondary)
                     }
                     // Time remaining estimate
                     if let mins = ReaderProgressTracker.shared.progress(for: pdf?.id ?? UUID())?.estimatedMinutesRemaining, mins > 0 {
                         Text("~\(mins)m left")
                             .font(.system(size: 10, weight: .regular, design: .rounded))
-                            .foregroundStyle(Color(hex: "#B39DDB").opacity(0.8))
+                            .foregroundStyle(colorScheme == .dark ? Color(hex: "#B39DDB").opacity(0.85) : Color.inkViolet)
                     }
                 }
                 .frame(minWidth: 100)
@@ -667,7 +676,7 @@ struct EBookReaderView: View {
                 Button { nextChapter() } label: {
                     Image(systemName: "chevron.right.circle.fill")
                         .font(.system(size: 32))
-                        .foregroundStyle(currentIndex >= totalChapters - 1 ? .white.opacity(0.2) : .white.opacity(0.9))
+                        .foregroundStyle(currentIndex >= totalChapters - 1 ? Color.inkSecondary.opacity(0.25) : Color.inkText)
                 }
                 .disabled(currentIndex >= totalChapters - 1)
             }
@@ -677,7 +686,9 @@ struct EBookReaderView: View {
         }
         .background(
             LinearGradient(
-                colors: [Color.clear, Color.black.opacity(0.65)],
+                colors: colorScheme == .dark
+                    ? [Color.clear, Color.black.opacity(0.70)]
+                    : [Color.clear, Color.white.opacity(0.4), Color.white.opacity(0.92)],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -1422,12 +1433,12 @@ struct EBookReaderView: View {
                                     Text("Done")
                                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                                 }
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Color.inkText)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 8)
                                 .background(.ultraThinMaterial, in: Capsule())
-                                .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.5))
-                                .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+                                .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
+                                .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
                             }
                             .buttonStyle(.plain)
                             .padding(.leading, 16)
@@ -1472,10 +1483,11 @@ struct EBookReaderView: View {
                             } label: {
                                 Image(systemName: "pencil.tip.crop.circle")
                                     .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(Color.inkText)
                                     .frame(width: 44, height: 44)
                                     .background(.ultraThinMaterial)
                                     .clipShape(Circle())
+                                    .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
                                     .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 3)
                             }
                             .padding(.trailing, 20)
@@ -1850,12 +1862,12 @@ struct EBookReaderView: View {
         if showToast {
             Text(toastMessage)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.inkText)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 10)
                 .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+                .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
                 .padding(.bottom, max(bottomInset + 90, 110))
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(100)

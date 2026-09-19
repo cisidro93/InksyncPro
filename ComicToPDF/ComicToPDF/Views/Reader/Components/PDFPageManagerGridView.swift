@@ -28,37 +28,43 @@ struct PDFPageManagerGridView: View {
             VStack(spacing: 0) {
                 // Top Action Control Bar
                 if isSelectionMode {
-                    HStack(spacing: 16) {
-                        Text("\(selectedPageIndices.count) selected")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.white)
+                    VStack(spacing: 0) {
+                        HStack(spacing: 16) {
+                            Text("\(selectedPageIndices.count) selected")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color.inkText)
 
-                        Spacer()
+                            Spacer()
 
-                        Button(action: rotateSelectedLeft) {
-                            Label("Rotate L", systemImage: "rotate.left")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.white)
+                            Button(action: rotateSelectedLeft) {
+                                Label("Rotate L", systemImage: "rotate.left")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(Color.inkText)
+                            }
+                            .disabled(selectedPageIndices.isEmpty)
+
+                            Button(action: rotateSelectedRight) {
+                                Label("Rotate R", systemImage: "rotate.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(Color.inkText)
+                            }
+                            .disabled(selectedPageIndices.isEmpty)
+
+                            Button(action: { showDeleteConfirmation = true }) {
+                                Label("Delete", systemImage: "trash")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(selectedPageIndices.isEmpty ? Color.inkSecondary : Color.inkRed)
+                            }
+                            .disabled(selectedPageIndices.isEmpty || (pdfDocument?.pageCount ?? 1) <= 1)
                         }
-                        .disabled(selectedPageIndices.isEmpty)
-
-                        Button(action: rotateSelectedRight) {
-                            Label("Rotate R", systemImage: "rotate.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                        .disabled(selectedPageIndices.isEmpty)
-
-                        Button(action: { showDeleteConfirmation = true }) {
-                            Label("Delete", systemImage: "trash")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(selectedPageIndices.isEmpty ? .gray : .red)
-                        }
-                        .disabled(selectedPageIndices.isEmpty || (pdfDocument?.pageCount ?? 1) <= 1)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        
+                        Rectangle()
+                            .fill(Color.inkBorderSubtle)
+                            .frame(height: 0.5)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Color.black.opacity(0.6))
+                    .background(Color.inkSurfaceRaised)
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
@@ -77,21 +83,21 @@ struct PDFPageManagerGridView: View {
                                     )
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8)
-                                            .stroke(selectedPageIndices.contains(pageIndex) ? Color.inkGreen : Color.white.opacity(0.15), lineWidth: selectedPageIndices.contains(pageIndex) ? 3 : 1)
+                                            .stroke(selectedPageIndices.contains(pageIndex) ? Color.inkGreen : Color.inkBorderSubtle, lineWidth: selectedPageIndices.contains(pageIndex) ? 3 : 1)
                                     )
-                                    .shadow(color: .black.opacity(0.25), radius: 5, y: 3)
+                                    .shadow(color: .black.opacity(0.18), radius: 5, y: 3)
 
                                     if isSelectionMode {
                                         Image(systemName: selectedPageIndices.contains(pageIndex) ? "checkmark.circle.fill" : "circle")
                                             .font(.system(size: 20))
-                                            .foregroundColor(selectedPageIndices.contains(pageIndex) ? .inkGreen : .white.opacity(0.8))
+                                            .foregroundColor(selectedPageIndices.contains(pageIndex) ? .inkGreen : Color.inkSecondary)
                                             .padding(6)
                                     }
                                 }
 
                                 Text("Page \(pageIndex + 1)")
                                     .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                    .foregroundColor(Theme.textSecondary)
+                                    .foregroundColor(Color.inkSecondary)
                             }
                             .onTapGesture {
                                 if isSelectionMode {

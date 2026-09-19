@@ -364,7 +364,7 @@ struct WebtoonControlBar: View {
                     Button { scrollSpeed = max(20, scrollSpeed - 20) } label: {
                         Image(systemName: "tortoise.fill")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.inkText)
                     }
 
                     Slider(value: $scrollSpeed, in: 20...200, step: 10)
@@ -374,16 +374,18 @@ struct WebtoonControlBar: View {
                     Button { scrollSpeed = min(200, scrollSpeed + 20) } label: {
                         Image(systemName: "hare.fill")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.inkText)
                     }
 
                     Text("\(Int(scrollSpeed)) px/s")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(Color.inkSecondary)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
                 .background(.ultraThinMaterial, in: Capsule())
+                .inkSpecularBorder(cornerRadius: 20)
+                .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
                 .padding(.bottom, 110)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }

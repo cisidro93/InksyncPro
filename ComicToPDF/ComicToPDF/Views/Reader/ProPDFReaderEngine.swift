@@ -853,12 +853,12 @@ struct ProPDFReaderEngine: View {
                                 Text("Done")
                                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                             }
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.inkText)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
                             .background(.ultraThinMaterial, in: Capsule())
-                            .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.5))
-                            .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+                            .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
+                            .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
                         }
                         .buttonStyle(.plain)
                         .padding(.leading, 16)
@@ -903,11 +903,11 @@ struct ProPDFReaderEngine: View {
                         } label: {
                             Image(systemName: "pencil.tip.crop.circle")
                                 .font(.system(size: 20, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Color.inkText)
                                 .frame(width: 44, height: 44)
                                 .background(.ultraThinMaterial, in: Circle())
-                                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
-                                .shadow(color: Color.black.opacity(0.25), radius: 8, y: 3)
+                                .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.8))
+                                .shadow(color: Color.black.opacity(0.2), radius: 8, y: 3)
                         }
                         .buttonStyle(.plain)
                         .padding(.trailing, 20)
@@ -1032,9 +1032,9 @@ struct ProPDFReaderEngine: View {
                     } label: {
                         Image(systemName: "minus")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.inkText)
                             .frame(width: 24, height: 24)
-                            .background(Color.white.opacity(0.12), in: Circle())
+                            .background(Color.primary.opacity(0.08), in: Circle())
                     }
                     .buttonStyle(.plain)
                     .help("Zoom Out")
@@ -1045,6 +1045,7 @@ struct ProPDFReaderEngine: View {
                         HStack(spacing: 4) {
                             Text("\(scalePct)%")
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.inkText)
                             if abs(activeZoomScale - 1.0) > 0.04 {
                                 Text("• Fit")
                                     .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -1060,9 +1061,9 @@ struct ProPDFReaderEngine: View {
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.inkText)
                             .frame(width: 24, height: 24)
-                            .background(Color.white.opacity(0.12), in: Circle())
+                            .background(Color.primary.opacity(0.08), in: Circle())
                     }
                     .buttonStyle(.plain)
                     .help("Zoom In")
@@ -1086,17 +1087,17 @@ struct ProPDFReaderEngine: View {
                             Text(prefs.isZoomLocked ? "Locked" : "Lock")
                                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                         }
-                        .foregroundStyle(prefs.isZoomLocked ? Color.orange : Color.white.opacity(0.85))
+                        .foregroundStyle(prefs.isZoomLocked ? Color.orange : Color.inkSecondary)
                     }
                     .buttonStyle(.plain)
                     .help(prefs.isZoomLocked ? "Unlock Zoom" : "Lock Zoom Across Pages")
                 }
-                .foregroundColor(.white)
+                .foregroundColor(Color.inkText)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+                .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
                 .padding(.top, chromeVisible ? 70 : 50)
                 Spacer()
             }
@@ -1362,11 +1363,11 @@ struct ProPDFReaderEngine: View {
         if showToast {
             Text(toastMessage)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.inkText)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 10)
                 .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
                 .padding(.bottom, 110)
                 .transition(.move(edge: .bottom).combined(with: .opacity))

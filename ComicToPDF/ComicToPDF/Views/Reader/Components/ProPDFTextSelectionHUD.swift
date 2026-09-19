@@ -402,13 +402,13 @@ struct ProPDFTextSelectionHUD: View {
                                 Text(style.displayName)
                                     .font(.system(size: 11, weight: .medium, design: .rounded))
                             }
-                            .foregroundColor(selectedMarkupStyle == style ? .inkOrange : .white.opacity(0.75))
+                            .foregroundColor(selectedMarkupStyle == style ? .inkOrange : Color.inkSecondary)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 6)
                             .background(
                                 selectedMarkupStyle == style
                                     ? Color.inkOrange.opacity(0.2)
-                                    : Color.white.opacity(0.08),
+                                    : Color.primary.opacity(0.06),
                                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                             )
                         }
@@ -418,13 +418,13 @@ struct ProPDFTextSelectionHUD: View {
             }
 
             Divider()
-                .background(Color.white.opacity(0.15))
+                .background(Color.inkBorderSubtle)
 
             // Adlerian Marginalia Shorthand Symbols
             VStack(alignment: .leading, spacing: 6) {
                 Text("MARGINALIA (ADLER SHORTHAND)")
                     .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.5))
+                    .foregroundStyle(Color.inkSecondary)
                     .tracking(0.8)
 
                 HStack(spacing: 8) {
@@ -437,13 +437,13 @@ struct ProPDFTextSelectionHUD: View {
                             VStack(spacing: 2) {
                                 Text(item.symbol)
                                     .font(.system(size: 13, weight: .bold))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(Color.inkText)
                                     .frame(width: 26, height: 26)
-                                    .background(Color.white.opacity(0.12), in: Circle())
+                                    .background(Color.primary.opacity(0.08), in: Circle())
 
                                 Text(item.shortLabel)
                                     .font(.system(size: 8, weight: .semibold, design: .rounded))
-                                    .foregroundColor(Color.white.opacity(0.6))
+                                    .foregroundColor(Color.inkSecondary)
                                     .lineLimit(1)
                             }
                         }
@@ -454,7 +454,7 @@ struct ProPDFTextSelectionHUD: View {
             }
 
             Divider()
-                .background(Color.white.opacity(0.15))
+                .background(Color.inkBorderSubtle)
 
             // Actions: Speak & Zettelkasten
             VStack(spacing: 6) {
@@ -466,7 +466,7 @@ struct ProPDFTextSelectionHUD: View {
                     HStack {
                         Label("Read Aloud", systemImage: "speaker.wave.2.fill")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.white)
+                            .foregroundColor(Color.inkText)
                         Spacer()
                     }
                     .padding(.vertical, 4)
@@ -491,7 +491,8 @@ struct ProPDFTextSelectionHUD: View {
         }
         .padding(14)
         .frame(width: 280)
-        .background(Color(hex: "#1A1A24"))
+        .background(Color.inkSurfaceRaised)
+        .inkSpecularBorder(cornerRadius: 14)
     }
 }
 

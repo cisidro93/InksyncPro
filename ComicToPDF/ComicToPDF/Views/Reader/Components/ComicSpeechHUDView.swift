@@ -17,6 +17,7 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
     @State private var showVoiceSheet: Bool = false
     @StateObject private var previewSynth = VoicePreviewSynthesizer()
     @Environment(\.horizontalSizeClass) private var hSizeClass
+    @Environment(\.colorScheme) private var colorScheme
 
     private let speedOptions: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
 
@@ -32,7 +33,7 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                 // Animated Live Indicator & Location Counter
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(engine.isPlaying ? Color.purple : Color.gray)
+                        .fill(engine.isPlaying ? Color.inkViolet : Color.gray)
                         .frame(width: 8, height: 8)
                         .scaleEffect(engine.isPlaying ? 1.2 : 1.0)
                         .animation(engine.isPlaying ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: engine.isPlaying)
@@ -40,12 +41,12 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                     if engine.totalBlocksCount > 0 {
                         Text("\(engine.activeDisplayIndex)/\(engine.totalBlocksCount)")
                             .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(Color.inkText)
                     }
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color.white.opacity(0.12), in: Capsule())
+                .background(Color.inkSurfaceRaised, in: Capsule())
 
                 // Rewind (Previous Sentence / Bubble)
                 Button {
@@ -54,7 +55,7 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                 } label: {
                     Image(systemName: "backward.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.inkText)
                         .frame(width: 28, height: 28)
                 }
                 .disabled(engine.activeDisplayIndex <= 1)
@@ -67,7 +68,7 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                 } label: {
                     ZStack {
                         Circle()
-                            .fill(LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .fill(LinearGradient(colors: [.inkViolet, .inkBlue], startPoint: .topLeading, endPoint: .bottomTrailing))
                             .frame(width: 36, height: 36)
                         Image(systemName: engine.isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 15, weight: .bold))
@@ -82,7 +83,7 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                 } label: {
                     Image(systemName: "forward.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.inkText)
                         .frame(width: 28, height: 28)
                 }
 
@@ -104,10 +105,10 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                 } label: {
                     Text("\(engine.speechRate, specifier: "%.2g")x")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.inkText)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.14), in: Capsule())
+                        .background(Color.inkSurfaceRaised, in: Capsule())
                 }
 
                 // Voice Picker Menu
@@ -175,14 +176,14 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                 } label: {
                     Image(systemName: "person.wave.2.fill")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.9))
+                        .foregroundStyle(Color.inkText)
                         .frame(width: 28, height: 28)
-                        .background(Color.white.opacity(0.14), in: Circle())
+                        .background(Color.inkSurfaceRaised, in: Circle())
                 }
 
                 Divider()
                     .frame(height: 18)
-                    .background(Color.white.opacity(0.25))
+                    .background(Color.inkBorderVisible)
 
                 // Stop & Close
                 Button {
@@ -193,7 +194,7 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(Color.inkSecondary)
                 }
             }
             .padding(.horizontal, 14)
@@ -202,17 +203,23 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
             .overlay(
                 Capsule()
                     .strokeBorder(
-                        LinearGradient(colors: [Color.white.opacity(0.3), Color.purple.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.3), Color.inkViolet.opacity(0.4)]
+                                : [Color.black.opacity(0.12), Color.inkViolet.opacity(0.3)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
                         lineWidth: 0.75
                     )
             )
-            .shadow(color: Color.black.opacity(0.35), radius: 14, y: 6)
+            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.12), radius: 14, y: 6)
 
             // Current Dialogue Subtitle Snippet
             if !engine.activeTextSnippet.isEmpty {
                 Text(engine.activeTextSnippet)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.95))
+                    .foregroundStyle(Color.inkText)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16)
@@ -220,9 +227,9 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
+                            .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
                     )
-                    .shadow(color: Color.black.opacity(0.2), radius: 8, y: 3)
+                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.08), radius: 8, y: 3)
                     .frame(maxWidth: min(400, (UIScreen.main.bounds.width - 32)))
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }

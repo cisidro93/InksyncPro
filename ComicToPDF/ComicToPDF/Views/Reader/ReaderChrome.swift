@@ -18,6 +18,7 @@ struct ReaderChrome: View {
     let pageText: String
     @Binding var isVisible: Bool
     @Environment(\.horizontalSizeClass) private var hSizeClass
+    @Environment(\.colorScheme) private var colorScheme
 
     // Actions
     var onBack: () -> Void
@@ -203,19 +204,20 @@ struct ReaderChrome: View {
             Button(action: onBack) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.inkText)
                     .frame(width: 36, height: 36)
                     .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
             .buttonStyle(.plain)
 
             // ── Title ──────────────────────────────────────────────────────────
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.inkText)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .shadow(color: .black.opacity(0.6), radius: 3)
+                .shadow(color: colorScheme == .dark ? .black.opacity(0.6) : .clear, radius: 3)
 
             Spacer()
 
@@ -228,9 +230,10 @@ struct ReaderChrome: View {
             Button(action: onBookmark) {
                 Image(systemName: onBookmarkActive ? "bookmark.fill" : "bookmark")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(onBookmarkActive ? Color.orange : .white)
+                    .foregroundStyle(onBookmarkActive ? Color.orange : Color.inkText)
                     .frame(width: 34, height: 34)
                     .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
             .buttonStyle(.plain)
 
@@ -238,9 +241,10 @@ struct ReaderChrome: View {
             Button(action: onSettingsToggle) {
                 Image(systemName: "textformat.size")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isSettingsActive ? Color.orange : .white)
+                    .foregroundStyle(isSettingsActive ? Color.orange : Color.inkText)
                     .frame(width: 34, height: 34)
                     .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
             .buttonStyle(.plain)
 
@@ -350,9 +354,10 @@ struct ReaderChrome: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.inkText)
                     .frame(width: 34, height: 34)
                     .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
         }
         .padding(.horizontal, 14)
@@ -360,7 +365,9 @@ struct ReaderChrome: View {
         .padding(.bottom, 10)
         .background(
             LinearGradient(
-                colors: [Color.black.opacity(0.55), Color.clear],
+                colors: colorScheme == .dark
+                    ? [Color.black.opacity(0.65), Color.clear]
+                    : [Color.white.opacity(0.92), Color.white.opacity(0.4), Color.clear],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -382,7 +389,7 @@ struct ReaderChrome: View {
                 HStack(spacing: 10) {
                     Text("1")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(Color.inkSecondary)
                         .frame(width: 20, alignment: .leading)
 
                     Slider(
@@ -424,17 +431,17 @@ struct ReaderChrome: View {
                                         }
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                                                .stroke(Color.inkBorderSubtle, lineWidth: 0.5)
                                         )
-                                        .shadow(color: .black.opacity(0.5), radius: 14, y: 6)
+                                        .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.15), radius: 14, y: 6)
                                         
                                         Text("Page \(pageNum)")
                                             .font(.system(size: 11, weight: .bold, design: .rounded))
-                                            .foregroundColor(.white)
+                                            .foregroundColor(Color.inkText)
                                             .padding(.horizontal, 10)
                                             .padding(.vertical, 4)
                                             .background(.ultraThinMaterial, in: Capsule())
-                                            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                                            .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
                                     }
                                     .position(
                                         x: 14 + (sliderGeo.size.width - 28) * CGFloat(currentProgress),
@@ -444,12 +451,12 @@ struct ReaderChrome: View {
                                 } else {
                                     Text("Page \(pageNum)")
                                         .font(.system(size: 13, weight: .bold, design: .rounded))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(Color.inkText)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 6)
-                                        .background(Color(white: 0.15).opacity(0.85), in: Capsule())
-                                        .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
-                                        .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+                                        .background(Color.inkSurfaceRaised.opacity(0.95), in: Capsule())
+                                        .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
+                                        .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0.12), radius: 8, y: 4)
                                         .position(
                                             x: 14 + (sliderGeo.size.width - 28) * CGFloat(currentProgress),
                                             y: -24
@@ -462,7 +469,7 @@ struct ReaderChrome: View {
 
                     Text("\(totalPages)")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(Color.inkSecondary)
                         .frame(width: 20, alignment: .trailing)
                 }
                 .padding(.horizontal, 20)
@@ -471,7 +478,7 @@ struct ReaderChrome: View {
             }
 
             Rectangle()
-                .fill(Color.white.opacity(0.08))
+                .fill(Color.inkBorderSubtle)
                 .frame(height: 0.5)
                 .padding(.horizontal, 16)
 
@@ -484,7 +491,7 @@ struct ReaderChrome: View {
                 } label: {
                     Image(systemName: "chevron.left.circle.fill")
                         .font(.system(size: 32))
-                        .foregroundStyle(currentProgress <= 0.001 ? .white.opacity(0.2) : .white.opacity(0.9))
+                        .foregroundStyle(currentProgress <= 0.001 ? Color.inkSecondary.opacity(0.25) : Color.inkText)
                 }
                 .buttonStyle(.plain)
                 .disabled(currentProgress <= 0.001)
@@ -496,11 +503,11 @@ struct ReaderChrome: View {
                     VStack(spacing: 2) {
                         Text(pageText)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.inkText)
                         if let tr = timeRemainingText, !tr.isEmpty {
                             Text(tr)
                                 .font(.system(size: 10, weight: .regular, design: .rounded))
-                                .foregroundStyle(Color(hex: "#B39DDB").opacity(0.8))
+                                .foregroundStyle(colorScheme == .dark ? Color(hex: "#B39DDB").opacity(0.85) : Color.inkViolet)
                         }
                     }
                     .frame(minWidth: 100)
@@ -521,7 +528,7 @@ struct ReaderChrome: View {
                 } label: {
                     Image(systemName: "chevron.right.circle.fill")
                         .font(.system(size: 32))
-                        .foregroundStyle(currentProgress >= 0.999 ? .white.opacity(0.2) : .white.opacity(0.9))
+                        .foregroundStyle(currentProgress >= 0.999 ? Color.inkSecondary.opacity(0.25) : Color.inkText)
                 }
                 .buttonStyle(.plain)
                 .disabled(currentProgress >= 0.999)
@@ -532,7 +539,9 @@ struct ReaderChrome: View {
         }
         .background(
             LinearGradient(
-                colors: [Color.clear, Color.black.opacity(0.65)],
+                colors: colorScheme == .dark
+                    ? [Color.clear, Color.black.opacity(0.70)]
+                    : [Color.clear, Color.white.opacity(0.4), Color.white.opacity(0.92)],
                 startPoint: .top,
                 endPoint: .bottom
             )

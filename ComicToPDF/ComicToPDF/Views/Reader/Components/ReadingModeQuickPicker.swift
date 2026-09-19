@@ -66,18 +66,18 @@ struct ReadingModeQuickPicker: View {
                         Text(mode.label)
                             .font(.system(size: 13, weight: .semibold))
                     }
-                    .foregroundStyle(currentMode == mode ? Color.white : Color.white.opacity(0.55))
+                    .foregroundStyle(currentMode == mode ? Color.white : Color.inkSecondary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                     .background(
                         currentMode == mode
                             ? AnyShapeStyle(Theme.orange)
-                            : AnyShapeStyle(Color.white.opacity(0.08)),
+                            : AnyShapeStyle(Color.primary.opacity(0.06)),
                         in: Capsule()
                     )
                     .overlay(
                         Capsule()
-                            .stroke(Color.white.opacity(currentMode == mode ? 0 : 0.15), lineWidth: 0.5)
+                            .stroke(Color.primary.opacity(currentMode == mode ? 0 : 0.08), lineWidth: 0.5)
                     )
                 }
                 .buttonStyle(.plain)
@@ -86,14 +86,11 @@ struct ReadingModeQuickPicker: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(
-            .ultraThinMaterial,
+            Color.inkSurfaceRaised.opacity(0.92).background(.ultraThinMaterial),
             in: RoundedRectangle(cornerRadius: 22, style: .continuous)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.35), radius: 20, y: 8)
+        .inkSpecularBorder(cornerRadius: 22)
+        .shadow(color: .black.opacity(0.25), radius: 18, y: 6)
         .padding(.horizontal, 32)
         .padding(.bottom, 100)
         .transition(.move(edge: .bottom).combined(with: .opacity))

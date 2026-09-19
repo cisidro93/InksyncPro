@@ -60,17 +60,17 @@ public struct ReadingJumpToastOverlay: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Jumped to Page \(jump.toPage + 1)")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.inkText)
                         
                         if let label = jump.chapterLabel, !label.isEmpty {
                             Text("Return to \(label) (p. \(jump.fromPage + 1))")
                                 .font(.system(size: 11, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.8))
+                                .foregroundStyle(Color.inkSecondary)
                                 .lineLimit(1)
                         } else {
                             Text("Tap to return to Page \(jump.fromPage + 1)")
                                 .font(.system(size: 11, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.8))
+                                .foregroundStyle(Color.inkSecondary)
                         }
                     }
 
@@ -82,10 +82,10 @@ public struct ReadingJumpToastOverlay: View {
                     } label: {
                         Text("Return")
                             .font(.system(size: 12, weight: .bold, design: .rounded))
-                            .foregroundStyle(.black)
+                            .foregroundStyle(Color.white)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 7)
-                            .background(Color.white, in: Capsule())
+                            .background(Color.inkViolet, in: Capsule())
                     }
                     .buttonStyle(.plain)
 
@@ -95,7 +95,7 @@ public struct ReadingJumpToastOverlay: View {
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundStyle(Color.inkSecondary)
                             .padding(6)
                     }
                     .buttonStyle(.plain)
@@ -104,14 +104,11 @@ public struct ReadingJumpToastOverlay: View {
                 .padding(.vertical, 10)
                 .background(
                     Capsule()
-                        .fill(Color.black.opacity(0.88))
+                        .fill(Color.inkSurfaceRaised.opacity(0.95))
                         .background(.ultraThinMaterial, in: Capsule())
                 )
-                .overlay(
-                    Capsule()
-                        .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
-                )
-                .shadow(color: .black.opacity(0.3), radius: 14, x: 0, y: 5)
+                .inkSpecularBorder(cornerRadius: 24)
+                .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 5)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 68)
             }

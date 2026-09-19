@@ -187,11 +187,11 @@ struct ReaderView: View {
                 if showBookmarkToast {
                     Text(bookmarkToastMessage)
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.inkText)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 10)
                         .background(.ultraThinMaterial, in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                        .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
                         .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
                         .padding(.bottom, 110)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1067,11 +1067,11 @@ struct ReaderView: View {
                 VStack(spacing: 8) {
                     Text("Volume Complete!")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.inkText)
 
                     Text("Continue reading the next issue in the series?")
                         .font(.system(size: 15))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(Color.inkSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                 }
@@ -1079,7 +1079,7 @@ struct ReaderView: View {
                 VStack(spacing: 6) {
                     Text(nextVol.name)
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.inkText)
 
                     if let issue = nextVol.metadata.issueNumber {
                         Text("Issue #\(issue)")
@@ -1090,7 +1090,7 @@ struct ReaderView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
                 .frame(maxWidth: .infinity)
-                .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .padding(.horizontal, 32)
 
                 HStack(spacing: 16) {
@@ -1099,10 +1099,10 @@ struct ReaderView: View {
                     } label: {
                         Text("Later")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.inkText)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                     .buttonStyle(.plain)
 
@@ -1121,8 +1121,9 @@ struct ReaderView: View {
                 .padding(.top, 8)
             }
             .padding(32)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .shadow(color: .black.opacity(0.4), radius: 30, y: 10)
+            .background(Color.inkSurfaceRaised, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .inkSpecularBorder(cornerRadius: 28)
+            .shadow(color: .black.opacity(0.35), radius: 30, y: 10)
             .padding(32)
         }
         .zIndex(1000)
@@ -1181,11 +1182,12 @@ struct ReaderView: View {
                     Spacer()
                     Text(hudMessage)
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(Color.inkText)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 12)
-                        .background(Color.black.opacity(0.8))
-                        .cornerRadius(16)
+                        .background(Color.inkSurfaceRaised.opacity(0.95), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .inkSpecularBorder(cornerRadius: 16)
+                        .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
                         .padding(.bottom, 120)
                 }
                 .transition(.opacity)
