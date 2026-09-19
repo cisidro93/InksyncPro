@@ -416,19 +416,36 @@ struct PanelExtractor {
         }
     }
 
-    /// Option A + Option C Hybrid:
-    /// Attempts Vision panel detection (Option A). If 2 or more panels are detected,
-    /// returns them sorted in reading order. Otherwise falls back to Smart Gutter / Overlap strides (Option C.1/C.2)
-    /// specialized for dual pages or nondual single pages.
+    /// Guided View Panel Provider:
+    /// Respects the user's preferred PanelInspectionStyle (.hybrid, .dynamicAI, or .smartStrides).
     static func detectPanelsOrSmartStrides(
         in image: UIImage,
         isDualPage: Bool = false,
         mangaMode: Bool = false
     ) async -> [Panel] {
-        let detected = await detectPanels(in: image, mode: .automatic, mangaMode: mangaMode)
-        if detected.count >= 2 {
-            return detected
+        let style = await MainActor.run { EBookPreferences.shared.panelInspectionStyle }
+
+        switch style {
+        case .smartStrides:
+            // Explicit Smart Tiers / Gutter Stride Viewer (Top / Mid / Bottom Half-Page view)
+            return generateSmartStrides(for: image, isDualPage: isDualPage, mangaMode: mangaMode)
+
+        case .dynamicAI:
+            // True AI Panel-by-Panel Guided View
+            let detected = await detectPanels(in: image, mode: .automatic, mangaMode: mangaMode)
+            if !detected.isEmpty {
+                return detected
+            }
+            // Fallback to strides only if zero panels detected (e.g. text/cover page)
+            return generateSmartStrides(for: image, isDualPage: isDualPage, mangaMode: mangaMode)
+
+        case .hybrid:
+            // Adaptive Hybrid: AI panels if 2 or more detected, otherwise smooth smart strides
+            let detected = await detectPanels(in: image, mode: .automatic, mangaMode: mangaMode)
+            if detected.count >= 2 {
+                return detected
+            }
+            return generateSmartStrides(for: image, isDualPage: isDualPage, mangaMode: mangaMode)
         }
-        return generateSmartStrides(for: image, isDualPage: isDualPage, mangaMode: mangaMode)
     }
 }

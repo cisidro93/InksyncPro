@@ -270,6 +270,21 @@ struct ReaderChrome: View {
                     } label: {
                         Label("Screen Fit: \(EBookPreferences.shared.comicPageFitMode.title)", systemImage: EBookPreferences.shared.comicPageFitMode.icon)
                     }
+                    Menu {
+                        ForEach(PanelInspectionStyle.allCases) { style in
+                            Button {
+                                EBookPreferences.shared.panelInspectionStyle = style
+                            } label: {
+                                if EBookPreferences.shared.panelInspectionStyle == style {
+                                    Label(style.title, systemImage: "checkmark")
+                                } else {
+                                    Label(style.title, systemImage: style.icon)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Panel Mode: \(EBookPreferences.shared.panelInspectionStyle.title)", systemImage: EBookPreferences.shared.panelInspectionStyle.icon)
+                    }
                 }
                 Section("Navigate") {
                     if let onTOC = onTOCToggle {

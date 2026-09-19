@@ -96,6 +96,25 @@ struct ReaderSettingsHUD: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 20)
 
+                // ── Panel Guided View Mode ──────────────────────────────────────────
+                sectionHeader("Panel Mode & Guided View")
+
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        ForEach(PanelInspectionStyle.allCases) { style in
+                            panelStyleButton(style)
+                        }
+                    }
+                    
+                    Text(prefs.panelInspectionStyle.subtitle)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundColor(.white.opacity(0.55))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 20)
+
                 // ── Screen Space & Scaling (iPhone Full Bleed) ─────────────────────
                 sectionHeader("Screen Space & Scaling")
 
@@ -456,6 +475,38 @@ struct ReaderSettingsHUD: View {
                 Image(systemName: mode.icon)
                     .font(.system(size: 15, weight: isSelected ? .bold : .medium))
                 Text(mode.title)
+                    .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+            }
+            .foregroundStyle(isSelected ? Color.inkGreen : Color.white.opacity(0.8))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(isSelected ? Color.inkGreen.opacity(0.2) : Color.white.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(isSelected ? Color.inkGreen.opacity(0.6) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Panel Style Button
+
+    @ViewBuilder
+    private func panelStyleButton(_ style: PanelInspectionStyle) -> some View {
+        let isSelected: Bool = (prefs.panelInspectionStyle == style)
+        Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                prefs.panelInspectionStyle = style
+            }
+            HapticEngine.selection()
+        } label: {
+            VStack(spacing: 5) {
+                Image(systemName: style.icon)
+                    .font(.system(size: 15, weight: isSelected ? .bold : .medium))
+                Text(style.title)
                     .font(.system(size: 11, weight: isSelected ? .bold : .medium))
             }
             .foregroundStyle(isSelected ? Color.inkGreen : Color.white.opacity(0.8))

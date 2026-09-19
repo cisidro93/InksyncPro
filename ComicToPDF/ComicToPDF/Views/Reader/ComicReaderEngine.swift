@@ -3335,6 +3335,10 @@ struct ComicSpreadGuidedView: View {
     @State private var lastTapTime: Date = .distantPast
     @State private var pendingSingleTapWorkItem: DispatchWorkItem? = nil
     @State private var dragOffset: CGSize = .zero
+    @State private var showPanelBadge: Bool = false
+    @State private var badgeDismissTask: Task<Void, Never>? = nil
+
+    @ObservedObject private var prefs = EBookPreferences.shared
 
     private var tapZoneStyle: TapZoneStyle {
         TapZoneStyle(rawValue: UserDefaults.standard.string(forKey: "tapZoneStyle") ?? "") ?? .classic
@@ -3363,6 +3367,19 @@ struct ComicSpreadGuidedView: View {
                 if currentStrideIndex >= 0 && currentStrideIndex < strides.count {
                     // ── Focused Inspection View (Smart Gutter / Panel Zoom) ──
                     inspectionStrideView(for: geo.size)
+
+                    // ── Discreet Panel / Tier Index HUD Indicator ──
+                    if showPanelBadge {
+                        VStack {
+                            panelBadgeView(for: strides[currentStrideIndex])
+                                .padding(.top, 18)
+                                .transition(.asymmetric(
+                                    insertion: .opacity.combined(with: .scale(scale: 0.92)),
+                                    removal: .opacity
+                                ))
+                            Spacer()
+                        }
+                    }
                 } else {
                     // ── Macro Physical Spread Overview (Feels like holding a comic) ──
                     macroSpreadView(for: geo.size)
@@ -3402,13 +3419,23 @@ struct ComicSpreadGuidedView: View {
         }
         .onAppear {
             loadImagesAndAnalyze()
+            flashPanelBadge()
         }
         .onChange(of: currentStrideIndex) { _, _ in
             dragOffset = .zero
+            flashPanelBadge()
+        }
+        .onChange(of: prefs.panelInspectionStyle) { _, _ in
+            strides.removeAll()
+            isAnalyzing = false
+            currentStrideIndex = 0
+            loadImagesAndAnalyze()
         }
         .onDisappear {
             pendingSingleTapWorkItem?.cancel()
             pendingSingleTapWorkItem = nil
+            badgeDismissTask?.cancel()
+            badgeDismissTask = nil
         }
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
             guard let userInfo = notification.userInfo,
@@ -3475,8 +3502,38 @@ struct ComicSpreadGuidedView: View {
     }
 
     @ViewBuilder
-    private var hudOverlay: some View {
-        EmptyView()
+    private func panelBadgeView(for stride: SpreadStride) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: prefs.panelInspectionStyle.icon)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.inkGreen)
+            Text(stride.label)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundColor(.white)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+        .shadow(color: .black.opacity(0.45), radius: 10, y: 3)
+    }
+
+    private func flashPanelBadge() {
+        badgeDismissTask?.cancel()
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+            showPanelBadge = true
+        }
+        badgeDismissTask = Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            if !Task.isCancelled {
+                await MainActor.run {
+                    withAnimation(.easeOut(duration: 0.4)) {
+                        showPanelBadge = false
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Gesture Handling
@@ -3608,6 +3665,18 @@ struct ComicSpreadGuidedView: View {
                 p1 = []
             }
 
+            func panelLabel(for panel: PanelExtractor.Panel, index: Int, total: Int) -> String {
+                let isFullWidthTier = panel.boundingBox.width >= 0.88
+                if isFullWidthTier {
+                    if total == 3 {
+                        return index == 0 ? "Top Tier" : (index == 1 ? "Middle Tier" : "Bottom Tier")
+                    } else if total == 2 {
+                        return index == 0 ? "Top Half" : "Bottom Half"
+                    }
+                }
+                return "Panel \(index + 1) of \(total)"
+            }
+
             var builtStrides: [SpreadStride] = []
             if spread.count == 2, let idx1 = idx1 {
                 // In both Western and Manga, idx0 (the lower page number) is read first:
@@ -3619,37 +3688,16 @@ struct ComicSpreadGuidedView: View {
                 let secondPanels = p1
 
                 for (i, panel) in firstPanels.enumerated() {
-                    let lbl: String
-                    if firstPanels.count > 3 {
-                        lbl = "Panel \(i + 1) of \(firstPanels.count)"
-                    } else if firstPanels.count == 3 {
-                        lbl = i == 0 ? "Top Tier" : (i == 1 ? "Middle Tier" : "Bottom Tier")
-                    } else {
-                        lbl = i == 0 ? "Top Section" : "Bottom Section"
-                    }
+                    let lbl = panelLabel(for: panel, index: i, total: firstPanels.count)
                     builtStrides.append(SpreadStride(pageIndex: firstIdx, panel: panel, label: lbl, subIndex: i, totalForPage: firstPanels.count))
                 }
                 for (i, panel) in secondPanels.enumerated() {
-                    let lbl: String
-                    if secondPanels.count > 3 {
-                        lbl = "Panel \(i + 1) of \(secondPanels.count)"
-                    } else if secondPanels.count == 3 {
-                        lbl = i == 0 ? "Top Tier" : (i == 1 ? "Middle Tier" : "Bottom Tier")
-                    } else {
-                        lbl = i == 0 ? "Top Section" : "Bottom Section"
-                    }
+                    let lbl = panelLabel(for: panel, index: i, total: secondPanels.count)
                     builtStrides.append(SpreadStride(pageIndex: secondIdx, panel: panel, label: lbl, subIndex: i, totalForPage: secondPanels.count))
                 }
             } else {
                 for (i, panel) in p0.enumerated() {
-                    let lbl: String
-                    if p0.count > 3 {
-                        lbl = "Panel \(i + 1) of \(p0.count)"
-                    } else if p0.count == 3 {
-                        lbl = i == 0 ? "Top Tier" : (i == 1 ? "Middle Tier" : "Bottom Tier")
-                    } else {
-                        lbl = i == 0 ? "Top Section" : "Bottom Section"
-                    }
+                    let lbl = panelLabel(for: panel, index: i, total: p0.count)
                     builtStrides.append(SpreadStride(pageIndex: idx0, panel: panel, label: lbl, subIndex: i, totalForPage: p0.count))
                 }
             }

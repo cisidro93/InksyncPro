@@ -18,17 +18,19 @@ class DeepScanPanelProvider: PanelProvider {
         filter?.setValue(10.0, forKey: "inputIntensity")
         
         let request = VNDetectContoursRequest()
+        request.maximumImageDimension = 1024
         
         let finalImage: CGImage
         if let edgeImage = filter?.outputImage,
            let finalCGImage = context.createCGImage(edgeImage, from: edgeImage.extent) {
             finalImage = finalCGImage
-            // High contrast setup
+            // High contrast setup: CIEdges generates bright white edges on a black background
             request.contrastAdjustment = 1.6
-            request.detectsDarkOnLight = true // Look for dark panel borders on white gutters
+            request.detectsDarkOnLight = false // Look for luminous bright edge contours on dark canvas
         } else {
-            // Fallback to raw image if CI fails
+            // Fallback to raw image if CI fails (dark borders on light gutters)
             finalImage = cgImage
+            request.detectsDarkOnLight = true
         }
         
         let handler = VNImageRequestHandler(cgImage: finalImage, options: [:])
@@ -49,7 +51,7 @@ class DeepScanPanelProvider: PanelProvider {
             }
             
             var candidates: [PanelCandidate] = []
-            let minSide = CGFloat(currentMinSize)
+            let minSide = CGFloat(min(0.06, currentMinSize))
             
             for contour in allContours {
                 let path = contour.normalizedPath
@@ -58,8 +60,8 @@ class DeepScanPanelProvider: PanelProvider {
                 // Filter out tiny noise contours
                 guard boundingBox.width >= minSide && boundingBox.height >= minSide else { continue }
                 
-                // We also don't want the contour of the *entire page* itself, if present
-                if boundingBox.width > 0.95 && boundingBox.height > 0.95 { continue }
+                // Filter out outer page boundary
+                if boundingBox.width >= 0.93 && boundingBox.height >= 0.93 { continue }
                 
                 candidates.append(PanelCandidate(
                     boundingBox: boundingBox,

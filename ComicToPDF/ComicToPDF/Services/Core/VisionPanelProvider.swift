@@ -15,10 +15,13 @@ class VisionPanelProvider: PanelProvider {
 
         // 1. Rectangle Request (Baseline)
         let rectRequest = VNDetectRectanglesRequest()
-        rectRequest.minimumConfidence = 0.6
-        rectRequest.minimumSize = 0.1
-        rectRequest.minimumAspectRatio = 0.1 // Task 1 Requirement
-        rectRequest.quadratureTolerance = 20  // Task 1 Requirement
+        // Apple Vision framework defaults maximumObservations to 1!
+        // We set to 64 so all comic panel frames across the page are extracted.
+        rectRequest.maximumObservations = 64
+        rectRequest.minimumConfidence = 0.35
+        rectRequest.minimumSize = 0.05
+        rectRequest.minimumAspectRatio = 0.05
+        rectRequest.quadratureTolerance = 25
         requests.append(rectRequest)
         
         // 2. Text Request (Anchors)
@@ -42,17 +45,25 @@ class VisionPanelProvider: PanelProvider {
             }
             
             var candidates: [PanelCandidate] = []
-            
+            let effConfidence = Float(min(0.40, currentConfidence))
+            let effMinSize = CGFloat(min(0.06, currentMinSize))
+
             // Process Rects
             if let rects = rectRequest.results {
                 for obs in rects {
-                    guard obs.confidence >= Float(currentConfidence) else { 
-                        Logger.shared.log("AI Vision [Drop]: Panel rejected due to confidence (\(String(format: "%.2f", obs.confidence)) < \(currentConfidence)).", category: "AI_Verbose")
+                    // Filter out full-page outer perimeter (width & height >= 93% of entire page)
+                    if obs.boundingBox.width >= 0.93 && obs.boundingBox.height >= 0.93 {
+                        Logger.shared.log("AI Vision [Drop]: Page perimeter border ignored.", category: "AI_Verbose")
+                        continue
+                    }
+
+                    guard obs.confidence >= effConfidence else { 
+                        Logger.shared.log("AI Vision [Drop]: Panel rejected due to confidence (\(String(format: "%.2f", obs.confidence)) < \(effConfidence)).", category: "AI_Verbose")
                         continue 
                     }
                     
-                    let isWideEnough = obs.boundingBox.width >= CGFloat(currentMinSize)
-                    let isTallEnough = obs.boundingBox.height >= CGFloat(currentMinSize)
+                    let isWideEnough = obs.boundingBox.width >= effMinSize
+                    let isTallEnough = obs.boundingBox.height >= effMinSize
                     
                     guard isWideEnough && isTallEnough else { 
                         Logger.shared.log("AI Vision [Drop]: Panel rejected due to microscopic bounds (w: \(String(format: "%.2f", obs.boundingBox.width)), h: \(String(format: "%.2f", obs.boundingBox.height))).", category: "AI_Verbose")
@@ -73,11 +84,11 @@ class VisionPanelProvider: PanelProvider {
             // Process Text Anchors & Virtual Bounds
             if let texts = textRequest.results {
                 for obs in texts {
-                    let isWideEnough = obs.boundingBox.width >= CGFloat(currentMinSize)
-                    let isTallEnough = obs.boundingBox.height >= CGFloat(currentMinSize)
+                    let isWideEnough = obs.boundingBox.width >= effMinSize
+                    let isTallEnough = obs.boundingBox.height >= effMinSize
                     
                     let ratio = obs.boundingBox.width / obs.boundingBox.height
-                    let isValidAspect = ratio > 0.2 && ratio < 5.0
+                    let isValidAspect = ratio > 0.15 && ratio < 6.0
                     
                     if isWideEnough && isTallEnough && isValidAspect {
                         candidates.append(PanelCandidate(

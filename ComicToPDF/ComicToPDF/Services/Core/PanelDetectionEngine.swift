@@ -46,12 +46,15 @@ class EnsemblePanelDetector {
         // 2. Analyze Coverage
         // If we found very few panels or specific "Text Anchors" are missing a container, run Deep Scan Contours.
         let textAnchors = candidates.filter { $0.method == .textAnchor }
-        var structuralPanels = candidates.filter { $0.method == .visionRectangle || $0.method == .deepScanContour }
+        var structuralPanels = candidates.filter { 
+            ($0.method == .visionRectangle || $0.method == .deepScanContour) &&
+            ($0.boundingBox.width < 0.93 || $0.boundingBox.height < 0.93)
+        }
         
         var requiresDeepScan = false
         
-        // If vision totally failed, or the user's Adaptive Learning parameters made it too strict, try contours
-        if structuralPanels.isEmpty {
+        // If vision found fewer than 2 panels, or specific "Text Anchors" are missing a container, run Deep Scan Contours
+        if structuralPanels.count < 2 {
             requiresDeepScan = true
         } else {
             // Check if any text anchor is "orphaned" (not inside a structural panel)
@@ -95,7 +98,7 @@ class EnsemblePanelDetector {
         // Filter out raw Text Anchors that served their purpose or are explicitly covered now
         let structuralPanelsFinal = candidates.filter { $0.method != .textAnchor }
 
-        // Phase 1: Aggressive Consolidation
+        // Phase 1: Clean NMS Consolidation
         let finalPanels = consolidateOverlappingPanels(structuralPanelsFinal)
 
         // Adaptive Logging — snapshot the diagnostic string on MainActor before logging
@@ -106,12 +109,18 @@ class EnsemblePanelDetector {
         return finalPanels
     }
     
-    /// Aggressively merges disjointed bounding boxes that geometrically intersect by more than 30% of their area, preventing fractured Guided View panels.
+    /// Merges disjointed bounding boxes and duplicate detections using IoU and spatial containment,
+    /// preventing fractured Guided View panels while preserving distinct neighboring panels.
     private func consolidateOverlappingPanels(_ candidates: [PanelCandidate]) -> [PanelCandidate] {
         var merged = [PanelCandidate]()
         
+        // Filter out perimeter border boxes (>= 93% width and height)
+        let validCandidates = candidates.filter {
+            $0.boundingBox.width < 0.93 || $0.boundingBox.height < 0.93
+        }
+        
         // Sort by confidence (strongest anchors naturally define the primary row/block bounds)
-        var pool = candidates.sorted { $0.confidence > $1.confidence }
+        var pool = validCandidates.sorted { $0.confidence > $1.confidence }
         
         while !pool.isEmpty {
             let anchor = pool.removeFirst()
@@ -129,14 +138,18 @@ class EnsemblePanelDetector {
                     continue
                 }
                 
-                // Calculate percentage of area overlap strictly relative to the smaller bounding box fragment
                 let intersectionArea = intersection.width * intersection.height
-                let minArea = min(currentMergedBounds.width * currentMergedBounds.height, candidate.boundingBox.width * candidate.boundingBox.height)
+                let currentArea = currentMergedBounds.width * currentMergedBounds.height
+                let candidateArea = candidate.boundingBox.width * candidate.boundingBox.height
+                let minArea = min(currentArea, candidateArea)
+                let unionArea = currentArea + candidateArea - intersectionArea
                 
-                // Critical NMS Fusion: If fragments share 30% spatial volume, they are guaranteed to belong to the same parent panel.
-                if minArea > 0 && intersectionArea > (minArea * 0.3) {
+                let iou = unionArea > 0 ? (intersectionArea / unionArea) : 0.0
+                let containment = minArea > 0 ? (intersectionArea / minArea) : 0.0
+                
+                // Merge if duplicate detection (IoU > 0.40) or if fragment is substantially inside (containment > 0.65)
+                if iou > 0.40 || containment > 0.65 {
                     currentMergedBounds = currentMergedBounds.union(candidate.boundingBox)
-                    // Mutate the parent parameters to reflect the absorption
                     currentBaseConfidence = min(1.0, currentBaseConfidence * 1.05)
                     containsTextAccumulated = containsTextAccumulated || candidate.containsText
                 } else {
@@ -146,12 +159,15 @@ class EnsemblePanelDetector {
             
             pool = remainingPool
             
-            merged.append(PanelCandidate(
-                boundingBox: currentMergedBounds,
-                confidence: currentBaseConfidence,
-                method: currentMethod,
-                containsText: containsTextAccumulated
-            ))
+            // Only add if it didn't balloon into the full page perimeter
+            if currentMergedBounds.width < 0.93 || currentMergedBounds.height < 0.93 {
+                merged.append(PanelCandidate(
+                    boundingBox: currentMergedBounds,
+                    confidence: currentBaseConfidence,
+                    method: currentMethod,
+                    containsText: containsTextAccumulated
+                ))
+            }
         }
         
         return merged
