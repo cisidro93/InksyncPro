@@ -18,10 +18,10 @@ class VisionPanelProvider: PanelProvider {
         // Apple Vision framework defaults maximumObservations to 1!
         // We set to 64 so all comic panel frames across the page are extracted.
         rectRequest.maximumObservations = 64
-        rectRequest.minimumConfidence = 0.35
-        rectRequest.minimumSize = 0.05
-        rectRequest.minimumAspectRatio = 0.05
-        rectRequest.quadratureTolerance = 25
+        rectRequest.minimumConfidence = 0.20
+        rectRequest.minimumSize = 0.04
+        rectRequest.minimumAspectRatio = 0.03
+        rectRequest.quadratureTolerance = 35
         requests.append(rectRequest)
         
         // 2. Text Request (Anchors)
@@ -45,8 +45,8 @@ class VisionPanelProvider: PanelProvider {
             }
             
             var candidates: [PanelCandidate] = []
-            let effConfidence = Float(min(0.40, currentConfidence))
-            let effMinSize = CGFloat(min(0.06, currentMinSize))
+            let effConfidence = Float(min(0.25, currentConfidence))
+            let effMinSize = CGFloat(min(0.04, currentMinSize))
 
             // Process Rects
             if let rects = rectRequest.results {

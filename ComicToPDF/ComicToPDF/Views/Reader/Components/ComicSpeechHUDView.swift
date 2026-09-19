@@ -7,13 +7,15 @@ import AVFoundation
 /// - Real-time location tracker indicator (`Bubble 2/5`, `Sentence 3/14`)
 /// - Full transport controls: Rewind, Play/Pause, Fast-Forward, Stop
 /// - Speed adjustment menu (0.75x, 1.0x, 1.25x, 1.5x, 2.0x)
-/// - Voice picker menu with iOS system voices & Personal Voices
+/// - Voice picker menu with English voices prioritized and Voice Audition / Preview testing
 /// - Live text snippet subtitle preview
 struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
     @ObservedObject var engine: Engine
     var onClose: () -> Void
 
     @State private var isExpanded: Bool = false
+    @State private var showVoiceSheet: Bool = false
+    @StateObject private var previewSynth = VoicePreviewSynthesizer()
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
     private let speedOptions: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
@@ -110,6 +112,12 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
 
                 // Voice Picker Menu
                 Menu {
+                    Button {
+                        showVoiceSheet = true
+                    } label: {
+                        Label("Test Voices & Language Settings...", systemImage: "waveform.badge.magnifyingglass")
+                    }
+
                     Section("Personal Voices (On-Device)") {
                         if engine.personalVoices.isEmpty {
                             if #available(iOS 17.0, *) {
@@ -143,7 +151,7 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                         }
                     }
 
-                    Section("System Voices") {
+                    Section("English Voices (Curated)") {
                         ForEach(filteredVoices, id: \.identifier) { voice in
                             Button {
                                 HapticEngine.selection()
@@ -157,6 +165,12 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                                 }
                             }
                         }
+                    }
+
+                    Button {
+                        showVoiceSheet = true
+                    } label: {
+                        Label("All Languages & Voices...", systemImage: "globe")
                     }
                 } label: {
                     Image(systemName: "person.wave.2.fill")
@@ -173,6 +187,7 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                 // Stop & Close
                 Button {
                     HapticEngine.light()
+                    previewSynth.stop()
                     engine.stop()
                     onClose()
                 } label: {
@@ -214,14 +229,243 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: engine.activeDisplayIndex)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: engine.isPlaying)
+        .sheet(isPresented: $showVoiceSheet, onDismiss: {
+            previewSynth.stop()
+        }) {
+            NavigationStack {
+                VoiceAuditionSheet(
+                    engine: engine,
+                    previewSynth: previewSynth,
+                    isPresented: $showVoiceSheet
+                )
+            }
+        }
     }
 
     private var filteredVoices: [AVSpeechSynthesisVoice] {
-        let currentLangPrefix = String(Locale.current.language.languageCode?.identifier.prefix(2) ?? "en")
-        let primary = engine.availableVoices.filter { $0.language.starts(with: currentLangPrefix) }
-        let japanese = engine.availableVoices.filter { $0.language.starts(with: "ja") }
-        let combined = primary + japanese
-        return combined.isEmpty ? Array(engine.availableVoices.prefix(10)) : combined
+        let englishVoices = engine.availableVoices
+            .filter { $0.language.starts(with: "en") }
+            .sorted { a, b in
+                if a.quality.rawValue != b.quality.rawValue {
+                    return a.quality.rawValue > b.quality.rawValue
+                }
+                return a.name < b.name
+            }
+        return Array(englishVoices.prefix(12))
+    }
+}
+
+// MARK: - Voice Preview Synthesizer (Audition Engine)
+
+@MainActor
+final class VoicePreviewSynthesizer: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
+    @Published var activeTestingVoiceId: String? = nil
+    private let synth = AVSpeechSynthesizer()
+
+    override init() {
+        super.init()
+        synth.delegate = self
+    }
+
+    func testVoice(_ voice: AVSpeechSynthesisVoice) {
+        if activeTestingVoiceId == voice.identifier {
+            synth.stopSpeaking(at: .immediate)
+            activeTestingVoiceId = nil
+            return
+        }
+
+        synth.stopSpeaking(at: .immediate)
+        activeTestingVoiceId = voice.identifier
+        HapticEngine.selection()
+
+        let sampleText = "Hello! This is \(voice.name). Ready to read your comic."
+        let utterance = AVSpeechUtterance(string: sampleText)
+        utterance.voice = voice
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        synth.speak(utterance)
+    }
+
+    func stop() {
+        if synth.isSpeaking {
+            synth.stopSpeaking(at: .immediate)
+        }
+        activeTestingVoiceId = nil
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor in
+            self.activeTestingVoiceId = nil
+        }
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor in
+            self.activeTestingVoiceId = nil
+        }
+    }
+}
+
+// MARK: - Voice Audition & Language Selection Sheet
+
+struct VoiceAuditionSheet<Engine: ReaderSpeechEngineProtocol>: View {
+    @ObservedObject var engine: Engine
+    @ObservedObject var previewSynth: VoicePreviewSynthesizer
+    @Binding var isPresented: Bool
+
+    @State private var languageScope: LanguageScope = .english
+    @State private var searchText: String = ""
+
+    enum LanguageScope: String, CaseIterable, Identifiable {
+        case english = "English"
+        case all = "All Languages"
+        var id: String { rawValue }
+    }
+
+    private func sortVoices(_ a: AVSpeechSynthesisVoice, _ b: AVSpeechSynthesisVoice) -> Bool {
+        if a.quality.rawValue != b.quality.rawValue {
+            return a.quality.rawValue > b.quality.rawValue
+        }
+        return a.name < b.name
+    }
+
+    private var groupedVoices: [(title: String, voices: [AVSpeechSynthesisVoice])] {
+        let pool: [AVSpeechSynthesisVoice]
+        switch languageScope {
+        case .english:
+            pool = engine.availableVoices.filter { $0.language.starts(with: "en") }
+        case .all:
+            pool = engine.availableVoices
+        }
+
+        let filtered: [AVSpeechSynthesisVoice]
+        if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            filtered = pool
+        } else {
+            let query = searchText.lowercased()
+            filtered = pool.filter {
+                $0.name.lowercased().contains(query) ||
+                $0.language.lowercased().contains(query)
+            }
+        }
+
+        let dict = Dictionary(grouping: filtered) { voice -> String in
+            let loc = Locale(identifier: voice.language)
+            return loc.localizedString(forIdentifier: voice.language) ?? voice.language
+        }
+
+        return dict.map { (title: $0.key, voices: $0.value.sorted(by: sortVoices)) }
+            .sorted { $0.title < $1.title }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Scope Picker
+            Picker("Language", selection: $languageScope) {
+                ForEach(LanguageScope.allCases) { scope in
+                    Text(scope.rawValue).tag(scope)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            List {
+                ForEach(groupedVoices, id: \.title) { group in
+                    Section(header: Text(group.title).font(.system(size: 13, weight: .bold))) {
+                        ForEach(group.voices, id: \.identifier) { voice in
+                            voiceRow(voice)
+                        }
+                    }
+                }
+            }
+            .searchable(text: $searchText, prompt: "Search voice name or dialect...")
+        }
+        .navigationTitle("Read Aloud Voices")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Done") {
+                    previewSynth.stop()
+                    isPresented = false
+                }
+                .font(.system(size: 16, weight: .semibold))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func voiceRow(_ voice: AVSpeechSynthesisVoice) -> some View {
+        let isSelected = (engine.selectedVoice?.identifier == voice.identifier)
+        let isTesting = (previewSynth.activeTestingVoiceId == voice.identifier)
+
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(voice.name)
+                        .font(.system(size: 15, weight: isSelected ? .bold : .medium))
+                        .foregroundColor(Color.inkText)
+
+                    if voice.quality == .enhanced {
+                        Text("Enhanced")
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.inkGreen.opacity(0.18), in: Capsule())
+                            .foregroundColor(Color.inkGreen)
+                    } else if voice.quality == .premium {
+                        Text("Premium")
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.inkViolet.opacity(0.18), in: Capsule())
+                            .foregroundColor(Color.inkViolet)
+                    }
+                }
+
+                Text(voice.language)
+                    .font(.system(size: 12))
+                    .foregroundColor(Color.inkSecondary)
+            }
+
+            Spacer()
+
+            // Play / Audition Button
+            Button {
+                previewSynth.testVoice(voice)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: isTesting ? "speaker.wave.3.fill" : "speaker.wave.2")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(isTesting ? "Playing" : "Test")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(isTesting ? Color.inkViolet.opacity(0.25) : Color.inkSecondary.opacity(0.12))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isTesting ? Color.inkViolet : Color.clear, lineWidth: 1)
+                )
+                .foregroundColor(isTesting ? Color.inkViolet : Color.inkText)
+            }
+            .buttonStyle(.borderless)
+
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(Color.inkViolet)
+                    .padding(.leading, 6)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            HapticEngine.selection()
+            engine.setVoice(voice)
+        }
     }
 }
 

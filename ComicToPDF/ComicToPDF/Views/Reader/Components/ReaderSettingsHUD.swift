@@ -114,6 +114,42 @@ struct ReaderSettingsHUD: View {
                         .foregroundColor(Color.inkSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
+
+                    Button {
+                        HapticEngine.selection()
+                        NotificationCenter.default.post(name: NSNotification.Name("ComicReader_OpenPanelWorkspace"), object: nil)
+                    } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.inkViolet.opacity(0.18))
+                                    .frame(width: isPad ? 36 : 32, height: isPad ? 36 : 32)
+                                Image(systemName: "slider.horizontal.2.square")
+                                    .font(.system(size: isPad ? 16 : 14, weight: .semibold))
+                                    .foregroundColor(Color.inkViolet)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Adjust Page Panels in Workspace...")
+                                    .font(.system(size: isPad ? 15 : 13, weight: .semibold))
+                                    .foregroundColor(Color.inkText)
+                                Text("Interactive panel boundaries, reticle snapping & ordering")
+                                    .font(.system(size: isPad ? 12 : 11))
+                                    .foregroundColor(Color.inkSecondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(Color.inkSecondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.inkViolet.opacity(0.08))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
                 }
                 .padding(.horizontal, 14)
                 .padding(.bottom, 20)

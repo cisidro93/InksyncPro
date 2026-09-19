@@ -75,27 +75,28 @@ struct PanelExtractor {
             return generateGridPanels(rows: 2, cols: 2)
         }
         
+        let detectionImage = preprocessForDetection(image).map { UIImage(cgImage: $0) } ?? image
         let detector = EnsemblePanelDetector()
         let candidates: [PanelCandidate]
         
-        // Determine Strategy
-        // For now, Automatic/Neural/Aggressive trigger the full Ensemble.
-        // Conservative triggers just the Vision base (Task 1) via the Ensemble but we could tune it.
-        // For simplicity, we use Ensemble for all dynamic modes, as it's adaptive.
-        
         if mode == .conservative {
-            // Bypass Deep Scan for conservative
             let context = CIContext()
-            candidates = await VisionPanelProvider().detectPanels(in: image, context: context)
+            candidates = await VisionPanelProvider().detectPanels(in: detectionImage, context: context)
         } else {
-            // Full Ensemble
-            candidates = await detector.detect(in: image)
+            candidates = await detector.detect(in: detectionImage)
         }
         
-        // Convert to shared Panel model
-        let panels = candidates.map { Panel(boundingBox: $0.boundingBox) }
+        var panels = candidates.map { Panel(boundingBox: $0.boundingBox) }
         
-        // Sort
+        // If vision + deep scan found fewer than 2 distinct panels on the page,
+        // synthesize clean panels using intelligent multi-tier gutter decomposition.
+        if panels.count < 2 {
+            let gutterPanels = decomposeGutterPanels(in: image, mangaMode: mangaMode)
+            if gutterPanels.count >= 2 {
+                panels = gutterPanels
+            }
+        }
+        
         return clusterAndSortPanels(panels, mangaMode: mangaMode)
     }
     
@@ -447,5 +448,96 @@ struct PanelExtractor {
             }
             return generateSmartStrides(for: image, isDualPage: isDualPage, mangaMode: mangaMode)
         }
+    }
+
+    /// Synthesizes intelligent comic panels by combining detected horizontal tiers
+    /// with internal vertical gutters. Guarantees clean panel detection even on hand-inked or borderless pages.
+    static func decomposeGutterPanels(in image: UIImage, mangaMode: Bool = false) -> [Panel] {
+        let tiers = generateSmartStrides(for: image, isDualPage: false, mangaMode: mangaMode)
+        guard !tiers.isEmpty else { return [] }
+
+        guard let cgImage = image.cgImage,
+              let thumbnail = SmartCropper.createLowResThumbnail(from: cgImage, maxDimension: 256) else {
+            return tiers
+        }
+
+        let width = thumbnail.width
+        let height = thumbnail.height
+        guard width > 20 && height > 20 else { return tiers }
+
+        let colorSpace = CGColorSpaceCreateDeviceGray()
+        var rawData = [UInt8](repeating: 0, count: width * height)
+        guard let context = CGContext(
+            data: &rawData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return tiers }
+
+        context.draw(thumbnail, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        var resultPanels: [Panel] = []
+
+        for tier in tiers {
+            let b = tier.boundingBox
+            // In CGContext thumbnail coordinates, row 0 is bottom, row height-1 is top
+            let startRow = max(0, min(height - 1, Int(b.minY * Double(height))))
+            let endRow = max(0, min(height - 1, Int(b.maxY * Double(height))))
+            let tierHeight = endRow - startRow + 1
+
+            if tierHeight < 15 {
+                resultPanels.append(tier)
+                continue
+            }
+
+            // Scan column slices within this tier (between 25% and 75% width) to find a vertical gutter
+            let startX = Int(Double(width) * 0.25)
+            let endX = Int(Double(width) * 0.75)
+            var bestGutterX: Int? = nil
+            var minVariance = Int.max
+
+            for x in startX...endX {
+                var colMin = 255
+                var colMax = 0
+                var sum = 0
+
+                for y in startRow...endRow {
+                    let val = Int(rawData[y * width + x])
+                    if val < colMin { colMin = val }
+                    if val > colMax { colMax = val }
+                    sum += val
+                }
+
+                let spread = colMax - colMin
+                let avg = sum / tierHeight
+
+                // Check for a clean gutter column (uniform light/dark or minimal variance)
+                let isGutterCol = (avg > 210 && spread < 45) || (avg < 40 && spread < 35) || spread < 20
+                if isGutterCol && spread < minVariance {
+                    minVariance = spread
+                    bestGutterX = x
+                }
+            }
+
+            if let splitX = bestGutterX {
+                let splitRatio = Double(splitX) / Double(width)
+                let leftPanel = Panel(boundingBox: CGRect(x: 0, y: b.minY, width: splitRatio, height: b.height))
+                let rightPanel = Panel(boundingBox: CGRect(x: splitRatio, y: b.minY, width: 1.0 - splitRatio, height: b.height))
+                if mangaMode {
+                    resultPanels.append(rightPanel)
+                    resultPanels.append(leftPanel)
+                } else {
+                    resultPanels.append(leftPanel)
+                    resultPanels.append(rightPanel)
+                }
+            } else {
+                resultPanels.append(tier)
+            }
+        }
+
+        return resultPanels
     }
 }

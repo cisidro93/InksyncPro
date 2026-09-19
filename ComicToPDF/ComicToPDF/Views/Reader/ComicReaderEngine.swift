@@ -2095,11 +2095,12 @@ struct ComicReaderEngine: View {
         ComicSpreadGuidedView(
             spread: currentSpread,
             cache: cache,
-            pdfID: pdf.id,
+            pdf: pdf,
             masterIndex: $currentIndex,
             spreads: spreads,
             activeFilterPreset: activeFilterPreset,
             isMangaMode: isMangaActive,
+            isChromeVisible: chromeVisible,
             onTapChrome: { chromeVisible.toggle() },
             onToggleReadingMode: {
                 let now = Date()
@@ -3319,19 +3320,23 @@ struct ComicPageView: View {
 struct ComicSpreadGuidedView: View {
     let spread: [Int] // [pageIndex] for single, or [leftIndex, rightIndex] for dual spread
     let cache: ComicImageCache
-    let pdfID: UUID
+    let pdf: ConvertedPDF
     @Binding var masterIndex: Int
     let spreads: [[Int]]
     let activeFilterPreset: ReadingFilterPreset
     var isMangaMode: Bool = false
+    var isChromeVisible: Bool = false
     var onTapChrome: () -> Void
     var onToggleReadingMode: (() -> Void)? = nil
+
+    private var pdfID: UUID { pdf.id }
 
     @State private var image0: UIImage? = nil
     @State private var image1: UIImage? = nil
     @State private var currentStrideIndex: Int = 0 // 0 = Focused Inspection View (first panel/section)
     @State private var strides: [SpreadStride] = []
     @State private var isAnalyzing: Bool = false
+    @State private var isAdjustingInWorkspace: Bool = false
     @State private var lastTapTime: Date = .distantPast
     @State private var pendingSingleTapWorkItem: DispatchWorkItem? = nil
     @State private var dragOffset: CGSize = .zero
@@ -3369,7 +3374,7 @@ struct ComicSpreadGuidedView: View {
                     inspectionStrideView(for: geo.size)
 
                     // ── Discreet Panel / Tier Index HUD Indicator ──
-                    if showPanelBadge {
+                    if showPanelBadge || isChromeVisible {
                         VStack {
                             panelBadgeView(for: strides[currentStrideIndex])
                                 .padding(.top, 18)
@@ -3437,6 +3442,23 @@ struct ComicSpreadGuidedView: View {
             badgeDismissTask?.cancel()
             badgeDismissTask = nil
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ComicReader_OpenPanelWorkspace"))) { _ in
+            isAdjustingInWorkspace = true
+        }
+        .sheet(isPresented: $isAdjustingInWorkspace, onDismiss: {
+            loadImagesAndAnalyze()
+        }) {
+            let activePage = (currentStrideIndex >= 0 && currentStrideIndex < strides.count) ? strides[currentStrideIndex].pageIndex : (spread.first ?? masterIndex)
+            NavigationStack {
+                PrecisionCanvasView(
+                    pdf: pdf,
+                    pageIndex: .constant(activePage),
+                    totalCount: max(1, cache.pageCount),
+                    conversionManager: ConversionManager.shared,
+                    shouldEndSessionOnDisappear: false
+                )
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
             guard let userInfo = notification.userInfo,
                   let loadedIndex = userInfo["index"] as? Int else { return }
@@ -3503,13 +3525,30 @@ struct ComicSpreadGuidedView: View {
 
     @ViewBuilder
     private func panelBadgeView(for stride: SpreadStride) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: prefs.panelInspectionStyle.icon)
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(.inkGreen)
             Text(stride.label)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundColor(.white)
+
+            Rectangle()
+                .fill(Color.white.opacity(0.25))
+                .frame(width: 1, height: 12)
+
+            Button {
+                HapticEngine.selection()
+                isAdjustingInWorkspace = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "slider.horizontal.2.square")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Adjust")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                }
+                .foregroundColor(Color.inkViolet)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -3802,7 +3841,41 @@ struct ComicSpreadGuidedView: View {
         let imageRenderCenter = CGPoint(x: renderW / 2, y: renderH / 2)
 
         let tx = (imageRenderCenter.x - panelCenter.x) * scale
-        let ty = (imageRenderCenter.y - panelCenter.y) * scale
+        var ty = (imageRenderCenter.y - panelCenter.y) * scale
+
+        // ── Smart Vertical Framing Safeguard ──
+        // When a tier or panel is displayed, centering it vertically causes
+        // the top edge to overflow the screen whenever mappedH * scale > proxy.height.
+        // For top tiers / top-of-page panels (and in landscape mode), speech bubbles
+        // and captions sit right at the top. We shift the tier DOWN so its top sits safely
+        // within the screen with comfortable breathing room.
+        let scaledPanelH = mappedH * scale
+        let screenPanelTop = (proxy.height - scaledPanelH) / 2
+        let screenPanelBottom = (proxy.height + scaledPanelH) / 2
+
+        let isTopEdge = (rawMaxY >= 0.88) || (rect.minY <= 0.03 * imgSize.height)
+        let isBottomEdge = (rawMinY <= 0.12) || (rect.maxY >= 0.97 * imgSize.height)
+        let isLandscape = proxy.width > proxy.height
+        let safeTop: CGFloat = isLandscape ? 12 : 16
+        let safeBottom: CGFloat = isLandscape ? 12 : 16
+
+        if isTopEdge {
+            // Shift down so the top of the comic page / speech bubbles are 100% visible
+            if screenPanelTop < safeTop {
+                let shiftDown = safeTop - screenPanelTop
+                ty += shiftDown
+            }
+        } else if isBottomEdge {
+            // Shift up so bottom panels / credits aren't cut off
+            if screenPanelBottom > (proxy.height - safeBottom) {
+                let shiftUp = screenPanelBottom - (proxy.height - safeBottom)
+                ty -= shiftUp
+            }
+        } else if screenPanelTop < safeTop {
+            // General safety: if an inner panel still overflows top, prioritize top dialogue
+            let shiftDown = safeTop - screenPanelTop
+            ty += shiftDown
+        }
 
         guard tx.isFinite, ty.isFinite else {
             return ViewMetrics(scale: scale, offsetX: 0, offsetY: 0)
