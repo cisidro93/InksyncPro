@@ -99,8 +99,8 @@ struct ReaderSettingsHUD: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 20)
 
-                // ── Panel Guided View Mode ──────────────────────────────────────────
-                sectionHeader("Panel Mode & Guided View")
+                // ── Smart Tiers & Guided Flow ──────────────────────────────────────────
+                sectionHeader("Smart Tiers & Guided Flow")
 
                 VStack(spacing: 8) {
                     HStack(spacing: 8) {
@@ -114,6 +114,15 @@ struct ReaderSettingsHUD: View {
                         .foregroundColor(Color.inkSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
+
+                    Toggle(isOn: $prefs.isPDFSmartTiersActive) {
+                        Label("PDF Smart Tiers Guided Flow", systemImage: "rectangle.split.3x1")
+                            .font(.system(size: isPad ? 13 : 12, weight: .semibold))
+                            .foregroundColor(Color.inkTextPrimary)
+                    }
+                    .tint(.inkGreen)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 4)
 
                     Button {
                         HapticEngine.selection()

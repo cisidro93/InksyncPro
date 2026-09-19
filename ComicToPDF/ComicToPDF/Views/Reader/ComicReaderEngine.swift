@@ -2847,14 +2847,14 @@ struct ComicReaderEngine: View {
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 18))
-                                .foregroundColor(.white.opacity(0.4))
+                                .foregroundColor(Color.inkSecondary)
                         }
                     }
                     
                     ScrollView {
                         Text(block.text)
                             .font(.system(size: 18, weight: .medium, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundColor(Color.inkTextPrimary)
                             .lineSpacing(6)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2905,10 +2905,11 @@ struct ComicReaderEngine: View {
                                 Text("Copy Text")
                                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                             }
-                            .foregroundColor(.black)
+                            .foregroundColor(Color.inkTextPrimary)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
-                            .background(Color.white, in: Capsule())
+                            .background(Color.inkSurfaceRaised, in: Capsule())
+                            .overlay(Capsule().strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5))
                         }
                         
                         Button {
@@ -2952,7 +2953,7 @@ struct ComicReaderEngine: View {
                         
                         Text("Page \(currentIndex + 1)")
                             .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.4))
+                            .foregroundColor(Color.inkSecondary)
                     }
                 }
                 .padding(20)
@@ -2965,7 +2966,7 @@ struct ComicReaderEngine: View {
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
+                        .stroke(Color.inkBorderSubtle, lineWidth: 0.5)
                 )
                 .shadow(color: .black.opacity(0.4), radius: 24, y: 12)
                 .frame(maxWidth: hSizeClass == .regular ? 560 : .infinity)
@@ -3531,10 +3532,10 @@ struct ComicSpreadGuidedView: View {
                 .foregroundColor(.inkGreen)
             Text(stride.label)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundColor(Color.inkTextPrimary)
 
             Rectangle()
-                .fill(Color.white.opacity(0.25))
+                .fill(Color.inkBorderSubtle)
                 .frame(width: 1, height: 12)
 
             Button {
@@ -3554,7 +3555,7 @@ struct ComicSpreadGuidedView: View {
         .padding(.vertical, 7)
         .background(.ultraThinMaterial)
         .clipShape(Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+        .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.8))
         .shadow(color: .black.opacity(0.45), radius: 10, y: 3)
     }
 
@@ -4008,23 +4009,23 @@ struct VisualComicScrubber: View {
                         .transition(.opacity)
                 } else {
                     ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                        .progressViewStyle(CircularProgressViewStyle(tint: Color.inkSecondary.opacity(0.7)))
                 }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                    .stroke(Color.inkBorderSubtle, lineWidth: 0.5)
             )
             .shadow(color: .black.opacity(0.5), radius: 14, y: 6)
 
             // Page number pill
             Text("\(index + 1) / \(totalPages)")
                 .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundColor(Color.inkTextPrimary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
                 .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
         }
     }
 }

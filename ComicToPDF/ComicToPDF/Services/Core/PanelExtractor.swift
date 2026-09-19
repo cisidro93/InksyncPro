@@ -418,36 +418,14 @@ struct PanelExtractor {
     }
 
     /// Guided View Panel Provider:
-    /// Respects the user's preferred PanelInspectionStyle (.hybrid, .dynamicAI, or .smartStrides).
+    /// Strictly uses production-ready Smart Tiers (horizontal gutter & tier strides).
     static func detectPanelsOrSmartStrides(
         in image: UIImage,
         isDualPage: Bool = false,
         mangaMode: Bool = false
     ) async -> [Panel] {
-        let style = await MainActor.run { EBookPreferences.shared.panelInspectionStyle }
-
-        switch style {
-        case .smartStrides:
-            // Explicit Smart Tiers / Gutter Stride Viewer (Top / Mid / Bottom Half-Page view)
-            return generateSmartStrides(for: image, isDualPage: isDualPage, mangaMode: mangaMode)
-
-        case .dynamicAI:
-            // True AI Panel-by-Panel Guided View
-            let detected = await detectPanels(in: image, mode: .automatic, mangaMode: mangaMode)
-            if !detected.isEmpty {
-                return detected
-            }
-            // Fallback to strides only if zero panels detected (e.g. text/cover page)
-            return generateSmartStrides(for: image, isDualPage: isDualPage, mangaMode: mangaMode)
-
-        case .hybrid:
-            // Adaptive Hybrid: AI panels if 2 or more detected, otherwise smooth smart strides
-            let detected = await detectPanels(in: image, mode: .automatic, mangaMode: mangaMode)
-            if detected.count >= 2 {
-                return detected
-            }
-            return generateSmartStrides(for: image, isDualPage: isDualPage, mangaMode: mangaMode)
-        }
+        // Smart Tiers is the rock-solid production standard for Comic and Manga guided view.
+        return generateSmartStrides(for: image, isDualPage: isDualPage, mangaMode: mangaMode)
     }
 
     /// Synthesizes intelligent comic panels by combining detected horizontal tiers

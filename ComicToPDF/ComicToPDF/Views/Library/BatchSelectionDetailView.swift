@@ -84,7 +84,7 @@ struct BatchSelectionDetailView: View {
                                         ? Color.inkSecondary.opacity(0.2)
                                         : Color.inkBlue
                                 )
-                                .foregroundColor(.white)
+                                .foregroundColor(selectionCount == 0 ? Color.inkSecondary : .white)
                                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                                 .shadow(color: selectionCount == 0 ? .clear : Color.inkBlue.opacity(0.3), radius: 6, y: 3)
                         }
@@ -99,7 +99,7 @@ struct BatchSelectionDetailView: View {
                                 .frame(maxWidth: buttonMaxWidth)
                                 .padding(.vertical, isPad ? 15 : 13)
                                 .background(selectionCount == 0 ? Color.inkSecondary.opacity(0.2) : Color.inkBlue)
-                                .foregroundColor(.white)
+                                .foregroundColor(selectionCount == 0 ? Color.inkSecondary : .white)
                                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                                 .shadow(color: selectionCount == 0 ? .clear : Color.inkBlue.opacity(0.3), radius: 6, y: 3)
                         }
@@ -114,7 +114,7 @@ struct BatchSelectionDetailView: View {
                                 .frame(maxWidth: buttonMaxWidth)
                                 .padding(.vertical, isPad ? 15 : 13)
                                 .background(selectionCount < 2 ? Color.inkSecondary.opacity(0.2) : Color.inkViolet)
-                                .foregroundColor(.white)
+                                .foregroundColor(selectionCount < 2 ? Color.inkSecondary : .white)
                                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                                 .shadow(color: selectionCount < 2 ? .clear : Color.inkViolet.opacity(0.3), radius: 6, y: 3)
                         }

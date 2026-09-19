@@ -213,16 +213,21 @@ class EBookPreferences: ObservableObject {
         }
     }
 
-    // MARK: - Comic Guided View Panel Inspection Style
-    @AppStorage("comic_panelInspectionStyle") var panelInspectionStyleRaw: String = PanelInspectionStyle.hybrid.rawValue {
+    // MARK: - Comic & PDF Guided View Panel Inspection Style (Smart Tiers)
+    @AppStorage("comic_panelInspectionStyle") var panelInspectionStyleRaw: String = PanelInspectionStyle.smartStrides.rawValue {
         didSet { objectWillChange.send() }
     }
     var panelInspectionStyle: PanelInspectionStyle {
-        get { PanelInspectionStyle(rawValue: panelInspectionStyleRaw) ?? .hybrid }
+        get { .smartStrides }
         set {
-            panelInspectionStyleRaw = newValue.rawValue
+            panelInspectionStyleRaw = PanelInspectionStyle.smartStrides.rawValue
             objectWillChange.send()
         }
+    }
+
+    // PDF Smart Tiers Enabled Flag
+    @AppStorage("pdf_smartTiersActive") var isPDFSmartTiersActive: Bool = false {
+        didSet { objectWillChange.send() }
     }
 
     var defaultCodableCropInsets: CodableCropInsets {
@@ -611,35 +616,21 @@ enum ComicPageFitMode: String, CaseIterable, Identifiable, Codable, Sendable {
     }
 }
 
-// MARK: - Comic Guided View Panel Inspection Style
+// MARK: - Guided View Panel Inspection Style
 enum PanelInspectionStyle: String, CaseIterable, Identifiable, Codable, Sendable {
-    case hybrid       = "hybrid"       // Adaptive: True AI Panels if detected, smooth tier fallback
-    case dynamicAI    = "dynamicAI"    // True AI Panel-by-Panel (Vision & Contours isolation)
     case smartStrides = "smartStrides" // Smart Tiers (Top / Mid / Bottom half & tier viewer)
 
     var id: String { rawValue }
 
     var title: String {
-        switch self {
-        case .hybrid:       return "Adaptive Auto"
-        case .dynamicAI:    return "AI Panels"
-        case .smartStrides: return "Smart Tiers"
-        }
+        return "Smart Tiers"
     }
 
     var subtitle: String {
-        switch self {
-        case .hybrid:       return "AI panels when detected, smooth tier fallback"
-        case .dynamicAI:    return "Direct panel-by-panel guided view isolation"
-        case .smartStrides: return "Top, middle, & bottom half-page gutter strides"
-        }
+        return "Top, middle, & bottom page gutter strides with continuous flow"
     }
 
     var icon: String {
-        switch self {
-        case .hybrid:       return "sparkles.rectangle.stack"
-        case .dynamicAI:    return "viewfinder.rectangular"
-        case .smartStrides: return "rectangle.split.3x1"
-        }
+        return "rectangle.split.3x1"
     }
 }

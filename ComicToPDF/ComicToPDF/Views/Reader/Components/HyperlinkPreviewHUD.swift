@@ -23,10 +23,10 @@ struct HyperlinkPreviewHUD: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Hyperlink Destination")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color.inkTextPrimary)
                     Text("Page \(targetPageIndex + 1)")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(Color.inkSecondary)
                 }
                 
                 Spacer()
@@ -37,7 +37,7 @@ struct HyperlinkPreviewHUD: View {
                 }) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 20))
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundColor(Color.inkSecondary)
                 }
             }
             .padding(.horizontal, 16)
@@ -63,7 +63,7 @@ struct HyperlinkPreviewHUD: View {
                             .tint(.inkGreen)
                         Text("Rendering Page Preview...")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(Color.inkSecondary)
                     }
                 }
             }
@@ -77,10 +77,10 @@ struct HyperlinkPreviewHUD: View {
                 }) {
                     Text("Cancel")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundColor(Color.inkTextPrimary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Color.white.opacity(0.12))
+                        .background(Color.inkSurfaceRaised)
                         .clipShape(Capsule())
                 }
                 
@@ -109,7 +109,7 @@ struct HyperlinkPreviewHUD: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.2), lineWidth: 0.75)
+                .stroke(Color.inkBorderSubtle, lineWidth: 0.75)
         )
         .shadow(color: Color.black.opacity(0.5), radius: 24, y: 10)
         .task {

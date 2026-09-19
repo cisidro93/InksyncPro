@@ -159,10 +159,9 @@ struct LibraryListView: View {
                                     .frame(width: 36, height: 36)
                                     .background(
                                         Circle()
-                                            .fill(.ultraThinMaterial)
-                                            .background(Circle().fill(Theme.blue.opacity(0.35)))
+                                            .fill(Theme.blue.opacity(0.85))
                                     )
-                                    .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                                    .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.75))
                                     .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
                             }
                             .padding(.trailing, 8)

@@ -386,7 +386,7 @@ struct ProPDFTextSelectionHUD: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("STYLE")
                     .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.5))
+                    .foregroundStyle(Color.inkSecondary)
                     .tracking(0.8)
 
                 HStack(spacing: 8) {

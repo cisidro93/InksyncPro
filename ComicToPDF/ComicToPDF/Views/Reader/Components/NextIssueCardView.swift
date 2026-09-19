@@ -52,7 +52,7 @@ struct NextIssueCardView: View {
                 
                 Text("Issue Completed")
                     .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(Color.inkTextPrimary)
             }
             .padding(.top, 8)
             

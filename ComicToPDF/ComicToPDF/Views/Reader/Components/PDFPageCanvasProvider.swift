@@ -217,7 +217,8 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         let isEraser = currentMode == .eraser
         let isColoring = InksyncInkingState.shared.isColoringModeActive
         let autoPenActive = isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
-        let isExplicitDrawingMode = isWriting || isEraser || isColoring || isMarkupActive
+        let isToolActive = isWriting || isEraser || isColoring
+        let isExplicitDrawingMode = isMarkupActive && isToolActive
         let shouldBeActive = isExplicitDrawingMode || autoPenActive
 
         canvas.overrideUserInterfaceStyle = .light

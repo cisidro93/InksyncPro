@@ -220,7 +220,8 @@ struct UnifiedReaderView: View {
                             .id(currentBook.id)
                     case .checkingEPUB:
                         ProgressView("Loading…")
-                            .foregroundColor(.white)
+                            .tint(Color.inkTextPrimary)
+                            .foregroundColor(Color.inkTextPrimary)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

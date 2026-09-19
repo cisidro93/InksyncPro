@@ -425,7 +425,7 @@ struct GlobalZettelkastenHubView: View {
                                                                 .truncationMode(.tail)
                                                             Text("\(group.value.count)")
                                                                 .font(.system(size: 10, weight: .bold, design: .rounded))
-                                                                .foregroundColor(.white)
+                                                                .foregroundColor(Color.inkTextPrimary)
                                                                 .padding(.horizontal, 6)
                                                                 .padding(.vertical, 2)
                                                                 .background(Color.primary.opacity(0.2), in: Capsule())

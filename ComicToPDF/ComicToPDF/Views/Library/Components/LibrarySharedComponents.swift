@@ -211,7 +211,7 @@ struct QuickJumpOverlay: View {
                     Label {
                         Text("Jump to Section")
                             .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.inkTextPrimary)
                     } icon: {
                         Image(systemName: "abc")
                             .foregroundStyle(Theme.blue)
@@ -248,12 +248,12 @@ struct QuickJumpOverlay: View {
                         } label: {
                             Text(char)
                                 .font(.system(size: 15, weight: .bold, design: .rounded))
-                                .foregroundColor(hasItems ? .white : .white.opacity(0.2))
+                                .foregroundColor(hasItems ? .white : Color.inkSecondary.opacity(0.4))
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 44)
                                 .background(
                                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(hasItems ? Theme.blue.opacity(0.55) : Color.white.opacity(0.04))
+                                        .fill(hasItems ? Theme.blue.opacity(0.75) : Color.primary.opacity(0.04))
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -271,12 +271,12 @@ struct QuickJumpOverlay: View {
                     .fill(.ultraThinMaterial)
                     .background(
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(Color(hex: "#0e0e16").opacity(0.85))
+                            .fill(Color.inkSurfaceRaised.opacity(0.85))
                     )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    .stroke(Color.inkBorderSubtle, lineWidth: 1)
             )
             .padding(.horizontal, 28)
             .shadow(color: .black.opacity(0.4), radius: 16, y: 8)

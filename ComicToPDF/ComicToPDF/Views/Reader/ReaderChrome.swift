@@ -274,20 +274,22 @@ struct ReaderChrome: View {
                     } label: {
                         Label("Screen Fit: \(EBookPreferences.shared.comicPageFitMode.title)", systemImage: EBookPreferences.shared.comicPageFitMode.icon)
                     }
-                    Menu {
-                        ForEach(PanelInspectionStyle.allCases) { style in
-                            Button {
-                                EBookPreferences.shared.panelInspectionStyle = style
-                            } label: {
-                                if EBookPreferences.shared.panelInspectionStyle == style {
-                                    Label(style.title, systemImage: "checkmark")
-                                } else {
-                                    Label(style.title, systemImage: style.icon)
-                                }
-                            }
+                    Button {
+                        if isPDF {
+                            EBookPreferences.shared.isPDFSmartTiersActive.toggle()
+                        } else {
+                            EBookPreferences.shared.panelInspectionStyle = .smartStrides
                         }
+                        HapticEngine.selection()
                     } label: {
-                        Label("Panel Mode: \(EBookPreferences.shared.panelInspectionStyle.title)", systemImage: EBookPreferences.shared.panelInspectionStyle.icon)
+                        if isPDF {
+                            Label(
+                                EBookPreferences.shared.isPDFSmartTiersActive ? "Smart Tiers (Active)" : "Smart Tiers (Guided Flow)",
+                                systemImage: EBookPreferences.shared.isPDFSmartTiersActive ? "checkmark.circle.fill" : "rectangle.split.3x1"
+                            )
+                        } else {
+                            Label("Smart Tiers", systemImage: "rectangle.split.3x1")
+                        }
                     }
                 }
                 Section("Navigate") {

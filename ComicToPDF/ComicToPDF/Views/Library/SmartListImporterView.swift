@@ -400,7 +400,7 @@ struct SmartListImporterView: View {
                         .foregroundColor(.inkGreen)
                     Text("Prompt & Inventory Copied")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color.inkTextPrimary)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
@@ -409,6 +409,7 @@ struct SmartListImporterView: View {
                         .fill(Color.inkBackground.opacity(0.95))
                         .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
                 )
+                .overlay(Capsule().strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5))
                 .padding(.bottom, 40)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -426,11 +427,12 @@ struct SmartListImporterView: View {
                         
                         Text("Resolving Library Matches...")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(Color.inkTextPrimary)
                     }
                     .padding(28)
                     .background(Color.inkSurface)
                     .cornerRadius(16)
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5))
                     .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 5)
                 }
                 .transition(.opacity)

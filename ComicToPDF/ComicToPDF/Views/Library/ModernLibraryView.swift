@@ -614,13 +614,13 @@ struct ModernLibraryView: View {
             if isSearchActive {
                 VStack {
                     HStack {
-                        Image(systemName: "magnifyingglass").foregroundColor(.gray)
+                        Image(systemName: "magnifyingglass").foregroundColor(Color.inkSecondary)
                         TextField("Search library...", text: $viewModel.searchText)
                             .textFieldStyle(.plain)
-                            .foregroundColor(.white)
+                            .foregroundColor(Color.inkTextPrimary)
                         if !viewModel.searchText.isEmpty {
                             Button(action: { viewModel.searchText = "" }) {
-                                Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
+                                Image(systemName: "xmark.circle.fill").foregroundColor(Color.inkSecondary)
                             }
                         }
                         Button("Cancel") {
@@ -636,7 +636,7 @@ struct ModernLibraryView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
                     .background(.ultraThinMaterial, in: Capsule())
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.15)))
+                    .overlay(Capsule().strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5))
                     .padding(.horizontal, 24)
                     .padding(.top, 16)
                     .shadow(color: .black.opacity(0.2), radius: 10, y: 5)
@@ -995,15 +995,15 @@ struct ModernLibraryView: View {
                     
                     Text("InkSync Pro")
                         .font(.system(size: hSizeClass == .regular ? 22 : 18, weight: .black, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color.inkTextPrimary)
                     
                     // Dynamic item count badge
                     Text(hSizeClass == .regular ? "\(cachedVisiblePDFs.count) Items" : "\(cachedVisiblePDFs.count)")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.4))
+                        .foregroundColor(Color.inkSecondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color.white.opacity(0.06), in: Capsule())
+                        .background(Color.primary.opacity(0.06), in: Capsule())
                 }
                 
                 Spacer()
@@ -1015,7 +1015,7 @@ struct ModernLibraryView: View {
                     } label: {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: hSizeClass == .regular ? 16 : 15, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(Color.inkTextPrimary)
                     }
                     
                     Button {
@@ -1023,7 +1023,7 @@ struct ModernLibraryView: View {
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: hSizeClass == .regular ? 16 : 15, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(Color.inkTextPrimary)
                     }
                     
                     Button {
@@ -1031,13 +1031,13 @@ struct ModernLibraryView: View {
                     } label: {
                         Image(systemName: "slider.horizontal.3")
                             .font(.system(size: hSizeClass == .regular ? 16 : 15, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(Color.inkTextPrimary)
                     }
                 }
                 .padding(.horizontal, hSizeClass == .regular ? 14 : 11)
                 .padding(.vertical, hSizeClass == .regular ? 8 : 7)
                 .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.08)))
+                .overlay(Capsule().strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5))
             }
             .padding(.horizontal, hSizeClass == .regular ? 16 : 14)
             .padding(.vertical, 10)
@@ -1347,13 +1347,13 @@ struct ModernLibraryView: View {
                         .foregroundColor(.red)
                     Text("External Drive Disconnected")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color.inkTextPrimary)
                     Spacer()
                 }
                 HStack {
                     Text("Please reconnect '\(driveName)' to read your linked comics.")
                         .font(.system(size: 13))
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundColor(Color.inkSecondary)
                     Spacer()
                 }
             }

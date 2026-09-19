@@ -81,6 +81,14 @@ struct ProPDFReaderEngine: View {
     @State private var passwordErrorMessage: String? = nil
     @State private var pendingLockedDocument: PDFDocument? = nil
 
+    // PDF Smart Tiers & Guided Column Flow
+    @State private var smartTiersConfig: PDFTierGuideConfiguration = .standardTwoColumn
+    @State private var currentTierQuadrants: [PDFTierQuadrant] = []
+    @State private var currentTierIndex: Int = 0
+    @State private var showTierBadge: Bool = false
+    @State private var tierBadgeDismissTask: Task<Void, Never>? = nil
+    @State private var isAdjustingSmartTiers: Bool = false
+
     // Undo / Redo Markup Action History
     struct MarkupHistoryItem: Sendable {
         let id: UUID
@@ -608,6 +616,24 @@ struct ProPDFReaderEngine: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
+            .sheet(isPresented: $isAdjustingSmartTiers) {
+                if let doc = pdfDocument, let page = doc.page(at: currentPageIndex) {
+                    PDFSmartTiersQuickAdjustHUD(
+                        currentPage: page,
+                        pageIndex: currentPageIndex,
+                        isPresented: $isAdjustingSmartTiers,
+                        onApplyConfiguration: { newConfig in
+                            self.smartTiersConfig = newConfig
+                            prefs.isPDFSmartTiersActive = true
+                            refreshSmartTierQuadrants()
+                            focusOnTier(index: 0, animated: true)
+                            flashTierBadge()
+                        }
+                    )
+                    .presentationDetents([.fraction(0.88), .large])
+                    .presentationDragIndicator(.visible)
+                }
+            }
     }
 
     @ViewBuilder
@@ -647,6 +673,9 @@ struct ProPDFReaderEngine: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageBackward"))) { _ in
                 advancePage(forward: false)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("PDFReader_OpenSmartTiersWorkspace"))) { _ in
+                isAdjustingSmartTiers = true
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleMarkupMode"))) { _ in
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
@@ -836,6 +865,20 @@ struct ProPDFReaderEngine: View {
             )
             .ignoresSafeArea()
 
+            // ── Discreet PDF Smart Tier / Quadrant Index HUD Indicator ──
+            if prefs.isPDFSmartTiersActive && (showTierBadge || chromeVisible) && !currentTierQuadrants.isEmpty && currentTierIndex >= 0 && currentTierIndex < currentTierQuadrants.count {
+                VStack {
+                    pdfTierBadgeView(for: currentTierQuadrants[currentTierIndex])
+                        .padding(.top, 54)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.92)),
+                            removal: .opacity
+                        ))
+                    Spacer()
+                }
+                .zIndex(25)
+            }
+
 
             if isPencilMode {
                 VStack {
@@ -940,7 +983,7 @@ struct ProPDFReaderEngine: View {
                     .foregroundColor(.orange)
                 Text(loadErrorMessage.isEmpty ? "Unable to open PDF document." : loadErrorMessage)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(Color.inkTextPrimary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
                 Button("Retry Loading") {
@@ -1390,11 +1433,11 @@ struct ProPDFReaderEngine: View {
                     VStack(spacing: 6) {
                         Text("Encrypted PDF Document")
                             .font(.system(size: 20, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundColor(Color.inkTextPrimary)
 
                         Text("This document is password protected. Enter the decryption password to read.")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.gray)
+                            .foregroundColor(Color.inkSecondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 16)
                     }
@@ -1402,13 +1445,13 @@ struct ProPDFReaderEngine: View {
                     VStack(spacing: 12) {
                         SecureField("Enter Password", text: $passwordInput)
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.white)
+                            .foregroundColor(Color.inkTextPrimary)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
-                            .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                            .background(Color.inkSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .stroke(passwordErrorMessage != nil ? Color.inkRed : Color.white.opacity(0.2), lineWidth: 1)
+                                    .stroke(passwordErrorMessage != nil ? Color.inkRed : Color.inkBorderSubtle, lineWidth: 1)
                             )
                             .onSubmit {
                                 attemptUnlockWithPassword(passwordInput)
@@ -1429,10 +1472,10 @@ struct ProPDFReaderEngine: View {
                         } label: {
                             Text("Cancel")
                                 .font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(.white.opacity(0.8))
+                                .foregroundColor(Color.inkTextPrimary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
-                                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                                .background(Color.inkSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
                         }
 
                         Button {
@@ -1453,7 +1496,7 @@ struct ProPDFReaderEngine: View {
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                        .stroke(Color.inkBorderSubtle, lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.6), radius: 24, y: 12)
                 .padding(.horizontal, 20)
@@ -1901,6 +1944,36 @@ struct ProPDFReaderEngine: View {
 
         guard let pdfView = pdfViewReference else { return }
 
+        // PDF Smart Tiers & Guided Column Flow Navigation
+        if prefs.isPDFSmartTiersActive, let page = pdfView.currentPage {
+            if currentTierQuadrants.isEmpty {
+                refreshSmartTierQuadrants()
+            }
+            if !currentTierQuadrants.isEmpty {
+                if effectiveForward {
+                    if currentTierIndex + 1 < currentTierQuadrants.count {
+                        currentTierIndex += 1
+                        focusOnTier(index: currentTierIndex, animated: true)
+                        flashTierBadge()
+                        HapticEngine.selection()
+                        return
+                    } else {
+                        currentTierIndex = 0
+                    }
+                } else {
+                    if currentTierIndex > 0 {
+                        currentTierIndex -= 1
+                        focusOnTier(index: currentTierIndex, animated: true)
+                        flashTierBadge()
+                        HapticEngine.selection()
+                        return
+                    } else {
+                        currentTierIndex = -1
+                    }
+                }
+            }
+        }
+
         // Boox NeoReader Article / Column Mode Navigation
         if prefs.isArticleMode, let page = pdfView.currentPage, let doc = pdfView.document {
             let pageIdx = doc.index(for: page)
@@ -1960,6 +2033,18 @@ struct ProPDFReaderEngine: View {
             }
         }
 
+        // If entering new page in Smart Tiers Mode, zoom into first (or last) tier!
+        if prefs.isPDFSmartTiersActive, let page = pdfView.currentPage {
+            refreshSmartTierQuadrants()
+            if currentTierIndex == -1 {
+                currentTierIndex = max(0, currentTierQuadrants.count - 1)
+            } else {
+                currentTierIndex = 0
+            }
+            focusOnTier(index: currentTierIndex, animated: true)
+            flashTierBadge()
+        }
+
         // If entering new page in Article Mode, zoom into first column
         if prefs.isArticleMode, let page = pdfView.currentPage, let doc = pdfView.document {
             let pageIdx = doc.index(for: page)
@@ -1995,6 +2080,104 @@ struct ProPDFReaderEngine: View {
                 let targetOffsetX = max(0, viewPoint.x - (pdfView.bounds.width / 2.0))
                 let targetOffsetY = max(0, viewPoint.y - 20)
                 scrollView.setContentOffset(CGPoint(x: targetOffsetX, y: targetOffsetY), animated: false)
+            }
+        }
+    }
+
+    // MARK: - PDF Smart Tiers & Guided Column Flow Helpers
+
+    @ViewBuilder
+    private func pdfTierBadgeView(for quad: PDFTierQuadrant) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "rectangle.split.3x1")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.inkGreen)
+            Text(quad.label)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundColor(Color.inkTextPrimary)
+
+            Rectangle()
+                .fill(Color.inkBorderSubtle)
+                .frame(width: 1, height: 12)
+
+            Button {
+                HapticEngine.selection()
+                isAdjustingSmartTiers = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "slider.horizontal.2.square")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Adjust")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                }
+                .foregroundColor(Color.inkViolet)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.8))
+        .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
+    }
+
+    private func refreshSmartTierQuadrants() {
+        guard let doc = pdfDocument, let page = doc.page(at: currentPageIndex) else { return }
+        let isManga = prefs.pdfRTL || UserDefaults.standard.bool(forKey: "isMangaMode")
+        let quads = PDFSmartTierEngine.shared.generateQuadrants(
+            for: page,
+            pageIndex: currentPageIndex,
+            config: smartTiersConfig,
+            isMangaRTL: isManga
+        )
+        self.currentTierQuadrants = quads
+        if currentTierIndex >= quads.count {
+            currentTierIndex = 0
+        }
+    }
+
+    private func focusOnTier(index: Int, animated: Bool = true) {
+        guard let pv = pdfViewReference,
+              let page = pv.currentPage,
+              index >= 0, index < currentTierQuadrants.count else { return }
+
+        let quad = currentTierQuadrants[index]
+        let pageRect = PDFSmartTierEngine.shared.pageRect(for: quad, on: page)
+        let fitScale = pv.scaleFactorForSizeToFit
+
+        // Calculate scale to fit column width cleanly inside the PDFView
+        let colWidth = max(20, pageRect.width)
+        let availableWidth = pv.bounds.width - 24.0
+        let targetScale = max(fitScale * 1.1, min(fitScale * 4.0, availableWidth / colWidth))
+
+        let duration = animated ? 0.35 : 0.0
+        UIView.animate(withDuration: duration, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: [.curveEaseOut]) {
+            pv.scaleFactor = targetScale
+
+            // Target top-center of the quadrant
+            let topCenter = CGPoint(x: pageRect.midX, y: pageRect.maxY)
+            let viewPoint = pv.convert(topCenter, from: page)
+
+            if let scrollView = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                let targetOffsetX = max(0, viewPoint.x - (pv.bounds.width / 2.0))
+                let targetOffsetY = max(0, viewPoint.y - 20)
+                scrollView.setContentOffset(CGPoint(x: targetOffsetX, y: targetOffsetY), animated: false)
+            }
+        }
+    }
+
+    private func flashTierBadge() {
+        tierBadgeDismissTask?.cancel()
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+            showTierBadge = true
+        }
+        tierBadgeDismissTask = Task {
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    showTierBadge = false
+                }
             }
         }
     }
@@ -2984,22 +3167,22 @@ struct VisualPDFScrubber: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 } else {
                     ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                        .progressViewStyle(CircularProgressViewStyle(tint: Color.inkSecondary.opacity(0.7)))
                 }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                    .stroke(Color.inkBorderSubtle, lineWidth: 0.5)
             )
             .shadow(color: .black.opacity(0.5), radius: 14, y: 6)
 
             Text("\(index + 1) / \(totalPages)")
                 .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundColor(Color.inkTextPrimary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
                 .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
         }
     }
 }
@@ -3235,10 +3418,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         // ── Finger Glide (word-snap) highlight gesture (finger only) ─────────────
         // 40ms duration when in text highlight mode for responsive fluid touch-drag,
-        // 300ms minimum press duration when in normal reading allows scrolling/swiping and reliable single taps.
+        // 550ms minimum press duration when in normal reading allows scrolling/swiping and reliable single taps without hair-trigger selection.
         let fingerGlide = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleGlideSelection(_:)))
         let isDedicatedHighlighter = isPencilMode && currentToolMode == .textHighlight
-        fingerGlide.minimumPressDuration = isDedicatedHighlighter ? 0.04 : 0.30
+        fingerGlide.minimumPressDuration = isDedicatedHighlighter ? 0.04 : 0.55
         fingerGlide.allowableMovement = 2000
         fingerGlide.cancelsTouchesInView = false
         fingerGlide.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
@@ -3341,7 +3524,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if context.coordinator.fingerGlide?.isEnabled != targetFingerGlide {
             context.coordinator.fingerGlide?.isEnabled = targetFingerGlide
         }
-        let targetPressDuration: TimeInterval = isDedicatedHighlighter ? 0.04 : 0.30
+        let targetPressDuration: TimeInterval = isDedicatedHighlighter ? 0.04 : 0.55
         if context.coordinator.fingerGlide?.minimumPressDuration != targetPressDuration {
             context.coordinator.fingerGlide?.minimumPressDuration = targetPressDuration
         }
@@ -3921,6 +4104,20 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     return false
                 }
             }
+
+            // In Pure Reading Mode (!parent.isPencilMode), if touch is in the outer margin page-turn zones,
+            // fingerGlide should NEVER receive the touch!
+            // This guarantees page-turn taps fire with ZERO latency and are never blocked waiting for long-press to fail!
+            if !parent.isPencilMode && gestureRecognizer == fingerGlide {
+                if let view = gestureRecognizer.view {
+                    let loc = touch.location(in: view)
+                    let width = view.bounds.width
+                    let zones = prefs.tapZoneStyle.zones
+                    if loc.x < width * zones.leftEdge || loc.x > width * zones.rightEdge {
+                        return false
+                    }
+                }
+            }
             return true
         }
 
@@ -3990,20 +4187,23 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 return
             }
 
-            // If user taps directly on an existing highlight annotation, open the Kindle HUD with color and delete actions
-            if let page = view.page(for: tapLocation, nearest: false) {
-                let pagePoint = view.convert(tapLocation, to: page)
-                if let hit = findHighlight(at: pagePoint, on: page, in: view) {
-                    presentHighlightHUD(for: hit, on: page, in: view)
-                    return
-                }
-            }
-
             // If a highlight/markup HUD was previously showing without an active text selection, single-tap outside dismisses it
             if parent.isHUDShowing {
                 view.clearSelection()
                 parent.onTextSelectionChanged(nil, nil)
                 return
+            }
+
+            // In Annotation Mode (pencil mode): tapping directly on an existing highlight annotation opens the Kindle HUD with color and delete actions.
+            // In Pure Reading Mode: single-taps are 100% sovereign for page turns and center-tap UI toggling!
+            if parent.isPencilMode {
+                if let page = view.page(for: tapLocation, nearest: false) {
+                    let pagePoint = view.convert(tapLocation, to: page)
+                    if let hit = findHighlight(at: pagePoint, on: page, in: view) {
+                        presentHighlightHUD(for: hit, on: page, in: view)
+                        return
+                    }
+                }
             }
 
             if tapLocation.x < width * zones.leftEdge {

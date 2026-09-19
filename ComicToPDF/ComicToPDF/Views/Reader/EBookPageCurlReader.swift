@@ -1146,6 +1146,7 @@ extension EBookPageCurlReader {
             canvas.isScrollEnabled = false
             canvas.bounces = false
             canvas.panGestureRecognizer.isEnabled = allowFinger
+            primaryWebView?.evaluateJavaScript("window.__inksync_is_pencil_mode = \(isPencilMode);", completionHandler: nil)
         }
 
 
@@ -1365,21 +1366,24 @@ extension EBookPageCurlReader {
                     self.isUserSelectingText = false
                     return
                 }
-                if res.contains("\"highlight\"") {
-                    if let data = res.data(using: .utf8),
-                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
-                        let id = obj["id"] ?? ""
-                        let text = obj["text"] ?? ""
-                        let target = !id.isEmpty ? id : text
-                        if !target.isEmpty {
-                            self.parent.onHighlightTapped?(target)
-                            HapticEngine.selection()
-                            return
+                if res.contains("\"highlight\"") || res == "highlight" {
+                    if self.parent.isPencilMode {
+                        if let data = res.data(using: .utf8),
+                           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+                            let id = obj["id"] ?? ""
+                            let text = obj["text"] ?? ""
+                            let target = !id.isEmpty ? id : text
+                            if !target.isEmpty {
+                                self.parent.onHighlightTapped?(target)
+                                HapticEngine.selection()
+                                return
+                            }
                         }
+                        return
                     }
-                    return
-                }
-                if res == "highlight" || res == "link" || res == "footnote" {
+                    // In Pure Reading Mode (!isPencilMode): highlights never hijack navigation!
+                    // Fall through to performTapZoneAction!
+                } else if res == "link" || res == "footnote" {
                     // Touched a link or interactive element; allow native action to proceed
                     return
                 }
@@ -1473,6 +1477,7 @@ extension EBookPageCurlReader {
             DispatchQueue.main.async { [weak self] in
                 self?.parent.webViewRef = webView
             }
+            webView.evaluateJavaScript("window.__inksync_is_pencil_mode = \(self.parent.isPencilMode);", completionHandler: nil)
             restoreHighlights(in: webView)
             // Note: Snapshot is deferred to didReceiveMetrics once DOM fonts and layout metrics settle.
         }
@@ -2416,6 +2421,7 @@ extension EBookPageCurlReader {
             // Passive selection observer for SwiftUI context HUD
 
             document.addEventListener('click', function(e) {
+                if (!window.__inksync_is_pencil_mode) return;
                 var mark = e.target.closest ? e.target.closest('mark.inksync-highlight') : null;
                 if (mark) {
                     var id = mark.getAttribute('data-id') || '';
