@@ -500,20 +500,16 @@ struct PPLReaderView: View {
                 offset = .zero
                 updatePPL(in: geo.size)
             }
+            HapticEngine.selection()
             return
         }
         if isGuidedReadingActive {
-            isGuidedReadingActive = false; updatePPL(in: geo.size); return
+            isGuidedReadingActive = false
+            updatePPL(in: geo.size)
+            HapticEngine.selection()
+            return
         }
-        refreshGuidedPanels()
-        if !guidedPanels.isEmpty {
-            isGuidedReadingActive = true; guidedPanelIndex = 0
-            withAnimation(.easeInOut(duration: 0.25)) {
-                bufferManager.lockedRect   = guidedPanels[0]
-                bufferManager.isPPLEnabled = true
-            }
-            Haptics.shared.playImpact(style: .medium); return
-        }
+        HapticEngine.selection()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             scale = 2.0
             lastScale = 2.0
