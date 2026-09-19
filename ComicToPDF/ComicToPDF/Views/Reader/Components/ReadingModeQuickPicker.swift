@@ -86,8 +86,9 @@ struct ReadingModeQuickPicker: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(
-            Color.inkSurfaceRaised.opacity(0.92).background(.ultraThinMaterial),
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color.inkSurfaceRaised.opacity(0.92))
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         )
         .inkSpecularBorder(cornerRadius: 22)
         .shadow(color: .black.opacity(0.25), radius: 18, y: 6)
