@@ -278,7 +278,7 @@ struct ReaderChrome: View {
                         if isPDF {
                             EBookPreferences.shared.isPDFSmartTiersActive.toggle()
                         } else {
-                            EBookPreferences.shared.panelInspectionStyle = .smartStrides
+                            NotificationCenter.default.post(name: NSNotification.Name("ComicReader_OpenPanelWorkspace"), object: nil)
                         }
                         HapticEngine.selection()
                     } label: {
@@ -288,7 +288,7 @@ struct ReaderChrome: View {
                                 systemImage: EBookPreferences.shared.isPDFSmartTiersActive ? "checkmark.circle.fill" : "rectangle.split.3x1"
                             )
                         } else {
-                            Label("Smart Tiers", systemImage: "rectangle.split.3x1")
+                            Label("Adjust Smart Tiers & Flow", systemImage: "slider.horizontal.2.square")
                         }
                     }
                 }

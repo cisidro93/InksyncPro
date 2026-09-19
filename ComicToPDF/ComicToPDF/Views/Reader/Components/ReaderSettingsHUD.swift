@@ -138,10 +138,10 @@ struct ReaderSettingsHUD: View {
                                     .foregroundColor(Color.inkViolet)
                             }
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Adjust Page Panels in Workspace...")
+                                Text("Adjust Smart Tiers & Flow...")
                                     .font(.system(size: isPad ? 15 : 13, weight: .semibold))
-                                    .foregroundColor(Color.inkText)
-                                Text("Interactive panel boundaries, reticle snapping & ordering")
+                                    .foregroundColor(Color.inkTextPrimary)
+                                Text("Customize tiers, overlap, and manga/comic flow across book")
                                     .font(.system(size: isPad ? 12 : 11))
                                     .foregroundColor(Color.inkSecondary)
                             }

@@ -3450,15 +3450,21 @@ struct ComicSpreadGuidedView: View {
             loadImagesAndAnalyze()
         }) {
             let activePage = (currentStrideIndex >= 0 && currentStrideIndex < strides.count) ? strides[currentStrideIndex].pageIndex : (spread.first ?? masterIndex)
-            NavigationStack {
-                PrecisionCanvasView(
-                    pdf: pdf,
-                    pageIndex: .constant(activePage),
-                    totalCount: max(1, cache.pageCount),
-                    conversionManager: ConversionManager.shared,
-                    shouldEndSessionOnDisappear: false
-                )
-            }
+            let activeImage = (currentStrideIndex >= 0 && currentStrideIndex < strides.count && strides[currentStrideIndex].pageIndex == spread.last && spread.count > 1) ? (image1 ?? image0) : (image0 ?? image1)
+            ComicSmartTiersQuickAdjustHUD(
+                pageImage: activeImage,
+                pageIndex: activePage,
+                isMangaMode: isMangaMode,
+                isPresented: $isAdjustingInWorkspace,
+                onApplyConfiguration: { newConfig in
+                    prefs.comicTierConfiguration = newConfig
+                    strides.removeAll()
+                    isAnalyzing = false
+                    currentStrideIndex = 0
+                    loadImagesAndAnalyze()
+                    flashPanelBadge()
+                }
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: .comicImageCacheImageLoaded)) { notification in
             guard let userInfo = notification.userInfo,
@@ -3685,22 +3691,11 @@ struct ComicSpreadGuidedView: View {
 
         Task.detached(priority: .userInitiated) {
             let isDualSpread = (spread.count == 2)
-            let saved0 = await PageModelStore.shared.legacyVisionPanels(for: docID, pageIndex: idx0)
-            let p0: [PanelExtractor.Panel]
-            if !saved0.isEmpty {
-                p0 = saved0
-            } else {
-                p0 = await PanelExtractor.detectPanelsOrSmartStrides(in: img0, isDualPage: isDualSpread, mangaMode: manga)
-            }
+            let p0 = await PanelExtractor.detectPanelsOrSmartStrides(in: img0, isDualPage: isDualSpread, mangaMode: manga)
 
             let p1: [PanelExtractor.Panel]
-            if let idx1 = idx1, let img1 = img1 {
-                let saved1 = await PageModelStore.shared.legacyVisionPanels(for: docID, pageIndex: idx1)
-                if !saved1.isEmpty {
-                    p1 = saved1
-                } else {
-                    p1 = await PanelExtractor.detectPanelsOrSmartStrides(in: img1, isDualPage: isDualSpread, mangaMode: manga)
-                }
+            if let _ = idx1, let img1 = img1 {
+                p1 = await PanelExtractor.detectPanelsOrSmartStrides(in: img1, isDualPage: isDualSpread, mangaMode: manga)
             } else {
                 p1 = []
             }
@@ -3712,7 +3707,13 @@ struct ComicSpreadGuidedView: View {
                         return index == 0 ? "Top Tier" : (index == 1 ? "Middle Tier" : "Bottom Tier")
                     } else if total == 2 {
                         return index == 0 ? "Top Half" : "Bottom Half"
+                    } else if total == 4 {
+                        return "Tier \(index + 1) of 4"
                     }
+                } else if total == 4 {
+                    let col = index < 2 ? (manga ? "Right Col" : "Left Col") : (manga ? "Left Col" : "Right Col")
+                    let row = (index % 2 == 0) ? "Top" : "Bottom"
+                    return "\(col) · \(row) (\(index + 1)/4)"
                 }
                 return "Panel \(index + 1) of \(total)"
             }

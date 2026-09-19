@@ -230,6 +230,53 @@ class EBookPreferences: ObservableObject {
         didSet { objectWillChange.send() }
     }
 
+    // MARK: - Comic Smart Tiers Quick Adjust Configuration
+    @AppStorage("comic_smartTierPreset") var comicSmartTierPresetRaw: String = ComicTierLayoutPreset.threeTier.rawValue {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("comic_smartTierCount") var comicSmartTierCount: Int = 3 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("comic_smartTierColumnCount") var comicSmartTierColumnCount: Int = 1 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("comic_smartTierOverlap") var comicSmartTierOverlap: Double = 0.15 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("comic_smartTierColumnSplitRatio") var comicSmartTierColumnSplitRatio: Double = 0.50 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("comic_smartTierTopMarginTrim") var comicSmartTierTopMarginTrim: Double = 0.0 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("comic_smartTierBottomMarginTrim") var comicSmartTierBottomMarginTrim: Double = 0.0 {
+        didSet { objectWillChange.send() }
+    }
+
+    var comicTierConfiguration: ComicTierGuideConfiguration {
+        get {
+            ComicTierGuideConfiguration(
+                preset: ComicTierLayoutPreset(rawValue: comicSmartTierPresetRaw) ?? .threeTier,
+                tierCount: comicSmartTierCount,
+                columnCount: comicSmartTierColumnCount,
+                overlap: comicSmartTierOverlap,
+                columnSplitRatio: comicSmartTierColumnSplitRatio,
+                topMarginTrim: comicSmartTierTopMarginTrim,
+                bottomMarginTrim: comicSmartTierBottomMarginTrim
+            )
+        }
+        set {
+            comicSmartTierPresetRaw = newValue.preset.rawValue
+            comicSmartTierCount = newValue.tierCount
+            comicSmartTierColumnCount = newValue.columnCount
+            comicSmartTierOverlap = newValue.overlap
+            comicSmartTierColumnSplitRatio = newValue.columnSplitRatio
+            comicSmartTierTopMarginTrim = newValue.topMarginTrim
+            comicSmartTierBottomMarginTrim = newValue.bottomMarginTrim
+            objectWillChange.send()
+        }
+    }
+
     var defaultCodableCropInsets: CodableCropInsets {
         CodableCropInsets(
             top: defaultCropTop,

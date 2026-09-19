@@ -348,73 +348,22 @@ struct PanelExtractor {
     /// - Nondual single pages: Divided into 3 tiers if 2 gutters found (C.1) for optimal 2:1 landscape screen fit,
     ///   2 halves if 1 gutter found, or 3 overlapping strides (C.2) with 20% safe zone so speech bubbles are never sliced.
     /// - Double-page splash scans: Divided into Left/Right halves with reading direction respect.
-    static func generateSmartStrides(for image: UIImage, isDualPage: Bool = false, mangaMode: Bool = false) -> [Panel] {
-        let imgSize = image.size
-        let isWideDoubleSpread = imgSize.width > imgSize.height * 1.18
-
-        if isWideDoubleSpread {
-            // Wide Double-Page Spread in a single image:
-            // Divide into Left Half (Page 1 in LTR) and Right Half (Page 1 in RTL)
-            let leftBox = CGRect(x: 0.0, y: 0.0, width: 0.52, height: 1.0)
-            let rightBox = CGRect(x: 0.48, y: 0.0, width: 0.52, height: 1.0)
-
-            let firstBox = mangaMode ? rightBox : leftBox
-            let secondBox = mangaMode ? leftBox : rightBox
-
-            // Top and Bottom strides for each half (20% overlap zone vertically)
-            let firstTop = Panel(boundingBox: CGRect(x: firstBox.minX, y: 0.40, width: firstBox.width, height: 0.60))
-            let firstBot = Panel(boundingBox: CGRect(x: firstBox.minX, y: 0.00, width: firstBox.width, height: 0.60))
-            let secondTop = Panel(boundingBox: CGRect(x: secondBox.minX, y: 0.40, width: secondBox.width, height: 0.60))
-            let secondBot = Panel(boundingBox: CGRect(x: secondBox.minX, y: 0.00, width: secondBox.width, height: 0.60))
-
-            return [firstTop, firstBot, secondTop, secondBot]
-        }
-
-        if isDualPage {
-            // Dual-Page Variation:
-            // 2 sections per page for smooth 4-step spread cadence (Page 1 Top/Bot -> Page 2 Top/Bot)
-            if let gutterRatio = findHorizontalGutterRatio(in: image) {
-                // Option C.1: Clean split at detected gutter
-                let topH = Double(gutterRatio)
-                let botH = 1.0 - topH
-                let topPanel = Panel(boundingBox: CGRect(x: 0, y: 1.0 - topH, width: 1.0, height: topH))
-                let botPanel = Panel(boundingBox: CGRect(x: 0, y: 0, width: 1.0, height: botH))
-                return [topPanel, botPanel]
-            } else {
-                // Option C.2: 20% overlapping safe zone
-                let topPanel = Panel(boundingBox: CGRect(x: 0, y: 0.40, width: 1.0, height: 0.60))
-                let botPanel = Panel(boundingBox: CGRect(x: 0, y: 0.00, width: 1.0, height: 0.60))
-                return [topPanel, botPanel]
-            }
-        } else {
-            // Nondual Single Page Variation:
-            // Multi-tier detection for optimal landscape phone magnification
-            let gutters = findHorizontalGutterRatios(in: image, startRatio: 0.22, endRatio: 0.78, maxGutters: 2)
-
-            if gutters.count == 2 {
-                // Option C.1: 3 clean tiers (Top Tier, Middle Tier, Bottom Tier)
-                let g1 = Double(gutters[0])
-                let g2 = Double(gutters[1])
-
-                let tier1 = Panel(boundingBox: CGRect(x: 0, y: 1.0 - g1, width: 1.0, height: g1))
-                let tier2 = Panel(boundingBox: CGRect(x: 0, y: 1.0 - g2, width: 1.0, height: g2 - g1))
-                let tier3 = Panel(boundingBox: CGRect(x: 0, y: 0.0, width: 1.0, height: 1.0 - g2))
-                return [tier1, tier2, tier3]
-            } else if gutters.count == 1 {
-                // Option C.1: 2 clean halves
-                let g = Double(gutters[0])
-                let topPanel = Panel(boundingBox: CGRect(x: 0, y: 1.0 - g, width: 1.0, height: g))
-                let botPanel = Panel(boundingBox: CGRect(x: 0, y: 0, width: 1.0, height: 1.0 - g))
-                return [topPanel, botPanel]
-            } else {
-                // Option C.2: 3 overlapping strides with 20% safe zones
-                // Gives 3x magnification on iPhone landscape with zero bisected speech bubbles
-                let strideTop = Panel(boundingBox: CGRect(x: 0, y: 0.55, width: 1.0, height: 0.45))
-                let strideMid = Panel(boundingBox: CGRect(x: 0, y: 0.28, width: 1.0, height: 0.44))
-                let strideBot = Panel(boundingBox: CGRect(x: 0, y: 0.00, width: 1.0, height: 0.45))
-                return [strideTop, strideMid, strideBot]
-            }
-        }
+    /// Generates smart reading strides for a comic page, respecting custom user configurations,
+    /// tier counts (2, 3, 4), safe overlap zones (10% - 25%), column splits, and Manga RTL flow.
+    static func generateSmartStrides(
+        for image: UIImage,
+        isDualPage: Bool = false,
+        mangaMode: Bool = false,
+        config: ComicTierGuideConfiguration? = nil
+    ) -> [Panel] {
+        let quads = generateComicQuadrants(
+            for: image.size,
+            isDualPage: isDualPage,
+            mangaMode: mangaMode,
+            config: config,
+            imageForGutterAnalysis: image
+        )
+        return quads.map { Panel(boundingBox: $0.normalizedRect) }
     }
 
     /// Guided View Panel Provider:
@@ -422,10 +371,233 @@ struct PanelExtractor {
     static func detectPanelsOrSmartStrides(
         in image: UIImage,
         isDualPage: Bool = false,
-        mangaMode: Bool = false
+        mangaMode: Bool = false,
+        config: ComicTierGuideConfiguration? = nil
     ) async -> [Panel] {
-        // Smart Tiers is the rock-solid production standard for Comic and Manga guided view.
-        return generateSmartStrides(for: image, isDualPage: isDualPage, mangaMode: mangaMode)
+        return generateSmartStrides(for: image, isDualPage: isDualPage, mangaMode: mangaMode, config: config)
+    }
+
+    /// Generates ordered ComicTierQuadrants with step ordering, labels, and normalized bounding boxes.
+    static func generateComicQuadrants(
+        for imageSize: CGSize,
+        isDualPage: Bool = false,
+        mangaMode: Bool = false,
+        config: ComicTierGuideConfiguration? = nil,
+        imageForGutterAnalysis: UIImage? = nil
+    ) -> [ComicTierQuadrant] {
+        let activeConfig = config ?? ComicTierGuideConfiguration(
+            preset: ComicTierLayoutPreset(rawValue: UserDefaults.standard.string(forKey: "comic_smartTierPreset") ?? "") ?? .threeTier,
+            tierCount: UserDefaults.standard.integer(forKey: "comic_smartTierCount") != 0 ? UserDefaults.standard.integer(forKey: "comic_smartTierCount") : 3,
+            columnCount: UserDefaults.standard.integer(forKey: "comic_smartTierColumnCount") != 0 ? UserDefaults.standard.integer(forKey: "comic_smartTierColumnCount") : 1,
+            overlap: UserDefaults.standard.double(forKey: "comic_smartTierOverlap") != 0 ? UserDefaults.standard.double(forKey: "comic_smartTierOverlap") : 0.15,
+            columnSplitRatio: UserDefaults.standard.double(forKey: "comic_smartTierColumnSplitRatio") != 0 ? UserDefaults.standard.double(forKey: "comic_smartTierColumnSplitRatio") : 0.50,
+            topMarginTrim: UserDefaults.standard.double(forKey: "comic_smartTierTopMarginTrim"),
+            bottomMarginTrim: UserDefaults.standard.double(forKey: "comic_smartTierBottomMarginTrim")
+        )
+
+        let isWideDoubleSpread = imageSize.width > imageSize.height * 1.18
+
+        if isWideDoubleSpread {
+            // Wide Double-Page Spread in a single image:
+            // Divide into Left Half (Page 1 in LTR) and Right Half (Page 1 in RTL)
+            let leftBox = CGRect(x: 0.0, y: 0.0, width: 0.51, height: 1.0)
+            let rightBox = CGRect(x: 0.49, y: 0.0, width: 0.51, height: 1.0)
+
+            let firstBox = mangaMode ? rightBox : leftBox
+            let secondBox = mangaMode ? leftBox : rightBox
+
+            let tiersCount = max(2, min(4, activeConfig.tierCount))
+            var quads: [ComicTierQuadrant] = []
+            var step = 0
+            let totalSteps = tiersCount * 2
+
+            // Half 1
+            let half1LabelPrefix = mangaMode ? "Right Page" : "Left Page"
+            for t in 0..<tiersCount {
+                let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: firstBox.minX, columnW: firstBox.width, config: activeConfig)
+                let lbl = "\(half1LabelPrefix) · \(tierSubLabel(index: t, total: tiersCount)) (\(step + 1)/\(totalSteps))"
+                quads.append(ComicTierQuadrant(
+                    id: step,
+                    columnIndex: 0,
+                    tierIndex: t,
+                    totalColumns: 2,
+                    totalTiersInColumn: tiersCount,
+                    stepOrder: step,
+                    totalInPage: totalSteps,
+                    normalizedRect: rect,
+                    label: lbl
+                ))
+                step += 1
+            }
+
+            // Half 2
+            let half2LabelPrefix = mangaMode ? "Left Page" : "Right Page"
+            for t in 0..<tiersCount {
+                let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: secondBox.minX, columnW: secondBox.width, config: activeConfig)
+                let lbl = "\(half2LabelPrefix) · \(tierSubLabel(index: t, total: tiersCount)) (\(step + 1)/\(totalSteps))"
+                quads.append(ComicTierQuadrant(
+                    id: step,
+                    columnIndex: 1,
+                    tierIndex: t,
+                    totalColumns: 2,
+                    totalTiersInColumn: tiersCount,
+                    stepOrder: step,
+                    totalInPage: totalSteps,
+                    normalizedRect: rect,
+                    label: lbl
+                ))
+                step += 1
+            }
+
+            return quads
+        }
+
+        // Auto Gutter preset
+        if activeConfig.preset == .autoGutter, let img = imageForGutterAnalysis {
+            let gutters = findHorizontalGutterRatios(in: img, startRatio: 0.22, endRatio: 0.78, maxGutters: 2)
+            if gutters.count == 2 {
+                let g1 = Double(gutters[0])
+                let g2 = Double(gutters[1])
+                let rect1 = CGRect(x: 0, y: 1.0 - g1, width: 1.0, height: g1)
+                let rect2 = CGRect(x: 0, y: 1.0 - g2, width: 1.0, height: g2 - g1)
+                let rect3 = CGRect(x: 0, y: 0.0, width: 1.0, height: 1.0 - g2)
+                return [
+                    ComicTierQuadrant(id: 0, columnIndex: 0, tierIndex: 0, totalColumns: 1, totalTiersInColumn: 3, stepOrder: 0, totalInPage: 3, normalizedRect: rect1, label: "Top Tier (1/3)"),
+                    ComicTierQuadrant(id: 1, columnIndex: 0, tierIndex: 1, totalColumns: 1, totalTiersInColumn: 3, stepOrder: 1, totalInPage: 3, normalizedRect: rect2, label: "Middle Tier (2/3)"),
+                    ComicTierQuadrant(id: 2, columnIndex: 0, tierIndex: 2, totalColumns: 1, totalTiersInColumn: 3, stepOrder: 2, totalInPage: 3, normalizedRect: rect3, label: "Bottom Tier (3/3)")
+                ]
+            } else if gutters.count == 1 {
+                let g = Double(gutters[0])
+                let rect1 = CGRect(x: 0, y: 1.0 - g, width: 1.0, height: g)
+                let rect2 = CGRect(x: 0, y: 0, width: 1.0, height: 1.0 - g)
+                return [
+                    ComicTierQuadrant(id: 0, columnIndex: 0, tierIndex: 0, totalColumns: 1, totalTiersInColumn: 2, stepOrder: 0, totalInPage: 2, normalizedRect: rect1, label: "Top Half (1/2)"),
+                    ComicTierQuadrant(id: 1, columnIndex: 0, tierIndex: 1, totalColumns: 1, totalTiersInColumn: 2, stepOrder: 1, totalInPage: 2, normalizedRect: rect2, label: "Bottom Half (2/2)")
+                ]
+            }
+        }
+
+        // 2-Column / Yonkoma Mode
+        if activeConfig.preset == .yonkoma || activeConfig.columnCount == 2 {
+            let split = max(0.35, min(0.65, CGFloat(activeConfig.columnSplitRatio)))
+            let gutter: CGFloat = 0.02
+            let leftCol = CGRect(x: 0.0, y: 0.0, width: max(0.1, split - (gutter / 2)), height: 1.0)
+            let rightCol = CGRect(x: split + (gutter / 2), y: 0.0, width: max(0.1, 1.0 - (split + (gutter / 2))), height: 1.0)
+
+            let firstCol = mangaMode ? rightCol : leftCol
+            let secondCol = mangaMode ? leftCol : rightCol
+            let firstColName = mangaMode ? "Right Col" : "Left Col"
+            let secondColName = mangaMode ? "Left Col" : "Right Col"
+
+            let tiersCount = max(2, min(4, activeConfig.tierCount))
+            let totalSteps = tiersCount * 2
+            var quads: [ComicTierQuadrant] = []
+            var step = 0
+
+            // Column 1
+            for t in 0..<tiersCount {
+                let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: firstCol.minX, columnW: firstCol.width, config: activeConfig)
+                let subLbl = tierSubLabel(index: t, total: tiersCount)
+                let lbl = "\(firstColName) · \(subLbl) (\(step + 1)/\(totalSteps))"
+                quads.append(ComicTierQuadrant(
+                    id: step,
+                    columnIndex: 0,
+                    tierIndex: t,
+                    totalColumns: 2,
+                    totalTiersInColumn: tiersCount,
+                    stepOrder: step,
+                    totalInPage: totalSteps,
+                    normalizedRect: rect,
+                    label: lbl
+                ))
+                step += 1
+            }
+
+            // Column 2
+            for t in 0..<tiersCount {
+                let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: secondCol.minX, columnW: secondCol.width, config: activeConfig)
+                let subLbl = tierSubLabel(index: t, total: tiersCount)
+                let lbl = "\(secondColName) · \(subLbl) (\(step + 1)/\(totalSteps))"
+                quads.append(ComicTierQuadrant(
+                    id: step,
+                    columnIndex: 1,
+                    tierIndex: t,
+                    totalColumns: 2,
+                    totalTiersInColumn: tiersCount,
+                    stepOrder: step,
+                    totalInPage: totalSteps,
+                    normalizedRect: rect,
+                    label: lbl
+                ))
+                step += 1
+            }
+
+            return quads
+        }
+
+        // Single Column (3 Tiers, 2 Halves, 4 Tiers)
+        let tiersCount = max(2, min(5, activeConfig.tierCount))
+        var quads: [ComicTierQuadrant] = []
+        for t in 0..<tiersCount {
+            let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: 0.0, columnW: 1.0, config: activeConfig)
+            let subLbl = tierSubLabel(index: t, total: tiersCount)
+            let lbl = "\(subLbl) (\(t + 1)/\(tiersCount))"
+            quads.append(ComicTierQuadrant(
+                id: t,
+                columnIndex: 0,
+                tierIndex: t,
+                totalColumns: 1,
+                totalTiersInColumn: tiersCount,
+                stepOrder: t,
+                totalInPage: tiersCount,
+                normalizedRect: rect,
+                label: lbl
+            ))
+        }
+
+        return quads
+    }
+
+    private static func computeTierRect(
+        tierIndex: Int,
+        totalTiers: Int,
+        columnX: CGFloat,
+        columnW: CGFloat,
+        config: ComicTierGuideConfiguration
+    ) -> CGRect {
+        let topTrim = max(0.0, min(0.12, CGFloat(config.topMarginTrim)))
+        let botTrim = max(0.0, min(0.12, CGFloat(config.bottomMarginTrim)))
+        let usableH = max(0.5, 1.0 - (topTrim + botTrim))
+        let overlap = max(0.05, min(0.30, CGFloat(config.overlap)))
+
+        let rawH = usableH / CGFloat(totalTiers)
+        let effectiveH = min(1.0, rawH * (1.0 + overlap))
+
+        // In Vision coords, Y=1 is Top, Y=0 is Bottom.
+        let stepFraction = CGFloat(tierIndex) / CGFloat(max(1, totalTiers - 1))
+        let maxY = (1.0 - topTrim)
+        let minY = botTrim
+
+        let tierMaxY = maxY - (stepFraction * max(0.0, (maxY - minY - effectiveH)))
+        let tierMinY = max(minY, tierMaxY - effectiveH)
+
+        return CGRect(
+            x: columnX,
+            y: tierMinY,
+            width: columnW,
+            height: max(0.05, tierMaxY - tierMinY)
+        )
+    }
+
+    private static func tierSubLabel(index: Int, total: Int) -> String {
+        if total == 3 {
+            return index == 0 ? "Top Tier" : (index == 1 ? "Middle Tier" : "Bottom Tier")
+        } else if total == 2 {
+            return index == 0 ? "Top Half" : "Bottom Half"
+        } else if total == 4 {
+            return "Tier \(index + 1) of 4"
+        }
+        return "Tier \(index + 1)"
     }
 
     /// Synthesizes intelligent comic panels by combining detected horizontal tiers
