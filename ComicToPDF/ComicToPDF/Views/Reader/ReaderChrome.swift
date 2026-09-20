@@ -274,20 +274,29 @@ struct ReaderChrome: View {
                     } label: {
                         Label("Screen Fit: \(EBookPreferences.shared.comicPageFitMode.title)", systemImage: EBookPreferences.shared.comicPageFitMode.icon)
                     }
-                    Button {
-                        if isPDF {
+                    if isPDF {
+                        Button {
                             EBookPreferences.shared.isPDFSmartTiersActive.toggle()
-                        } else {
-                            NotificationCenter.default.post(name: NSNotification.Name("ComicReader_OpenPanelWorkspace"), object: nil)
-                        }
-                        HapticEngine.selection()
-                    } label: {
-                        if isPDF {
+                            HapticEngine.selection()
+                        } label: {
                             Label(
                                 EBookPreferences.shared.isPDFSmartTiersActive ? "Smart Tiers (Active)" : "Smart Tiers (Guided Flow)",
                                 systemImage: EBookPreferences.shared.isPDFSmartTiersActive ? "checkmark.circle.fill" : "rectangle.split.3x1"
                             )
-                        } else {
+                        }
+                        if EBookPreferences.shared.isPDFSmartTiersActive {
+                            Button {
+                                NotificationCenter.default.post(name: NSNotification.Name("PDFReader_OpenSmartTiersWorkspace"), object: nil)
+                                HapticEngine.selection()
+                            } label: {
+                                Label("Adjust Smart Tiers & Flow", systemImage: "slider.horizontal.2.square")
+                            }
+                        }
+                    } else {
+                        Button {
+                            NotificationCenter.default.post(name: NSNotification.Name("ComicReader_OpenPanelWorkspace"), object: nil)
+                            HapticEngine.selection()
+                        } label: {
                             Label("Adjust Smart Tiers & Flow", systemImage: "slider.horizontal.2.square")
                         }
                     }
