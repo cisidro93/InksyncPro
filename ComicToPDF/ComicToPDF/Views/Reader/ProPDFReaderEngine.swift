@@ -2166,12 +2166,19 @@ struct ProPDFReaderEngine: View {
         let fitScale = pv.scaleFactorForSizeToFit
         let colWidthOnPage = max(20.0, norm.width * cropBox.width)
         let availableWidth = max(100.0, pv.bounds.width - 24.0)
-
-        // Scale to fit the column width cleanly across the viewport
         let scaleForColumn = availableWidth / colWidthOnPage
+
+        let isPhone = UIDevice.current.userInterfaceIdiom == .phone
+        let isLandscape = pv.bounds.width > pv.bounds.height
+        let tierHeightOnPage = max(20.0, norm.height * cropBox.height)
+        // If the block represents a partial-height tier (e.g. 1x3, 2x3, 1x2, 2x2),
+        // ensure targetScale zooms enough so the tier comfortably occupies the screen,
+        // and contentSize.height > pv.bounds.height so vertical scrolling works on iPhone.
+        let scaleForTierHeight = (pv.bounds.height * (isLandscape ? 0.85 : 0.48)) / tierHeightOnPage
+        let minRequiredScale = (isPhone && norm.height < 0.90) ? max(fitScale * 1.5, scaleForTierHeight) : scaleForColumn
         let minAllowed = max(0.5, fitScale * 1.05)
         let maxAllowed: CGFloat = max(12.0, fitScale * 12.0)
-        let targetScale = max(minAllowed, min(maxAllowed, scaleForColumn))
+        let targetScale = max(minAllowed, min(maxAllowed, max(scaleForColumn, minRequiredScale)))
 
         // Set generous scale bounds so PDFKit never clamps our zoom
         pv.minScaleFactor = 0.2
@@ -2208,9 +2215,13 @@ struct ProPDFReaderEngine: View {
             let contentPointX = currentOffset.x + viewPoint.x
             let contentPointY = currentOffset.y + viewPoint.y
 
-            // Desired position on screen: centered horizontally with padding, top placed with 8pt breathing room
-            let desiredViewX = max(0.0, (pv.bounds.width - (colWidthOnPage * targetScale)) / 2.0)
-            let desiredViewY: CGFloat = 8.0
+            // Dynamic notch/safe-area avoidance: place top with safe-area breathing room
+            let topSafeArea = pv.safeAreaInsets.top
+            let desiredViewY: CGFloat = max(8.0, topSafeArea > 0 ? (topSafeArea + 6.0) : 8.0)
+
+            // Desired position on screen: centered horizontally if narrower than viewport, left-anchored if wider
+            let scaledColWidth = colWidthOnPage * targetScale
+            let desiredViewX: CGFloat = scaledColWidth < pv.bounds.width ? max(0.0, (pv.bounds.width - scaledColWidth) / 2.0) : 0.0
 
             let targetOffsetX = contentPointX - desiredViewX
             let targetOffsetY = contentPointY - desiredViewY

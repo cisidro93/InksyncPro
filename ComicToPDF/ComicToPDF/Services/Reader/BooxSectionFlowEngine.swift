@@ -202,10 +202,36 @@ public final class BooxSectionFlowEngine: Sendable {
                 finalRedundantRect = redundantRectTopY
             }
 
-            let colLabel = (numCols > 1) ? "Col \(cell.col + 1)" : ""
-            let rowLabel = (rowRanges.count > 1) ? "Row \(cell.row + 1)" : ""
-            let sep = (!colLabel.isEmpty && !rowLabel.isEmpty) ? " · " : ""
-            let label = "\(colLabel)\(sep)\(rowLabel) (\(stepIdx + 1)/\(sortedCells.count))"
+            let rowName: String
+            if rowRanges.count == 3 {
+                rowName = (cell.row == 0) ? "Top" : ((cell.row == 1) ? "Mid" : "Bot")
+            } else if rowRanges.count == 2 {
+                rowName = (cell.row == 0) ? "Top" : "Bottom"
+            } else {
+                rowName = ""
+            }
+
+            let label: String
+            if numCols == 1 {
+                if rowRanges.count == 3 {
+                    let tierName = (cell.row == 0) ? "Top Tier" : ((cell.row == 1) ? "Middle Tier" : "Bottom Tier")
+                    label = "\(tierName) (\(stepIdx + 1)/\(sortedCells.count))"
+                } else if rowRanges.count == 2 {
+                    let halfName = (cell.row == 0) ? "Top Half" : "Bottom Half"
+                    label = "\(halfName) (\(stepIdx + 1)/\(sortedCells.count))"
+                } else {
+                    label = "Block \(stepIdx + 1) of \(sortedCells.count)"
+                }
+            } else {
+                let colName: String
+                if config.flowOrder == .reverseNFlow || config.flowOrder == .reverseZFlow {
+                    colName = (cell.col == 0) ? "Right Col" : (numCols == 2 ? "Left Col" : "Col \(cell.col + 1)")
+                } else {
+                    colName = "Col \(cell.col + 1)"
+                }
+                let tierPart = !rowName.isEmpty ? " · \(rowName)" : ""
+                label = "\(colName)\(tierPart) (\(stepIdx + 1)/\(sortedCells.count))"
+            }
 
             blocks.append(BooxSectionBlock(
                 id: stepIdx,

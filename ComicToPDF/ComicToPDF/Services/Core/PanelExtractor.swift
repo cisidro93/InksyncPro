@@ -409,7 +409,7 @@ struct PanelExtractor {
                 connectionRedundancy: booxRedundancy,
                 redundancyRatio: CGFloat(booxRedRatio)
             )
-            let booxBlocks = BooxSectionFlowEngine.shared.generateBlocks(config: booxConfig, space: .image)
+            let booxBlocks = BooxSectionFlowEngine.shared.generateBlocks(config: booxConfig, space: .pdf)
             if !booxBlocks.isEmpty {
                 return booxBlocks.map { b in
                     ComicTierQuadrant(

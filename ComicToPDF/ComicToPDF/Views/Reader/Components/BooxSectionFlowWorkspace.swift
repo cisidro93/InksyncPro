@@ -582,8 +582,8 @@ public struct BooxSectionFlowWorkspace: View {
             let rectW = renderW * norm.width
             let rectH = renderH * norm.height
             let rectX = originX + (renderW * norm.minX)
-            // For PDF space: convert from bottom-left to top-left Y
-            let rectY = (pdfPage != nil) ? originY + (renderH * (1.0 - norm.maxY)) : originY + (renderH * norm.minY)
+            // Convert from Vision/PDF bottom-origin space to UIKit screen overlay space
+            let rectY = originY + (renderH * (1.0 - norm.maxY))
 
             let isSelected = selectedBlockIndex == block.stepOrder
 
@@ -707,7 +707,7 @@ public struct BooxSectionFlowWorkspace: View {
                     let cgH = CGFloat(thumb.cgImage?.height ?? 100)
                     let cropBox = CGRect(
                         x: norm.minX * cgW,
-                        y: (pdfPage != nil ? (1.0 - norm.maxY) : norm.minY) * cgH,
+                        y: (1.0 - norm.maxY) * cgH,
                         width: norm.width * cgW,
                         height: norm.height * cgH
                     )
@@ -763,8 +763,8 @@ public struct BooxSectionFlowWorkspace: View {
     }
 
     private func recomputeBlocks() {
-        let space: BooxCoordinateSpace = (pdfPage != nil) ? .pdf : .image
-        let blocks = BooxSectionFlowEngine.shared.generateBlocks(config: config, space: space)
+        // Standardize on Vision/PDF bottom-origin space across both PDFKit and Comic Image pipelines
+        let blocks = BooxSectionFlowEngine.shared.generateBlocks(config: config, space: .pdf)
         self.activeBlocks = blocks
         if selectedBlockIndex >= blocks.count {
             selectedBlockIndex = max(0, blocks.count - 1)

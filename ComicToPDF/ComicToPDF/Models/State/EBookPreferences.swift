@@ -397,12 +397,18 @@ class EBookPreferences: ObservableObject {
 
     var booxSectionFlowConfig: BooxSectionFlowConfig {
         get {
-            BooxSectionFlowConfig(
-                gridPreset: BooxGridPreset(rawValue: booxGridPresetRaw) ?? .twoByTwo,
+            let preset = BooxGridPreset(rawValue: booxGridPresetRaw) ?? .twoByTwo
+            let defaultSplits: [CGFloat] = preset.rowCount == 3 ? [0.33, 0.66] : [0.50]
+            let h0 = (preset.rowCount == 3 && abs(booxHorizontalSplit0 - 0.50) < 0.01) ? 0.33 : (booxHorizontalSplit0 != 0 ? CGFloat(booxHorizontalSplit0) : defaultSplits[0])
+            let h1 = (preset.rowCount == 3 && abs(booxHorizontalSplit1 - 0.50) < 0.01) ? 0.66 : (booxHorizontalSplit1 != 0 ? CGFloat(booxHorizontalSplit1) : 0.66)
+            let splits = preset.rowCount == 3 ? [h0, h1] : [h0]
+
+            return BooxSectionFlowConfig(
+                gridPreset: preset,
                 flowOrder: BooxFlowOrder(rawValue: booxFlowOrderRaw) ?? .nFlow,
                 isSpreadMode: booxIsSpreadMode,
                 verticalSplitRatio: CGFloat(booxVerticalSplitRatio),
-                horizontalSplitRatios: [CGFloat(booxHorizontalSplit0), CGFloat(booxHorizontalSplit1)],
+                horizontalSplitRatios: splits,
                 topMarginTrim: CGFloat(booxTopMarginTrim),
                 bottomMarginTrim: CGFloat(booxBottomMarginTrim),
                 leftMarginTrim: CGFloat(booxLeftMarginTrim),
