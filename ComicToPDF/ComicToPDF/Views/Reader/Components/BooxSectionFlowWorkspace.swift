@@ -1283,16 +1283,17 @@ public struct BooxSectionFlowWorkspace: View {
                             let totalRows = config.gridPreset.rowCount
                             let rowIdx = block.rowIndex
 
-                            let posY: CGFloat
-                            if totalRows > 1 && rowIdx == 0 {
-                                posY = 14.0 + (renderedH / 2.0)
-                            } else if totalRows > 1 && rowIdx == (totalRows - 1) && renderedH < safeH {
-                                posY = viewH - 18.0 - (renderedH / 2.0)
-                            } else if renderedH < safeH {
-                                posY = viewH / 2.0
-                            } else {
-                                posY = 14.0 + (renderedH / 2.0)
-                            }
+                            let posY: CGFloat = {
+                                if totalRows > 1 && rowIdx == 0 {
+                                    return 14.0 + (renderedH / 2.0)
+                                } else if totalRows > 1 && rowIdx == (totalRows - 1) && renderedH < safeH {
+                                    return viewH - 18.0 - (renderedH / 2.0)
+                                } else if renderedH < safeH {
+                                    return viewH / 2.0
+                                } else {
+                                    return 14.0 + (renderedH / 2.0)
+                                }
+                            }()
 
                             if let croppedCG = thumb.cgImage?.cropping(to: cropBox) {
                                 ZStack {
