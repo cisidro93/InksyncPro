@@ -27,11 +27,19 @@ public final class PDFSmartTierEngine {
         isMangaRTL: Bool = false
     ) -> [PDFTierQuadrant] {
         let cropBox = page.bounds(for: .cropBox)
-        let cacheKey = "\(pageIndex)_\(cropBox.width)_\(cropBox.height)_\(config.preset.rawValue)_\(config.columnCount)_\(config.tiersPerColumn)_\(config.columnSplitRatio)_\(config.verticalOverlap)_\(isMangaRTL)"
+        let leftTrim = max(0.0, min(0.25, config.leftMarginTrim))
+        let rightTrim = max(0.0, min(0.25, config.rightMarginTrim))
+        let topTrim = max(0.0, min(0.25, config.topMarginTrim))
+        let botTrim = max(0.0, min(0.25, config.bottomMarginTrim))
+        let effectiveRTL = isMangaRTL || config.flowOrder == .mangaRTL
+
+        let cacheKey = "\(pageIndex)_\(cropBox.width)_\(cropBox.height)_\(config.preset.rawValue)_\(config.columnCount)_\(config.tiersPerColumn)_\(config.columnSplitRatio)_\(config.verticalOverlap)_\(leftTrim)_\(rightTrim)_\(topTrim)_\(botTrim)_\(config.flowOrder.rawValue)_\(effectiveRTL)"
 
         if let cached = quadrantCache[cacheKey] {
             return cached
         }
+
+        let activeW = max(0.2, 1.0 - (leftTrim + rightTrim))
 
         let quadrants: [PDFTierQuadrant]
         switch config.preset {
@@ -41,35 +49,40 @@ public final class PDFSmartTierEngine {
                 pageIndex: pageIndex,
                 cropBox: cropBox,
                 config: config,
-                isMangaRTL: isMangaRTL
+                isMangaRTL: effectiveRTL
             )
         case .singleColumn:
+            let col0 = CGRect(x: leftTrim, y: 0.0, width: activeW, height: 1.0)
             quadrants = generateColumnQuadrants(
-                columns: [CGRect(x: 0, y: 0, width: 1.0, height: 1.0)],
+                columns: [col0],
                 config: config,
-                isMangaRTL: isMangaRTL
+                isMangaRTL: effectiveRTL
             )
         case .twoColumn:
             let split = max(0.2, min(0.8, config.columnSplitRatio))
-            let gutter: CGFloat = 0.02
-            let col0 = CGRect(x: 0.0, y: 0.0, width: max(0.1, split - gutter), height: 1.0)
-            let col1 = CGRect(x: split + gutter, y: 0.0, width: max(0.1, 1.0 - (split + gutter)), height: 1.0)
-            quadrants = generateColumnQuadrants(
-                columns: isMangaRTL ? [col1, col0] : [col0, col1],
-                config: config,
-                isMangaRTL: isMangaRTL
-            )
-        case .threeColumn:
-            let colWidth: CGFloat = 0.31
-            let gutter: CGFloat = 0.035
-            let col0 = CGRect(x: 0.0, y: 0.0, width: colWidth, height: 1.0)
-            let col1 = CGRect(x: colWidth + gutter, y: 0.0, width: colWidth, height: 1.0)
-            let col2 = CGRect(x: (colWidth + gutter) * 2, y: 0.0, width: colWidth, height: 1.0)
-            let cols = isMangaRTL ? [col2, col1, col0] : [col0, col1, col2]
+            let gutter: CGFloat = 0.02 * activeW
+            let col0W = max(0.05, (activeW * split) - (gutter / 2.0))
+            let col1X = leftTrim + (activeW * split) + (gutter / 2.0)
+            let col1W = max(0.05, (leftTrim + activeW) - col1X)
+            let col0 = CGRect(x: leftTrim, y: 0.0, width: col0W, height: 1.0)
+            let col1 = CGRect(x: col1X, y: 0.0, width: col1W, height: 1.0)
+            let cols = effectiveRTL ? [col1, col0] : [col0, col1]
             quadrants = generateColumnQuadrants(
                 columns: cols,
                 config: config,
-                isMangaRTL: isMangaRTL
+                isMangaRTL: effectiveRTL
+            )
+        case .threeColumn:
+            let gutter: CGFloat = 0.02 * activeW
+            let colW = max(0.05, (activeW - (gutter * 2.0)) / 3.0)
+            let col0 = CGRect(x: leftTrim, y: 0.0, width: colW, height: 1.0)
+            let col1 = CGRect(x: leftTrim + colW + gutter, y: 0.0, width: colW, height: 1.0)
+            let col2 = CGRect(x: leftTrim + (colW + gutter) * 2.0, y: 0.0, width: colW, height: 1.0)
+            let cols = effectiveRTL ? [col2, col1, col0] : [col0, col1, col2]
+            quadrants = generateColumnQuadrants(
+                columns: cols,
+                config: config,
+                isMangaRTL: effectiveRTL
             )
         }
 
@@ -94,9 +107,11 @@ public final class PDFSmartTierEngine {
             }
             return generateColumnQuadrants(columns: colRects, config: config, isMangaRTL: isMangaRTL)
         } else {
-            // Fallback to 1 column
+            let leftTrim = max(0.0, min(0.25, config.leftMarginTrim))
+            let rightTrim = max(0.0, min(0.25, config.rightMarginTrim))
+            let activeW = max(0.2, 1.0 - (leftTrim + rightTrim))
             return generateColumnQuadrants(
-                columns: [CGRect(x: 0, y: 0, width: 1.0, height: 1.0)],
+                columns: [CGRect(x: leftTrim, y: 0.0, width: activeW, height: 1.0)],
                 config: config,
                 isMangaRTL: isMangaRTL
             )
@@ -113,68 +128,101 @@ public final class PDFSmartTierEngine {
         let tiersCount = max(2, min(5, config.tiersPerColumn))
         let totalQuadrants = totalCols * tiersCount
 
-        let topTrim = max(0.0, min(0.15, config.topMarginTrim))
-        let botTrim = max(0.0, min(0.15, config.bottomMarginTrim))
+        let topTrim = max(0.0, min(0.25, config.topMarginTrim))
+        let botTrim = max(0.0, min(0.25, config.bottomMarginTrim))
         let usableHeight = max(0.5, 1.0 - (topTrim + botTrim))
         let overlap = max(0.05, min(0.30, config.verticalOverlap))
 
-        var globalStep = 0
+        // Precompute tier rectangles for each column
+        // Tier 0 is Top (highest Y in PDFKit coordinate space), Tier N-1 is Bottom (lowest Y)
+        let rawTierHeight = usableHeight / CGFloat(tiersCount)
+        let overlapHeight = rawTierHeight * overlap
+        let effectiveTierHeight = min(1.0, rawTierHeight + overlapHeight)
 
-        for (colIndex, colBox) in columns.enumerated() {
-            // Tier 0 is Top (highest Y in PDFKit coordinate space), Tier N-1 is Bottom (lowest Y)
-            let rawTierHeight = usableHeight / CGFloat(tiersCount)
-            let overlapHeight = rawTierHeight * overlap
-            let effectiveTierHeight = min(1.0, rawTierHeight + overlapHeight)
-
+        var columnTierRects: [[CGRect]] = []
+        for colBox in columns {
+            var colTiers: [CGRect] = []
             for tierIdx in 0..<tiersCount {
-                // In PDF coordinates: Y=0 is bottom, Y=1 is top.
-                // We want to read top to bottom:
-                // Step 0: Highest Y
-                // Step N-1: Lowest Y
                 let stepFraction = CGFloat(tierIdx) / CGFloat(max(1, tiersCount - 1))
                 let maxY = (1.0 - topTrim)
                 let minY = botTrim
 
-                let tierMaxY = maxY - (stepFraction * max(0, (maxY - minY - effectiveTierHeight)))
+                let tierMaxY = maxY - (stepFraction * max(0.0, (maxY - minY - effectiveTierHeight)))
                 let tierMinY = max(minY, tierMaxY - effectiveTierHeight)
 
                 let normRect = CGRect(
                     x: max(0.0, colBox.minX),
                     y: max(0.0, tierMinY),
                     width: min(1.0, colBox.width),
-                    height: min(1.0, tierMaxY - tierMinY)
+                    height: max(0.05, tierMaxY - tierMinY)
                 )
+                colTiers.append(normRect)
+            }
+            columnTierRects.append(colTiers)
+        }
 
-                let tierName: String
-                if tiersCount == 2 {
-                    tierName = (tierIdx == 0) ? "Top Half" : "Bottom Half"
-                } else if tiersCount == 3 {
-                    tierName = (tierIdx == 0) ? "Top" : ((tierIdx == 1) ? "Mid" : "Bottom")
-                } else {
-                    tierName = "Tier \(tierIdx + 1)/\(tiersCount)"
+        func tierName(for idx: Int, count: Int) -> String {
+            if count == 2 {
+                return (idx == 0) ? "Top Half" : "Bottom Half"
+            } else if count == 3 {
+                return (idx == 0) ? "Top" : ((idx == 1) ? "Mid" : "Bottom")
+            } else {
+                return "Tier \(idx + 1)/\(count)"
+            }
+        }
+
+        var globalStep = 0
+
+        if config.flowOrder == .rowFirst && totalCols > 1 {
+            // Row-First (Z-Flow): Traverse across columns row by row
+            for tierIdx in 0..<tiersCount {
+                for (colIndex, _) in columns.enumerated() {
+                    let normRect = columnTierRects[colIndex][tierIdx]
+                    let tName = tierName(for: tierIdx, count: tiersCount)
+                    let colLabel = isMangaRTL ? (colIndex == 0 ? "Right Col" : "Left Col") : "Col \(colIndex + 1)"
+                    let label = "\(colLabel) · \(tName) (\(globalStep + 1)/\(totalQuadrants))"
+
+                    results.append(PDFTierQuadrant(
+                        id: globalStep,
+                        columnIndex: colIndex,
+                        tierIndex: tierIdx,
+                        totalColumns: totalCols,
+                        totalTiersInColumn: tiersCount,
+                        stepOrder: globalStep,
+                        totalInPage: totalQuadrants,
+                        normalizedRect: normRect,
+                        label: label
+                    ))
+                    globalStep += 1
                 }
+            }
+        } else {
+            // Column-First (N-Flow or Manga RTL): Traverse down each column top-to-bottom
+            for (colIndex, _) in columns.enumerated() {
+                for tierIdx in 0..<tiersCount {
+                    let normRect = columnTierRects[colIndex][tierIdx]
+                    let tName = tierName(for: tierIdx, count: tiersCount)
+                    let label: String
+                    if totalCols > 1 {
+                        let colLabel = isMangaRTL ? (colIndex == 0 ? "Right Col" : "Left Col") : "Col \(colIndex + 1)"
+                        label = "\(colLabel) · \(tName) (\(globalStep + 1)/\(totalQuadrants))"
+                    } else {
+                        label = "Tier \(globalStep + 1) of \(totalQuadrants) (\(tName))"
+                    }
 
-                let label: String
-                if totalCols > 1 {
-                    label = "Col \(colIndex + 1) · \(tierName) (\(globalStep + 1)/\(totalQuadrants))"
-                } else {
-                    label = "Tier \(globalStep + 1) of \(totalQuadrants) (\(tierName))"
+                    results.append(PDFTierQuadrant(
+                        id: globalStep,
+                        columnIndex: colIndex,
+                        tierIndex: tierIdx,
+                        totalColumns: totalCols,
+                        totalTiersInColumn: tiersCount,
+                        stepOrder: globalStep,
+                        totalInPage: totalQuadrants,
+                        normalizedRect: normRect,
+                        label: label
+                    ))
+                    globalStep += 1
                 }
-
-                let quad = PDFTierQuadrant(
-                    id: globalStep,
-                    columnIndex: colIndex,
-                    tierIndex: tierIdx,
-                    totalColumns: totalCols,
-                    totalTiersInColumn: tiersCount,
-                    stepOrder: globalStep,
-                    totalInPage: totalQuadrants,
-                    normalizedRect: normRect,
-                    label: label
-                )
-
-                results.append(quad)
-                globalStep += 1
             }
         }
 

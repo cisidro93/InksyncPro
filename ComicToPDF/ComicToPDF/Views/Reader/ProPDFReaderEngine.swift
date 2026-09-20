@@ -2147,22 +2147,25 @@ struct ProPDFReaderEngine: View {
 
         // Calculate scale to fit column width cleanly inside the PDFView
         let colWidth = max(20, pageRect.width)
-        let availableWidth = pv.bounds.width - 24.0
-        let targetScale = max(fitScale * 1.1, min(fitScale * 4.0, availableWidth / colWidth))
+        let availableWidth = max(100, pv.bounds.width - 24.0)
+        let targetScale = max(fitScale * 1.05, min(fitScale * 4.5, availableWidth / colWidth))
 
-        let duration = animated ? 0.35 : 0.0
-        UIView.animate(withDuration: duration, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0, options: [.curveEaseOut]) {
-            pv.scaleFactor = targetScale
+        let cropBox = page.bounds(for: .cropBox)
+        let visibleWidthInPoints = pv.bounds.width / targetScale
+        let horizontalPadding = max(0, (visibleWidthInPoints - colWidth) / 2.0)
+        let targetX = max(cropBox.minX, pageRect.minX - horizontalPadding)
+        let targetY = min(cropBox.maxY, pageRect.maxY + (8.0 / targetScale))
 
-            // Target top-center of the quadrant
-            let topCenter = CGPoint(x: pageRect.midX, y: pageRect.maxY)
-            let viewPoint = pv.convert(topCenter, from: page)
+        let destination = PDFDestination(page: page, at: CGPoint(x: targetX, y: targetY))
 
-            if let scrollView = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-                let targetOffsetX = max(0, viewPoint.x - (pv.bounds.width / 2.0))
-                let targetOffsetY = max(0, viewPoint.y - 20)
-                scrollView.setContentOffset(CGPoint(x: targetOffsetX, y: targetOffsetY), animated: false)
+        if animated {
+            UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.88, initialSpringVelocity: 0, options: [.curveEaseOut]) {
+                pv.scaleFactor = targetScale
+                pv.go(to: destination)
             }
+        } else {
+            pv.scaleFactor = targetScale
+            pv.go(to: destination)
         }
     }
 

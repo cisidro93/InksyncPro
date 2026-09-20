@@ -79,15 +79,43 @@ public enum ComicTierLayoutPreset: String, CaseIterable, Identifiable, Codable, 
     }
 }
 
-/// Stores user's quick reference guides and parameters for Smart Tiers across a comic book.
+/// Section Reading Flow Order for Comics and Manga
+public enum ComicReadingFlowOrder: String, CaseIterable, Identifiable, Codable, Sendable {
+    case mangaRTL    = "mangaRTL"    // Manga RTL: Right Col Top->Bot, then Left Col Top->Bot
+    case columnFirst = "columnFirst" // Column-by-Column (N-Flow): Col 1 Top->Bot, then Col 2 Top->Bot
+    case rowFirst    = "rowFirst"    // Row-by-Row (Z-Flow): Top-Left -> Top-Right -> Mid-Left -> Mid-Right
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .mangaRTL:    return "Manga RTL"
+        case .columnFirst: return "Column-First (N)"
+        case .rowFirst:    return "Row-First (Z)"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .mangaRTL:    return "arrow.left.to.line.compact"
+        case .columnFirst: return "arrow.down.to.line.compact"
+        case .rowFirst:    return "arrow.right.to.line.compact"
+        }
+    }
+}
+
+/// Stores user's quick reference guides, page limits, and parameters for Smart Tiers across a comic book.
 public struct ComicTierGuideConfiguration: Codable, Equatable, Sendable {
     public var preset: ComicTierLayoutPreset
     public var tierCount: Int          // 2, 3, or 4
     public var columnCount: Int        // 1 or 2
     public var overlap: Double         // 0.05 ... 0.30 (default 0.15 = 15% overlap)
     public var columnSplitRatio: Double // 0.35 ... 0.65 (default 0.50 for equal split)
-    public var topMarginTrim: Double   // 0.0 ... 0.10
-    public var bottomMarginTrim: Double // 0.0 ... 0.10
+    public var topMarginTrim: Double   // 0.0 ... 0.20
+    public var bottomMarginTrim: Double // 0.0 ... 0.20
+    public var leftMarginTrim: Double   // 0.0 ... 0.20
+    public var rightMarginTrim: Double  // 0.0 ... 0.20
+    public var flowOrder: ComicReadingFlowOrder // Manga RTL, Column-First, or Row-First
 
     public init(
         preset: ComicTierLayoutPreset = .threeTier,
@@ -96,7 +124,10 @@ public struct ComicTierGuideConfiguration: Codable, Equatable, Sendable {
         overlap: Double = 0.15,
         columnSplitRatio: Double = 0.50,
         topMarginTrim: Double = 0.0,
-        bottomMarginTrim: Double = 0.0
+        bottomMarginTrim: Double = 0.0,
+        leftMarginTrim: Double = 0.0,
+        rightMarginTrim: Double = 0.0,
+        flowOrder: ComicReadingFlowOrder = .mangaRTL
     ) {
         self.preset = preset
         self.tierCount = tierCount
@@ -105,6 +136,9 @@ public struct ComicTierGuideConfiguration: Codable, Equatable, Sendable {
         self.columnSplitRatio = columnSplitRatio
         self.topMarginTrim = topMarginTrim
         self.bottomMarginTrim = bottomMarginTrim
+        self.leftMarginTrim = leftMarginTrim
+        self.rightMarginTrim = rightMarginTrim
+        self.flowOrder = flowOrder
     }
 
     public static let standardThreeTier = ComicTierGuideConfiguration(

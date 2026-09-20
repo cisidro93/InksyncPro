@@ -131,6 +131,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             action: #selector(Coordinator.handlePinch(_:))
         )
         pinch.cancelsTouchesInView = false
+        pinch.delegate = context.coordinator
         view.addGestureRecognizer(pinch)
 
         context.coordinator.pageViewController = pvc
@@ -491,6 +492,9 @@ extension EBookPageCurlReader {
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            if gestureRecognizer is UIPinchGestureRecognizer || otherGestureRecognizer is UIPinchGestureRecognizer {
+                return true
+            }
             if let tap = gestureRecognizer as? UITapGestureRecognizer, tap.numberOfTouchesRequired >= 2 {
                 return true
             }
@@ -613,6 +617,7 @@ extension EBookPageCurlReader {
             wv.scrollView.showsVerticalScrollIndicator = false
             wv.scrollView.contentInsetAdjustmentBehavior = .never
             wv.scrollView.contentInset = .zero
+            wv.scrollView.pinchGestureRecognizer?.isEnabled = false
 
             self.primaryWebView = wv
             self.parent.webViewRef = wv

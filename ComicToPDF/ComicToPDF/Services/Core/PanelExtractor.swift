@@ -392,61 +392,71 @@ struct PanelExtractor {
             overlap: UserDefaults.standard.double(forKey: "comic_smartTierOverlap") != 0 ? UserDefaults.standard.double(forKey: "comic_smartTierOverlap") : 0.15,
             columnSplitRatio: UserDefaults.standard.double(forKey: "comic_smartTierColumnSplitRatio") != 0 ? UserDefaults.standard.double(forKey: "comic_smartTierColumnSplitRatio") : 0.50,
             topMarginTrim: UserDefaults.standard.double(forKey: "comic_smartTierTopMarginTrim"),
-            bottomMarginTrim: UserDefaults.standard.double(forKey: "comic_smartTierBottomMarginTrim")
+            bottomMarginTrim: UserDefaults.standard.double(forKey: "comic_smartTierBottomMarginTrim"),
+            leftMarginTrim: UserDefaults.standard.double(forKey: "comic_smartTierLeftTrim"),
+            rightMarginTrim: UserDefaults.standard.double(forKey: "comic_smartTierRightTrim"),
+            flowOrder: ComicReadingFlowOrder(rawValue: UserDefaults.standard.string(forKey: "comic_smartTierFlowOrder") ?? "") ?? (mangaMode ? .mangaRTL : .columnFirst)
         )
 
         let isWideDoubleSpread = imageSize.width > imageSize.height * 1.18
+        let leftTrim = max(0.0, min(0.25, CGFloat(activeConfig.leftMarginTrim)))
+        let rightTrim = max(0.0, min(0.25, CGFloat(activeConfig.rightMarginTrim)))
+        let activeW = max(0.2, 1.0 - (leftTrim + rightTrim))
+        let effectiveRTL = mangaMode || activeConfig.flowOrder == .mangaRTL
 
         if isWideDoubleSpread {
             // Wide Double-Page Spread in a single image:
-            // Divide into Left Half (Page 1 in LTR) and Right Half (Page 1 in RTL)
-            let leftBox = CGRect(x: 0.0, y: 0.0, width: 0.51, height: 1.0)
-            let rightBox = CGRect(x: 0.49, y: 0.0, width: 0.51, height: 1.0)
+            // Divide into Left Half and Right Half
+            let halfW = activeW / 2.0
+            let leftBox = CGRect(x: leftTrim, y: 0.0, width: halfW, height: 1.0)
+            let rightBox = CGRect(x: leftTrim + halfW, y: 0.0, width: halfW, height: 1.0)
 
-            let firstBox = mangaMode ? rightBox : leftBox
-            let secondBox = mangaMode ? leftBox : rightBox
+            let cols = effectiveRTL ? [rightBox, leftBox] : [leftBox, rightBox]
+            let colNames = effectiveRTL ? ["Right Page", "Left Page"] : ["Left Page", "Right Page"]
 
             let tiersCount = max(2, min(4, activeConfig.tierCount))
             var quads: [ComicTierQuadrant] = []
             var step = 0
             let totalSteps = tiersCount * 2
 
-            // Half 1
-            let half1LabelPrefix = mangaMode ? "Right Page" : "Left Page"
-            for t in 0..<tiersCount {
-                let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: firstBox.minX, columnW: firstBox.width, config: activeConfig)
-                let lbl = "\(half1LabelPrefix) · \(tierSubLabel(index: t, total: tiersCount)) (\(step + 1)/\(totalSteps))"
-                quads.append(ComicTierQuadrant(
-                    id: step,
-                    columnIndex: 0,
-                    tierIndex: t,
-                    totalColumns: 2,
-                    totalTiersInColumn: tiersCount,
-                    stepOrder: step,
-                    totalInPage: totalSteps,
-                    normalizedRect: rect,
-                    label: lbl
-                ))
-                step += 1
-            }
-
-            // Half 2
-            let half2LabelPrefix = mangaMode ? "Left Page" : "Right Page"
-            for t in 0..<tiersCount {
-                let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: secondBox.minX, columnW: secondBox.width, config: activeConfig)
-                let lbl = "\(half2LabelPrefix) · \(tierSubLabel(index: t, total: tiersCount)) (\(step + 1)/\(totalSteps))"
-                quads.append(ComicTierQuadrant(
-                    id: step,
-                    columnIndex: 1,
-                    tierIndex: t,
-                    totalColumns: 2,
-                    totalTiersInColumn: tiersCount,
-                    stepOrder: step,
-                    totalInPage: totalSteps,
-                    normalizedRect: rect,
-                    label: lbl
-                ))
-                step += 1
+            if activeConfig.flowOrder == .rowFirst {
+                for t in 0..<tiersCount {
+                    for (cIdx, col) in cols.enumerated() {
+                        let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: col.minX, columnW: col.width, config: activeConfig)
+                        let lbl = "\(colNames[cIdx]) · \(tierSubLabel(index: t, total: tiersCount)) (\(step + 1)/\(totalSteps))"
+                        quads.append(ComicTierQuadrant(
+                            id: step,
+                            columnIndex: cIdx,
+                            tierIndex: t,
+                            totalColumns: 2,
+                            totalTiersInColumn: tiersCount,
+                            stepOrder: step,
+                            totalInPage: totalSteps,
+                            normalizedRect: rect,
+                            label: lbl
+                        ))
+                        step += 1
+                    }
+                }
+            } else {
+                for (cIdx, col) in cols.enumerated() {
+                    for t in 0..<tiersCount {
+                        let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: col.minX, columnW: col.width, config: activeConfig)
+                        let lbl = "\(colNames[cIdx]) · \(tierSubLabel(index: t, total: tiersCount)) (\(step + 1)/\(totalSteps))"
+                        quads.append(ComicTierQuadrant(
+                            id: step,
+                            columnIndex: cIdx,
+                            tierIndex: t,
+                            totalColumns: 2,
+                            totalTiersInColumn: tiersCount,
+                            stepOrder: step,
+                            totalInPage: totalSteps,
+                            normalizedRect: rect,
+                            label: lbl
+                        ))
+                        step += 1
+                    }
+                }
             }
 
             return quads
@@ -458,9 +468,9 @@ struct PanelExtractor {
             if gutters.count == 2 {
                 let g1 = Double(gutters[0])
                 let g2 = Double(gutters[1])
-                let rect1 = CGRect(x: 0, y: 1.0 - g1, width: 1.0, height: g1)
-                let rect2 = CGRect(x: 0, y: 1.0 - g2, width: 1.0, height: g2 - g1)
-                let rect3 = CGRect(x: 0, y: 0.0, width: 1.0, height: 1.0 - g2)
+                let rect1 = CGRect(x: leftTrim, y: 1.0 - g1, width: activeW, height: g1)
+                let rect2 = CGRect(x: leftTrim, y: 1.0 - g2, width: activeW, height: g2 - g1)
+                let rect3 = CGRect(x: leftTrim, y: 0.0, width: activeW, height: 1.0 - g2)
                 return [
                     ComicTierQuadrant(id: 0, columnIndex: 0, tierIndex: 0, totalColumns: 1, totalTiersInColumn: 3, stepOrder: 0, totalInPage: 3, normalizedRect: rect1, label: "Top Tier (1/3)"),
                     ComicTierQuadrant(id: 1, columnIndex: 0, tierIndex: 1, totalColumns: 1, totalTiersInColumn: 3, stepOrder: 1, totalInPage: 3, normalizedRect: rect2, label: "Middle Tier (2/3)"),
@@ -468,8 +478,8 @@ struct PanelExtractor {
                 ]
             } else if gutters.count == 1 {
                 let g = Double(gutters[0])
-                let rect1 = CGRect(x: 0, y: 1.0 - g, width: 1.0, height: g)
-                let rect2 = CGRect(x: 0, y: 0, width: 1.0, height: 1.0 - g)
+                let rect1 = CGRect(x: leftTrim, y: 1.0 - g, width: activeW, height: g)
+                let rect2 = CGRect(x: leftTrim, y: 0, width: activeW, height: 1.0 - g)
                 return [
                     ComicTierQuadrant(id: 0, columnIndex: 0, tierIndex: 0, totalColumns: 1, totalTiersInColumn: 2, stepOrder: 0, totalInPage: 2, normalizedRect: rect1, label: "Top Half (1/2)"),
                     ComicTierQuadrant(id: 1, columnIndex: 0, tierIndex: 1, totalColumns: 1, totalTiersInColumn: 2, stepOrder: 1, totalInPage: 2, normalizedRect: rect2, label: "Bottom Half (2/2)")
@@ -479,57 +489,62 @@ struct PanelExtractor {
 
         // 2-Column / Yonkoma Mode
         if activeConfig.preset == .yonkoma || activeConfig.columnCount == 2 {
-            let split = max(0.35, min(0.65, CGFloat(activeConfig.columnSplitRatio)))
-            let gutter: CGFloat = 0.02
-            let leftCol = CGRect(x: 0.0, y: 0.0, width: max(0.1, split - (gutter / 2)), height: 1.0)
-            let rightCol = CGRect(x: split + (gutter / 2), y: 0.0, width: max(0.1, 1.0 - (split + (gutter / 2))), height: 1.0)
+            let split = max(0.2, min(0.8, CGFloat(activeConfig.columnSplitRatio)))
+            let gutter: CGFloat = 0.02 * activeW
+            let col0W = max(0.05, (activeW * split) - (gutter / 2.0))
+            let col1X = leftTrim + (activeW * split) + (gutter / 2.0)
+            let col1W = max(0.05, (leftTrim + activeW) - col1X)
+            let leftCol = CGRect(x: leftTrim, y: 0.0, width: col0W, height: 1.0)
+            let rightCol = CGRect(x: col1X, y: 0.0, width: col1W, height: 1.0)
 
-            let firstCol = mangaMode ? rightCol : leftCol
-            let secondCol = mangaMode ? leftCol : rightCol
-            let firstColName = mangaMode ? "Right Col" : "Left Col"
-            let secondColName = mangaMode ? "Left Col" : "Right Col"
+            let cols = effectiveRTL ? [rightCol, leftCol] : [leftCol, rightCol]
+            let colNames = effectiveRTL ? ["Right Col", "Left Col"] : ["Left Col", "Right Col"]
 
             let tiersCount = max(2, min(4, activeConfig.tierCount))
             let totalSteps = tiersCount * 2
             var quads: [ComicTierQuadrant] = []
             var step = 0
 
-            // Column 1
-            for t in 0..<tiersCount {
-                let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: firstCol.minX, columnW: firstCol.width, config: activeConfig)
-                let subLbl = tierSubLabel(index: t, total: tiersCount)
-                let lbl = "\(firstColName) · \(subLbl) (\(step + 1)/\(totalSteps))"
-                quads.append(ComicTierQuadrant(
-                    id: step,
-                    columnIndex: 0,
-                    tierIndex: t,
-                    totalColumns: 2,
-                    totalTiersInColumn: tiersCount,
-                    stepOrder: step,
-                    totalInPage: totalSteps,
-                    normalizedRect: rect,
-                    label: lbl
-                ))
-                step += 1
-            }
-
-            // Column 2
-            for t in 0..<tiersCount {
-                let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: secondCol.minX, columnW: secondCol.width, config: activeConfig)
-                let subLbl = tierSubLabel(index: t, total: tiersCount)
-                let lbl = "\(secondColName) · \(subLbl) (\(step + 1)/\(totalSteps))"
-                quads.append(ComicTierQuadrant(
-                    id: step,
-                    columnIndex: 1,
-                    tierIndex: t,
-                    totalColumns: 2,
-                    totalTiersInColumn: tiersCount,
-                    stepOrder: step,
-                    totalInPage: totalSteps,
-                    normalizedRect: rect,
-                    label: lbl
-                ))
-                step += 1
+            if activeConfig.flowOrder == .rowFirst {
+                for t in 0..<tiersCount {
+                    for (cIdx, col) in cols.enumerated() {
+                        let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: col.minX, columnW: col.width, config: activeConfig)
+                        let subLbl = tierSubLabel(index: t, total: tiersCount)
+                        let lbl = "\(colNames[cIdx]) · \(subLbl) (\(step + 1)/\(totalSteps))"
+                        quads.append(ComicTierQuadrant(
+                            id: step,
+                            columnIndex: cIdx,
+                            tierIndex: t,
+                            totalColumns: 2,
+                            totalTiersInColumn: tiersCount,
+                            stepOrder: step,
+                            totalInPage: totalSteps,
+                            normalizedRect: rect,
+                            label: lbl
+                        ))
+                        step += 1
+                    }
+                }
+            } else {
+                for (cIdx, col) in cols.enumerated() {
+                    for t in 0..<tiersCount {
+                        let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: col.minX, columnW: col.width, config: activeConfig)
+                        let subLbl = tierSubLabel(index: t, total: tiersCount)
+                        let lbl = "\(colNames[cIdx]) · \(subLbl) (\(step + 1)/\(totalSteps))"
+                        quads.append(ComicTierQuadrant(
+                            id: step,
+                            columnIndex: cIdx,
+                            tierIndex: t,
+                            totalColumns: 2,
+                            totalTiersInColumn: tiersCount,
+                            stepOrder: step,
+                            totalInPage: totalSteps,
+                            normalizedRect: rect,
+                            label: lbl
+                        ))
+                        step += 1
+                    }
+                }
             }
 
             return quads
@@ -539,7 +554,7 @@ struct PanelExtractor {
         let tiersCount = max(2, min(5, activeConfig.tierCount))
         var quads: [ComicTierQuadrant] = []
         for t in 0..<tiersCount {
-            let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: 0.0, columnW: 1.0, config: activeConfig)
+            let rect = computeTierRect(tierIndex: t, totalTiers: tiersCount, columnX: leftTrim, columnW: activeW, config: activeConfig)
             let subLbl = tierSubLabel(index: t, total: tiersCount)
             let lbl = "\(subLbl) (\(t + 1)/\(tiersCount))"
             quads.append(ComicTierQuadrant(

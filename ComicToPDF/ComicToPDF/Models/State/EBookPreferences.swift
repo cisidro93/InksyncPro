@@ -230,6 +230,68 @@ class EBookPreferences: ObservableObject {
         didSet { objectWillChange.send() }
     }
 
+    // MARK: - PDF Smart Tiers Configuration & Limits
+    @AppStorage("pdf_smartTierPreset") var pdfSmartTierPresetRaw: String = PDFTierLayoutPreset.twoColumn.rawValue {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("pdf_smartTierColumnCount") var pdfSmartTierColumnCount: Int = 2 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("pdf_smartTierTiersPerColumn") var pdfSmartTierTiersPerColumn: Int = 3 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("pdf_smartTierColumnSplitRatio") var pdfSmartTierColumnSplitRatio: Double = 0.50 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("pdf_smartTierVerticalOverlap") var pdfSmartTierVerticalOverlap: Double = 0.15 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("pdf_smartTierTopTrim") var pdfSmartTierTopTrim: Double = 0.04 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("pdf_smartTierBottomTrim") var pdfSmartTierBottomTrim: Double = 0.04 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("pdf_smartTierLeftTrim") var pdfSmartTierLeftTrim: Double = 0.0 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("pdf_smartTierRightTrim") var pdfSmartTierRightTrim: Double = 0.0 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("pdf_smartTierFlowOrder") var pdfSmartTierFlowOrderRaw: String = PDFReadingFlowOrder.columnFirst.rawValue {
+        didSet { objectWillChange.send() }
+    }
+
+    var pdfTierConfiguration: PDFTierGuideConfiguration {
+        get {
+            PDFTierGuideConfiguration(
+                preset: PDFTierLayoutPreset(rawValue: pdfSmartTierPresetRaw) ?? .twoColumn,
+                columnCount: pdfSmartTierColumnCount,
+                tiersPerColumn: pdfSmartTierTiersPerColumn,
+                columnSplitRatio: CGFloat(pdfSmartTierColumnSplitRatio),
+                verticalOverlap: CGFloat(pdfSmartTierVerticalOverlap),
+                topMarginTrim: CGFloat(pdfSmartTierTopTrim),
+                bottomMarginTrim: CGFloat(pdfSmartTierBottomTrim),
+                leftMarginTrim: CGFloat(pdfSmartTierLeftTrim),
+                rightMarginTrim: CGFloat(pdfSmartTierRightTrim),
+                flowOrder: PDFReadingFlowOrder(rawValue: pdfSmartTierFlowOrderRaw) ?? .columnFirst
+            )
+        }
+        set {
+            pdfSmartTierPresetRaw = newValue.preset.rawValue
+            pdfSmartTierColumnCount = newValue.columnCount
+            pdfSmartTierTiersPerColumn = newValue.tiersPerColumn
+            pdfSmartTierColumnSplitRatio = Double(newValue.columnSplitRatio)
+            pdfSmartTierVerticalOverlap = Double(newValue.verticalOverlap)
+            pdfSmartTierTopTrim = Double(newValue.topMarginTrim)
+            pdfSmartTierBottomTrim = Double(newValue.bottomMarginTrim)
+            pdfSmartTierLeftTrim = Double(newValue.leftMarginTrim)
+            pdfSmartTierRightTrim = Double(newValue.rightMarginTrim)
+            pdfSmartTierFlowOrderRaw = newValue.flowOrder.rawValue
+            objectWillChange.send()
+        }
+    }
+
     // MARK: - Comic Smart Tiers Quick Adjust Configuration
     @AppStorage("comic_smartTierPreset") var comicSmartTierPresetRaw: String = ComicTierLayoutPreset.threeTier.rawValue {
         didSet { objectWillChange.send() }
@@ -252,6 +314,15 @@ class EBookPreferences: ObservableObject {
     @AppStorage("comic_smartTierBottomMarginTrim") var comicSmartTierBottomMarginTrim: Double = 0.0 {
         didSet { objectWillChange.send() }
     }
+    @AppStorage("comic_smartTierLeftTrim") var comicSmartTierLeftTrim: Double = 0.0 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("comic_smartTierRightTrim") var comicSmartTierRightTrim: Double = 0.0 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("comic_smartTierFlowOrder") var comicSmartTierFlowOrderRaw: String = ComicReadingFlowOrder.mangaRTL.rawValue {
+        didSet { objectWillChange.send() }
+    }
 
     var comicTierConfiguration: ComicTierGuideConfiguration {
         get {
@@ -262,7 +333,10 @@ class EBookPreferences: ObservableObject {
                 overlap: comicSmartTierOverlap,
                 columnSplitRatio: comicSmartTierColumnSplitRatio,
                 topMarginTrim: comicSmartTierTopMarginTrim,
-                bottomMarginTrim: comicSmartTierBottomMarginTrim
+                bottomMarginTrim: comicSmartTierBottomMarginTrim,
+                leftMarginTrim: comicSmartTierLeftTrim,
+                rightMarginTrim: comicSmartTierRightTrim,
+                flowOrder: ComicReadingFlowOrder(rawValue: comicSmartTierFlowOrderRaw) ?? .mangaRTL
             )
         }
         set {
@@ -273,6 +347,9 @@ class EBookPreferences: ObservableObject {
             comicSmartTierColumnSplitRatio = newValue.columnSplitRatio
             comicSmartTierTopMarginTrim = newValue.topMarginTrim
             comicSmartTierBottomMarginTrim = newValue.bottomMarginTrim
+            comicSmartTierLeftTrim = newValue.leftMarginTrim
+            comicSmartTierRightTrim = newValue.rightMarginTrim
+            comicSmartTierFlowOrderRaw = newValue.flowOrder.rawValue
             objectWillChange.send()
         }
     }

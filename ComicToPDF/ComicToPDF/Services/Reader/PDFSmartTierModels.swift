@@ -38,6 +38,31 @@ public struct PDFTierQuadrant: Identifiable, Equatable, Sendable {
     }
 }
 
+/// Section Reading Flow Order (Boox NeoReader Standard)
+public enum PDFReadingFlowOrder: String, CaseIterable, Identifiable, Codable, Sendable {
+    case columnFirst = "columnFirst" // Column-by-Column (N-Flow): Col 1 Top->Bot, then Col 2 Top->Bot
+    case rowFirst    = "rowFirst"    // Row-by-Row (Z-Flow): Top-Left -> Top-Right -> Mid-Left -> Mid-Right
+    case mangaRTL    = "mangaRTL"    // Manga RTL: Right Col Top->Bot, then Left Col Top->Bot
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .columnFirst: return "Column-First (N)"
+        case .rowFirst:    return "Row-First (Z)"
+        case .mangaRTL:    return "Manga RTL"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .columnFirst: return "arrow.down.to.line.compact"
+        case .rowFirst:    return "arrow.right.to.line.compact"
+        case .mangaRTL:    return "arrow.left.to.line.compact"
+        }
+    }
+}
+
 /// Guided View layout presets for PDF documents.
 public enum PDFTierLayoutPreset: String, CaseIterable, Identifiable, Codable, Sendable {
     case twoColumn    = "twoColumn"    // Academic / Paper (2 Columns: Left Top-to-Bot, Right Top-to-Bot)
@@ -75,15 +100,18 @@ public enum PDFTierLayoutPreset: String, CaseIterable, Identifiable, Codable, Se
     }
 }
 
-/// Stores user's quick reference guides and parameters for Smart Tiers across a document.
+/// Stores user's quick reference guides, page limits, and parameters for Smart Tiers across a document.
 public struct PDFTierGuideConfiguration: Codable, Equatable, Sendable {
     public var preset: PDFTierLayoutPreset
     public var columnCount: Int         // 1, 2, or 3
     public var tiersPerColumn: Int       // 2, 3, or 4
     public var columnSplitRatio: CGFloat // 0.2 ... 0.8 (default 0.5 for equal 2-col)
     public var verticalOverlap: CGFloat  // 0.05 ... 0.25 (default 0.15 = 15% overlap)
-    public var topMarginTrim: CGFloat    // 0.0 ... 0.15 (exclude headers)
-    public var bottomMarginTrim: CGFloat // 0.0 ... 0.15 (exclude footers/page numbers)
+    public var topMarginTrim: CGFloat    // 0.0 ... 0.20 (exclude running headers)
+    public var bottomMarginTrim: CGFloat // 0.0 ... 0.20 (exclude footers/page numbers)
+    public var leftMarginTrim: CGFloat   // 0.0 ... 0.20 (exclude left outer margins)
+    public var rightMarginTrim: CGFloat  // 0.0 ... 0.20 (exclude right outer margins)
+    public var flowOrder: PDFReadingFlowOrder // Column-First, Row-First, or Manga RTL
 
     public init(
         preset: PDFTierLayoutPreset = .twoColumn,
@@ -92,7 +120,10 @@ public struct PDFTierGuideConfiguration: Codable, Equatable, Sendable {
         columnSplitRatio: CGFloat = 0.5,
         verticalOverlap: CGFloat = 0.15,
         topMarginTrim: CGFloat = 0.04,
-        bottomMarginTrim: CGFloat = 0.04
+        bottomMarginTrim: CGFloat = 0.04,
+        leftMarginTrim: CGFloat = 0.0,
+        rightMarginTrim: CGFloat = 0.0,
+        flowOrder: PDFReadingFlowOrder = .columnFirst
     ) {
         self.preset = preset
         self.columnCount = columnCount
@@ -101,6 +132,9 @@ public struct PDFTierGuideConfiguration: Codable, Equatable, Sendable {
         self.verticalOverlap = verticalOverlap
         self.topMarginTrim = topMarginTrim
         self.bottomMarginTrim = bottomMarginTrim
+        self.leftMarginTrim = leftMarginTrim
+        self.rightMarginTrim = rightMarginTrim
+        self.flowOrder = flowOrder
     }
 
     public static let standardTwoColumn = PDFTierGuideConfiguration(
@@ -110,7 +144,10 @@ public struct PDFTierGuideConfiguration: Codable, Equatable, Sendable {
         columnSplitRatio: 0.5,
         verticalOverlap: 0.15,
         topMarginTrim: 0.04,
-        bottomMarginTrim: 0.04
+        bottomMarginTrim: 0.04,
+        leftMarginTrim: 0.0,
+        rightMarginTrim: 0.0,
+        flowOrder: .columnFirst
     )
 
     public static let standardSingleColumn = PDFTierGuideConfiguration(
@@ -120,7 +157,10 @@ public struct PDFTierGuideConfiguration: Codable, Equatable, Sendable {
         columnSplitRatio: 0.5,
         verticalOverlap: 0.15,
         topMarginTrim: 0.03,
-        bottomMarginTrim: 0.03
+        bottomMarginTrim: 0.03,
+        leftMarginTrim: 0.0,
+        rightMarginTrim: 0.0,
+        flowOrder: .columnFirst
     )
 
     public static let standardAuto = PDFTierGuideConfiguration(
@@ -130,6 +170,9 @@ public struct PDFTierGuideConfiguration: Codable, Equatable, Sendable {
         columnSplitRatio: 0.5,
         verticalOverlap: 0.15,
         topMarginTrim: 0.04,
-        bottomMarginTrim: 0.04
+        bottomMarginTrim: 0.04,
+        leftMarginTrim: 0.0,
+        rightMarginTrim: 0.0,
+        flowOrder: .columnFirst
     )
 }
