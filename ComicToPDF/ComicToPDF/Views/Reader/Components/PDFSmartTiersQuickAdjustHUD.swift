@@ -8,14 +8,16 @@ import PDFKit
 struct PDFSmartTiersQuickAdjustHUD: View {
     let currentPage: PDFPage
     let pageIndex: Int
+    var initialTierIndex: Int = 0
     @Binding var isPresented: Bool
-    let onApplyConfiguration: (PDFTierGuideConfiguration) -> Void
+    let onApplyConfiguration: (PDFTierGuideConfiguration, Int) -> Void
 
     @ObservedObject private var prefs = EBookPreferences.shared
     @State private var config: PDFTierGuideConfiguration = .standardTwoColumn
     @State private var pageThumbnail: UIImage? = nil
     @State private var previewQuadrants: [PDFTierQuadrant] = []
     @State private var isMarginsExpanded: Bool = false
+    @State private var selectedTierIndex: Int = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -29,6 +31,7 @@ struct PDFSmartTiersQuickAdjustHUD: View {
         }
         .task {
             config = prefs.pdfTierConfiguration
+            selectedTierIndex = initialTierIndex
             renderPageThumbnail()
             recomputePreviewQuadrants()
         }
@@ -245,14 +248,16 @@ struct PDFSmartTiersQuickAdjustHUD: View {
                         let rectH = renderH * norm.height
                         let rectX = originX + (renderW * norm.minX)
                         let rectY = originY + (renderH * (1.0 - norm.maxY))
+                        let isSelected = selectedTierIndex == quad.stepOrder
 
                         ZStack(alignment: .center) {
                             RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.inkGreen.opacity(0.90), lineWidth: 1.5)
+                                .stroke(isSelected ? Color.inkGreen : Color.inkGreen.opacity(0.80), lineWidth: isSelected ? 2.5 : 1.2)
                                 .background(
                                     RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color.inkGreen.opacity(0.14))
+                                        .fill(isSelected ? Color.inkGreen.opacity(0.30) : Color.inkGreen.opacity(0.12))
                                 )
+                                .shadow(color: isSelected ? Color.inkGreen.opacity(0.45) : Color.clear, radius: 4)
 
                             // Numbered sequence flow badge
                             HStack(spacing: 3) {
@@ -260,13 +265,13 @@ struct PDFSmartTiersQuickAdjustHUD: View {
                                     .font(.system(size: 11, weight: .black, design: .rounded))
                                     .foregroundColor(.white)
                                     .frame(width: 20, height: 20)
-                                    .background(Circle().fill(Color.inkGreen))
+                                    .background(Circle().fill(isSelected ? Color.inkGreen : Color.inkGreen.opacity(0.85)))
                                     .shadow(color: Color.black.opacity(0.3), radius: 2)
 
                                 if rectW > 80 {
                                     Text(quad.label.components(separatedBy: "(").first ?? "")
-                                        .font(.system(size: 9, weight: .bold))
-                                        .foregroundColor(Color.inkTextPrimary)
+                                        .font(.system(size: 9, weight: isSelected ? .black : .bold))
+                                        .foregroundColor(isSelected ? .white : Color.inkTextPrimary)
                                         .lineLimit(1)
                                 }
                             }
@@ -274,6 +279,11 @@ struct PDFSmartTiersQuickAdjustHUD: View {
                         }
                         .frame(width: rectW, height: rectH)
                         .position(x: rectX + (rectW / 2.0), y: rectY + (rectH / 2.0))
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            HapticEngine.selection()
+                            selectedTierIndex = quad.stepOrder
+                        }
                     }
                 }
             } else {
@@ -466,7 +476,7 @@ struct PDFSmartTiersQuickAdjustHUD: View {
         Button {
             HapticEngine.medium()
             prefs.pdfTierConfiguration = config
-            onApplyConfiguration(config)
+            onApplyConfiguration(config, selectedTierIndex)
             isPresented = false
         } label: {
             HStack(spacing: 8) {
@@ -500,5 +510,8 @@ struct PDFSmartTiersQuickAdjustHUD: View {
             isMangaRTL: isManga
         )
         self.previewQuadrants = quads
+        if selectedTierIndex >= quads.count {
+            selectedTierIndex = max(0, quads.count - 1)
+        }
     }
 }

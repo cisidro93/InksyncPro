@@ -616,17 +616,24 @@ struct ProPDFReaderEngine: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $isAdjustingSmartTiers) {
+            .sheet(isPresented: $isAdjustingSmartTiers, onDismiss: {
+                if prefs.isPDFSmartTiersActive {
+                    focusOnTier(index: currentTierIndex, animated: false)
+                }
+            }) {
                 if let doc = pdfDocument, let page = doc.page(at: currentPageIndex) {
                     PDFSmartTiersQuickAdjustHUD(
                         currentPage: page,
                         pageIndex: currentPageIndex,
+                        initialTierIndex: currentTierIndex,
                         isPresented: $isAdjustingSmartTiers,
-                        onApplyConfiguration: { newConfig in
+                        onApplyConfiguration: { newConfig, chosenIndex in
                             self.smartTiersConfig = newConfig
                             prefs.isPDFSmartTiersActive = true
                             refreshSmartTierQuadrants()
-                            focusOnTier(index: 0, animated: true)
+                            let targetIdx = min(chosenIndex, max(0, self.currentTierQuadrants.count - 1))
+                            self.currentTierIndex = targetIdx
+                            focusOnTier(index: targetIdx, animated: true)
                             flashTierBadge()
                         }
                     )
@@ -712,6 +719,7 @@ struct ProPDFReaderEngine: View {
                 // Reset quick filter override so saved document theme takes precedence
                 activeFilterPreset = .original
                 isReflowMode = prefs.pdfReflowMode
+                smartTiersConfig = prefs.pdfTierConfiguration
                 AnnotationStore.shared.initialize(with: modelContext)
                 loadPDFDocument()
             }
@@ -2142,30 +2150,83 @@ struct ProPDFReaderEngine: View {
               index >= 0, index < currentTierQuadrants.count else { return }
 
         let quad = currentTierQuadrants[index]
-        let pageRect = PDFSmartTierEngine.shared.pageRect(for: quad, on: page)
-        let fitScale = pv.scaleFactorForSizeToFit
-
-        // Calculate scale to fit column width cleanly inside the PDFView
-        let colWidth = max(20, pageRect.width)
-        let availableWidth = max(100, pv.bounds.width - 24.0)
-        let targetScale = max(fitScale * 1.05, min(fitScale * 4.5, availableWidth / colWidth))
-
         let cropBox = page.bounds(for: .cropBox)
-        let visibleWidthInPoints = pv.bounds.width / targetScale
-        let horizontalPadding = max(0, (visibleWidthInPoints - colWidth) / 2.0)
-        let targetX = max(cropBox.minX, pageRect.minX - horizontalPadding)
-        let targetY = min(cropBox.maxY, pageRect.maxY + (8.0 / targetScale))
+        let norm = quad.normalizedRect
 
-        let destination = PDFDestination(page: page, at: CGPoint(x: targetX, y: targetY))
+        // Disable autoScales so PDFKit does not fight our programmatic zoom
+        pv.autoScales = false
 
-        if animated {
-            UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.88, initialSpringVelocity: 0, options: [.curveEaseOut]) {
+        let fitScale = pv.scaleFactorForSizeToFit
+        let colWidthOnPage = max(20.0, norm.width * cropBox.width)
+        let availableWidth = max(100.0, pv.bounds.width - 24.0)
+
+        // Scale to fit the column width cleanly across the viewport
+        let scaleForColumn = availableWidth / colWidthOnPage
+        let minAllowed = max(0.5, fitScale * 1.05)
+        let maxAllowed: CGFloat = max(12.0, fitScale * 12.0)
+        let targetScale = max(minAllowed, min(maxAllowed, scaleForColumn))
+
+        // Set generous scale bounds so PDFKit never clamps our zoom
+        pv.minScaleFactor = 0.2
+        pv.maxScaleFactor = maxAllowed
+        if let sv = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+            sv.minimumZoomScale = 0.2
+            sv.maximumZoomScale = maxAllowed
+        }
+
+        pv.scaleFactor = targetScale
+        pv.layoutDocumentView()
+
+        // Point in PDF Page coordinates:
+        // Left edge of quadrant: cropBox.minX + (norm.minX * cropBox.width)
+        // Top edge of quadrant: cropBox.minY + (norm.maxY * cropBox.height)
+        let quadTopLeft = CGPoint(
+            x: cropBox.minX + (norm.minX * cropBox.width),
+            y: cropBox.minY + (norm.maxY * cropBox.height)
+        )
+
+        let alignViewport: @MainActor () -> Void = { [weak pv] in
+            guard let pv = pv,
+                  let sv = pv.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView else { return }
+
+            if abs(pv.scaleFactor - targetScale) > 0.05 {
                 pv.scaleFactor = targetScale
-                pv.go(to: destination)
+                pv.layoutDocumentView()
             }
-        } else {
-            pv.scaleFactor = targetScale
-            pv.go(to: destination)
+
+            let viewPoint = pv.convert(quadTopLeft, from: page)
+            let currentOffset = sv.contentOffset
+
+            // Absolute content position inside UIScrollView
+            let contentPointX = currentOffset.x + viewPoint.x
+            let contentPointY = currentOffset.y + viewPoint.y
+
+            // Desired position on screen: centered horizontally with padding, top placed with 8pt breathing room
+            let desiredViewX = max(0.0, (pv.bounds.width - (colWidthOnPage * targetScale)) / 2.0)
+            let desiredViewY: CGFloat = 8.0
+
+            let targetOffsetX = contentPointX - desiredViewX
+            let targetOffsetY = contentPointY - desiredViewY
+
+            let maxOffsetX = max(0.0, sv.contentSize.width - pv.bounds.width)
+            let maxOffsetY = max(0.0, sv.contentSize.height - pv.bounds.height)
+
+            let finalOffsetX = max(0.0, min(maxOffsetX, targetOffsetX))
+            let finalOffsetY = max(0.0, min(maxOffsetY, targetOffsetY))
+
+            if animated {
+                UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.88, initialSpringVelocity: 0, options: [.curveEaseOut]) {
+                    sv.setContentOffset(CGPoint(x: finalOffsetX, y: finalOffsetY), animated: false)
+                }
+            } else {
+                sv.setContentOffset(CGPoint(x: finalOffsetX, y: finalOffsetY), animated: false)
+            }
+        }
+
+        alignViewport()
+
+        DispatchQueue.main.async {
+            alignViewport()
         }
     }
 
@@ -3533,7 +3594,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         }
         let isPhone = UIDevice.current.userInterfaceIdiom == .phone
         let isLandscape = uiView.bounds.width > uiView.bounds.height
-        let isDual = (!isPhone ? prefs.pdfDualPage : (isLandscape && prefs.pdfDualPage)) || (prefs.autoLandscapeDualPage && isLandscape)
+        let isDual = !prefs.isPDFSmartTiersActive && ((!isPhone ? prefs.pdfDualPage : (isLandscape && prefs.pdfDualPage)) || (prefs.autoLandscapeDualPage && isLandscape))
         let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
 
         if uiView.displayMode != targetDisplayMode {
@@ -3582,15 +3643,28 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
             let fitScale = uiView.scaleFactorForSizeToFit
             if fitScale > 0.001 {
-                uiView.minScaleFactor = fitScale
-                uiView.maxScaleFactor = fitScale * 3.5
-                if let sv = uiView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
-                    sv.minimumZoomScale = fitScale
-                    sv.maximumZoomScale = fitScale * 3.5
+                if prefs.isPDFSmartTiersActive {
+                    uiView.minScaleFactor = 0.2
+                    uiView.maxScaleFactor = max(12.0, fitScale * 12.0)
+                    if let sv = uiView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                        sv.minimumZoomScale = 0.2
+                        sv.maximumZoomScale = max(12.0, fitScale * 12.0)
+                    }
+                } else {
+                    uiView.minScaleFactor = fitScale
+                    uiView.maxScaleFactor = fitScale * 3.5
+                    if let sv = uiView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                        sv.minimumZoomScale = fitScale
+                        sv.maximumZoomScale = fitScale * 3.5
+                    }
                 }
             }
 
-            if isExpandedView {
+            if prefs.isPDFSmartTiersActive {
+                if uiView.autoScales {
+                    uiView.autoScales = false
+                }
+            } else if isExpandedView {
                 let targetScale = max((fitScale > 0 ? fitScale : 1.0) * 1.35, 1.0)
                 if abs(uiView.scaleFactor - targetScale) > 0.05 {
                     uiView.scaleFactor = targetScale
