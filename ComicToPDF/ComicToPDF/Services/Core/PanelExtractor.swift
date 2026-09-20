@@ -386,7 +386,29 @@ struct PanelExtractor {
         imageForGutterAnalysis: UIImage? = nil
     ) -> [ComicTierQuadrant] {
         if config == nil {
-            let booxConfig = EBookPreferences.shared.booxSectionFlowConfig
+            let booxGridRaw = UserDefaults.standard.string(forKey: "boox_gridPreset") ?? BooxGridPreset.twoByTwo.rawValue
+            let booxFlowRaw = UserDefaults.standard.string(forKey: "boox_flowOrder") ?? BooxFlowOrder.nFlow.rawValue
+            let booxSpread = UserDefaults.standard.bool(forKey: "boox_isSpreadMode")
+            let booxSplit = UserDefaults.standard.double(forKey: "boox_verticalSplitRatio") != 0 ? UserDefaults.standard.double(forKey: "boox_verticalSplitRatio") : 0.50
+            let booxH0 = UserDefaults.standard.double(forKey: "boox_horizontalSplit0") != 0 ? UserDefaults.standard.double(forKey: "boox_horizontalSplit0") : 0.50
+            let booxH1 = UserDefaults.standard.double(forKey: "boox_horizontalSplit1") != 0 ? UserDefaults.standard.double(forKey: "boox_horizontalSplit1") : 0.66
+            let booxRedundancy = UserDefaults.standard.object(forKey: "boox_connectionRedundancy") != nil ? UserDefaults.standard.bool(forKey: "boox_connectionRedundancy") : true
+            let booxRedRatio = UserDefaults.standard.double(forKey: "boox_redundancyRatio") != 0 ? UserDefaults.standard.double(forKey: "boox_redundancyRatio") : 0.15
+
+            let booxConfig = BooxSectionFlowConfig(
+                gridPreset: BooxGridPreset(rawValue: booxGridRaw) ?? .twoByTwo,
+                flowOrder: BooxFlowOrder(rawValue: booxFlowRaw) ?? (mangaMode ? .reverseNFlow : .nFlow),
+                isSpreadMode: booxSpread,
+                verticalSplitRatio: CGFloat(booxSplit),
+                horizontalSplitRatios: [CGFloat(booxH0), CGFloat(booxH1)],
+                topMarginTrim: CGFloat(UserDefaults.standard.double(forKey: "boox_topMarginTrim")),
+                bottomMarginTrim: CGFloat(UserDefaults.standard.double(forKey: "boox_bottomMarginTrim")),
+                leftMarginTrim: CGFloat(UserDefaults.standard.double(forKey: "boox_leftMarginTrim")),
+                rightMarginTrim: CGFloat(UserDefaults.standard.double(forKey: "boox_rightMarginTrim")),
+                autoCropAfterPagination: UserDefaults.standard.bool(forKey: "boox_autoCropAfterPagination"),
+                connectionRedundancy: booxRedundancy,
+                redundancyRatio: CGFloat(booxRedRatio)
+            )
             let booxBlocks = BooxSectionFlowEngine.shared.generateBlocks(config: booxConfig, space: .image)
             if !booxBlocks.isEmpty {
                 return booxBlocks.map { b in

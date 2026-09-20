@@ -16,11 +16,10 @@ public enum BooxCoordinateSpace: Sendable {
 /// High-performance layout engine that divides a page into a sequence of readable blocks
 /// honoring Boox NeoReader matrix grids, custom split ratios, margin limits,
 /// and connection redundancy overlap buffers.
-@MainActor
-public final class BooxSectionFlowEngine {
+public final class BooxSectionFlowEngine: Sendable {
     public static let shared = BooxSectionFlowEngine()
 
-    private init() {}
+    public init() {}
 
     // MARK: - Public Block Generation
 
