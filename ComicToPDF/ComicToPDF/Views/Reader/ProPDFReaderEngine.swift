@@ -709,6 +709,13 @@ struct ProPDFReaderEngine: View {
             .onReceive(NotificationCenter.default.publisher(for: .annotationsDidChange)) { notif in
                 handleAnnotationsDidChange(notif)
             }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+                if prefs.isPDFSmartTiersActive {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
+                        focusOnTier(index: currentTierIndex, animated: false)
+                    }
+                }
+            }
     }
 
     var body: some View {
@@ -2168,14 +2175,13 @@ struct ProPDFReaderEngine: View {
         let availableWidth = max(100.0, pv.bounds.width - 24.0)
         let scaleForColumn = availableWidth / colWidthOnPage
 
-        let isPhone = UIDevice.current.userInterfaceIdiom == .phone
         let isLandscape = pv.bounds.width > pv.bounds.height
         let tierHeightOnPage = max(20.0, norm.height * cropBox.height)
         // If the block represents a partial-height tier (e.g. 1x3, 2x3, 1x2, 2x2),
         // ensure targetScale zooms enough so the tier comfortably occupies the screen,
-        // and contentSize.height > pv.bounds.height so vertical scrolling works on iPhone.
-        let scaleForTierHeight = (pv.bounds.height * (isLandscape ? 0.85 : 0.48)) / tierHeightOnPage
-        let minRequiredScale = (isPhone && norm.height < 0.90) ? max(fitScale * 1.5, scaleForTierHeight) : scaleForColumn
+        // and contentSize.height > pv.bounds.height so vertical scrolling works on BOTH iPhone and iPad.
+        let scaleForTierHeight = (pv.bounds.height * (isLandscape ? 0.85 : 0.52)) / tierHeightOnPage
+        let minRequiredScale = (norm.height < 0.88) ? max(fitScale * 1.45, scaleForTierHeight) : scaleForColumn
         let minAllowed = max(0.5, fitScale * 1.05)
         let maxAllowed: CGFloat = max(12.0, fitScale * 12.0)
         let targetScale = max(minAllowed, min(maxAllowed, max(scaleForColumn, minRequiredScale)))
@@ -2219,9 +2225,17 @@ struct ProPDFReaderEngine: View {
             let topSafeArea = pv.safeAreaInsets.top
             let desiredViewY: CGFloat = max(8.0, topSafeArea > 0 ? (topSafeArea + 6.0) : 8.0)
 
-            // Desired position on screen: centered horizontally if narrower than viewport, left-anchored if wider
+            // Desired position on screen: centered horizontally within safe area if narrower than viewport, left-anchored to safe area if wider
+            let leftSafeArea = pv.safeAreaInsets.left
+            let rightSafeArea = pv.safeAreaInsets.right
+            let safeWidth = max(100.0, pv.bounds.width - leftSafeArea - rightSafeArea)
             let scaledColWidth = colWidthOnPage * targetScale
-            let desiredViewX: CGFloat = scaledColWidth < pv.bounds.width ? max(0.0, (pv.bounds.width - scaledColWidth) / 2.0) : 0.0
+            let desiredViewX: CGFloat
+            if scaledColWidth < safeWidth {
+                desiredViewX = leftSafeArea + max(0.0, (safeWidth - scaledColWidth) / 2.0)
+            } else {
+                desiredViewX = max(leftSafeArea, 0.0)
+            }
 
             let targetOffsetX = contentPointX - desiredViewX
             let targetOffsetY = contentPointY - desiredViewY

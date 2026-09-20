@@ -395,9 +395,15 @@ struct PanelExtractor {
             let booxRedundancy = UserDefaults.standard.object(forKey: "boox_connectionRedundancy") != nil ? UserDefaults.standard.bool(forKey: "boox_connectionRedundancy") : true
             let booxRedRatio = UserDefaults.standard.double(forKey: "boox_redundancyRatio") != 0 ? UserDefaults.standard.double(forKey: "boox_redundancyRatio") : 0.15
 
+            var effectiveFlow = BooxFlowOrder(rawValue: booxFlowRaw) ?? (mangaMode ? .reverseNFlow : .nFlow)
+            if mangaMode {
+                if effectiveFlow == .nFlow { effectiveFlow = .reverseNFlow }
+                else if effectiveFlow == .zFlow { effectiveFlow = .reverseZFlow }
+            }
+
             let booxConfig = BooxSectionFlowConfig(
                 gridPreset: BooxGridPreset(rawValue: booxGridRaw) ?? .twoByTwo,
-                flowOrder: BooxFlowOrder(rawValue: booxFlowRaw) ?? (mangaMode ? .reverseNFlow : .nFlow),
+                flowOrder: effectiveFlow,
                 isSpreadMode: booxSpread,
                 verticalSplitRatio: CGFloat(booxSplit),
                 horizontalSplitRatios: [CGFloat(booxH0), CGFloat(booxH1)],

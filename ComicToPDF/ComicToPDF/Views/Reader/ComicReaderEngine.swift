@@ -3372,13 +3372,13 @@ struct ComicSpreadGuidedView: View {
 
                 if currentStrideIndex >= 0 && currentStrideIndex < strides.count {
                     // ── Focused Inspection View (Smart Gutter / Panel Zoom) ──
-                    inspectionStrideView(for: geo.size)
+                    inspectionStrideView(for: geo.size, safeArea: geo.safeAreaInsets)
 
                     // ── Discreet Panel / Tier Index HUD Indicator ──
                     if showPanelBadge || isChromeVisible {
                         VStack {
                             panelBadgeView(for: strides[currentStrideIndex])
-                                .padding(.top, 18)
+                                .padding(.top, max(18, geo.safeAreaInsets.top + 6))
                                 .transition(.asymmetric(
                                     insertion: .opacity.combined(with: .scale(scale: 0.92)),
                                     removal: .opacity
@@ -3511,12 +3511,12 @@ struct ComicSpreadGuidedView: View {
     }
 
     @ViewBuilder
-    private func inspectionStrideView(for size: CGSize) -> some View {
+    private func inspectionStrideView(for size: CGSize, safeArea: EdgeInsets = EdgeInsets()) -> some View {
         let activeStride = strides[currentStrideIndex]
         let activeImg = (activeStride.pageIndex == spread[0]) ? image0 : image1
 
         if let img = activeImg {
-            let metrics = calculateMetrics(for: size, image: img, panel: activeStride.panel)
+            let metrics = calculateMetrics(for: size, image: img, panel: activeStride.panel, safeAreaInsets: safeArea)
 
             Image(uiImage: img)
                 .resizable()
@@ -3657,7 +3657,7 @@ struct ComicSpreadGuidedView: View {
         let prevSpreadIdx = currentSpreadIdx - 1
         if prevSpreadIdx >= 0 {
             masterIndex = spreads[prevSpreadIdx].first ?? masterIndex
-            currentStrideIndex = 0
+            currentStrideIndex = -1
         }
     }
 
@@ -3745,14 +3745,21 @@ struct ComicSpreadGuidedView: View {
             await MainActor.run {
                 self.strides = builtStrides
                 self.isAnalyzing = false
-                if self.currentStrideIndex < 0 && !builtStrides.isEmpty {
+                if self.currentStrideIndex == -1 && !builtStrides.isEmpty {
+                    self.currentStrideIndex = builtStrides.count - 1
+                } else if self.currentStrideIndex < 0 && !builtStrides.isEmpty {
                     self.currentStrideIndex = 0
                 }
             }
         }
     }
 
-    private func calculateMetrics(for proxy: CGSize, image: UIImage, panel: PanelExtractor.Panel) -> ViewMetrics {
+    private func calculateMetrics(
+        for proxy: CGSize,
+        image: UIImage,
+        panel: PanelExtractor.Panel,
+        safeAreaInsets: EdgeInsets = EdgeInsets()
+    ) -> ViewMetrics {
         guard proxy.width > 0, proxy.height > 0, proxy.width.isFinite, proxy.height.isFinite else {
             return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
         }
@@ -3857,8 +3864,8 @@ struct ComicSpreadGuidedView: View {
         let isTopEdge = (rawMaxY >= 0.88) || (rect.minY <= 0.03 * imgSize.height)
         let isBottomEdge = (rawMinY <= 0.12) || (rect.maxY >= 0.97 * imgSize.height)
         let isLandscape = proxy.width > proxy.height
-        let safeTop: CGFloat = isLandscape ? 12 : 16
-        let safeBottom: CGFloat = isLandscape ? 12 : 16
+        let safeTop: CGFloat = max(isLandscape ? 12 : 16, safeAreaInsets.top + 6)
+        let safeBottom: CGFloat = max(isLandscape ? 12 : 16, safeAreaInsets.bottom + 6)
 
         if isTopEdge {
             // Shift down so the top of the comic page / speech bubbles are 100% visible
