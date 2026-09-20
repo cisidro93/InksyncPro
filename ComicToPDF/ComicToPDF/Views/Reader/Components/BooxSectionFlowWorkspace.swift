@@ -25,6 +25,7 @@ public struct BooxSectionFlowWorkspace: View {
     // Full-Screen Tap-to-Preview Mode State
     @State private var showReaderPreview: Bool = false
     @State private var previewBlockIndex: Int = 0
+    @State private var showRedundancyGuides: Bool = false
 
     // Margin Drag State
     private enum MarginEdge {
@@ -1238,6 +1239,7 @@ public struct BooxSectionFlowWorkspace: View {
                 GeometryReader { viewportGeo in
                     let viewW = viewportGeo.size.width
                     let viewH = viewportGeo.size.height
+                    let isLandscape = viewW > viewH
 
                     ZStack {
                         Color.black.ignoresSafeArea()
@@ -1252,17 +1254,100 @@ public struct BooxSectionFlowWorkspace: View {
                             let cropBox = CGRect(
                                 x: max(0, targetNorm.minX * cgW),
                                 y: max(0, (1.0 - targetNorm.maxY) * cgH),
-                                width: min(cgW, targetNorm.width * cgW),
-                                height: min(cgH, targetNorm.height * cgH)
+                                width: max(1.0, min(cgW, targetNorm.width * cgW)),
+                                height: max(1.0, min(cgH, targetNorm.height * cgH))
                             )
 
+                            // Golden Rule Column Fit Invariant:
+                            // Fits the column/tier width to the reading display area with comfortable reading margins:
+                            let safeW = max(100.0, viewW - (isLandscape ? 36.0 : 20.0))
+                            let safeH = max(100.0, viewH - (isLandscape ? 24.0 : 40.0))
+
+                            let scaleForW = safeW / cropBox.width
+                            let scaleForH = safeH / cropBox.height
+
+                            // In portrait: strict column-fit ensures every line of text reads edge-to-edge with zero horizontal pan.
+                            // In landscape: clamp to fit comfortably without excessive height overflow.
+                            let fitScale: CGFloat = isLandscape ? min(scaleForW, max(scaleForW * 0.78, scaleForH)) : scaleForW
+
+                            let renderedW = cropBox.width * fitScale
+                            let renderedH = cropBox.height * fitScale
+
+                            // Desired X position: centered horizontally
+                            let posX = viewW / 2.0
+
+                            // Desired Y position:
+                            // Top tier: anchor top near top of screen
+                            // Bottom tier: anchor bottom near bottom of screen
+                            // Middle tier: center vertically
+                            let totalRows = config.gridPreset.rowCount
+                            let rowIdx = block.rowIndex
+
+                            let posY: CGFloat
+                            if totalRows > 1 && rowIdx == 0 {
+                                posY = 14.0 + (renderedH / 2.0)
+                            } else if totalRows > 1 && rowIdx == (totalRows - 1) && renderedH < safeH {
+                                posY = viewH - 18.0 - (renderedH / 2.0)
+                            } else if renderedH < safeH {
+                                posY = viewH / 2.0
+                            } else {
+                                posY = 14.0 + (renderedH / 2.0)
+                            }
+
                             if let croppedCG = thumb.cgImage?.cropping(to: cropBox) {
-                                Image(uiImage: UIImage(cgImage: croppedCG))
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(maxWidth: viewW, maxHeight: viewH)
-                                    .id(previewBlockIndex)
-                                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                                ZStack {
+                                    Image(uiImage: UIImage(cgImage: croppedCG))
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: renderedW, height: renderedH)
+                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                        .shadow(color: Color.black.opacity(0.4), radius: 8, y: 3)
+
+                                    // Visual Connection Redundancy Overlap Buffer Overlay
+                                    if showRedundancyGuides && config.connectionRedundancy {
+                                        VStack(spacing: 0) {
+                                            if rowIdx > 0 {
+                                                // Top Overlap Buffer Band
+                                                HStack {
+                                                    Text("▲ Overlap Buffer")
+                                                        .font(.system(size: 8, weight: .bold))
+                                                        .foregroundColor(.white)
+                                                        .padding(.horizontal, 6)
+                                                        .padding(.vertical, 2)
+                                                        .background(Capsule().fill(Color.inkGreen.opacity(0.85)))
+                                                    Spacer()
+                                                }
+                                                .padding(4)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .background(Color.inkGreen.opacity(0.25))
+                                                .overlay(Rectangle().stroke(Color.inkGreen, style: StrokeStyle(lineWidth: 1, dash: [4, 3])), alignment: .bottom)
+                                            }
+
+                                            Spacer()
+
+                                            if rowIdx < (totalRows - 1) {
+                                                // Bottom Overlap Buffer Band
+                                                HStack {
+                                                    Spacer()
+                                                    Text("▼ Overlap Buffer")
+                                                        .font(.system(size: 8, weight: .bold))
+                                                        .foregroundColor(.white)
+                                                        .padding(.horizontal, 6)
+                                                        .padding(.vertical, 2)
+                                                        .background(Capsule().fill(Color.inkGreen.opacity(0.85)))
+                                                }
+                                                .padding(4)
+                                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                                .background(Color.inkGreen.opacity(0.25))
+                                                .overlay(Rectangle().stroke(Color.inkGreen, style: StrokeStyle(lineWidth: 1, dash: [4, 3])), alignment: .top)
+                                            }
+                                        }
+                                        .frame(width: renderedW, height: renderedH)
+                                    }
+                                }
+                                .position(x: posX, y: posY)
+                                .id(previewBlockIndex)
+                                .transition(.opacity.combined(with: .scale(scale: 0.98)))
                             }
                         }
 
@@ -1289,7 +1374,7 @@ public struct BooxSectionFlowWorkspace: View {
                             }
                         }
 
-                        // Interactive Tap Zones (Apple Books / Kindle Standard)
+                        // Interactive Tap & Swipe Zones (Apple Books / Kindle Standard)
                         HStack(spacing: 0) {
                             // Left Tap Zone: Previous Quadrant
                             Color.clear
@@ -1320,10 +1405,32 @@ public struct BooxSectionFlowWorkspace: View {
                                 }
                         }
                     }
+                    .gesture(
+                        DragGesture(minimumDistance: 30)
+                            .onEnded { gesture in
+                                if gesture.translation.width < -40 {
+                                    // Swipe Left -> Next Quadrant
+                                    if previewBlockIndex < activeBlocks.count - 1 {
+                                        HapticEngine.selection()
+                                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                                            previewBlockIndex += 1
+                                        }
+                                    }
+                                } else if gesture.translation.width > 40 {
+                                    // Swipe Right -> Prev Quadrant
+                                    if previewBlockIndex > 0 {
+                                        HapticEngine.selection()
+                                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                                            previewBlockIndex -= 1
+                                        }
+                                    }
+                                }
+                            }
+                    )
                 }
 
                 // Bottom Preview Step Controller
-                HStack(spacing: 16) {
+                HStack(spacing: 12) {
                     Button {
                         if previewBlockIndex > 0 {
                             HapticEngine.selection()
@@ -1332,7 +1439,7 @@ public struct BooxSectionFlowWorkspace: View {
                             }
                         }
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 3) {
                             Image(systemName: "chevron.left")
                             Text("Prev")
                         }
@@ -1343,8 +1450,28 @@ public struct BooxSectionFlowWorkspace: View {
 
                     Spacer()
 
+                    // Connection Redundancy Toggle
+                    Button {
+                        showRedundancyGuides.toggle()
+                        HapticEngine.selection()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: showRedundancyGuides ? "eye.fill" : "eye.slash")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(showRedundancyGuides ? "Overlap Visible" : "Guides")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(showRedundancyGuides ? .inkGreen : Color.inkSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(showRedundancyGuides ? Color.inkGreen.opacity(0.18) : Color.inkSurfaceRaised))
+                        .overlay(Capsule().stroke(showRedundancyGuides ? Color.inkGreen : Color.inkBorderSubtle, lineWidth: 1))
+                    }
+
+                    Spacer()
+
                     // Step Indicator Dots
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         ForEach(0..<activeBlocks.count, id: \.self) { idx in
                             Circle()
                                 .fill(idx == previewBlockIndex ? Color.inkGreen : Color.inkSecondary.opacity(0.4))
@@ -1368,7 +1495,7 @@ public struct BooxSectionFlowWorkspace: View {
                             }
                         }
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 3) {
                             Text("Next")
                             Image(systemName: "chevron.right")
                         }
@@ -1377,7 +1504,7 @@ public struct BooxSectionFlowWorkspace: View {
                     }
                     .disabled(previewBlockIndex >= activeBlocks.count - 1)
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .frame(height: 48)
                 .background(Color.inkSurfaceRaised.opacity(0.98).background(.ultraThinMaterial))
                 .overlay(Rectangle().fill(Color.inkBorderSubtle).frame(height: 1), alignment: .top)
