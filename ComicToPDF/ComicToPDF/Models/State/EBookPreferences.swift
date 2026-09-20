@@ -394,6 +394,9 @@ class EBookPreferences: ObservableObject {
     @AppStorage("boox_redundancyRatio") var booxRedundancyRatio: Double = 0.15 {
         didSet { objectWillChange.send() }
     }
+    @AppStorage("boox_customBlockOverridesJSON") var booxCustomBlockOverridesJSON: String = "" {
+        didSet { objectWillChange.send() }
+    }
 
     var booxSectionFlowConfig: BooxSectionFlowConfig {
         get {
@@ -402,6 +405,13 @@ class EBookPreferences: ObservableObject {
             let h0 = (preset.rowCount == 3 && abs(booxHorizontalSplit0 - 0.50) < 0.01) ? 0.33 : (booxHorizontalSplit0 != 0 ? CGFloat(booxHorizontalSplit0) : defaultSplits[0])
             let h1 = (preset.rowCount == 3 && abs(booxHorizontalSplit1 - 0.50) < 0.01) ? 0.66 : (booxHorizontalSplit1 != 0 ? CGFloat(booxHorizontalSplit1) : 0.66)
             let splits = preset.rowCount == 3 ? [h0, h1] : [h0]
+
+            var customOverrides: [Int: CGRect] = [:]
+            if !booxCustomBlockOverridesJSON.isEmpty,
+               let data = booxCustomBlockOverridesJSON.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode([Int: CGRect].self, from: data) {
+                customOverrides = decoded
+            }
 
             return BooxSectionFlowConfig(
                 gridPreset: preset,
@@ -415,7 +425,8 @@ class EBookPreferences: ObservableObject {
                 rightMarginTrim: CGFloat(booxRightMarginTrim),
                 autoCropAfterPagination: booxAutoCropAfterPagination,
                 connectionRedundancy: booxConnectionRedundancy,
-                redundancyRatio: CGFloat(booxRedundancyRatio)
+                redundancyRatio: CGFloat(booxRedundancyRatio),
+                customBlockOverrides: customOverrides
             )
         }
         set {
@@ -436,6 +447,13 @@ class EBookPreferences: ObservableObject {
             booxAutoCropAfterPagination = newValue.autoCropAfterPagination
             booxConnectionRedundancy = newValue.connectionRedundancy
             booxRedundancyRatio = Double(newValue.redundancyRatio)
+            if !newValue.customBlockOverrides.isEmpty,
+               let data = try? JSONEncoder().encode(newValue.customBlockOverrides),
+               let jsonStr = String(data: data, encoding: .utf8) {
+                booxCustomBlockOverridesJSON = jsonStr
+            } else {
+                booxCustomBlockOverridesJSON = ""
+            }
             objectWillChange.send()
         }
     }

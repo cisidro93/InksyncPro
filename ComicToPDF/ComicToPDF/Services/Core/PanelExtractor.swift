@@ -413,7 +413,15 @@ struct PanelExtractor {
                 rightMarginTrim: CGFloat(UserDefaults.standard.double(forKey: "boox_rightMarginTrim")),
                 autoCropAfterPagination: UserDefaults.standard.bool(forKey: "boox_autoCropAfterPagination"),
                 connectionRedundancy: booxRedundancy,
-                redundancyRatio: CGFloat(booxRedRatio)
+                redundancyRatio: CGFloat(booxRedRatio),
+                customBlockOverrides: {
+                    if let jsonStr = UserDefaults.standard.string(forKey: "boox_customBlockOverridesJSON"),
+                       let data = jsonStr.data(using: .utf8),
+                       let decoded = try? JSONDecoder().decode([Int: CGRect].self, from: data) {
+                        return decoded
+                    }
+                    return [:]
+                }()
             )
             let booxBlocks = BooxSectionFlowEngine.shared.generateBlocks(config: booxConfig, space: .pdf)
             if !booxBlocks.isEmpty {

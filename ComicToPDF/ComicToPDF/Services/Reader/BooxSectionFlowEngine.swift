@@ -159,7 +159,16 @@ public final class BooxSectionFlowEngine: Sendable {
         var blocks: [BooxSectionBlock] = []
 
         for (stepIdx, cell) in sortedCells.enumerated() {
-            let baseRectTopY = cell.rect
+            let baseRectTopY: CGRect
+            if let customOverride = config.customBlockOverrides[stepIdx] {
+                let minX = max(0.0, min(0.92, customOverride.minX))
+                let minY = max(0.0, min(0.92, customOverride.minY))
+                let width = max(0.06, min(1.0 - minX, customOverride.width))
+                let height = max(0.06, min(1.0 - minY, customOverride.height))
+                baseRectTopY = CGRect(x: minX, y: minY, width: width, height: height)
+            } else {
+                baseRectTopY = cell.rect
+            }
 
             // Compute connection redundancy expansion
             let expandX = baseRectTopY.width * redundancyBuffer

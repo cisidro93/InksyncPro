@@ -169,6 +169,9 @@ public struct BooxSectionFlowConfig: Codable, Equatable, Sendable {
     /// Redundancy overlap buffer fraction (0.05 ... 0.30, default 0.15)
     public var redundancyRatio: CGFloat
 
+    /// Custom per-quadrant normalized bounds overrides [stepOrder: CGRect] (0.0 ... 1.0 in top-origin page space)
+    public var customBlockOverrides: [Int: CGRect]
+
     public init(
         gridPreset: BooxGridPreset = .twoByTwo,
         flowOrder: BooxFlowOrder = .nFlow,
@@ -181,7 +184,8 @@ public struct BooxSectionFlowConfig: Codable, Equatable, Sendable {
         rightMarginTrim: CGFloat = 0.0,
         autoCropAfterPagination: Bool = false,
         connectionRedundancy: Bool = true,
-        redundancyRatio: CGFloat = 0.15
+        redundancyRatio: CGFloat = 0.15,
+        customBlockOverrides: [Int: CGRect] = [:]
     ) {
         self.gridPreset = gridPreset
         self.flowOrder = flowOrder
@@ -195,9 +199,35 @@ public struct BooxSectionFlowConfig: Codable, Equatable, Sendable {
         self.autoCropAfterPagination = autoCropAfterPagination
         self.connectionRedundancy = connectionRedundancy
         self.redundancyRatio = redundancyRatio
+        self.customBlockOverrides = customBlockOverrides
     }
 
     public static let standardTwoByTwo = BooxSectionFlowConfig(gridPreset: .twoByTwo, flowOrder: .nFlow)
     public static let standardTwoByThree = BooxSectionFlowConfig(gridPreset: .twoByThree, flowOrder: .nFlow, horizontalSplitRatios: [0.33, 0.66])
     public static let standardManga = BooxSectionFlowConfig(gridPreset: .twoByTwo, flowOrder: .reverseNFlow)
+
+    // MARK: - Fail-Safe Backward Compatible Codable
+
+    enum CodingKeys: String, CodingKey {
+        case gridPreset, flowOrder, isSpreadMode, verticalSplitRatio, horizontalSplitRatios
+        case topMarginTrim, bottomMarginTrim, leftMarginTrim, rightMarginTrim
+        case autoCropAfterPagination, connectionRedundancy, redundancyRatio, customBlockOverrides
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.gridPreset = try container.decodeIfPresent(BooxGridPreset.self, forKey: .gridPreset) ?? .twoByTwo
+        self.flowOrder = try container.decodeIfPresent(BooxFlowOrder.self, forKey: .flowOrder) ?? .nFlow
+        self.isSpreadMode = try container.decodeIfPresent(Bool.self, forKey: .isSpreadMode) ?? false
+        self.verticalSplitRatio = try container.decodeIfPresent(CGFloat.self, forKey: .verticalSplitRatio) ?? 0.50
+        self.horizontalSplitRatios = try container.decodeIfPresent([CGFloat].self, forKey: .horizontalSplitRatios) ?? [0.50]
+        self.topMarginTrim = try container.decodeIfPresent(CGFloat.self, forKey: .topMarginTrim) ?? 0.0
+        self.bottomMarginTrim = try container.decodeIfPresent(CGFloat.self, forKey: .bottomMarginTrim) ?? 0.0
+        self.leftMarginTrim = try container.decodeIfPresent(CGFloat.self, forKey: .leftMarginTrim) ?? 0.0
+        self.rightMarginTrim = try container.decodeIfPresent(CGFloat.self, forKey: .rightMarginTrim) ?? 0.0
+        self.autoCropAfterPagination = try container.decodeIfPresent(Bool.self, forKey: .autoCropAfterPagination) ?? false
+        self.connectionRedundancy = try container.decodeIfPresent(Bool.self, forKey: .connectionRedundancy) ?? true
+        self.redundancyRatio = try container.decodeIfPresent(CGFloat.self, forKey: .redundancyRatio) ?? 0.15
+        self.customBlockOverrides = try container.decodeIfPresent([Int: CGRect].self, forKey: .customBlockOverrides) ?? [:]
+    }
 }

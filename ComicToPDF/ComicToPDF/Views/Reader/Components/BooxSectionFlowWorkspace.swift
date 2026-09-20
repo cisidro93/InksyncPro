@@ -1,10 +1,12 @@
 import SwiftUI
 import PDFKit
+import CoreGraphics
 
 /// InksyncPro NeoFlow Studio: An elevated, tactile evolution of Onyx Boox NeoReader.
 /// Provides direct on-canvas draggable dashed split lines with magnetic gutter snapping,
 /// M x N matrix grid presets, asymmetric comic layouts, outer margin crop ticks,
-/// traversal order vectors, and connection redundancy toggles.
+/// per-quadrant 8-point interactive custom boundary adjustments,
+/// and an interactive full-screen Tap-to-Preview reader simulator before saving.
 public struct BooxSectionFlowWorkspace: View {
     // Media Source: Either a live PDFPage or a Comic UIImage
     public let pdfPage: PDFPage?
@@ -19,9 +21,34 @@ public struct BooxSectionFlowWorkspace: View {
     @State private var renderedThumbnail: UIImage? = nil
     @State private var activeBlocks: [BooxSectionBlock] = []
     @State private var selectedBlockIndex: Int = 0
-    @State private var showPiPPreview: Bool = false
-    @State private var isDraggingVerticalSplit: Bool = false
-    @State private var isDraggingHorizontalSplit: Bool = false
+
+    // Full-Screen Tap-to-Preview Mode State
+    @State private var showReaderPreview: Bool = false
+    @State private var previewBlockIndex: Int = 0
+
+    // Margin Drag State
+    private enum MarginEdge {
+        case left, right, top, bottom
+    }
+    @State private var activeMarginEdge: MarginEdge? = nil
+    @State private var dragStartTrim: CGFloat = 0.0
+
+    // Partition Line Drag State
+    private enum PartitionLineID: Equatable {
+        case vertical(Int)
+        case horizontal(Int)
+    }
+    @State private var activePartitionLine: PartitionLineID? = nil
+    @State private var dragStartSplitRatio: CGFloat = 0.50
+
+    // Selected Quadrant Resize / Move Drag State
+    private enum QuadrantHandleType: Equatable {
+        case topLeft, topRight, bottomLeft, bottomRight
+        case topEdge, bottomEdge, leftEdge, rightEdge
+        case move
+    }
+    @State private var activeQuadrantHandle: QuadrantHandleType? = nil
+    @State private var dragStartQuadrantRect: CGRect = .zero
 
     // Magnetic gutter snap candidates
     @State private var magneticVerticalGutters: [CGFloat] = [0.33, 0.50, 0.66]
@@ -41,6 +68,7 @@ public struct BooxSectionFlowWorkspace: View {
         self._isPresented = isPresented
         self.onApply = onApply
         self._selectedBlockIndex = State(initialValue: initialBlockIndex)
+        self._previewBlockIndex = State(initialValue: initialBlockIndex)
     }
 
     public var body: some View {
@@ -76,10 +104,11 @@ public struct BooxSectionFlowWorkspace: View {
                     bottomSafeguardBar
                 }
 
-                // Floating Live Viewport PiP Preview Card
-                if showPiPPreview {
-                    floatingPiPCard
-                        .transition(.scale.combined(with: .opacity))
+                // Interactive Tap-to-Preview Full-Screen Simulator Overlay
+                if showReaderPreview {
+                    liveReaderPreviewOverlay
+                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                        .zIndex(500)
                 }
             }
         }
@@ -90,63 +119,78 @@ public struct BooxSectionFlowWorkspace: View {
         }
     }
 
-    // MARK: - Top Navigation Bar
+    // MARK: - Top Navigation Bar (Compact & Responsive)
 
     private var topNavigationBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             Button {
                 HapticEngine.light()
                 isPresented = false
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                     Text("Cancel")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                 }
                 .foregroundColor(Color.inkTextPrimary)
             }
 
             Spacer()
 
-            // Title & Mode Indicator
-            HStack(spacing: 6) {
+            // Compact Title & Page Badge (Never clipped on iPhone portrait)
+            HStack(spacing: 5) {
                 Image(systemName: "rectangle.split.3x3")
                     .foregroundColor(.inkGreen)
-                    .font(.system(size: 13, weight: .bold))
-                Text("NeoFlow Studio")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.system(size: 12, weight: .bold))
+                Text("NeoFlow")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(Color.inkTextPrimary)
-                Text("· Page \(pageIndex + 1)")
-                    .font(.system(size: 12, weight: .regular))
+                Text("P. \(pageIndex + 1)")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundColor(Color.inkSecondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.inkSurfaceRaised))
             }
 
             Spacer()
 
-            // Live PiP Preview Toggle
+            // Tap to Preview Button
             Button {
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-                    showPiPPreview.toggle()
-                }
                 HapticEngine.selection()
+                previewBlockIndex = selectedBlockIndex
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    showReaderPreview = true
+                }
             } label: {
-                Image(systemName: showPiPPreview ? "pip.exit" : "pip.enter")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(showPiPPreview ? .inkGreen : Color.inkSecondary)
-                    .padding(6)
-                    .background(Circle().fill(Color.inkSurfaceRaised))
+                HStack(spacing: 4) {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("Preview")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(Color.inkGreen)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(Color.inkGreen.opacity(0.18))
+                        .overlay(Capsule().stroke(Color.inkGreen.opacity(0.4), lineWidth: 1))
+                )
             }
 
             // Reset Button
             Button {
                 HapticEngine.selection()
                 config = .standardTwoByTwo
+                config.customBlockOverrides = [:]
                 recomputeBlocks()
             } label: {
                 Text("Reset")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Color.inkSecondary)
+                    .padding(.horizontal, 4)
             }
 
             // Save / Apply Button
@@ -157,14 +201,14 @@ public struct BooxSectionFlowWorkspace: View {
                 isPresented = false
             } label: {
                 Text("Save")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 14)
                     .padding(.vertical, 6)
                     .background(Color.inkGreen, in: Capsule())
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 12)
         .frame(height: 48)
         .background(Color.inkSurfaceRaised.opacity(0.98).background(.ultraThinMaterial))
         .overlay(
@@ -179,7 +223,7 @@ public struct BooxSectionFlowWorkspace: View {
 
     private var leftToolPalette: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 16) {
+            VStack(spacing: 14) {
                 // Section 1: Pages (Single vs. Spread)
                 paletteSectionHeader("Pages")
                 VStack(spacing: 6) {
@@ -210,7 +254,8 @@ public struct BooxSectionFlowWorkspace: View {
                     ForEach(BooxGridPreset.allCases, id: \.rawValue) { preset in
                         matrixPresetButton(preset: preset, isSelected: config.gridPreset == preset) {
                             config.gridPreset = preset
-                            // Reset default split ratios matching the preset
+                            // Reset custom overrides when preset geometry changes
+                            config.customBlockOverrides = [:]
                             if preset.rowCount == 2 {
                                 config.horizontalSplitRatios = [0.50]
                             } else if preset.rowCount == 3 {
@@ -303,7 +348,6 @@ public struct BooxSectionFlowWorkspace: View {
         }) {
             VStack(spacing: 2) {
                 ZStack(alignment: .topTrailing) {
-                    // Geometric Mini-Matrix Preview
                     miniMatrixGridGlyph(for: preset, isSelected: isSelected)
                         .frame(width: 36, height: 36)
                         .background(
@@ -385,11 +429,16 @@ public struct BooxSectionFlowWorkspace: View {
             if let thumb = renderedThumbnail {
                 let imgW = thumb.size.width
                 let imgH = thumb.size.height
-                let scale = min((size.width - 40) / max(1, imgW), (size.height - 40) / max(1, imgH))
+                let scale = min((size.width - 48) / max(1, imgW), (size.height - 48) / max(1, imgH))
                 let renderW = imgW * scale
                 let renderH = imgH * scale
                 let originX = (size.width - renderW) / 2.0
                 let originY = (size.height - renderH) / 2.0
+
+                let cropX = originX + (renderW * config.leftMarginTrim)
+                let cropY = originY + (renderH * config.topMarginTrim)
+                let cropW = max(20, renderW * (1.0 - config.leftMarginTrim - config.rightMarginTrim))
+                let cropH = max(20, renderH * (1.0 - config.topMarginTrim - config.bottomMarginTrim))
 
                 ZStack {
                     // 1. Base Document Page Image
@@ -400,26 +449,27 @@ public struct BooxSectionFlowWorkspace: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                         .shadow(color: Color.black.opacity(0.35), radius: 12, y: 6)
 
-                    // 2. Outer Page Limits Crop Frame & Ticks
-                    let cropX = originX + (renderW * config.leftMarginTrim)
-                    let cropY = originY + (renderH * config.topMarginTrim)
-                    let cropW = max(20, renderW * (1.0 - config.leftMarginTrim - config.rightMarginTrim))
-                    let cropH = max(20, renderH * (1.0 - config.topMarginTrim - config.bottomMarginTrim))
-
-                    // Solid margin crop bounding frame
+                    // 2. Outer Page Limits Crop Frame
                     Rectangle()
-                        .stroke(Color.inkTextPrimary.opacity(0.40), lineWidth: 1.0)
+                        .stroke(Color.inkTextPrimary.opacity(0.30), lineWidth: 1.0)
                         .frame(width: cropW, height: cropH)
                         .position(x: cropX + (cropW / 2.0), y: cropY + (cropH / 2.0))
 
-                    // Draggable Margin Crop Tick Handles
-                    marginCropHandles(originX: originX, originY: originY, renderW: renderW, renderH: renderH, cropX: cropX, cropY: cropY, cropW: cropW, cropH: cropH)
-
-                    // 3. Draggable Dashed Partition Lines (Movable Gutters)
-                    partitionLinesOverlay(cropX: cropX, cropY: cropY, cropW: cropW, cropH: cropH)
-
-                    // 4. Circled Sequence Badges (①, ②, ③, ④)
+                    // 3. Circled Sequence Badges & Quadrant Selection Overlay (Layer 10)
                     sequenceBadgesOverlay(originX: originX, originY: originY, renderW: renderW, renderH: renderH)
+                        .zIndex(10)
+
+                    // 4. Draggable Dashed Partition Lines with Center Grips (Layer 150)
+                    partitionLinesOverlay(cropX: cropX, cropY: cropY, cropW: cropW, cropH: cropH)
+                        .zIndex(150)
+
+                    // 5. Draggable Margin Crop Handles (Layer 200)
+                    marginCropHandles(originX: originX, originY: originY, renderW: renderW, renderH: renderH, cropX: cropX, cropY: cropY, cropW: cropW, cropH: cropH)
+                        .zIndex(200)
+
+                    // 6. Selected Quadrant 8-Point Resize Handles & Move Controller (Layer 250)
+                    selectedQuadrantHandlesOverlay(originX: originX, originY: originY, renderW: renderW, renderH: renderH)
+                        .zIndex(250)
                 }
                 .frame(width: size.width, height: size.height)
             } else {
@@ -429,83 +479,231 @@ public struct BooxSectionFlowWorkspace: View {
         }
     }
 
-    // MARK: - Draggable Dashed Partition Lines with Magnetic Gutter Snapping
+    // MARK: - Draggable Dashed Partition Lines with Multi-Row & Gutter Snapping
 
     @ViewBuilder
     private func partitionLinesOverlay(cropX: CGFloat, cropY: CGFloat, cropW: CGFloat, cropH: CGFloat) -> some View {
         let preset = config.gridPreset
 
-        // Vertical Dashed Split Line (for 2-column layouts)
+        // 1. Vertical Split Line (2-Column Presets)
         if preset.columnCount == 2 {
             let splitX = cropX + (cropW * config.verticalSplitRatio)
-            Path { p in
-                p.move(to: CGPoint(x: splitX, y: cropY))
-                p.addLine(to: CGPoint(x: splitX, y: cropY + cropH))
-            }
-            .stroke(isDraggingVerticalSplit ? Color.inkGreen : Color.inkTextPrimary.opacity(0.85), style: StrokeStyle(lineWidth: isDraggingVerticalSplit ? 2.5 : 1.5, dash: [5, 4]))
-            .gesture(
-                DragGesture(minimumDistance: 1)
-                    .onChanged { value in
-                        isDraggingVerticalSplit = true
-                        let localX = value.location.x - cropX
-                        var ratio = max(0.15, min(0.85, localX / cropW))
+            let isDragging = (activePartitionLine == .vertical(0))
 
-                        // Magnetic Gutter Snapping: Snap if within 14 points of candidate valley
-                        for candidate in magneticVerticalGutters {
-                            let candX = candidate * cropW
-                            if abs(localX - candX) < 14 {
-                                ratio = candidate
-                                HapticEngine.selection()
-                                break
+            ZStack {
+                // Dashed Vertical Line
+                Path { p in
+                    p.move(to: CGPoint(x: splitX, y: cropY))
+                    p.addLine(to: CGPoint(x: splitX, y: cropY + cropH))
+                }
+                .stroke(isDragging ? Color.inkGreen : Color.inkTextPrimary.opacity(0.75), style: StrokeStyle(lineWidth: isDragging ? 2.5 : 1.5, dash: [6, 4]))
+
+                // Invisible 44pt Touch Corridor & Tactile Center Grip
+                VStack {
+                    Spacer()
+                    HStack(spacing: 2) {
+                        Image(systemName: "arrow.left.and.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(isDragging ? .white : Color.inkTextPrimary)
+                    }
+                    .frame(width: 26, height: 26)
+                    .background(isDragging ? Color.inkGreen : Color.inkSurfaceRaised.opacity(0.95))
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(isDragging ? Color.white : Color.inkBorderSubtle, lineWidth: 1.2))
+                    .shadow(color: Color.black.opacity(0.35), radius: 3)
+                    Spacer()
+                }
+                .frame(width: 44, height: cropH)
+                .contentShape(Rectangle())
+                .position(x: splitX, y: cropY + (cropH / 2.0))
+                .gesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            if activePartitionLine != .vertical(0) {
+                                activePartitionLine = .vertical(0)
+                                dragStartSplitRatio = config.verticalSplitRatio
                             }
+                            let deltaRatio = value.translation.width / cropW
+                            var newRatio = max(0.15, min(0.85, dragStartSplitRatio + deltaRatio))
+
+                            // Magnetic Gutter Snapping
+                            for candidate in magneticVerticalGutters {
+                                let candX = candidate * cropW
+                                let currX = newRatio * cropW
+                                if abs(currX - candX) < 14 {
+                                    newRatio = candidate
+                                    HapticEngine.selection()
+                                    break
+                                }
+                            }
+                            config.verticalSplitRatio = newRatio
+                            recomputeBlocks()
                         }
-                        config.verticalSplitRatio = ratio
-                        recomputeBlocks()
-                    }
-                    .onEnded { _ in
-                        isDraggingVerticalSplit = false
-                        HapticEngine.light()
-                    }
-            )
+                        .onEnded { _ in
+                            activePartitionLine = nil
+                            HapticEngine.light()
+                        }
+                )
+            }
         }
 
-        // Horizontal Dashed Split Line (for 2-row layouts)
+        // 2. Horizontal Split Line (2-Row Presets)
         if preset.rowCount == 2 {
             let splitRatio = config.horizontalSplitRatios.first ?? 0.50
             let splitY = cropY + (cropH * splitRatio)
-            Path { p in
-                p.move(to: CGPoint(x: cropX, y: splitY))
-                p.addLine(to: CGPoint(x: cropX + cropW, y: splitY))
-            }
-            .stroke(isDraggingHorizontalSplit ? Color.inkGreen : Color.inkTextPrimary.opacity(0.85), style: StrokeStyle(lineWidth: isDraggingHorizontalSplit ? 2.5 : 1.5, dash: [5, 4]))
-            .gesture(
-                DragGesture(minimumDistance: 1)
-                    .onChanged { value in
-                        isDraggingHorizontalSplit = true
-                        let localY = value.location.y - cropY
-                        var ratio = max(0.15, min(0.85, localY / cropH))
+            let isDragging = (activePartitionLine == .horizontal(0))
 
-                        // Magnetic Gutter Snapping
-                        for candidate in magneticHorizontalGutters {
-                            let candY = candidate * cropH
-                            if abs(localY - candY) < 14 {
-                                ratio = candidate
-                                HapticEngine.selection()
-                                break
+            ZStack {
+                Path { p in
+                    p.move(to: CGPoint(x: cropX, y: splitY))
+                    p.addLine(to: CGPoint(x: cropX + cropW, y: splitY))
+                }
+                .stroke(isDragging ? Color.inkGreen : Color.inkTextPrimary.opacity(0.75), style: StrokeStyle(lineWidth: isDragging ? 2.5 : 1.5, dash: [6, 4]))
+
+                // Invisible 44pt Touch Corridor & Tactile Center Grip
+                HStack {
+                    Spacer()
+                    Image(systemName: "arrow.up.and.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(isDragging ? .white : Color.inkTextPrimary)
+                        .frame(width: 26, height: 26)
+                        .background(isDragging ? Color.inkGreen : Color.inkSurfaceRaised.opacity(0.95))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(isDragging ? Color.white : Color.inkBorderSubtle, lineWidth: 1.2))
+                        .shadow(color: Color.black.opacity(0.35), radius: 3)
+                    Spacer()
+                }
+                .frame(width: cropW, height: 44)
+                .contentShape(Rectangle())
+                .position(x: cropX + (cropW / 2.0), y: splitY)
+                .gesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            if activePartitionLine != .horizontal(0) {
+                                activePartitionLine = .horizontal(0)
+                                dragStartSplitRatio = config.horizontalSplitRatios.first ?? 0.50
                             }
+                            let deltaRatio = value.translation.height / cropH
+                            var newRatio = max(0.15, min(0.85, dragStartSplitRatio + deltaRatio))
+
+                            // Magnetic Gutter Snapping
+                            for candidate in magneticHorizontalGutters {
+                                let candY = candidate * cropH
+                                let currY = newRatio * cropH
+                                if abs(currY - candY) < 14 {
+                                    newRatio = candidate
+                                    HapticEngine.selection()
+                                    break
+                                }
+                            }
+                            config.horizontalSplitRatios = [newRatio]
+                            recomputeBlocks()
                         }
-                        config.horizontalSplitRatios = [ratio]
-                        recomputeBlocks()
-                    }
-                    .onEnded { _ in
-                        isDraggingHorizontalSplit = false
-                        HapticEngine.light()
-                    }
-            )
+                        .onEnded { _ in
+                            activePartitionLine = nil
+                            HapticEngine.light()
+                        }
+                )
+            }
+        }
+
+        // 3. Horizontal Split Lines (3-Row Presets: 1x3, 2x3, 3x3)
+        if preset.rowCount == 3 {
+            let splits = config.horizontalSplitRatios.count >= 2 ? config.horizontalSplitRatios : [0.33, 0.66]
+            let splitY0 = cropY + (cropH * splits[0])
+            let splitY1 = cropY + (cropH * splits[1])
+
+            // Tier Split Line 0 (Top / Mid boundary)
+            let isDragging0 = (activePartitionLine == .horizontal(0))
+            ZStack {
+                Path { p in
+                    p.move(to: CGPoint(x: cropX, y: splitY0))
+                    p.addLine(to: CGPoint(x: cropX + cropW, y: splitY0))
+                }
+                .stroke(isDragging0 ? Color.inkGreen : Color.inkTextPrimary.opacity(0.75), style: StrokeStyle(lineWidth: isDragging0 ? 2.5 : 1.5, dash: [6, 4]))
+
+                HStack {
+                    Spacer()
+                    Image(systemName: "arrow.up.and.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(isDragging0 ? .white : Color.inkTextPrimary)
+                        .frame(width: 24, height: 24)
+                        .background(isDragging0 ? Color.inkGreen : Color.inkSurfaceRaised.opacity(0.95))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(isDragging0 ? Color.white : Color.inkBorderSubtle, lineWidth: 1.2))
+                        .shadow(color: Color.black.opacity(0.35), radius: 3)
+                    Spacer()
+                }
+                .frame(width: cropW, height: 44)
+                .contentShape(Rectangle())
+                .position(x: cropX + (cropW / 2.0), y: splitY0)
+                .gesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            if activePartitionLine != .horizontal(0) {
+                                activePartitionLine = .horizontal(0)
+                                dragStartSplitRatio = splits[0]
+                            }
+                            let deltaRatio = value.translation.height / cropH
+                            let maxAllowed = splits[1] - 0.08
+                            let newRatio = max(0.10, min(maxAllowed, dragStartSplitRatio + deltaRatio))
+                            config.horizontalSplitRatios = [newRatio, splits[1]]
+                            recomputeBlocks()
+                        }
+                        .onEnded { _ in
+                            activePartitionLine = nil
+                            HapticEngine.light()
+                        }
+                )
+            }
+
+            // Tier Split Line 1 (Mid / Bot boundary)
+            let isDragging1 = (activePartitionLine == .horizontal(1))
+            ZStack {
+                Path { p in
+                    p.move(to: CGPoint(x: cropX, y: splitY1))
+                    p.addLine(to: CGPoint(x: cropX + cropW, y: splitY1))
+                }
+                .stroke(isDragging1 ? Color.inkGreen : Color.inkTextPrimary.opacity(0.75), style: StrokeStyle(lineWidth: isDragging1 ? 2.5 : 1.5, dash: [6, 4]))
+
+                HStack {
+                    Spacer()
+                    Image(systemName: "arrow.up.and.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(isDragging1 ? .white : Color.inkTextPrimary)
+                        .frame(width: 24, height: 24)
+                        .background(isDragging1 ? Color.inkGreen : Color.inkSurfaceRaised.opacity(0.95))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(isDragging1 ? Color.white : Color.inkBorderSubtle, lineWidth: 1.2))
+                        .shadow(color: Color.black.opacity(0.35), radius: 3)
+                    Spacer()
+                }
+                .frame(width: cropW, height: 44)
+                .contentShape(Rectangle())
+                .position(x: cropX + (cropW / 2.0), y: splitY1)
+                .gesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            if activePartitionLine != .horizontal(1) {
+                                activePartitionLine = .horizontal(1)
+                                dragStartSplitRatio = splits[1]
+                            }
+                            let deltaRatio = value.translation.height / cropH
+                            let minAllowed = splits[0] + 0.08
+                            let newRatio = max(minAllowed, min(0.90, dragStartSplitRatio + deltaRatio))
+                            config.horizontalSplitRatios = [splits[0], newRatio]
+                            recomputeBlocks()
+                        }
+                        .onEnded { _ in
+                            activePartitionLine = nil
+                            HapticEngine.light()
+                        }
+                )
+            }
         }
     }
 
-    // MARK: - Margin Crop Tick Handles
+    // MARK: - Margin Crop Tick Handles (Apple HIG >= 44pt Touch Targets)
 
     @ViewBuilder
     private func marginCropHandles(
@@ -519,55 +717,118 @@ public struct BooxSectionFlowWorkspace: View {
         cropH: CGFloat
     ) -> some View {
         // Left Margin Handle
-        marginHandle(isVertical: true, position: CGPoint(x: cropX, y: cropY + cropH / 2.0)) { delta in
-            let newTrim = max(0.0, min(0.25, config.leftMarginTrim + (delta / renderW)))
-            config.leftMarginTrim = newTrim
-            recomputeBlocks()
+        marginHandlePill(
+            isVertical: true,
+            position: CGPoint(x: cropX, y: cropY + cropH / 2.0),
+            isActive: activeMarginEdge == .left
+        ) {
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if activeMarginEdge != .left {
+                        activeMarginEdge = .left
+                        dragStartTrim = config.leftMarginTrim
+                    }
+                    let deltaNorm = value.translation.width / renderW
+                    config.leftMarginTrim = max(0.0, min(0.30, dragStartTrim + deltaNorm))
+                    recomputeBlocks()
+                }
+                .onEnded { _ in
+                    activeMarginEdge = nil
+                    HapticEngine.light()
+                }
         }
 
         // Right Margin Handle
-        marginHandle(isVertical: true, position: CGPoint(x: cropX + cropW, y: cropY + cropH / 2.0)) { delta in
-            let newTrim = max(0.0, min(0.25, config.rightMarginTrim - (delta / renderW)))
-            config.rightMarginTrim = newTrim
-            recomputeBlocks()
+        marginHandlePill(
+            isVertical: true,
+            position: CGPoint(x: cropX + cropW, y: cropY + cropH / 2.0),
+            isActive: activeMarginEdge == .right
+        ) {
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if activeMarginEdge != .right {
+                        activeMarginEdge = .right
+                        dragStartTrim = config.rightMarginTrim
+                    }
+                    let deltaNorm = value.translation.width / renderW
+                    config.rightMarginTrim = max(0.0, min(0.30, dragStartTrim - deltaNorm))
+                    recomputeBlocks()
+                }
+                .onEnded { _ in
+                    activeMarginEdge = nil
+                    HapticEngine.light()
+                }
         }
 
         // Top Margin Handle
-        marginHandle(isVertical: false, position: CGPoint(x: cropX + cropW / 2.0, y: cropY)) { delta in
-            let newTrim = max(0.0, min(0.25, config.topMarginTrim + (delta / renderH)))
-            config.topMarginTrim = newTrim
-            recomputeBlocks()
+        marginHandlePill(
+            isVertical: false,
+            position: CGPoint(x: cropX + cropW / 2.0, y: cropY),
+            isActive: activeMarginEdge == .top
+        ) {
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if activeMarginEdge != .top {
+                        activeMarginEdge = .top
+                        dragStartTrim = config.topMarginTrim
+                    }
+                    let deltaNorm = value.translation.height / renderH
+                    config.topMarginTrim = max(0.0, min(0.30, dragStartTrim + deltaNorm))
+                    recomputeBlocks()
+                }
+                .onEnded { _ in
+                    activeMarginEdge = nil
+                    HapticEngine.light()
+                }
         }
 
         // Bottom Margin Handle
-        marginHandle(isVertical: false, position: CGPoint(x: cropX + cropW / 2.0, y: cropY + cropH)) { delta in
-            let newTrim = max(0.0, min(0.25, config.bottomMarginTrim - (delta / renderH)))
-            config.bottomMarginTrim = newTrim
-            recomputeBlocks()
+        marginHandlePill(
+            isVertical: false,
+            position: CGPoint(x: cropX + cropW / 2.0, y: cropY + cropH),
+            isActive: activeMarginEdge == .bottom
+        ) {
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if activeMarginEdge != .bottom {
+                        activeMarginEdge = .bottom
+                        dragStartTrim = config.bottomMarginTrim
+                    }
+                    let deltaNorm = value.translation.height / renderH
+                    config.bottomMarginTrim = max(0.0, min(0.30, dragStartTrim - deltaNorm))
+                    recomputeBlocks()
+                }
+                .onEnded { _ in
+                    activeMarginEdge = nil
+                    HapticEngine.light()
+                }
         }
     }
 
-    private func marginHandle(
+    private func marginHandlePill(
         isVertical: Bool,
         position: CGPoint,
-        onDrag: @escaping (CGFloat) -> Void
+        isActive: Bool,
+        gesture: () -> some Gesture
     ) -> some View {
-        Capsule()
-            .fill(Color.inkTextPrimary)
-            .frame(width: isVertical ? 5 : 24, height: isVertical ? 24 : 5)
-            .overlay(Capsule().stroke(Color.white, lineWidth: 1))
-            .shadow(color: Color.black.opacity(0.4), radius: 3)
-            .position(position)
-            .gesture(
-                DragGesture(minimumDistance: 1)
-                    .onChanged { value in
-                        let delta = isVertical ? value.translation.width : value.translation.height
-                        onDrag(delta * 0.15)
-                    }
-            )
+        ZStack {
+            // Invisible HIG Touch Frame (>= 44pt)
+            Color.clear
+                .frame(width: isVertical ? 44 : 54, height: isVertical ? 54 : 44)
+                .contentShape(Rectangle())
+
+            // Tactile Handle Visual
+            Capsule()
+                .fill(isActive ? Color.inkGreen : Color.white)
+                .frame(width: isVertical ? 7 : 32, height: isVertical ? 32 : 7)
+                .overlay(Capsule().stroke(Color.black.opacity(0.3), lineWidth: 0.8))
+                .shadow(color: Color.black.opacity(0.4), radius: 4, y: 1)
+        }
+        .position(position)
+        .gesture(gesture())
     }
 
-    // MARK: - Dynamic Circled Sequence Badges
+    // MARK: - Circled Sequence Badges & Quadrant Selection Overlay
 
     @ViewBuilder
     private func sequenceBadgesOverlay(
@@ -577,12 +838,10 @@ public struct BooxSectionFlowWorkspace: View {
         renderH: CGFloat
     ) -> some View {
         ForEach(activeBlocks) { block in
-            // Use UIKit coordinate space (Y=0 is top) for screen overlay
             let norm = block.normalizedRect
             let rectW = renderW * norm.width
             let rectH = renderH * norm.height
             let rectX = originX + (renderW * norm.minX)
-            // Convert from Vision/PDF bottom-origin space to UIKit screen overlay space
             let rectY = originY + (renderH * (1.0 - norm.maxY))
 
             let isSelected = selectedBlockIndex == block.stepOrder
@@ -590,10 +849,10 @@ public struct BooxSectionFlowWorkspace: View {
             ZStack(alignment: .center) {
                 // Subtle boundary fill & active glow
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(isSelected ? Color.inkGreen : Color.clear, lineWidth: 2.0)
+                    .stroke(isSelected ? Color.inkGreen : Color.inkBorderSubtle.opacity(0.6), lineWidth: isSelected ? 2.5 : 1.0)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(isSelected ? Color.inkGreen.opacity(0.18) : Color.clear)
+                            .fill(isSelected ? Color.inkGreen.opacity(0.12) : Color.clear)
                     )
 
                 // Circled Number Badge (①, ②, ③, ④)
@@ -629,6 +888,242 @@ public struct BooxSectionFlowWorkspace: View {
                 selectedBlockIndex = block.stepOrder
             }
         }
+    }
+
+    // MARK: - Selected Quadrant 8-Point Resize Handles & Move Controller
+
+    @ViewBuilder
+    private func selectedQuadrantHandlesOverlay(
+        originX: CGFloat,
+        originY: CGFloat,
+        renderW: CGFloat,
+        renderH: CGFloat
+    ) -> some View {
+        if selectedBlockIndex < activeBlocks.count {
+            let block = activeBlocks[selectedBlockIndex]
+            let norm = block.normalizedRect
+            let rectW = renderW * norm.width
+            let rectH = renderH * norm.height
+            let rectX = originX + (renderW * norm.minX)
+            let rectY = originY + (renderH * (1.0 - norm.maxY))
+
+            // Current top-origin normalized bounding box
+            let topNorm = CGRect(
+                x: norm.minX,
+                y: max(0.0, 1.0 - norm.maxY),
+                width: norm.width,
+                height: norm.height
+            )
+
+            ZStack {
+                // 1. Top-Left Corner Handle
+                quadrantCornerHandle(
+                    position: CGPoint(x: rectX, y: rectY),
+                    handleType: .topLeft
+                ) {
+                    quadrantResizeGesture(handleType: .topLeft, baseRect: topNorm, renderW: renderW, renderH: renderH)
+                }
+
+                // 2. Top-Right Corner Handle
+                quadrantCornerHandle(
+                    position: CGPoint(x: rectX + rectW, y: rectY),
+                    handleType: .topRight
+                ) {
+                    quadrantResizeGesture(handleType: .topRight, baseRect: topNorm, renderW: renderW, renderH: renderH)
+                }
+
+                // 3. Bottom-Left Corner Handle
+                quadrantCornerHandle(
+                    position: CGPoint(x: rectX, y: rectY + rectH),
+                    handleType: .bottomLeft
+                ) {
+                    quadrantResizeGesture(handleType: .bottomLeft, baseRect: topNorm, renderW: renderW, renderH: renderH)
+                }
+
+                // 4. Bottom-Right Corner Handle
+                quadrantCornerHandle(
+                    position: CGPoint(x: rectX + rectW, y: rectY + rectH),
+                    handleType: .bottomRight
+                ) {
+                    quadrantResizeGesture(handleType: .bottomRight, baseRect: topNorm, renderW: renderW, renderH: renderH)
+                }
+
+                // 5. Top Edge Handle
+                quadrantEdgeHandle(
+                    isVertical: false,
+                    position: CGPoint(x: rectX + rectW / 2.0, y: rectY),
+                    handleType: .topEdge
+                ) {
+                    quadrantResizeGesture(handleType: .topEdge, baseRect: topNorm, renderW: renderW, renderH: renderH)
+                }
+
+                // 6. Bottom Edge Handle
+                quadrantEdgeHandle(
+                    isVertical: false,
+                    position: CGPoint(x: rectX + rectW / 2.0, y: rectY + rectH),
+                    handleType: .bottomEdge
+                ) {
+                    quadrantResizeGesture(handleType: .bottomEdge, baseRect: topNorm, renderW: renderW, renderH: renderH)
+                }
+
+                // 7. Left Edge Handle
+                quadrantEdgeHandle(
+                    isVertical: true,
+                    position: CGPoint(x: rectX, y: rectY + rectH / 2.0),
+                    handleType: .leftEdge
+                ) {
+                    quadrantResizeGesture(handleType: .leftEdge, baseRect: topNorm, renderW: renderW, renderH: renderH)
+                }
+
+                // 8. Right Edge Handle
+                quadrantEdgeHandle(
+                    isVertical: true,
+                    position: CGPoint(x: rectX + rectW, y: rectY + rectH / 2.0),
+                    handleType: .rightEdge
+                ) {
+                    quadrantResizeGesture(handleType: .rightEdge, baseRect: topNorm, renderW: renderW, renderH: renderH)
+                }
+
+                // Floating "Reset Quadrant" Chip if this quadrant has a custom override
+                if config.customBlockOverrides[selectedBlockIndex] != nil {
+                    HStack(spacing: 5) {
+                        Text("Custom Bounds")
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundColor(.inkGreen)
+                        Button {
+                            HapticEngine.selection()
+                            config.customBlockOverrides.removeValue(forKey: selectedBlockIndex)
+                            recomputeBlocks()
+                        } label: {
+                            HStack(spacing: 2) {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.system(size: 8, weight: .bold))
+                                Text("Reset")
+                                    .font(.system(size: 9, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.inkGreen))
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.inkSurfaceRaised).overlay(Capsule().stroke(Color.inkGreen.opacity(0.5), lineWidth: 1)))
+                    .shadow(color: Color.black.opacity(0.3), radius: 3)
+                    .position(x: rectX + rectW / 2.0, y: max(originY + 12, rectY - 14))
+                }
+            }
+        }
+    }
+
+    private func quadrantCornerHandle(
+        position: CGPoint,
+        handleType: QuadrantHandleType,
+        gesture: () -> some Gesture
+    ) -> some View {
+        ZStack {
+            Color.clear
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+
+            Circle()
+                .fill(Color.white)
+                .frame(width: 14, height: 14)
+                .overlay(Circle().stroke(Color.inkGreen, lineWidth: 2.5))
+                .shadow(color: Color.black.opacity(0.35), radius: 3)
+        }
+        .position(position)
+        .gesture(gesture())
+    }
+
+    private func quadrantEdgeHandle(
+        isVertical: Bool,
+        position: CGPoint,
+        handleType: QuadrantHandleType,
+        gesture: () -> some Gesture
+    ) -> some View {
+        ZStack {
+            Color.clear
+                .frame(width: isVertical ? 44 : 50, height: isVertical ? 50 : 44)
+                .contentShape(Rectangle())
+
+            Capsule()
+                .fill(Color.white)
+                .frame(width: isVertical ? 6 : 22, height: isVertical ? 22 : 6)
+                .overlay(Capsule().stroke(Color.inkGreen, lineWidth: 1.5))
+                .shadow(color: Color.black.opacity(0.35), radius: 3)
+        }
+        .position(position)
+        .gesture(gesture())
+    }
+
+    private func quadrantResizeGesture(
+        handleType: QuadrantHandleType,
+        baseRect: CGRect,
+        renderW: CGFloat,
+        renderH: CGFloat
+    ) -> some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { value in
+                if activeQuadrantHandle != handleType {
+                    activeQuadrantHandle = handleType
+                    dragStartQuadrantRect = baseRect
+                }
+                let dx = value.translation.width / renderW
+                let dy = value.translation.height / renderH
+
+                var newX = dragStartQuadrantRect.minX
+                var newY = dragStartQuadrantRect.minY
+                var newW = dragStartQuadrantRect.width
+                var newH = dragStartQuadrantRect.height
+
+                switch handleType {
+                case .topLeft:
+                    let clampedDx = min(dx, dragStartQuadrantRect.width - 0.08)
+                    let clampedDy = min(dy, dragStartQuadrantRect.height - 0.08)
+                    newX = max(0.0, dragStartQuadrantRect.minX + clampedDx)
+                    newY = max(0.0, dragStartQuadrantRect.minY + clampedDy)
+                    newW = max(0.08, dragStartQuadrantRect.maxX - newX)
+                    newH = max(0.08, dragStartQuadrantRect.maxY - newY)
+                case .topRight:
+                    let clampedDy = min(dy, dragStartQuadrantRect.height - 0.08)
+                    newY = max(0.0, dragStartQuadrantRect.minY + clampedDy)
+                    newW = max(0.08, min(1.0 - newX, dragStartQuadrantRect.width + dx))
+                    newH = max(0.08, dragStartQuadrantRect.maxY - newY)
+                case .bottomLeft:
+                    let clampedDx = min(dx, dragStartQuadrantRect.width - 0.08)
+                    newX = max(0.0, dragStartQuadrantRect.minX + clampedDx)
+                    newW = max(0.08, dragStartQuadrantRect.maxX - newX)
+                    newH = max(0.08, min(1.0 - newY, dragStartQuadrantRect.height + dy))
+                case .bottomRight:
+                    newW = max(0.08, min(1.0 - newX, dragStartQuadrantRect.width + dx))
+                    newH = max(0.08, min(1.0 - newY, dragStartQuadrantRect.height + dy))
+                case .topEdge:
+                    let clampedDy = min(dy, dragStartQuadrantRect.height - 0.08)
+                    newY = max(0.0, dragStartQuadrantRect.minY + clampedDy)
+                    newH = max(0.08, dragStartQuadrantRect.maxY - newY)
+                case .bottomEdge:
+                    newH = max(0.08, min(1.0 - newY, dragStartQuadrantRect.height + dy))
+                case .leftEdge:
+                    let clampedDx = min(dx, dragStartQuadrantRect.width - 0.08)
+                    newX = max(0.0, dragStartQuadrantRect.minX + clampedDx)
+                    newW = max(0.08, dragStartQuadrantRect.maxX - newX)
+                case .rightEdge:
+                    newW = max(0.08, min(1.0 - newX, dragStartQuadrantRect.width + dx))
+                case .move:
+                    newX = max(0.0, min(1.0 - newW, dragStartQuadrantRect.minX + dx))
+                    newY = max(0.0, min(1.0 - newH, dragStartQuadrantRect.minY + dy))
+                }
+
+                let updatedRect = CGRect(x: newX, y: newY, width: newW, height: newH)
+                config.customBlockOverrides[selectedBlockIndex] = updatedRect
+                recomputeBlocks()
+            }
+            .onEnded { _ in
+                activeQuadrantHandle = nil
+                HapticEngine.light()
+            }
     }
 
     // MARK: - Bottom Safeguard Tool Bar
@@ -679,69 +1174,215 @@ public struct BooxSectionFlowWorkspace: View {
         )
     }
 
-    // MARK: - Floating PiP Live Viewport Card
+    // MARK: - Interactive Full-Screen Tap-to-Preview Simulator
 
-    private var floatingPiPCard: some View {
-        VStack(alignment: .trailing, spacing: 6) {
-            HStack {
-                Text("Device Framing · Block \(selectedBlockIndex + 1)")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundColor(Color.inkTextPrimary)
-                Spacer()
-                Button {
-                    withAnimation { showPiPPreview = false }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(Color.inkSecondary)
+    private var liveReaderPreviewOverlay: some View {
+        ZStack {
+            Color.inkBackground.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Top Preview Header Bar
+                HStack(spacing: 12) {
+                    Button {
+                        HapticEngine.light()
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showReaderPreview = false
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Editor")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(Color.inkTextPrimary)
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "play.circle.fill")
+                            .foregroundColor(.inkGreen)
+                            .font(.system(size: 13, weight: .bold))
+                        Text("Reader Preview")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(Color.inkTextPrimary)
+                        Text("· Block \(previewBlockIndex + 1) of \(activeBlocks.count)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Color.inkSecondary)
+                    }
+
+                    Spacer()
+
+                    // Direct Save & Finish Button
+                    Button {
+                        HapticEngine.medium()
+                        prefs.booxSectionFlowConfig = config
+                        onApply(config, previewBlockIndex)
+                        isPresented = false
+                    } label: {
+                        Text("Save & Read")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(Color.inkGreen, in: Capsule())
+                    }
                 }
-            }
+                .padding(.horizontal, 16)
+                .frame(height: 48)
+                .background(Color.inkSurfaceRaised.opacity(0.98).background(.ultraThinMaterial))
+                .overlay(Rectangle().fill(Color.inkBorderSubtle).frame(height: 1), alignment: .bottom)
 
-            // Cropped representation of selected block with green redundancy tint
-            ZStack {
-                Color.black
-                if let thumb = renderedThumbnail, selectedBlockIndex < activeBlocks.count {
-                    let block = activeBlocks[selectedBlockIndex]
-                    let norm = block.normalizedRect
-                    let cgW = CGFloat(thumb.cgImage?.width ?? 100)
-                    let cgH = CGFloat(thumb.cgImage?.height ?? 100)
-                    let cropBox = CGRect(
-                        x: norm.minX * cgW,
-                        y: (1.0 - norm.maxY) * cgH,
-                        width: norm.width * cgW,
-                        height: norm.height * cgH
-                    )
-                    if let cropped = thumb.cgImage?.cropping(to: cropBox) {
-                        Image(uiImage: UIImage(cgImage: cropped))
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
+                // Viewport Reader Simulator
+                GeometryReader { viewportGeo in
+                    let viewW = viewportGeo.size.width
+                    let viewH = viewportGeo.size.height
+
+                    ZStack {
+                        Color.black.ignoresSafeArea()
+
+                        if let thumb = renderedThumbnail, previewBlockIndex < activeBlocks.count {
+                            let block = activeBlocks[previewBlockIndex]
+                            let targetNorm = config.connectionRedundancy ? block.redundantRect : block.normalizedRect
+                            let cgW = CGFloat(thumb.cgImage?.width ?? 100)
+                            let cgH = CGFloat(thumb.cgImage?.height ?? 100)
+
+                            // Target crop box in CGImage space (Y=0 is top)
+                            let cropBox = CGRect(
+                                x: max(0, targetNorm.minX * cgW),
+                                y: max(0, (1.0 - targetNorm.maxY) * cgH),
+                                width: min(cgW, targetNorm.width * cgW),
+                                height: min(cgH, targetNorm.height * cgH)
+                            )
+
+                            if let croppedCG = thumb.cgImage?.cropping(to: cropBox) {
+                                Image(uiImage: UIImage(cgImage: croppedCG))
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(maxWidth: viewW, maxHeight: viewH)
+                                    .id(previewBlockIndex)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                            }
+                        }
+
+                        // Floating HUD Tier Badge (Matches Live Reader Engine)
+                        if previewBlockIndex < activeBlocks.count {
+                            let block = activeBlocks[previewBlockIndex]
+                            VStack {
+                                HStack(spacing: 6) {
+                                    Circle()
+                                        .fill(Color.inkGreen)
+                                        .frame(width: 8, height: 8)
+                                    Text(block.label)
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .foregroundColor(Color.inkTextPrimary)
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(Color.inkSurfaceRaised.opacity(0.92)).background(.ultraThinMaterial))
+                                .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 1))
+                                .shadow(color: Color.black.opacity(0.35), radius: 8, y: 3)
+                                .padding(.top, 14)
+
+                                Spacer()
+                            }
+                        }
+
+                        // Interactive Tap Zones (Apple Books / Kindle Standard)
+                        HStack(spacing: 0) {
+                            // Left Tap Zone: Previous Quadrant
+                            Color.clear
+                                .frame(maxWidth: viewW * 0.35, maxHeight: .infinity)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    if previewBlockIndex > 0 {
+                                        HapticEngine.selection()
+                                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                                            previewBlockIndex -= 1
+                                        }
+                                    }
+                                }
+
+                            Spacer()
+
+                            // Right Tap Zone: Next Quadrant
+                            Color.clear
+                                .frame(maxWidth: viewW * 0.35, maxHeight: .infinity)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    if previewBlockIndex < activeBlocks.count - 1 {
+                                        HapticEngine.selection()
+                                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                                            previewBlockIndex += 1
+                                        }
+                                    }
+                                }
+                        }
                     }
                 }
 
-                // Redundancy buffer indicator
-                if config.connectionRedundancy {
-                    VStack {
-                        Rectangle()
-                            .fill(Color.inkGreen.opacity(0.25))
-                            .frame(height: 8)
-                        Spacer()
-                        Rectangle()
-                            .fill(Color.inkGreen.opacity(0.25))
-                            .frame(height: 8)
+                // Bottom Preview Step Controller
+                HStack(spacing: 16) {
+                    Button {
+                        if previewBlockIndex > 0 {
+                            HapticEngine.selection()
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                                previewBlockIndex -= 1
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Prev")
+                        }
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(previewBlockIndex > 0 ? Color.inkTextPrimary : Color.inkSecondary.opacity(0.35))
                     }
+                    .disabled(previewBlockIndex == 0)
+
+                    Spacer()
+
+                    // Step Indicator Dots
+                    HStack(spacing: 6) {
+                        ForEach(0..<activeBlocks.count, id: \.self) { idx in
+                            Circle()
+                                .fill(idx == previewBlockIndex ? Color.inkGreen : Color.inkSecondary.opacity(0.4))
+                                .frame(width: idx == previewBlockIndex ? 8 : 5, height: idx == previewBlockIndex ? 8 : 5)
+                                .onTapGesture {
+                                    HapticEngine.selection()
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                                        previewBlockIndex = idx
+                                    }
+                                }
+                        }
+                    }
+
+                    Spacer()
+
+                    Button {
+                        if previewBlockIndex < activeBlocks.count - 1 {
+                            HapticEngine.selection()
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                                previewBlockIndex += 1
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Next")
+                            Image(systemName: "chevron.right")
+                        }
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(previewBlockIndex < activeBlocks.count - 1 ? Color.inkTextPrimary : Color.inkSecondary.opacity(0.35))
+                    }
+                    .disabled(previewBlockIndex >= activeBlocks.count - 1)
                 }
+                .padding(.horizontal, 20)
+                .frame(height: 48)
+                .background(Color.inkSurfaceRaised.opacity(0.98).background(.ultraThinMaterial))
+                .overlay(Rectangle().fill(Color.inkBorderSubtle).frame(height: 1), alignment: .top)
             }
-            .frame(width: 140, height: 90)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.inkGreen, lineWidth: 1))
         }
-        .padding(10)
-        .background(Color.inkSurfaceRaised.opacity(0.96).background(.ultraThinMaterial))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: Color.black.opacity(0.4), radius: 12, y: 6)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        .padding(.trailing, 16)
-        .padding(.top, 56)
     }
 
     // MARK: - Data Synchronization
@@ -763,11 +1404,13 @@ public struct BooxSectionFlowWorkspace: View {
     }
 
     private func recomputeBlocks() {
-        // Standardize on Vision/PDF bottom-origin space across both PDFKit and Comic Image pipelines
         let blocks = BooxSectionFlowEngine.shared.generateBlocks(config: config, space: .pdf)
         self.activeBlocks = blocks
         if selectedBlockIndex >= blocks.count {
             selectedBlockIndex = max(0, blocks.count - 1)
+        }
+        if previewBlockIndex >= blocks.count {
+            previewBlockIndex = max(0, blocks.count - 1)
         }
     }
 }
