@@ -385,6 +385,25 @@ struct PanelExtractor {
         config: ComicTierGuideConfiguration? = nil,
         imageForGutterAnalysis: UIImage? = nil
     ) -> [ComicTierQuadrant] {
+        if config == nil {
+            let booxConfig = EBookPreferences.shared.booxSectionFlowConfig
+            let booxBlocks = BooxSectionFlowEngine.shared.generateBlocks(config: booxConfig, space: .image)
+            if !booxBlocks.isEmpty {
+                return booxBlocks.map { b in
+                    ComicTierQuadrant(
+                        id: b.id,
+                        columnIndex: b.columnIndex,
+                        tierIndex: b.rowIndex,
+                        totalColumns: booxConfig.gridPreset.columnCount,
+                        totalTiersInColumn: booxConfig.gridPreset.rowCount,
+                        stepOrder: b.stepOrder,
+                        totalInPage: b.totalBlocks,
+                        normalizedRect: booxConfig.connectionRedundancy ? b.redundantRect : b.normalizedRect,
+                        label: b.label
+                    )
+                }
+            }
+        }
         let activeConfig = config ?? ComicTierGuideConfiguration(
             preset: ComicTierLayoutPreset(rawValue: UserDefaults.standard.string(forKey: "comic_smartTierPreset") ?? "") ?? .threeTier,
             tierCount: UserDefaults.standard.integer(forKey: "comic_smartTierCount") != 0 ? UserDefaults.standard.integer(forKey: "comic_smartTierCount") : 3,

@@ -3451,16 +3451,16 @@ struct ComicSpreadGuidedView: View {
         }) {
             let activePage = (currentStrideIndex >= 0 && currentStrideIndex < strides.count) ? strides[currentStrideIndex].pageIndex : (spread.first ?? masterIndex)
             let activeImage = (currentStrideIndex >= 0 && currentStrideIndex < strides.count && strides[currentStrideIndex].pageIndex == spread.last && spread.count > 1) ? (image1 ?? image0) : (image0 ?? image1)
-            ComicSmartTiersQuickAdjustHUD(
-                pageImage: activeImage,
+            BooxSectionFlowWorkspace(
+                comicImage: activeImage,
                 pageIndex: activePage,
-                isMangaMode: isMangaMode,
+                initialBlockIndex: currentStrideIndex,
                 isPresented: $isAdjustingInWorkspace,
-                onApplyConfiguration: { newConfig in
-                    prefs.comicTierConfiguration = newConfig
+                onApply: { newConfig, chosenIndex in
+                    prefs.booxSectionFlowConfig = newConfig
                     strides.removeAll()
                     isAnalyzing = false
-                    currentStrideIndex = 0
+                    currentStrideIndex = chosenIndex
                     loadImagesAndAnalyze()
                     flashPanelBadge()
                 }

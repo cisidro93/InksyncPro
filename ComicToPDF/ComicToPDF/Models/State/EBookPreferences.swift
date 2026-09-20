@@ -354,6 +354,86 @@ class EBookPreferences: ObservableObject {
         }
     }
 
+    // MARK: - Boox Section Flow / NeoFlow Configuration
+    @AppStorage("boox_gridPreset") var booxGridPresetRaw: String = BooxGridPreset.twoByTwo.rawValue {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("boox_flowOrder") var booxFlowOrderRaw: String = BooxFlowOrder.nFlow.rawValue {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("boox_isSpreadMode") var booxIsSpreadMode: Bool = false {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("boox_verticalSplitRatio") var booxVerticalSplitRatio: Double = 0.50 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("boox_horizontalSplit0") var booxHorizontalSplit0: Double = 0.50 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("boox_horizontalSplit1") var booxHorizontalSplit1: Double = 0.66 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("boox_topMarginTrim") var booxTopMarginTrim: Double = 0.0 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("boox_bottomMarginTrim") var booxBottomMarginTrim: Double = 0.0 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("boox_leftMarginTrim") var booxLeftMarginTrim: Double = 0.0 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("boox_rightMarginTrim") var booxRightMarginTrim: Double = 0.0 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("boox_autoCropAfterPagination") var booxAutoCropAfterPagination: Bool = false {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("boox_connectionRedundancy") var booxConnectionRedundancy: Bool = true {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("boox_redundancyRatio") var booxRedundancyRatio: Double = 0.15 {
+        didSet { objectWillChange.send() }
+    }
+
+    var booxSectionFlowConfig: BooxSectionFlowConfig {
+        get {
+            BooxSectionFlowConfig(
+                gridPreset: BooxGridPreset(rawValue: booxGridPresetRaw) ?? .twoByTwo,
+                flowOrder: BooxFlowOrder(rawValue: booxFlowOrderRaw) ?? .nFlow,
+                isSpreadMode: booxIsSpreadMode,
+                verticalSplitRatio: CGFloat(booxVerticalSplitRatio),
+                horizontalSplitRatios: [CGFloat(booxHorizontalSplit0), CGFloat(booxHorizontalSplit1)],
+                topMarginTrim: CGFloat(booxTopMarginTrim),
+                bottomMarginTrim: CGFloat(booxBottomMarginTrim),
+                leftMarginTrim: CGFloat(booxLeftMarginTrim),
+                rightMarginTrim: CGFloat(booxRightMarginTrim),
+                autoCropAfterPagination: booxAutoCropAfterPagination,
+                connectionRedundancy: booxConnectionRedundancy,
+                redundancyRatio: CGFloat(booxRedundancyRatio)
+            )
+        }
+        set {
+            booxGridPresetRaw = newValue.gridPreset.rawValue
+            booxFlowOrderRaw = newValue.flowOrder.rawValue
+            booxIsSpreadMode = newValue.isSpreadMode
+            booxVerticalSplitRatio = Double(newValue.verticalSplitRatio)
+            if let first = newValue.horizontalSplitRatios.first {
+                booxHorizontalSplit0 = Double(first)
+            }
+            if newValue.horizontalSplitRatios.count > 1 {
+                booxHorizontalSplit1 = Double(newValue.horizontalSplitRatios[1])
+            }
+            booxTopMarginTrim = Double(newValue.topMarginTrim)
+            booxBottomMarginTrim = Double(newValue.bottomMarginTrim)
+            booxLeftMarginTrim = Double(newValue.leftMarginTrim)
+            booxRightMarginTrim = Double(newValue.rightMarginTrim)
+            booxAutoCropAfterPagination = newValue.autoCropAfterPagination
+            booxConnectionRedundancy = newValue.connectionRedundancy
+            booxRedundancyRatio = Double(newValue.redundancyRatio)
+            objectWillChange.send()
+        }
+    }
+
     var defaultCodableCropInsets: CodableCropInsets {
         CodableCropInsets(
             top: defaultCropTop,

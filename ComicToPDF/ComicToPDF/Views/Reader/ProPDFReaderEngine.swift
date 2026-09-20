@@ -622,13 +622,13 @@ struct ProPDFReaderEngine: View {
                 }
             }) {
                 if let doc = pdfDocument, let page = doc.page(at: currentPageIndex) {
-                    PDFSmartTiersQuickAdjustHUD(
-                        currentPage: page,
+                    BooxSectionFlowWorkspace(
+                        pdfPage: page,
                         pageIndex: currentPageIndex,
-                        initialTierIndex: currentTierIndex,
+                        initialBlockIndex: currentTierIndex,
                         isPresented: $isAdjustingSmartTiers,
-                        onApplyConfiguration: { newConfig, chosenIndex in
-                            self.smartTiersConfig = newConfig
+                        onApply: { newConfig, chosenIndex in
+                            prefs.booxSectionFlowConfig = newConfig
                             prefs.isPDFSmartTiersActive = true
                             refreshSmartTierQuadrants()
                             let targetIdx = min(chosenIndex, max(0, self.currentTierQuadrants.count - 1))
@@ -637,7 +637,7 @@ struct ProPDFReaderEngine: View {
                             flashTierBadge()
                         }
                     )
-                    .presentationDetents([.fraction(0.88), .large])
+                    .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
                 }
             }
@@ -2131,15 +2131,22 @@ struct ProPDFReaderEngine: View {
 
     private func refreshSmartTierQuadrants() {
         guard let doc = pdfDocument, let page = doc.page(at: currentPageIndex) else { return }
-        let isManga = prefs.pdfRTL || UserDefaults.standard.bool(forKey: "isMangaMode")
-        let quads = PDFSmartTierEngine.shared.generateQuadrants(
-            for: page,
-            pageIndex: currentPageIndex,
-            config: smartTiersConfig,
-            isMangaRTL: isManga
-        )
-        self.currentTierQuadrants = quads
-        if currentTierIndex >= quads.count {
+        let booxConfig = prefs.booxSectionFlowConfig
+        let blocks = BooxSectionFlowEngine.shared.generateBlocks(config: booxConfig, space: .pdf)
+        self.currentTierQuadrants = blocks.map { b in
+            PDFTierQuadrant(
+                id: b.id,
+                columnIndex: b.columnIndex,
+                tierIndex: b.rowIndex,
+                totalColumns: booxConfig.gridPreset.columnCount,
+                totalTiersInColumn: booxConfig.gridPreset.rowCount,
+                stepOrder: b.stepOrder,
+                totalInPage: b.totalBlocks,
+                normalizedRect: booxConfig.connectionRedundancy ? b.redundantRect : b.normalizedRect,
+                label: b.label
+            )
+        }
+        if currentTierIndex >= self.currentTierQuadrants.count {
             currentTierIndex = 0
         }
     }
