@@ -434,7 +434,7 @@ struct PDFSmartTiersQuickAdjustHUD: View {
     }
 
     @ViewBuilder
-    private func marginSlider(label: String, icon: String, value: Binding<Double>) -> some View {
+    private func marginSlider(label: String, icon: String, value: Binding<CGFloat>) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 11))
