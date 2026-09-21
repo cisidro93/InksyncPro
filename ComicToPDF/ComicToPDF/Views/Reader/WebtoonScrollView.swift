@@ -115,7 +115,21 @@ struct WebtoonScrollView: UIViewRepresentable {
             return c
         }()
 
-        init(_ parent: WebtoonScrollView) { self.parentView = parent }
+        private var backgroundObserver: NSObjectProtocol?
+
+        init(_ parent: WebtoonScrollView) {
+            self.parentView = parent
+            super.init()
+            backgroundObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.didEnterBackgroundNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self = self, let sv = self.scrollView else { return }
+                self.updateAutoScroll(isActive: false, speed: 0, sv: sv)
+                self.imageCache.removeAllObjects()
+            }
+        }
 
         // MARK: - Populate
 
@@ -227,6 +241,10 @@ struct WebtoonScrollView: UIViewRepresentable {
         /// Tear-down: invalidate the display link and cancel all image loads.
         /// Called from dismantleUIView to break the CADisplayLink strong-reference cycle.
         func invalidate() {
+            if let obs = backgroundObserver {
+                NotificationCenter.default.removeObserver(obs)
+                backgroundObserver = nil
+            }
             displayLink?.invalidate()
             displayLink = nil
             metadataTask?.cancel()
@@ -318,9 +336,15 @@ struct WebtoonScrollView: UIViewRepresentable {
         @objc private func tick(_ dl: CADisplayLink) {
             guard let sv = scrollView else { return }
             let pxPerFrame = parentView.scrollSpeed * dl.duration
-            let newY = min(sv.contentOffset.y + pxPerFrame,
-                           sv.contentSize.height - sv.bounds.height)
-            sv.contentOffset = CGPoint(x: 0, y: max(0, newY))
+            let maxOffset = sv.contentSize.height - sv.bounds.height
+            let newY = sv.contentOffset.y + pxPerFrame
+            
+            if newY >= maxOffset {
+                sv.contentOffset = CGPoint(x: 0, y: max(0, maxOffset))
+                updateAutoScroll(isActive: false, speed: 0, sv: sv)
+            } else {
+                sv.contentOffset = CGPoint(x: 0, y: max(0, newY))
+            }
         }
 
         // MARK: - Tap

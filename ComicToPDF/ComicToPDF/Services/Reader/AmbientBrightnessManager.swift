@@ -24,7 +24,11 @@ final class AmbientBrightnessManager: ObservableObject {
     // Note: @AppStorage is a View-only property wrapper; use UserDefaults directly in ObservableObject classes.
     var autoNightMode: Bool {
         get { UserDefaults.standard.object(forKey: "reader_autoNightMode") as? Bool ?? false }
-        set { UserDefaults.standard.set(newValue, forKey: "reader_autoNightMode") }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "reader_autoNightMode")
+            updateTimerState()
+            evaluate()
+        }
     }
     var nightStartHour: Double {
         get { UserDefaults.standard.object(forKey: "reader_nightModeStartHour") as? Double ?? 20.0 }
@@ -44,9 +48,45 @@ final class AmbientBrightnessManager: ObservableObject {
 
     private init() {
         evaluate()
+        updateTimerState()
+        
+        // Lifecycle observers to prevent background timer wakeups
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stopTimer()
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.evaluate()
+            self?.updateTimerState()
+        }
+    }
+    
+    private func updateTimerState() {
+        if autoNightMode {
+            startTimer()
+        } else {
+            stopTimer()
+        }
+    }
+    
+    private func startTimer() {
+        guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.evaluate() }
         }
+    }
+    
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
     }
 
     // MARK: - Public

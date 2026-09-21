@@ -12,15 +12,52 @@ import SwiftUI
 final class iCloudFileSyncManager: ObservableObject {
     static let shared = iCloudFileSyncManager()
 
-    @AppStorage("enableiCloudDocumentSync") var isSyncEnabled: Bool = false
+    @AppStorage("enableiCloudDocumentSync") var isSyncEnabled: Bool = false {
+        didSet {
+            if isSyncEnabled {
+                setupQuery()
+            } else {
+                stopQuery()
+            }
+        }
+    }
     @Published var isSyncing: Bool = false
     @Published var syncStatusText: String = "iCloud Sync Idle"
     @Published var lastSyncDate: Date? = nil
 
     private var query: NSMetadataQuery?
+    private var observers: [NSObjectProtocol] = []
 
     private init() {
-        setupQuery()
+        if isSyncEnabled {
+            setupQuery()
+        }
+        
+        let bgObs = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.query?.disableUpdates()
+        }
+        
+        let fgObs = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self, self.isSyncEnabled else { return }
+            self.query?.enableUpdates()
+        }
+        
+        observers = [bgObs, fgObs]
+    }
+    
+    deinit {
+        for obs in observers {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        stopQuery()
     }
 
     /// Check if iCloud Ubiquity container is available on this device.
@@ -79,6 +116,7 @@ final class iCloudFileSyncManager: ObservableObject {
     // MARK: - iCloud Directory Monitoring
 
     private func setupQuery() {
+        stopQuery()
         guard isUbiquityAvailable else { return }
         let q = NSMetadataQuery()
         q.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
@@ -99,6 +137,15 @@ final class iCloudFileSyncManager: ObservableObject {
 
         q.start()
         self.query = q
+    }
+
+    private func stopQuery() {
+        if let q = query {
+            NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidUpdate, object: q)
+            NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidFinishGathering, object: q)
+            q.stop()
+            self.query = nil
+        }
     }
 
     @objc private func metadataQueryDidUpdate(_ notification: Notification) {

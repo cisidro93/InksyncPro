@@ -26,6 +26,26 @@ public actor ColoringLineartEngine {
         ])
         cache.countLimit = 30
         cache.totalCostLimit = 64 * 1024 * 1024 // 64 MB
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            Task {
+                await ColoringLineartEngine.shared.clearCache()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            Task {
+                await ColoringLineartEngine.shared.clearCache()
+            }
+        }
     }
 
     /// Extracts a transparent lineart mask from a PDFPage at the specified target size.

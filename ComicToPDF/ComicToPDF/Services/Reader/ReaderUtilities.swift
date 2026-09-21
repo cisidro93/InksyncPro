@@ -59,17 +59,40 @@ final class SleepTimerManager: ObservableObject {
     private var initialBrightness: CGFloat = 1.0
     private var totalSeconds: Int = 0
     private let fadeDuration: Int = 120 // 2 minutes
+    private var targetFireDate: Date?
 
-    private init() {}
+    private init() {
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleBackground()
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleForeground()
+        }
+    }
 
     func start(minutes: Int) {
         stop()
         remainingSeconds = minutes * 60
         totalSeconds = remainingSeconds
+        targetFireDate = Date().addingTimeInterval(Double(remainingSeconds))
         initialBrightness = UIScreen.main.brightness
         isActive = true
         didFire = false
         
+        startTickingLoop()
+    }
+
+    private func startTickingLoop() {
+        timerTask?.cancel()
         timerTask = Task { @MainActor [weak self] in
             while true {
                 do {
@@ -78,20 +101,50 @@ final class SleepTimerManager: ObservableObject {
                     break
                 }
                 guard let self = self, !Task.isCancelled else { break }
-                if self.remainingSeconds > 1 {
-                    self.remainingSeconds -= 1
-                    self.updateBrightness()
+                if let target = self.targetFireDate {
+                    let diff = Int(target.timeIntervalSinceNow)
+                    if diff > 1 {
+                        self.remainingSeconds = diff
+                        self.updateBrightness()
+                    } else {
+                        self.fire()
+                        break
+                    }
                 } else {
-                    self.fire()
-                    break
+                    if self.remainingSeconds > 1 {
+                        self.remainingSeconds -= 1
+                        self.updateBrightness()
+                    } else {
+                        self.fire()
+                        break
+                    }
                 }
             }
+        }
+    }
+
+    private func handleBackground() {
+        // Suspend the 1-second Task.sleep loop so the CPU can power down completely
+        timerTask?.cancel()
+        timerTask = nil
+    }
+
+    private func handleForeground() {
+        guard isActive, let target = targetFireDate else { return }
+        let diff = Int(target.timeIntervalSinceNow)
+        if diff <= 0 {
+            fire()
+        } else {
+            remainingSeconds = diff
+            updateBrightness()
+            startTickingLoop()
         }
     }
 
     func stop() {
         timerTask?.cancel()
         timerTask = nil
+        targetFireDate = nil
         if isActive {
             UIScreen.main.brightness = initialBrightness
         }
@@ -108,7 +161,7 @@ final class SleepTimerManager: ObservableObject {
 
     private func updateBrightness() {
         let dimLimit = min(fadeDuration, totalSeconds)
-        if remainingSeconds <= dimLimit {
+        if remainingSeconds <= dimLimit && dimLimit > 0 {
             let progress = CGFloat(remainingSeconds) / CGFloat(dimLimit)
             UIScreen.main.brightness = initialBrightness * progress
         }

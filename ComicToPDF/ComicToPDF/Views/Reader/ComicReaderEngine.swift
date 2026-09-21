@@ -127,6 +127,31 @@ final class ComicImageCache: ObservableObject {
         case .high:
             self.cache.countLimit = ReaderCacheLimits.comicBufferProDevice
         }
+        
+        let memObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.cache.removeAllObjects()
+                self?.thumbnailCache.removeAllObjects()
+                self?.cancelAllPrefetchTasks()
+            }
+        }
+        let bgObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.cache.removeAllObjects()
+                self?.thumbnailCache.removeAllObjects()
+                self?.cancelAllPrefetchTasks()
+            }
+        }
+        self.notificationObservers = [memObserver, bgObserver]
+        
         let scheme = pdf.url.scheme?.lowercased() ?? ""
         
         if scheme == "virtual-omnibus" {

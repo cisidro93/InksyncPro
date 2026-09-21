@@ -77,6 +77,26 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
 
     nonisolated(unsafe) private var displayLink: CADisplayLink?
     private var tickCount: Int = 0
+    private var bgObserver: NSObjectProtocol?
+
+    override init() {
+        super.init()
+        bgObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stopSimulation()
+        }
+    }
+
+    deinit {
+        if let obs = bgObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        displayLink?.invalidate()
+        displayLink = nil
+    }
 
     // Physics tuning
     let repulsionStrength: Double = 7000.0
@@ -812,6 +832,9 @@ struct ZettelkastenGraphView: View {
             }
             .presentationDetents([.medium, .fraction(0.85)])
             .presentationDragIndicator(.visible)
+        }
+        .onDisappear {
+            engine.stopSimulation()
         }
     }
 

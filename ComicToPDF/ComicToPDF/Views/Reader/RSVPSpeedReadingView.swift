@@ -68,6 +68,11 @@ public struct RSVPSpeedReadingView: View {
             prefs.rsvpChunkSize = chunkSize
             onDismiss(currentWordIndex)
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+            if isPlaying {
+                togglePlayPause()
+            }
+        }
     }
 
     // MARK: - Header Bar

@@ -6,7 +6,7 @@ struct FloatingReaderClockOverlay: View {
     @ObservedObject var prefs: EBookPreferences = .shared
     @State private var currentTimeString: String = ""
     @State private var batteryPercentageString: String = ""
-    @State private var timer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
+    @State private var timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     
     var body: some View {
         if prefs.showClockHeader {
@@ -40,11 +40,31 @@ struct FloatingReaderClockOverlay: View {
             .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
             .padding(.top, 6)
             .onAppear {
-                UIDevice.current.isBatteryMonitoringEnabled = true
+                if prefs.showBatteryPercentage {
+                    UIDevice.current.isBatteryMonitoringEnabled = true
+                }
                 updateTimeAndBattery()
+            }
+            .onDisappear {
+                UIDevice.current.isBatteryMonitoringEnabled = false
             }
             .onReceive(timer) { _ in
                 updateTimeAndBattery()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in
+                updateTimeAndBattery()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+                updateTimeAndBattery()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                if prefs.showBatteryPercentage {
+                    UIDevice.current.isBatteryMonitoringEnabled = true
+                }
+                updateTimeAndBattery()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+                UIDevice.current.isBatteryMonitoringEnabled = false
             }
         }
     }

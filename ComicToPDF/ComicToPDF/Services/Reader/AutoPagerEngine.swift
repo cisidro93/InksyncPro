@@ -4,7 +4,23 @@ import Combine
 @MainActor
 public final class AutoPagerEngine: ObservableObject {
     public static let shared = AutoPagerEngine()
-    private init() {}
+    private var bgObserver: NSObjectProtocol?
+
+    private init() {
+        bgObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stop()
+        }
+    }
+
+    deinit {
+        if let obs = bgObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+    }
 
     @Published public var isActive = false
     @Published public var intervalSeconds: Double = 30.0

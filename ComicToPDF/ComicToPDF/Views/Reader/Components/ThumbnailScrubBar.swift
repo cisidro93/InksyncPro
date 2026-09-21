@@ -12,6 +12,22 @@ final class ThumbnailCache {
     private init() {
         cache.countLimit = 64
         cache.totalCostLimit = 16 * 1024 * 1024 // 16MB max
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.purge()
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.purge()
+        }
     }
     
     func getThumbnail(for page: PDFPage, index: Int, targetSize: CGSize) -> UIImage? {
