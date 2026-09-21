@@ -298,6 +298,10 @@ struct InksyncProgressFooterView: View {
             .padding(.horizontal, isPad ? 28 : 16)
         }
         .padding(.bottom, isPad ? 14 : (isPhoneLandscape ? 4 : 8))
+        .onDisappear {
+            collapseTask?.cancel()
+            collapseTask = nil
+        }
     }
 
     private func triggerModeCycle() {
