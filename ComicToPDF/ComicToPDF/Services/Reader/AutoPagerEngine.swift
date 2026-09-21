@@ -18,12 +18,6 @@ public final class AutoPagerEngine: ObservableObject {
         }
     }
 
-    deinit {
-        if let obs = bgObserver {
-            NotificationCenter.default.removeObserver(obs)
-        }
-    }
-
     @Published public var isActive = false
     @Published public var intervalSeconds: Double = 30.0
     @Published public var timeRemainingSeconds: Double = 30.0

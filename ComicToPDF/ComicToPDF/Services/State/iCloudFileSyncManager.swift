@@ -56,12 +56,7 @@ final class iCloudFileSyncManager: ObservableObject {
         
         observers = [bgObs, fgObs]
     }
-    
-    deinit {
-        for obs in observers {
-            NotificationCenter.default.removeObserver(obs)
-        }
-    }
+
 
     /// Check if iCloud Ubiquity container is available on this device.
     var isUbiquityAvailable: Bool {

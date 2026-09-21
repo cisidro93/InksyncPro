@@ -77,7 +77,7 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
 
     nonisolated(unsafe) private var displayLink: CADisplayLink?
     private var tickCount: Int = 0
-    private var bgObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var bgObserver: NSObjectProtocol?
 
     override init() {
         super.init()

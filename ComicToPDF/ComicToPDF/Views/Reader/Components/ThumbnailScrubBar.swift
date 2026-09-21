@@ -18,7 +18,9 @@ final class ThumbnailCache {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.purge()
+            Task { @MainActor [weak self] in
+                self?.purge()
+            }
         }
         
         NotificationCenter.default.addObserver(
@@ -26,7 +28,9 @@ final class ThumbnailCache {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.purge()
+            Task { @MainActor [weak self] in
+                self?.purge()
+            }
         }
     }
     

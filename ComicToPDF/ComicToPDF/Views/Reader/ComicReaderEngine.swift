@@ -128,30 +128,6 @@ final class ComicImageCache: ObservableObject {
             self.cache.countLimit = ReaderCacheLimits.comicBufferProDevice
         }
         
-        let memObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.didReceiveMemoryWarningNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.cache.removeAllObjects()
-                self?.thumbnailCache.removeAllObjects()
-                self?.cancelAllPrefetchTasks()
-            }
-        }
-        let bgObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.didEnterBackgroundNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.cache.removeAllObjects()
-                self?.thumbnailCache.removeAllObjects()
-                self?.cancelAllPrefetchTasks()
-            }
-        }
-        self.notificationObservers = [memObserver, bgObserver]
-        
         let scheme = pdf.url.scheme?.lowercased() ?? ""
         
         if scheme == "virtual-omnibus" {
@@ -204,6 +180,20 @@ final class ComicImageCache: ObservableObject {
             }
         }
         self.notificationObservers.append(memObs)
+        
+        let bgObs = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.cancelAllPrefetchTasks()
+                self.cache.removeAllObjects()
+                self.thumbnailCache.removeAllObjects()
+            }
+        }
+        self.notificationObservers.append(bgObs)
         
         let renameObs = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("InksyncPro.fileDidRename"),
