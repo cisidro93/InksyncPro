@@ -899,11 +899,11 @@ struct ProPDFReaderEngine: View {
             )
             .ignoresSafeArea()
 
-            // ── Discreet PDF Smart Tier / Quadrant Index HUD Indicator (Shown only when chrome is visible) ──
+            // ── Discreet PDF Smart Tier / Quadrant Index HUD Indicator (Shown below top bar when chrome is visible) ──
             if prefs.isPDFSmartTiersActive && chromeVisible && !currentTierQuadrants.isEmpty && currentTierIndex >= 0 && currentTierIndex < currentTierQuadrants.count {
                 VStack {
                     pdfTierBadgeView(for: currentTierQuadrants[currentTierIndex])
-                        .padding(.top, 54)
+                        .padding(.top, 108)
                         .transition(.asymmetric(
                             insertion: .opacity.combined(with: .scale(scale: 0.92)),
                             removal: .opacity
@@ -1542,7 +1542,7 @@ struct ProPDFReaderEngine: View {
 
     // MARK: - Master Unified Reader Chrome
     @ViewBuilder private var readerChromeView: some View {
-        let pageStatus = "\(currentPageIndex + 1) / \(max(1, totalPages))  •  \(velocityEngine.estimatedTimeRemaining)"
+        let pageStatus = "\(currentPageIndex + 1) / \(max(1, totalPages))"
         ReaderChrome(
             title: pdf.name,
             pageText: pageStatus,
@@ -2126,6 +2126,8 @@ struct ProPDFReaderEngine: View {
             Text(quad.label)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundColor(Color.inkTextPrimary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
 
             Rectangle()
                 .fill(Color.inkBorderSubtle)
@@ -2140,6 +2142,8 @@ struct ProPDFReaderEngine: View {
                         .font(.system(size: 11, weight: .semibold))
                     Text("Adjust")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
                 .foregroundColor(Color.inkViolet)
             }
@@ -3223,8 +3227,8 @@ struct VisualPDFScrubber: View {
     @State private var dragIndex: Int? = nil
     @State private var thumbXOffset: CGFloat = 0
 
-    private let trackHeight: CGFloat = 10
-    private let thumbSize: CGFloat = 26
+    private let trackHeight: CGFloat = 6
+    private let thumbSize: CGFloat = 22
 
     var body: some View {
         VStack(spacing: 0) {

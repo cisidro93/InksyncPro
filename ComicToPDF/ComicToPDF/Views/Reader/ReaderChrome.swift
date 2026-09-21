@@ -197,9 +197,12 @@ struct ReaderChrome: View {
     }
 
     // MARK: - Top Bar (Clean EPUB-Standard Glass Gradient)
+    private var isPhone: Bool {
+        hSizeClass == .compact
+    }
 
     private var topBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: isPhone ? 8 : 10) {
             // ── Back button ────────────────────────────────────────────────────
             Button(action: onBack) {
                 Image(systemName: "chevron.left")
@@ -217,13 +220,73 @@ struct ReaderChrome: View {
                 .foregroundStyle(Color.inkText)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .frame(maxWidth: isPhone ? 150 : 360, alignment: .leading)
                 .shadow(color: colorScheme == .dark ? .black.opacity(0.6) : .clear, radius: 3)
 
-            Spacer()
+            Spacer(minLength: 4)
 
-            // ── Session Timer Badge ────────────────────────────────────────────
-            if let startTime = sessionStartTime {
+            // ── Session Timer Badge (iPad / Regular Width Only) ─────────────────
+            if let startTime = sessionStartTime, !isPhone {
                 SessionTimerView(startTime: startTime)
+            }
+
+            // ── PDF Quick Controls: 1-Tap Reflow / Vector Mode ─────────────────
+            if isPDF, let onReflow = onReflowToggle {
+                if isPhone {
+                    // iPhone: Elegant 34x34 glass circle icon button matching Bookmark/Settings
+                    Button(action: onReflow) {
+                        Image(systemName: isReflowActive ? "doc.richtext" : "doc.text")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(isReflowActive ? Color.white : Color.inkText)
+                            .frame(width: 34, height: 34)
+                            .background(isReflowActive ? Color.inkGreen : Color.primary.opacity(0.08), in: Circle())
+                            .overlay(Circle().stroke(isReflowActive ? Color.inkGreen.opacity(0.6) : Color.inkBorderSubtle, lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    // iPad: Full text capsule with strict single-line bounds
+                    Button(action: onReflow) {
+                        HStack(spacing: 4) {
+                            Image(systemName: isReflowActive ? "doc.richtext" : "doc.text")
+                                .font(.system(size: 12, weight: .bold))
+                            Text(isReflowActive ? "Reflow" : "Vector")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                        .foregroundStyle(isReflowActive ? Color.white : Color.inkText)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(isReflowActive ? Color.inkGreen : Color.primary.opacity(0.08), in: Capsule())
+                        .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            // ── Dedicated NeoFlow Adjust Button (iPad / Regular Width Only) ─────
+            // On iPhone, NeoFlow status & adjust is presented as a floating sub-header HUD pill
+            // below the top bar and in the More Actions Menu (...) to prevent top bar crowding.
+            if isPDF && EBookPreferences.shared.isPDFSmartTiersActive && !isPhone {
+                Button {
+                    NotificationCenter.default.post(name: NSNotification.Name("PDFReader_OpenSmartTiersWorkspace"), object: nil)
+                    HapticEngine.selection()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "slider.horizontal.2.square")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("NeoFlow")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                    .foregroundStyle(Color.inkGreen)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(Color.inkGreen.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().stroke(Color.inkGreen.opacity(0.4), lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
             }
 
             // ── Bookmark Button ────────────────────────────────────────────────
@@ -247,48 +310,6 @@ struct ReaderChrome: View {
                     .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
             .buttonStyle(.plain)
-
-            // ── PDF Quick Controls: 1-Tap Reflow & NeoFlow Adjust ──────────────
-            if isPDF {
-                // Reflow / Vector Mode Toggle
-                if let onReflow = onReflowToggle {
-                    Button(action: onReflow) {
-                        HStack(spacing: 4) {
-                            Image(systemName: isReflowActive ? "doc.richtext" : "doc.text")
-                                .font(.system(size: 12, weight: .bold))
-                            Text(isReflowActive ? "Reflow" : "Vector")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                        }
-                        .foregroundStyle(isReflowActive ? Color.white : Color.inkText)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 6)
-                        .background(isReflowActive ? Color.inkGreen : Color.primary.opacity(0.08), in: Capsule())
-                        .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // Dedicated 1-Tap NeoFlow Adjust Button
-                if EBookPreferences.shared.isPDFSmartTiersActive {
-                    Button {
-                        NotificationCenter.default.post(name: NSNotification.Name("PDFReader_OpenSmartTiersWorkspace"), object: nil)
-                        HapticEngine.selection()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "slider.horizontal.2.square")
-                                .font(.system(size: 12, weight: .bold))
-                            Text("NeoFlow")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                        }
-                        .foregroundStyle(Color.inkGreen)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 6)
-                        .background(Color.inkGreen.opacity(0.12), in: Capsule())
-                        .overlay(Capsule().stroke(Color.inkGreen.opacity(0.4), lineWidth: 0.8))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
 
             // ── More Actions Menu (...) ────────────────────────────────────────
             Menu {
@@ -437,7 +458,7 @@ struct ReaderChrome: View {
                 custom
                     .padding(.horizontal, 20)
                     .padding(.top, 14)
-                    .padding(.bottom, 4)
+                    .padding(.bottom, 8)
             } else if totalPages > 1 {
                 HStack(spacing: 10) {
                     Text("1")
@@ -557,10 +578,12 @@ struct ReaderChrome: View {
                         Text(pageText)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                             .foregroundStyle(Color.inkText)
-                        if let tr = timeRemainingText, !tr.isEmpty {
+                            .lineLimit(1)
+                        if let tr = timeRemainingText, !tr.isEmpty, !pageText.contains(tr) {
                             Text(tr)
                                 .font(.system(size: 10, weight: .regular, design: .rounded))
                                 .foregroundStyle(colorScheme == .dark ? Color(hex: "#B39DDB").opacity(0.85) : Color.inkViolet)
+                                .lineLimit(1)
                         }
                     }
                     .frame(minWidth: 100)
@@ -698,11 +721,14 @@ struct SessionTimerView: View {
                 .font(.system(size: 11, weight: .bold))
             Text(formattedTime)
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .foregroundColor(.orange)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(Color.orange.opacity(0.12), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.leading, 8)
         .onReceive(timer) { _ in
             elapsed = Date().timeIntervalSince(startTime)

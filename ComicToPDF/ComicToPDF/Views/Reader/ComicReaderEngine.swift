@@ -2343,7 +2343,7 @@ struct ComicReaderEngine: View {
     @ViewBuilder private var readerChromeView: some View {
         ReaderChrome(
             title: pdf.name,
-            pageText: "\(currentIndex + 1) / \(cache.pageCount)  •  \(velocityEngine.estimatedTimeRemaining)",
+            pageText: "\(currentIndex + 1) / \(cache.pageCount)",
             isVisible: $chromeVisible,
             onBack: saveProgressAndDismiss,
             onBookmark: {
@@ -2389,6 +2389,7 @@ struct ComicReaderEngine: View {
                     isMangaMode: isMangaComic || readingMode == .mangaRTL
                 )
             ),
+            timeRemainingText: velocityEngine.estimatedTimeRemaining,
             onJumpToPage: {
                 jumpToPageText = ""
                 showJumpToPage = true
@@ -3393,7 +3394,7 @@ struct ComicSpreadGuidedView: View {
                     if showPanelBadge || isChromeVisible {
                         VStack {
                             panelBadgeView(for: strides[currentStrideIndex])
-                                .padding(.top, max(18, geo.safeAreaInsets.top + 6))
+                                .padding(.top, isChromeVisible ? 108 : max(18, geo.safeAreaInsets.top + 6))
                                 .transition(.asymmetric(
                                     insertion: .opacity.combined(with: .scale(scale: 0.92)),
                                     removal: .opacity
@@ -3554,6 +3555,8 @@ struct ComicSpreadGuidedView: View {
             Text(stride.label)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundColor(Color.inkTextPrimary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
 
             Rectangle()
                 .fill(Color.inkBorderSubtle)
@@ -3568,6 +3571,8 @@ struct ComicSpreadGuidedView: View {
                         .font(.system(size: 11, weight: .semibold))
                     Text("Adjust")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
                 .foregroundColor(Color.inkViolet)
             }
