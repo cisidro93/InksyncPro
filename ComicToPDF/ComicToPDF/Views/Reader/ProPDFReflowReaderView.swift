@@ -57,12 +57,12 @@ struct ProPDFReflowReaderView: View {
                     onCenterTap: {
                         onCenterTap?()
                     },
+                    onPageTurn: {
+                        syncCurrentPDFPageFromReflow()
+                    },
                     pdfID: pdf.id,
                     initialScrollFraction: 0.0,
                     onScrollFractionChanged: { fraction in
-                        syncCurrentPDFPageFromReflow()
-                    },
-                    onPageTurn: {
                         syncCurrentPDFPageFromReflow()
                     },
                     webViewRef: $webViewRef
