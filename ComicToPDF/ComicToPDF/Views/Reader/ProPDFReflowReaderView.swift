@@ -72,27 +72,45 @@ struct ProPDFReflowReaderView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            // Top Floating Mode Toggle Pill
+            // Top Floating Mode Toggle Pill & Status
             if let toggle = onToggleReflow {
-                Button(action: {
-                    HapticEngine.light()
-                    toggle()
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.left")
-                            .font(.system(size: 12, weight: .bold))
-                        Text("Vector View")
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                HStack(spacing: 8) {
+                    Button(action: {
+                        HapticEngine.light()
+                        toggle()
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "doc.text")
+                                .font(.system(size: 12, weight: .bold))
+                            Text("Vector View")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 7)
+                        .background(Color.black.opacity(0.72).background(.ultraThinMaterial))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
                     }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Color.black.opacity(0.65))
+
+                    Spacer()
+
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(Color.inkGreen)
+                            .frame(width: 7, height: 7)
+                        Text("Reflow Mode")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.65).background(.ultraThinMaterial))
                     .clipShape(Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
+                    .overlay(Capsule().stroke(Color.inkGreen.opacity(0.4), lineWidth: 0.8))
                 }
-                .padding(.leading, 16)
+                .padding(.horizontal, 16)
                 .padding(.top, 14)
                 .zIndex(20)
             }

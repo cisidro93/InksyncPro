@@ -248,6 +248,48 @@ struct ReaderChrome: View {
             }
             .buttonStyle(.plain)
 
+            // ── PDF Quick Controls: 1-Tap Reflow & NeoFlow Adjust ──────────────
+            if isPDF {
+                // Reflow / Vector Mode Toggle
+                if let onReflow = onReflowToggle {
+                    Button(action: onReflow) {
+                        HStack(spacing: 4) {
+                            Image(systemName: isReflowActive ? "doc.richtext" : "doc.text")
+                                .font(.system(size: 12, weight: .bold))
+                            Text(isReflowActive ? "Reflow" : "Vector")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                        }
+                        .foregroundStyle(isReflowActive ? Color.white : Color.inkText)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(isReflowActive ? Color.inkGreen : Color.primary.opacity(0.08), in: Capsule())
+                        .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Dedicated 1-Tap NeoFlow Adjust Button
+                if EBookPreferences.shared.isPDFSmartTiersActive {
+                    Button {
+                        NotificationCenter.default.post(name: NSNotification.Name("PDFReader_OpenSmartTiersWorkspace"), object: nil)
+                        HapticEngine.selection()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "slider.horizontal.2.square")
+                                .font(.system(size: 12, weight: .bold))
+                            Text("NeoFlow")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                        }
+                        .foregroundStyle(Color.inkGreen)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(Color.inkGreen.opacity(0.12), in: Capsule())
+                        .overlay(Capsule().stroke(Color.inkGreen.opacity(0.4), lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
             // ── More Actions Menu (...) ────────────────────────────────────────
             Menu {
                 Section("Appearance") {

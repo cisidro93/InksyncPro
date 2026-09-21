@@ -416,9 +416,14 @@ struct ProPDFReaderEngine: View {
             filterHUDOverlay
 
             if !chromeVisible && selectedTextForHUD == nil {
+                let currentTierLabel: String? = (prefs.isPDFSmartTiersActive && !currentTierQuadrants.isEmpty && currentTierIndex >= 0 && currentTierIndex < currentTierQuadrants.count)
+                    ? currentTierQuadrants[currentTierIndex].label
+                    : nil
+
                 KindleProgressFooterView(
                     currentPage: currentPageIndex + 1,
                     totalPages: max(1, totalPages),
+                    tierText: currentTierLabel,
                     estimatedMinutesLeft: ReaderProgressTracker.shared.progress(for: pdf.id)?.estimatedMinutesRemaining
                 )
                 .transition(.opacity)
@@ -880,8 +885,8 @@ struct ProPDFReaderEngine: View {
             )
             .ignoresSafeArea()
 
-            // ── Discreet PDF Smart Tier / Quadrant Index HUD Indicator ──
-            if prefs.isPDFSmartTiersActive && (showTierBadge || chromeVisible) && !currentTierQuadrants.isEmpty && currentTierIndex >= 0 && currentTierIndex < currentTierQuadrants.count {
+            // ── Discreet PDF Smart Tier / Quadrant Index HUD Indicator (Shown only when chrome is visible) ──
+            if prefs.isPDFSmartTiersActive && chromeVisible && !currentTierQuadrants.isEmpty && currentTierIndex >= 0 && currentTierIndex < currentTierQuadrants.count {
                 VStack {
                     pdfTierBadgeView(for: currentTierQuadrants[currentTierIndex])
                         .padding(.top, 54)
@@ -1969,7 +1974,6 @@ struct ProPDFReaderEngine: View {
                     if currentTierIndex + 1 < currentTierQuadrants.count {
                         currentTierIndex += 1
                         focusOnTier(index: currentTierIndex, animated: true)
-                        flashTierBadge()
                         HapticEngine.selection()
                         return
                     } else {
@@ -1979,7 +1983,6 @@ struct ProPDFReaderEngine: View {
                     if currentTierIndex > 0 {
                         currentTierIndex -= 1
                         focusOnTier(index: currentTierIndex, animated: true)
-                        flashTierBadge()
                         HapticEngine.selection()
                         return
                     } else {
@@ -2057,7 +2060,6 @@ struct ProPDFReaderEngine: View {
                 currentTierIndex = 0
             }
             focusOnTier(index: currentTierIndex, animated: true)
-            flashTierBadge()
         }
 
         // If entering new page in Article Mode, zoom into first column
@@ -2231,15 +2233,25 @@ struct ProPDFReaderEngine: View {
                 pv.layoutDocumentView()
             }
 
-            let viewPoint = pv.convert(quadTopLeft, from: page)
-            let currentOffset = sv.contentOffset
+            let currentScale = pv.scaleFactor
+            let docView = pv.documentView
+            let renderedPageW = cropBox.width * currentScale
+            let renderedPageH = cropBox.height * currentScale
+            let docFrame = docView?.frame ?? CGRect(
+                x: max(0.0, (sv.contentSize.width - renderedPageW) / 2.0),
+                y: max(0.0, (sv.contentSize.height - renderedPageH) / 2.0),
+                width: renderedPageW,
+                height: renderedPageH
+            )
 
-            // Absolute content position inside UIScrollView
-            let contentPointX = currentOffset.x + viewPoint.x
-            let contentPointY = currentOffset.y + viewPoint.y
+            // Pure mathematical coordinate computation:
+            // Absolute X inside scroll view: docFrame.minX + (norm.minX * docFrame.width)
+            let quadAbsX = docFrame.minX + (norm.minX * docFrame.width)
+            // Absolute Y inside scroll view: in PDF space Y=1 is top, Y=0 is bottom
+            let quadAbsY = docFrame.minY + ((1.0 - norm.maxY) * docFrame.height)
 
-            let scaledColWidth = colWidthOnPage * targetScale
-            let scaledTierHeight = tierHeightOnPage * targetScale
+            let scaledColWidth = norm.width * docFrame.width
+            let scaledTierHeight = norm.height * docFrame.height
 
             // Desired X position: center horizontally within safe area if narrower, anchor to safe margin if filling width
             let desiredViewX: CGFloat
@@ -2267,8 +2279,8 @@ struct ProPDFReaderEngine: View {
                 desiredViewY = topSafeArea + (isPhone ? 8.0 : 14.0)
             }
 
-            let targetOffsetX = contentPointX - desiredViewX
-            let targetOffsetY = contentPointY - desiredViewY
+            let targetOffsetX = quadAbsX - desiredViewX
+            let targetOffsetY = quadAbsY - desiredViewY
 
             let maxOffsetX = max(0.0, sv.contentSize.width - pv.bounds.width)
             let maxOffsetY = max(0.0, sv.contentSize.height - pv.bounds.height)
@@ -2287,7 +2299,7 @@ struct ProPDFReaderEngine: View {
 
         alignViewport()
 
-        DispatchQueue.main.async {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             alignViewport()
         }
     }

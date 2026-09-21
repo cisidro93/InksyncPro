@@ -132,11 +132,36 @@ final class PassthroughPKCanvasView: PKCanvasView {
             return nil
         }
 
+        let hasPencilTouch = event?.allTouches?.contains(where: { $0.type == .pencil }) ?? false
+        let isActivelyDrawing = (currentMode == .pen || currentMode == .pencil || currentMode == .marker || currentMode == .eraser)
+
+        // ── Page Turn & Navigation Corridors (Zero-Stray-Ink Defense) ──
+        // If the user touches with a finger (not an Apple Pencil) and is NOT actively drawing:
+        if !hasPencilTouch && !isActivelyDrawing {
+            // 1. Smart Tiers Mode: When reading in Smart Tiers / Guided Column mode,
+            // finger taps are strictly reserved for advancing/rewinding tiers, never drawing ink!
+            if EBookPreferences.shared.isPDFSmartTiersActive {
+                return nil
+            }
+
+            // 2. Left and Right Page-Turn Gutters:
+            // Tapping within the outer 16% margins is a universal reader gesture for turning pages.
+            // Finger touches here must pass straight down to PDFView / ReaderChrome and never mark the page!
+            if let window = self.window {
+                let windowPoint = self.convert(point, to: window)
+                let windowWidth = window.bounds.width
+                if windowPoint.x < windowWidth * 0.16 || windowPoint.x > windowWidth * 0.84 {
+                    return nil
+                }
+            } else if point.x < bounds.width * 0.16 || point.x > bounds.width * 0.84 {
+                return nil
+            }
+        }
+
         // When finger drawing is disabled (pencil-only mode / reading mode), the canvas must strictly ONLY capture
         // confirmed Apple Pencil touches. Any direct finger touch, or ambiguous event without a pencil touch,
         // MUST pass through (return nil) so document navigation, tapping to toggle UI chrome, and reading work 100% cleanly!
         if !allowFingerDrawing && currentMode != .eraser {
-            let hasPencilTouch = event?.allTouches?.contains(where: { $0.type == .pencil }) ?? false
             if !hasPencilTouch {
                 return nil
             }

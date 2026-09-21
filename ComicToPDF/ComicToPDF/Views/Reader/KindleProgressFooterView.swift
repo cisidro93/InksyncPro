@@ -9,6 +9,7 @@ struct InksyncProgressFooterView: View {
     var chapterTotalPages: Int = 1  // total pages in current chapter
     var chapterTitle: String? = nil // Optional semantic chapter or TOC title (e.g. "Introduction", "Chapter 1")
     var isBookSection: Bool = false // True if dividing an EPUB spine
+    var tierText: String? = nil     // Discrete Smart Tier/Quadrant indicator (e.g. "Tier 2/4", "Col 1 · Top")
     let estimatedMinutesLeft: Int?
     var accentColor: Color = Color(hex: "#7B5EA7")
 
@@ -85,17 +86,23 @@ struct InksyncProgressFooterView: View {
             return "\(currentWPM) WPM"
         default:
             guard totalPages > 0 else { return "Loading..." }
+            let basePage: String
             if chapterTotalPages > 1 {
-                return "\(sanitizedChapterPage + 1) / \(chapterTotalPages)"
+                basePage = "\(sanitizedChapterPage + 1) / \(chapterTotalPages)"
             } else {
                 let safePage = min(totalPages, max(1, currentPage))
-                return "\(safePage) / \(totalPages)"
+                basePage = "\(safePage) / \(totalPages)"
             }
+            if let tier = tierText, !tier.isEmpty {
+                return "\(basePage) · \(tier)"
+            }
+            return basePage
         }
     }
 
     private var primaryText: String {
         let trimmedTitle = chapterTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tierSuffix = (tierText != nil && !tierText!.isEmpty) ? " · \(tierText!)" : ""
 
         switch prefs.progressMode {
         case 1:
@@ -136,18 +143,18 @@ struct InksyncProgressFooterView: View {
             let safePage = min(totalPages, max(1, currentPage))
             if let title = trimmedTitle, !title.isEmpty {
                 if chapterTotalPages > 1 {
-                    return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)  ·  \(title)"
+                    return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)\(tierSuffix)  ·  \(title)"
                 } else {
-                    return "\(title)  ·  Page \(safePage) of \(totalPages)"
+                    return "\(title)  ·  Page \(safePage) of \(totalPages)\(tierSuffix)"
                 }
             } else if chapterTotalPages > 1 {
                 if isBookSection {
-                    return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)  ·  Section \(safePage) of \(totalPages)"
+                    return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)\(tierSuffix)  ·  Section \(safePage) of \(totalPages)"
                 } else {
-                    return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)"
+                    return "Page \(sanitizedChapterPage + 1) of \(chapterTotalPages)\(tierSuffix)"
                 }
             } else {
-                return "Page \(safePage) of \(totalPages)"
+                return "Page \(safePage) of \(totalPages)\(tierSuffix)"
             }
         }
     }
