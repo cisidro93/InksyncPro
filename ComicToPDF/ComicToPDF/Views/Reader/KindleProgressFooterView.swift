@@ -63,27 +63,31 @@ struct InksyncProgressFooterView: View {
     }
 
     private var condensedText: String {
+        let tierSuffix = (tierText != nil && !tierText!.isEmpty) ? " · \(tierText!)" : ""
         switch prefs.progressMode {
         case 1:
             let left = isBookSection && chapterTotalPages > 1 ? pagesLeftInChapter : pagesLeftInBook
-            return left == 1 ? "1 left" : "\(left) left"
+            let base = left == 1 ? "1 left" : "\(left) left"
+            return "\(base)\(tierSuffix)"
         case 2:
+            let base: String
             if let mins = estimatedMinutesLeft, mins > 0 {
                 let safeMins = min(mins, 99_999)
                 if safeMins < 60 {
-                    return "~\(safeMins)m"
+                    base = "~\(safeMins)m"
                 } else {
                     let hrs = safeMins / 60
                     let rem = safeMins % 60
-                    return rem > 0 ? "~\(hrs)h \(rem)m" : "~\(hrs)h"
+                    base = rem > 0 ? "~\(hrs)h \(rem)m" : "~\(hrs)h"
                 }
             } else {
-                return "\(progressPercentage)%"
+                base = "\(progressPercentage)%"
             }
+            return "\(base)\(tierSuffix)"
         case 3:
             let wpm = prefs.readingSpeedWPM
             let currentWPM = max(50, min(1500, wpm.isFinite && wpm > 0 ? Int(wpm) : 250))
-            return "\(currentWPM) WPM"
+            return "\(currentWPM) WPM\(tierSuffix)"
         default:
             guard totalPages > 0 else { return "Loading..." }
             let basePage: String
@@ -93,10 +97,7 @@ struct InksyncProgressFooterView: View {
                 let safePage = min(totalPages, max(1, currentPage))
                 basePage = "\(safePage) / \(totalPages)"
             }
-            if let tier = tierText, !tier.isEmpty {
-                return "\(basePage) · \(tier)"
-            }
-            return basePage
+            return "\(basePage)\(tierSuffix)"
         }
     }
 
@@ -107,36 +108,40 @@ struct InksyncProgressFooterView: View {
         switch prefs.progressMode {
         case 1:
             // Mode 1: Pages left
+            let base: String
             if isBookSection && chapterTotalPages > 1 {
                 let left = pagesLeftInChapter
                 if let title = trimmedTitle, !title.isEmpty {
-                    return left == 1 ? "1 page left in \(title)" : "\(left) pages left in \(title)"
+                    base = left == 1 ? "1 page left in \(title)" : "\(left) pages left in \(title)"
                 } else {
-                    return left == 1 ? "1 page left in chapter" : "\(left) pages left in chapter"
+                    base = left == 1 ? "1 page left in chapter" : "\(left) pages left in chapter"
                 }
             } else {
                 let left = pagesLeftInBook
-                return left == 1 ? "1 page left in book" : "\(left) pages left in book"
+                base = left == 1 ? "1 page left in book" : "\(left) pages left in book"
             }
+            return "\(base)\(tierSuffix)"
         case 2:
             // Mode 2: Estimated time remaining
+            let base: String
             if let mins = estimatedMinutesLeft, mins > 0 {
                 let safeMins = min(mins, 99_999)
                 if safeMins < 60 {
-                    return "~\(safeMins) min\(safeMins == 1 ? "" : "s") left in book"
+                    base = "~\(safeMins) min\(safeMins == 1 ? "" : "s") left in book"
                 } else {
                     let hrs = safeMins / 60
                     let rem = safeMins % 60
-                    return rem > 0 ? "~\(hrs)h \(rem)m left in book" : "~\(hrs)h left in book"
+                    base = rem > 0 ? "~\(hrs)h \(rem)m left in book" : "~\(hrs)h left in book"
                 }
             } else {
-                return "\(progressPercentage)% completed"
+                base = "\(progressPercentage)% completed"
             }
+            return "\(base)\(tierSuffix)"
         case 3:
             // Mode 3: Reading Pace WPM & Completion
             let wpm = prefs.readingSpeedWPM
             let currentWPM = max(50, min(1500, wpm.isFinite && wpm > 0 ? Int(wpm) : 250))
-            return "\(currentWPM) WPM · Reading Pace"
+            return "\(currentWPM) WPM · Reading Pace\(tierSuffix)"
         default:
             // Mode 0: Semantic Chapter Title & Page Indicator
             guard totalPages > 0 else { return "Loading..." }

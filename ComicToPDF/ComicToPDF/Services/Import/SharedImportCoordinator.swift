@@ -46,6 +46,7 @@ final class SharedImportCoordinator: ObservableObject {
 
     private var isIngesting = false
     private var inFlightDirectOpens: Set<String> = []
+    private var pendingTargetFilenames: [String] = []
 
     // MARK: - Entry Points
 
@@ -84,9 +85,18 @@ final class SharedImportCoordinator: ObservableObject {
 
     /// Called by ContentView's willEnterForeground observer, AppDelegate URL handler,
     /// scenePhase changes, and the `inksyncpro://` deep-link handler. Safe to call
-    /// multiple times — it debounces internally.
+    /// multiple times — queues concurrent requests and debounces internally.
     func coordinateImport(targetFilename: String? = nil, retryCount: Int = 3, retryDelaySeconds: Double = 0.5) {
-        guard !isIngesting else { return }
+        if let target = targetFilename, !target.isEmpty {
+            pendingTargetFilenames.append(target)
+        }
+        guard !isIngesting else {
+            Logger.shared.log(
+                "SharedImportCoordinator: Ingestion already active — queued target '\(targetFilename ?? "all")' for follow-up drain",
+                category: "ShareImport", type: .info
+            )
+            return
+        }
         isIngesting = true
         let groupIDs = appGroupIDs
         Task.detached(priority: .userInitiated) { [weak self] in
@@ -109,9 +119,12 @@ final class SharedImportCoordinator: ObservableObject {
                     let manager = self.conversionManager ?? ConversionManager.shared
                     var firstPDF: ConvertedPDF? = nil
 
+                    let activeTargets = Set(self.pendingTargetFilenames)
+                    self.pendingTargetFilenames.removeAll()
+
                     for (idx, name) in ingestedNames.enumerated() {
                         let fileURL = inboxDir.appendingPathComponent(name)
-                        let shouldOpen = (name == targetFilename) || (targetFilename == nil && idx == 0)
+                        let shouldOpen = activeTargets.contains(name) || (name == targetFilename) || (activeTargets.isEmpty && targetFilename == nil && idx == 0)
                         let pdf = manager.registerDirectFile(at: fileURL, autoOpen: shouldOpen)
                         if shouldOpen && firstPDF == nil {
                             firstPDF = pdf
@@ -134,6 +147,12 @@ final class SharedImportCoordinator: ObservableObject {
                     )
                 }
                 self.isIngesting = false
+
+                // If new targets arrived while processing, trigger a follow-up drain pass
+                if !self.pendingTargetFilenames.isEmpty {
+                    Logger.shared.log("SharedImportCoordinator: Draining \(self.pendingTargetFilenames.count) pending targets in follow-up pass", category: "ShareImport", type: .info)
+                    self.coordinateImport(targetFilename: nil, retryCount: 3, retryDelaySeconds: 0.3)
+                }
             }
         }
     }
@@ -236,6 +255,13 @@ final class SharedImportCoordinator: ObservableObject {
         )
         NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
         NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": "Added '\(filename)' to Library"])
+
+        // Clean up temporary handoff copies left in system Documents/Inbox to prevent disk bloat
+        if url.path.contains("/Documents/Inbox/") && url.path != dest.path {
+            try? FileManager.default.removeItem(at: url)
+            Logger.shared.log("SharedImportCoordinator: Cleaned up temporary system inbox file at \(url.lastPathComponent)", category: "Import", type: .info)
+        }
+
         return dest
     }
 
@@ -444,26 +470,37 @@ final class SharedImportCoordinator: ObservableObject {
 
     // MARK: - Private: File Settle Check
 
-    /// Returns true only when the file size is non-zero AND has not changed in the
-    /// last 150ms — meaning the extension process has finished writing it.
+    /// Returns true only when the file size is non-zero AND has stabilized
+    /// across two non-blocking measurements — ensuring active AirDrop or cross-app transfers are complete.
     nonisolated private func isFileSettled(at url: URL) async -> Bool {
         let fm = FileManager.default
-        guard let attrs1 = try? fm.attributesOfItem(atPath: url.path),
-              let sizeVal1 = attrs1[.size]
-        else { return false }
-        let size1 = (sizeVal1 as? NSNumber)?.int64Value ?? (sizeVal1 as? Int64) ?? (sizeVal1 as? UInt64).map(Int64.init) ?? 0
-        guard size1 > 0 else { return false }
+        var attempts = 0
+        let maxAttempts = 10
 
-        // For very small files (<1MB) we trust immediately.
-        if size1 < 1_048_576 { return true }
+        while attempts < maxAttempts {
+            attempts += 1
+            if let attrs1 = try? fm.attributesOfItem(atPath: url.path),
+               let sizeVal1 = attrs1[.size] {
+                let size1 = (sizeVal1 as? NSNumber)?.int64Value ?? (sizeVal1 as? Int64) ?? (sizeVal1 as? UInt64).map(Int64.init) ?? 0
+                if size1 > 0 {
+                    // For very small files (<1MB) accept if stable or after 1 retry
+                    if size1 < 1_048_576 && attempts > 1 { return true }
 
-        // For larger files: compare size after 150ms async non-blocking sleep.
-        try? await Task.sleep(nanoseconds: 150_000_000)
-        guard let attrs2 = try? fm.attributesOfItem(atPath: url.path),
-              let sizeVal2 = attrs2[.size]
-        else { return false }
-        let size2 = (sizeVal2 as? NSNumber)?.int64Value ?? (sizeVal2 as? Int64) ?? (sizeVal2 as? UInt64).map(Int64.init) ?? 0
-        return size1 == size2
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    if let attrs2 = try? fm.attributesOfItem(atPath: url.path),
+                       let sizeVal2 = attrs2[.size] {
+                        let size2 = (sizeVal2 as? NSNumber)?.int64Value ?? (sizeVal2 as? Int64) ?? (sizeVal2 as? UInt64).map(Int64.init) ?? 0
+                        if size1 == size2 && size2 > 0 {
+                            return true
+                        }
+                    }
+                }
+            }
+            if attempts < maxAttempts {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+        }
+        return false
     }
 
     // MARK: - Private: Clear App Group Flags

@@ -29,6 +29,13 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
+        Logger.shared.log("AppDelegate: Received incoming open URL: \(url.absoluteString)", category: "System")
+        if let destination = UniversalLinkBridge.shared.parse(url: url) {
+            Task { @MainActor in
+                UniversalLinkBridge.shared.handleDeepLink(destination)
+            }
+            return true
+        }
         Task { @MainActor in
             await SharedImportCoordinator.shared.handleIncomingURL(url)
         }
@@ -122,13 +129,6 @@ struct InksyncProApp: App {
                     SharedImportCoordinator.shared.conversionManager = ConversionManager.shared
                     // Check for any pending imports from Share Extension on launch
                     SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
-                }
-                .onOpenURL { incomingURL in
-                    Logger.shared.log("InksyncProApp: Received incoming open URL: \(incomingURL.absoluteString)", category: "System")
-                    Task { @MainActor in
-                        await SharedImportCoordinator.shared.handleIncomingURL(incomingURL)
-                    }
-                }
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {
                     case .background, .inactive:

@@ -28,9 +28,21 @@ class AppRouter: ObservableObject {
         if activeSheet != nil {
             activeSheet = nil
         }
-        if activeFullScreen != nil {
+
+        // Guard against duplicate re-presentation of the identical document
+        if let current = activeFullScreen {
+            switch (current, screen) {
+            case (.read(let currentPDF, _), .read(let newPDF, _)):
+                if currentPDF.id == newPDF.id || currentPDF.url.fastCanonicalPath == newPDF.url.fastCanonicalPath {
+                    Logger.shared.log("AppRouter: Already presenting document '\(currentPDF.name)' — ignoring duplicate presentation", category: "Navigation", type: .info)
+                    return
+                }
+            default:
+                break
+            }
+
             activeFullScreen = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                 self.activeFullScreen = screen
             }
         } else {
