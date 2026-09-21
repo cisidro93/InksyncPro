@@ -132,16 +132,19 @@ struct InksyncProApp: App {
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {
-                    case .background, .inactive:
+                    case .background:
                          SecurityManager.shared.handleAppBackgrounding()
                          DatabaseBackupService.shared.performBackup()
                          // Whenever the app goes to the background, we schedule the next sync
                          InksyncProApp.scheduleAppRefresh()
                          // Proactive Jetsam Defense: evict volatile in-memory decompressed textures
-                         JITComicCacheEngine.shared.handleMemoryWarning()
                          Task {
+                             await JITComicCacheEngine.shared.handleBackgroundPurge()
                              await ReaderImageFilterEngine.shared.purgeCache()
                          }
+                    case .inactive:
+                         // Transitional state (e.g. Control Center, Notification Center, system alerts)
+                         break
                     case .active:
                          SecurityManager.shared.handleAppForegrounding()
                          SharedImportCoordinator.shared.coordinateImport(retryCount: 3, retryDelaySeconds: 0.5)

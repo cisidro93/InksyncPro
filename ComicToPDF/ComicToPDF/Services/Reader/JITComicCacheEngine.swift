@@ -160,7 +160,7 @@ public actor JITComicCacheEngine {
     
     /// Responds to OS memory pressure by aggressively releasing non-essential caches.
     public func handleMemoryWarning() {
-        Logger.shared.log("JITComicCacheEngine: Received memory warning. Dropping cache down to 2 active pages.", category: "Memory", type: .error)
+        Logger.shared.log("JITComicCacheEngine: OS memory pressure handled — clamped cache to 2 active pages.", category: "Memory", type: .info)
         isUnderMemoryPressure = true
         
         // Cancel all in-flight prefetch tasks
@@ -184,6 +184,18 @@ public actor JITComicCacheEngine {
         Task {
             try? await Task.sleep(nanoseconds: 10_000_000_000)
             self.resetMemoryPressureFlag()
+        }
+    }
+
+    /// Proactively purges volatile in-memory decompressed textures when the app is placed in background.
+    public func handleBackgroundPurge() {
+        Logger.shared.log("JITComicCacheEngine: Proactive jetsam defense — flushed background caches.", category: "Memory", type: .info)
+        activePreloadTasks.values.forEach { $0.cancel() }
+        activePreloadTasks.removeAll()
+        mipmapCache.removeAll()
+        memoryCache.removeAll()
+        Task {
+            await ArchiveStreamEngine.shared.closeAllSessions()
         }
     }
     

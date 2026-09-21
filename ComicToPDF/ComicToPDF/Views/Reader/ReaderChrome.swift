@@ -76,6 +76,9 @@ struct ReaderChrome: View {
     // Phase 4A: Swipe-down-to-dismiss
     var onSwipeDown: (() -> Void)? = nil
 
+    // Optional floating sub-header (e.g. Smart Tier / Quadrant HUD)
+    var subHeaderView: AnyView? = nil
+
     // Scrubber interaction state
     @State private var isScrubbing: Bool = false
 
@@ -118,7 +121,8 @@ struct ReaderChrome: View {
         currentModeLabel: String? = nil,
         ambientColor: Color = .clear,
         sessionStartTime: Date? = nil,
-        onSwipeDown: (() -> Void)? = nil
+        onSwipeDown: (() -> Void)? = nil,
+        subHeaderView: AnyView? = nil
     ) {
         self.title = title
         self.pageText = pageText
@@ -159,6 +163,7 @@ struct ReaderChrome: View {
         self.ambientColor = ambientColor
         self.sessionStartTime = sessionStartTime
         self.onSwipeDown = onSwipeDown
+        self.subHeaderView = subHeaderView
     }
 
     // MARK: - Body
@@ -167,17 +172,15 @@ struct ReaderChrome: View {
         ZStack {
             if isVisible {
                 VStack(spacing: 0) {
-                    topBar
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .gesture(
-                            DragGesture(minimumDistance: 20)
-                                .onEnded { val in
-                                    if val.translation.height > 80 {
-                                        HapticEngine.light()
-                                        onSwipeDown?()
-                                    }
-                                }
-                        )
+                    VStack(spacing: 8) {
+                        topBar
+                        if let subHeader = subHeaderView {
+                            subHeader
+                                .padding(.bottom, 6)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
 
                     Color.clear
                         .contentShape(Rectangle())

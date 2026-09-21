@@ -1473,6 +1473,7 @@ struct ComicReaderEngine: View {
     @State private var sessionStartTime: Date? = nil
     @State private var readingMode: ComicReadingMode = .pageHorizontal
     @State private var lastPageTurnReadingMode: ComicReadingMode = .pageHorizontal
+    @State private var guidedPanelBadgeText: String? = nil
     @AppStorage("prefersTwoUpSpreads") private var prefersTwoUpSpreads = true
     @State private var activeFilterPreset: ReadingFilterPreset = .original
     @State private var showingFilterHUD = false
@@ -2116,6 +2117,7 @@ struct ComicReaderEngine: View {
             activeFilterPreset: activeFilterPreset,
             isMangaMode: isMangaActive,
             isChromeVisible: chromeVisible,
+            activeStrideLabel: $guidedPanelBadgeText,
             onTapChrome: { chromeVisible.toggle() },
             onToggleReadingMode: {
                 let now = Date()
@@ -2419,8 +2421,50 @@ struct ComicReaderEngine: View {
             currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil,
             ambientColor: ambientPageColor,
             sessionStartTime: sessionStartTime,
-            onSwipeDown: saveProgressAndDismiss
+            onSwipeDown: saveProgressAndDismiss,
+            subHeaderView: (readingMode == .panelNavigation && guidedPanelBadgeText != nil)
+                ? AnyView(comicPanelBadgeView(label: guidedPanelBadgeText!))
+                : nil
         )
+    }
+
+    @ViewBuilder
+    private func comicPanelBadgeView(label: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: prefs.panelInspectionStyle.icon)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.inkGreen)
+            Text(label)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundColor(Color.inkTextPrimary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+
+            Rectangle()
+                .fill(Color.inkBorderSubtle)
+                .frame(width: 1, height: 12)
+
+            Button {
+                HapticEngine.selection()
+                NotificationCenter.default.post(name: NSNotification.Name("ComicReader_OpenPanelWorkspace"), object: nil)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "slider.horizontal.2.square")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Adjust")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                .foregroundColor(Color.inkViolet)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.8))
+        .shadow(color: .black.opacity(0.45), radius: 10, y: 3)
     }
 
     /// Filter preset HUD (eink / vintage / etc).
@@ -3343,6 +3387,7 @@ struct ComicSpreadGuidedView: View {
     let activeFilterPreset: ReadingFilterPreset
     var isMangaMode: Bool = false
     var isChromeVisible: Bool = false
+    var activeStrideLabel: Binding<String?>? = nil
     var onTapChrome: () -> Void
     var onToggleReadingMode: (() -> Void)? = nil
 
@@ -3390,11 +3435,11 @@ struct ComicSpreadGuidedView: View {
                     // ── Focused Inspection View (Smart Gutter / Panel Zoom) ──
                     inspectionStrideView(for: geo.size, safeArea: geo.safeAreaInsets)
 
-                    // ── Discreet Panel / Tier Index HUD Indicator ──
-                    if showPanelBadge || isChromeVisible {
+                    // ── Discreet Panel / Tier Index HUD Indicator (Shown briefly when advancing without chrome) ──
+                    if showPanelBadge && !isChromeVisible {
                         VStack {
                             panelBadgeView(for: strides[currentStrideIndex])
-                                .padding(.top, isChromeVisible ? 108 : max(18, geo.safeAreaInsets.top + 6))
+                                .padding(.top, max(18, geo.safeAreaInsets.top + 6))
                                 .transition(.asymmetric(
                                     insertion: .opacity.combined(with: .scale(scale: 0.92)),
                                     removal: .opacity
@@ -3442,10 +3487,12 @@ struct ComicSpreadGuidedView: View {
         .onAppear {
             loadImagesAndAnalyze()
             flashPanelBadge()
+            updateActiveStrideLabel()
         }
         .onChange(of: currentStrideIndex) { _, _ in
             dragOffset = .zero
             flashPanelBadge()
+            updateActiveStrideLabel()
         }
         .onChange(of: prefs.panelInspectionStyle) { _, _ in
             strides.removeAll()
@@ -3770,7 +3817,16 @@ struct ComicSpreadGuidedView: View {
                 } else if self.currentStrideIndex < 0 && !builtStrides.isEmpty {
                     self.currentStrideIndex = 0
                 }
+                self.updateActiveStrideLabel()
             }
+        }
+    }
+
+    private func updateActiveStrideLabel() {
+        if currentStrideIndex >= 0 && currentStrideIndex < strides.count {
+            activeStrideLabel?.wrappedValue = strides[currentStrideIndex].label
+        } else {
+            activeStrideLabel?.wrappedValue = nil
         }
     }
 

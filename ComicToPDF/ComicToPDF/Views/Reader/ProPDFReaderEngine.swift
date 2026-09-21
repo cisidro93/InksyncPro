@@ -429,6 +429,19 @@ struct ProPDFReaderEngine: View {
                 .transition(.opacity)
             }
 
+            if showTierBadge && !chromeVisible && prefs.isPDFSmartTiersActive && !currentTierQuadrants.isEmpty && currentTierIndex >= 0 && currentTierIndex < currentTierQuadrants.count {
+                VStack {
+                    pdfTierBadgeView(for: currentTierQuadrants[currentTierIndex])
+                        .padding(.top, 54)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.92)),
+                            removal: .opacity
+                        ))
+                    Spacer()
+                }
+                .zIndex(100)
+            }
+
             toastAlertOverlay
             pdfNarrationHUD
             ReadingJumpToastOverlay()
@@ -651,6 +664,14 @@ struct ProPDFReaderEngine: View {
                     )
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
+                } else {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading Page\u{2026}")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(Color.inkSecondary)
+                    }
+                    .presentationDetents([.medium])
                 }
             }
     }
@@ -898,21 +919,6 @@ struct ProPDFReaderEngine: View {
                 isPencilMode: isPencilMode
             )
             .ignoresSafeArea()
-
-            // ── Discreet PDF Smart Tier / Quadrant Index HUD Indicator (Shown below top bar when chrome is visible) ──
-            if prefs.isPDFSmartTiersActive && chromeVisible && !currentTierQuadrants.isEmpty && currentTierIndex >= 0 && currentTierIndex < currentTierQuadrants.count {
-                VStack {
-                    pdfTierBadgeView(for: currentTierQuadrants[currentTierIndex])
-                        .padding(.top, 108)
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.92)),
-                            removal: .opacity
-                        ))
-                    Spacer()
-                }
-                .zIndex(25)
-            }
-
 
             if isPencilMode {
                 VStack {
@@ -1668,7 +1674,10 @@ struct ProPDFReaderEngine: View {
             onSwipeDown: {
                 saveReadingProgress()
                 onDismiss()
-            }
+            },
+            subHeaderView: (prefs.isPDFSmartTiersActive && !currentTierQuadrants.isEmpty && currentTierIndex >= 0 && currentTierIndex < currentTierQuadrants.count)
+                ? AnyView(pdfTierBadgeView(for: currentTierQuadrants[currentTierIndex]))
+                : nil
         )
     }
 
