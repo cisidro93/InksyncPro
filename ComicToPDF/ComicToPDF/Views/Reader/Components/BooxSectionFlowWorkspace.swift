@@ -94,12 +94,18 @@ public struct BooxSectionFlowWorkspace: View {
                                 alignment: .trailing
                             )
 
-                        // Center Canvas (Interactive Workspace)
-                        centerCanvasArea(size: CGSize(
-                            width: geo.size.width - (isLandscape ? 84 : 72),
-                            height: geo.size.height - 110
-                        ))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // Center Canvas (Interactive Workspace) with Section Selector Strip
+                        VStack(spacing: 0) {
+                            if !activeBlocks.isEmpty {
+                                sectionSelectorStrip
+                            }
+
+                            centerCanvasArea(size: CGSize(
+                                width: geo.size.width - (isLandscape ? 84 : 72),
+                                height: geo.size.height - 110 - (activeBlocks.isEmpty ? 0 : 38)
+                            ))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
 
                     bottomSafeguardBar
@@ -420,6 +426,67 @@ public struct BooxSectionFlowWorkspace: View {
         }
     }
 
+    // MARK: - Section Selector Strip
+
+    private var sectionSelectorStrip: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
+                Image(systemName: "hand.tap.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.inkGreen)
+                Text("Section:")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(Color.inkSecondary)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(activeBlocks) { block in
+                        let isSelected = (selectedBlockIndex == block.stepOrder)
+                        Button {
+                            HapticEngine.selection()
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                selectedBlockIndex = block.stepOrder
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("\(block.stepOrder + 1)")
+                                    .font(.system(size: 11, weight: .black, design: .rounded))
+                                let shortName = block.label.components(separatedBy: "·").last?.trimmingCharacters(in: .whitespaces).components(separatedBy: "(").first?.trimmingCharacters(in: .whitespaces) ?? ""
+                                if !shortName.isEmpty {
+                                    Text(shortName)
+                                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                }
+                            }
+                            .foregroundColor(isSelected ? .white : Color.inkTextPrimary)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(isSelected ? Color.inkGreen : Color.inkSurfaceRaised)
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(isSelected ? Color.inkGreen : Color.inkBorderSubtle, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.inkSurfaceRaised.opacity(0.65))
+        .overlay(
+            Rectangle()
+                .fill(Color.inkBorderSubtle.opacity(0.5))
+                .frame(height: 0.5),
+            alignment: .bottom
+        )
+    }
+
     // MARK: - Center Canvas Area
 
     @ViewBuilder
@@ -516,7 +583,6 @@ public struct BooxSectionFlowWorkspace: View {
                 }
                 .frame(width: 44, height: cropH)
                 .contentShape(Rectangle())
-                .position(x: splitX, y: cropY + (cropH / 2.0))
                 .gesture(
                     DragGesture(minimumDistance: 1)
                         .onChanged { value in
@@ -545,6 +611,7 @@ public struct BooxSectionFlowWorkspace: View {
                             HapticEngine.light()
                         }
                 )
+                .position(x: splitX, y: cropY + (cropH / 2.0))
             }
         }
 
@@ -576,7 +643,6 @@ public struct BooxSectionFlowWorkspace: View {
                 }
                 .frame(width: cropW, height: 44)
                 .contentShape(Rectangle())
-                .position(x: cropX + (cropW / 2.0), y: splitY)
                 .gesture(
                     DragGesture(minimumDistance: 1)
                         .onChanged { value in
@@ -605,6 +671,7 @@ public struct BooxSectionFlowWorkspace: View {
                             HapticEngine.light()
                         }
                 )
+                .position(x: cropX + (cropW / 2.0), y: splitY)
             }
         }
 
@@ -637,7 +704,6 @@ public struct BooxSectionFlowWorkspace: View {
                 }
                 .frame(width: cropW, height: 44)
                 .contentShape(Rectangle())
-                .position(x: cropX + (cropW / 2.0), y: splitY0)
                 .gesture(
                     DragGesture(minimumDistance: 1)
                         .onChanged { value in
@@ -656,6 +722,7 @@ public struct BooxSectionFlowWorkspace: View {
                             HapticEngine.light()
                         }
                 )
+                .position(x: cropX + (cropW / 2.0), y: splitY0)
             }
 
             // Tier Split Line 1 (Mid / Bot boundary)
@@ -681,7 +748,6 @@ public struct BooxSectionFlowWorkspace: View {
                 }
                 .frame(width: cropW, height: 44)
                 .contentShape(Rectangle())
-                .position(x: cropX + (cropW / 2.0), y: splitY1)
                 .gesture(
                     DragGesture(minimumDistance: 1)
                         .onChanged { value in
@@ -700,6 +766,7 @@ public struct BooxSectionFlowWorkspace: View {
                             HapticEngine.light()
                         }
                 )
+                .position(x: cropX + (cropW / 2.0), y: splitY1)
             }
         }
     }
@@ -825,8 +892,10 @@ public struct BooxSectionFlowWorkspace: View {
                 .overlay(Capsule().stroke(Color.black.opacity(0.3), lineWidth: 0.8))
                 .shadow(color: Color.black.opacity(0.4), radius: 4, y: 1)
         }
-        .position(position)
+        .frame(width: isVertical ? 44 : 54, height: isVertical ? 54 : 44)
+        .contentShape(Rectangle())
         .gesture(gesture())
+        .position(position)
     }
 
     // MARK: - Circled Sequence Badges & Quadrant Selection Overlay
@@ -853,7 +922,7 @@ public struct BooxSectionFlowWorkspace: View {
                     .stroke(isSelected ? Color.inkGreen : Color.inkBorderSubtle.opacity(0.6), lineWidth: isSelected ? 2.5 : 1.0)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(isSelected ? Color.inkGreen.opacity(0.12) : Color.clear)
+                            .fill(isSelected ? Color.inkGreen.opacity(0.15) : Color.black.opacity(0.001))
                     )
 
                 // Circled Number Badge (①, ②, ③, ④)
@@ -882,12 +951,14 @@ public struct BooxSectionFlowWorkspace: View {
                 .padding(3)
             }
             .frame(width: rectW, height: rectH)
-            .position(x: rectX + (rectW / 2.0), y: rectY + (rectH / 2.0))
             .contentShape(Rectangle())
             .onTapGesture {
                 HapticEngine.selection()
-                selectedBlockIndex = block.stepOrder
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    selectedBlockIndex = block.stepOrder
+                }
             }
+            .position(x: rectX + (rectW / 2.0), y: rectY + (rectH / 2.0))
         }
     }
 
@@ -1034,8 +1105,10 @@ public struct BooxSectionFlowWorkspace: View {
                 .overlay(Circle().stroke(Color.inkGreen, lineWidth: 2.5))
                 .shadow(color: Color.black.opacity(0.35), radius: 3)
         }
-        .position(position)
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
         .gesture(gesture())
+        .position(position)
     }
 
     private func quadrantEdgeHandle(
@@ -1055,8 +1128,10 @@ public struct BooxSectionFlowWorkspace: View {
                 .overlay(Capsule().stroke(Color.inkGreen, lineWidth: 1.5))
                 .shadow(color: Color.black.opacity(0.35), radius: 3)
         }
-        .position(position)
+        .frame(width: isVertical ? 44 : 50, height: isVertical ? 50 : 44)
+        .contentShape(Rectangle())
         .gesture(gesture())
+        .position(position)
     }
 
     private func quadrantResizeGesture(
