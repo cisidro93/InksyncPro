@@ -137,6 +137,11 @@ struct InksyncProApp: App {
                          DatabaseBackupService.shared.performBackup()
                          // Whenever the app goes to the background, we schedule the next sync
                          InksyncProApp.scheduleAppRefresh()
+                         // Proactive Jetsam Defense: evict volatile in-memory decompressed textures
+                         JITComicCacheEngine.shared.handleMemoryWarning()
+                         Task {
+                             await ReaderImageFilterEngine.shared.purgeCache()
+                         }
                     case .active:
                          SecurityManager.shared.handleAppForegrounding()
                          SharedImportCoordinator.shared.coordinateImport(retryCount: 3, retryDelaySeconds: 0.5)
