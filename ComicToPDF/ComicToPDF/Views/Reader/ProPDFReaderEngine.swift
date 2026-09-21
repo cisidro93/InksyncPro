@@ -1965,7 +1965,7 @@ struct ProPDFReaderEngine: View {
         guard let pdfView = pdfViewReference else { return }
 
         // PDF Smart Tiers & Guided Column Flow Navigation
-        if prefs.isPDFSmartTiersActive, let page = pdfView.currentPage {
+        if prefs.isPDFSmartTiersActive, pdfView.currentPage != nil {
             if currentTierQuadrants.isEmpty {
                 refreshSmartTierQuadrants()
             }

@@ -133,7 +133,7 @@ final class PassthroughPKCanvasView: PKCanvasView {
         }
 
         let hasPencilTouch = event?.allTouches?.contains(where: { $0.type == .pencil }) ?? false
-        let isActivelyDrawing = (currentMode == .pen || currentMode == .pencil || currentMode == .marker || currentMode == .eraser)
+        let isActivelyDrawing = (currentMode == .write || currentMode == .eraser)
 
         // ── Page Turn & Navigation Corridors (Zero-Stray-Ink Defense) ──
         // If the user touches with a finger (not an Apple Pencil) and is NOT actively drawing:
