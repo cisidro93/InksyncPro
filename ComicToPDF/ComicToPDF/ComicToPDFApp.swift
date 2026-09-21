@@ -129,6 +129,7 @@ struct InksyncProApp: App {
                     SharedImportCoordinator.shared.conversionManager = ConversionManager.shared
                     // Check for any pending imports from Share Extension on launch
                     SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
+                }
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {
                     case .background, .inactive:
