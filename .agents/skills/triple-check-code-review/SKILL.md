@@ -57,6 +57,10 @@ flowchart TD
    - When staging files from an external process, test for non-zero file size stability over a minimum delta (e.g. 150ms) using non-blocking `Task.sleep` to ensure incomplete byte writes are not prematurely ingested.
 3. **Sandbox UUID Shifts**:
    - Persist relative document paths rather than absolute paths to guarantee resilience against iOS container UUID re-allocations during updates.
+4. **Ingestion Concurrency & Queue Drain Loop**:
+   - When an ingestion is already active (`isIngesting == true`), incoming share targets MUST be appended to a pending queue instead of dropped. An automatic follow-up pass must drain the queue upon completion.
+5. **System Sandbox Inbox Hygiene**:
+   - Direct file opens handed via system `Documents/Inbox/` must be cleaned up after successful ingestion to `InksyncVault/Inbox` to prevent disk bloat.
 
 ### C. Resource Safety & Teardown
 
@@ -131,11 +135,16 @@ flowchart TD
 2. **Spread Splitting (`CropHalf`)**:
    - Dynamically handle two-up splash pages with geometry offsets (`offset(x: cropHalf == .left ? 0 : -width)`) respecting LTR vs RTL reading directions.
 
-### F. ProMotion 120Hz & Gesture Disambiguation
+### F. ProMotion 120Hz, Touch Ergonomics & Gesture Isolation
 
-1. **Touch Non-Cancellation**:
+1. **Touch Non-Cancellation & Apple HIG Targets (≥ 44pt)**:
    - Set `cancelsTouchesInView = false` on top-level gestures so child elements (hyperlinks, text selections, sliders) remain responsive.
-2. **Micro-Interaction Polish**:
+   - All drag handles, partition lines, and resize corners MUST provide an invisible touch hit corridor of at least $44\times 44\text{ pt}$ (`Color.clear.contentShape(Rectangle())`).
+2. **Gesture Layer Z-Index Hierarchy**:
+   - Ensure tap-gesture containers (e.g., sequence badge hitboxes) do not sit above draggable divider lines or resize handles, which steals drag touches.
+3. **Start-Relative Drag Math**:
+   - Verify that `DragGesture.onChanged` applies offset relative to the state at gesture start (`dragStartValue + translation`), rather than compounding cumulative translation deltas into runaway jitter.
+4. **Micro-Interaction Polish**:
    - Pair tactile `HapticEngine` feedback (`.light()`, `.medium()`, `.selection()`) with spring physics animations (`.spring(response: 0.3, dampingFraction: 0.8)`).
 
 ---
@@ -153,12 +162,17 @@ flowchart TD
 3. **Verify Modal Presenter & Content**:
    - Ensure every `.sheet`, `.popover`, and `.fullScreenCover` is backed by a valid non-nil binding and passes all required environment objects.
 
-### B. Navigation & Deep-Link Bridging
+### B. Navigation, Deep-Link Bridging & Presentation Concurrency
 
-1. **External Open Auto-Selection**:
+1. **AppRouter Presentation Idempotency**:
+   - Verify that `AppRouter.presentFullScreen(_:)` checks whether the requested document is already actively presented; if so, it must return immediately to prevent presentation dismissal flashes.
+   - For distinct destinations, enforce a `0.35s` delay to allow UIKit to finish dismissing prior full-screen modal covers.
+2. **External Open Auto-Selection**:
    - Ensure newly ingested external files (Share Extension, "Open With", AirDrop) bridge their selected state (`selectedPDF`) directly to the active presentation router (`AppRouter.presentFullScreen(.read(pdf))`) so the document immediately opens for the user.
-2. **Spotlight & Universal Links**:
-   - Route `NSUserActivity` and `onOpenURL` through `UniversalLinkBridge` to restore exact chapter and page indices.
+3. **Spotlight & Universal Links**:
+   - Route `NSUserActivity` and `onOpenURL` through `UniversalLinkBridge` to restore exact chapter and page indices. Verify that `.onOpenURL` is attached once at the root view rather than duplicated in both `WindowGroup` and child views.
+4. **Reading HUD Progress Mode Harmonization**:
+   - Verify that discrete Smart Tier badges (e.g. `· Tier 2/4`) remain displayed across all reading progress display modes (Pages Left, Time Left, and WPM) in `InksyncProgressFooterView`.
 
 ### C. Multi-State Edge-Case Matrix
 

@@ -95,6 +95,36 @@ Synthesized from world-class software engineering educators:
    - Instrument critical engines (e.g. `ComicParser`, `PDFCacheManager`, `ReaderProgressTracker`) with structured `os.Logger(subsystem:category:)`.
    - Never use blind `print()` statements for diagnostic tracking in production services.
 
+### Pillar 7: NeoFlow Studio & Smart Tiers Architecture
+
+1. **Coordinate Space Invariants (`BooxCoordinateSpace`):**
+   - PDFKit space: `(0,0)` is bottom-left, Y increases upward.
+   - UIKit / Image space: `(0,0)` is top-left, Y increases downward.
+   - All reader navigation (`PDFTierQuadrant`, `BooxSectionBlock`) MUST normalize to `space: .pdf` before programmatic alignment in `ProPDFReaderEngine`.
+2. **Golden Rule Column Fit Invariant:**
+   - **In Portrait**: Strict column-fit ensures every line of text spans edge-to-edge with zero horizontal pan. Width must NEVER exceed safe screen width.
+   - **In Landscape**: Clamp scale factor comfortably to fit without excessive vertical truncation.
+3. **Connection Redundancy Overlap Buffers:**
+   - Add a 10%–15% horizontal and vertical buffer between adjacent blocks (`redundantRect`) to eliminate cutting text or speech bubbles in half across page strides.
+4. **Draggable Partition Lines & 8-Point Quadrant Resize:**
+   - All partition lines and margin handles MUST provide $\ge 44\text{pt}$ touch corridors.
+   - Selected quadrants support 8-point interactive resize handles (4 corners, 4 edges) saved via `customBlockOverrides: [Int: CGRect]`.
+5. **Full-Screen Tap-to-Preview Reader Simulation:**
+   - Provide an interactive, full-screen reader preview with Left/Right step-through tap zones, allowing the user to verify tier framing before saving changes.
+
+### Pillar 8: Unified File Sharing & Ingestion Pipeline
+
+1. **Queue-Based Concurrency Staging (`SharedImportCoordinator`):**
+   - When `coordinateImport` is invoked while an ingestion is already active (`isIngesting == true`), incoming target filenames MUST be appended to `pendingTargetFilenames` rather than dropped.
+   - Drain pending queues in an automatic follow-up pass upon ingestion completion.
+2. **Resilient File Settlement Loop:**
+   - Always verify that incoming files from AirDrop or external app handoffs have stabilized non-zero file sizes using an asynchronous retry loop (up to 10 attempts, 200ms apart).
+3. **AppRouter Presentation Idempotency:**
+   - In `AppRouter.presentFullScreen(_:)`, verify if `activeFullScreen` is already presenting `.read` for the same document ID or path; if so, return immediately to eliminate presentation dismissal flashes.
+   - Use a `0.35s` delay when transitioning between different screens to match UIKit full-screen modal cover dismissal animation.
+4. **Sandbox Hygiene (`Documents/Inbox`):**
+   - Clean up temporary copies in `Documents/Inbox/` after copying to `InksyncVault/Inbox` to prevent container bloat.
+
 ---
 
 ## 2. Developer Action Checklist
@@ -106,6 +136,10 @@ Whenever authoring, refactoring, or reviewing code for InksyncPro:
 - [ ] **State Single Source of Truth**: Is state managed through an authoritative actor/manager without duplicated mirrors?
 - [ ] **Cognitive Load & Deep Modules**: Are complex systems behind simple semantic protocols to prevent comprehension debt?
 - [ ] **Hot vs Cold Separation**: Are high-frequency rendering/byte paths kept direct and performance-critical while services are modular?
-- [ ] **UI/UX Polish**: Does the UI deliver 120Hz ProMotion fluid responsiveness, glassmorphic styling, and Haptic feedback?
+- [ ] **Touch Ergonomics & Apple HIG**: Do all interactive handles, partition lines, and buttons provide $\ge 44\text{pt}$ invisible touch hit areas?
+- [ ] **NeoFlow & Smart Tiers**: Does column fitting follow the Golden Rule, and do custom overrides preserve PDFKit coordinate invariants?
+- [ ] **File Sharing & Ingestion**: Are concurrent imports queued without dropping, files verified settled, and temporary sandbox copies cleaned up?
+- [ ] **Presentation Idempotency**: Does `AppRouter` guard against duplicate presentation cycles and match UIKit dismissal animation timings?
 - [ ] **Resource Safety**: Are notification observers dismantled and async tasks explicitly cancelled on view teardown?
 - [ ] **Telemetry**: Are key lifecycle and error events logged with structured `os.Logger`?
+

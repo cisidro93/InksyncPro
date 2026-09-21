@@ -61,10 +61,27 @@ This skill provides step-by-step instructions for conducting **Clean Code Audits
   - Define domain-specific error enums conforming to `LocalizedError` and `Sendable`.
   - Isolate component failures so an engine error (e.g., failed thumbnail render or corrupt PDF page) degrades gracefully without tearing down the entire reader session.
 
+### 8. Touch Ergonomics & Apple HIG Compliance (≥ 44pt Hit Corridors)
+
+- **Rule**: Every interactive control, drag handle, divider line, or close button MUST have a touch target of at least 44×44 pt.
+- **Action**:
+  - Never style a draggable handle with only a 5pt or 7pt physical frame without an invisible touch hit corridor.
+  - Wrap slim tactile indicators inside a `ZStack` containing `Color.clear.frame(width: 44, height: 44).contentShape(Rectangle())`.
+  - Ensure gesture layers follow strict Z-index ordering so tap containers (e.g. badge selection boxes) never sit on top of and steal drag touches from partition handles.
+
+### 9. Gesture Translation Math & Presentation Idempotency
+
+- **Rule**: Drag gestures must never accumulate cumulative translation runaway; full-screen navigation transitions must be idempotent.
+- **Action**:
+  - In `DragGesture.onChanged`, capture the initial trim/split/rect on drag start, and calculate offsets strictly as `dragStartValue + translation`. Never apply incremental translation deltas recursively.
+  - In `AppRouter.presentFullScreen`, guard against re-presenting an already active document to eliminate unnecessary dismissal cycles and screen flashes.
+
 ## Audit Workflow
 
 1. **Scan for Duplication & Code Churn**: Check if identical gesture handlers, regex routines, or string operations exist across multiple files.
 2. **Audit Cognitive Load & Component Bounds**: Identify any view or function exceeding reasonable bounds (functions > 40 lines, view bodies > 80 lines) and modularize into deep components.
 3. **Verify Semantic Interfaces**: Confirm that complex subsystem interactions are decoupled through clear protocols rather than tightly coupled concrete classes.
 4. **Check Constants & Naming**: Replace inline numeric literals with central constants and cryptic names with intent-revealing identifiers.
-5. **Verify Teardown & Fault Safety**: Confirm all async tasks and observers have clean cancellation logic and explicit error handling.
+5. **Verify Touch Ergonomics (≥ 44pt)**: Ensure all handles and interactive partition lines provide a minimum 44pt invisible touch corridor and correct Z-index layering.
+6. **Verify Teardown & Fault Safety**: Confirm all async tasks and observers have clean cancellation logic and explicit error handling.
+
