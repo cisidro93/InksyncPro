@@ -759,6 +759,7 @@ struct ProPDFReaderEngine: View {
                 pdf: pdf,
                 pdfDocument: pdfDocument,
                 currentPageIndex: $currentPageIndex,
+                isChromeVisible: chromeVisible,
                 onDismiss: {
                     saveReadingProgress()
                     onDismiss()
@@ -768,6 +769,12 @@ struct ProPDFReaderEngine: View {
                         isReflowMode = false
                         prefs.pdfReflowMode = false
                     }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        jumpToPage(currentPageIndex)
+                    }
+                },
+                onCenterTap: {
+                    toggleChrome()
                 }
             )
         } else if let doc = pdfDocument {

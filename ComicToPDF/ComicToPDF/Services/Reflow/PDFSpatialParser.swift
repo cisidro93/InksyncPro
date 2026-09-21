@@ -49,7 +49,6 @@ public struct SpatialTextBlock: Identifiable, Sendable {
     }
 }
 
-@MainActor
 public final class PDFSpatialParser: Sendable {
     public static let shared = PDFSpatialParser()
     private init() {}
@@ -58,20 +57,66 @@ public final class PDFSpatialParser: Sendable {
     public func parseDocument(_ document: PDFDocument) async -> [SpatialTextBlock] {
         var blocks: [SpatialTextBlock] = []
         let pageCount = document.pageCount
+        guard pageCount > 0 else { return [] }
 
         let medianFontSize = calculateMedianFontSize(document: document)
 
+        // Pre-scan first 10 pages to determine if document has digital text
+        var hasDigitalText = false
+        for i in 0..<min(pageCount, 10) {
+            if let page = document.page(at: i),
+               let str = page.string,
+               !str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                hasDigitalText = true
+                break
+            }
+        }
+
         for i in 0..<pageCount {
+            if Task.isCancelled { break }
             guard let page = document.page(at: i) else { continue }
-            var pageBlocks = parsePage(page, pageIndex: i, medianFontSize: medianFontSize)
-            
-            // If page has no extractable digital text (scanned document / book / whitepaper),
-            // seamlessly use Vision OCR to extract text blocks
-            if pageBlocks.isEmpty {
+
+            let pageString = page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            var pageBlocks: [SpatialTextBlock] = autoreleasepool {
+                if hasDigitalText {
+                    if !pageString.isEmpty {
+                        var parsed = parsePage(page, pageIndex: i, medianFontSize: medianFontSize)
+                        // If all lines were filtered as headers/footers but text actually exists, create fallback block
+                        if parsed.isEmpty {
+                            let pageBounds = page.bounds(for: .mediaBox)
+                            parsed.append(SpatialTextBlock(
+                                pageIndex: i,
+                                rect: pageBounds,
+                                text: pageString,
+                                kind: .paragraph,
+                                fontName: "System",
+                                fontSize: medianFontSize,
+                                isBold: false,
+                                isItalic: false
+                            ))
+                        }
+                        return parsed
+                    } else {
+                        // Digital document page with no text is an illustration or blank page: skip OCR
+                        return []
+                    }
+                } else {
+                    // Document is scanned; OCR will be performed asynchronously below if needed
+                    return []
+                }
+            }
+
+            // For fully scanned documents (no digital text anywhere), run throttled fast Vision OCR
+            if !hasDigitalText && pageBlocks.isEmpty {
                 pageBlocks = await parsePageWithVisionOCR(page, pageIndex: i, medianFontSize: medianFontSize)
             }
-            
+
             blocks.append(contentsOf: pageBlocks)
+
+            if i % 5 == 0 {
+                await Task.yield()
+            }
         }
 
         return blocks
@@ -80,29 +125,48 @@ public final class PDFSpatialParser: Sendable {
     private func parsePageWithVisionOCR(_ page: PDFPage, pageIndex: Int, medianFontSize: CGFloat) async -> [SpatialTextBlock] {
         let pageBounds = page.bounds(for: .mediaBox)
         guard pageBounds.width > 0 && pageBounds.height > 0 else { return [] }
-        
-        let renderer = UIGraphicsImageRenderer(size: pageBounds.size)
-        let pageImage = renderer.image { ctx in
-            UIColor.white.set()
-            ctx.fill(pageBounds)
-            ctx.cgContext.translateBy(x: 0.0, y: pageBounds.size.height)
-            ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
-            page.draw(with: .mediaBox, to: ctx.cgContext)
+
+        // Downscale to max dimension 1024pt to avoid runaway Neural Engine / GPU allocations
+        let maxDimension: CGFloat = 1024.0
+        let aspect = pageBounds.width / pageBounds.height
+        let targetSize: CGSize
+        if pageBounds.width > pageBounds.height {
+            let width = min(pageBounds.width, maxDimension)
+            targetSize = CGSize(width: width, height: width / aspect)
+        } else {
+            let height = min(pageBounds.height, maxDimension)
+            targetSize = CGSize(width: height * aspect, height: height)
         }
-        
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = true
+
+        let pageImage = autoreleasepool { () -> UIImage in
+            let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+            return renderer.image { ctx in
+                UIColor.white.set()
+                ctx.fill(CGRect(origin: .zero, size: targetSize))
+                let cgCtx = ctx.cgContext
+                cgCtx.translateBy(x: 0.0, y: targetSize.height)
+                cgCtx.scaleBy(x: targetSize.width / pageBounds.width, y: -targetSize.height / pageBounds.height)
+                page.draw(with: .mediaBox, to: cgCtx)
+            }
+        }
+
         guard let cgImage = pageImage.cgImage else { return [] }
-        
+
         return await withCheckedContinuation { continuation in
             let request = VNRecognizeTextRequest { request, error in
                 guard error == nil, let observations = request.results as? [VNRecognizedTextObservation] else {
                     continuation.resume(returning: [])
                     return
                 }
-                
+
                 var ocrBlocks: [SpatialTextBlock] = []
                 for obs in observations {
                     guard let candidate = obs.topCandidates(1).first, !candidate.string.isEmpty else { continue }
-                    
+
                     let boundingBox = obs.boundingBox
                     let rect = CGRect(
                         x: boundingBox.origin.x * pageBounds.width,
@@ -110,13 +174,13 @@ public final class PDFSpatialParser: Sendable {
                         width: boundingBox.width * pageBounds.width,
                         height: boundingBox.height * pageBounds.height
                     )
-                    
+
                     let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { continue }
-                    
+
                     let isTitle = rect.height > medianFontSize * 1.5 || (text.count < 60 && text.allSatisfy { $0.isUppercase || $0.isWhitespace || $0.isPunctuation })
                     let kind: SpatialTextBlock.BlockKind = isTitle ? .heading2 : .paragraph
-                    
+
                     ocrBlocks.append(SpatialTextBlock(
                         pageIndex: pageIndex,
                         rect: rect,
@@ -130,10 +194,10 @@ public final class PDFSpatialParser: Sendable {
                 }
                 continuation.resume(returning: ocrBlocks)
             }
-            
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
-            
+
+            request.recognitionLevel = .fast
+            request.usesLanguageCorrection = false
+
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             do {
                 try handler.perform([request])

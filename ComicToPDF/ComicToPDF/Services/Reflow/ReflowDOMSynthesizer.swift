@@ -26,59 +26,53 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
         let htmlFileURL = targetDir.appendingPathComponent("reflow.html")
 
         var bodyHTML = ""
-        var currentPage = -1
+        let maxPage = max(
+            blocks.map { $0.pageIndex }.max() ?? -1,
+            images.map { $0.pageIndex }.max() ?? -1
+        )
 
-        var embeddedImagePaths = Set<String>()
+        if maxPage >= 0 {
+            for p in 0...maxPage {
+                let pageBlocks = blocks.filter { $0.pageIndex == p }
+                let pageImages = images.filter { $0.pageIndex == p }
+                if pageBlocks.isEmpty && pageImages.isEmpty { continue }
 
-        for block in blocks {
-            if block.pageIndex != currentPage {
-                currentPage = block.pageIndex
-                bodyHTML += "\n<section class=\"pdf-page-marker\" id=\"page-\(currentPage + 1)\" data-page=\"\(currentPage + 1)\">\n"
-                bodyHTML += "  <div class=\"page-number-divider\">Page \(currentPage + 1)</div>\n"
-                
-                // Embed images belonging to this page
-                let pageImages = images.filter { $0.pageIndex == currentPage }
+                bodyHTML += "\n<section class=\"pdf-page-marker\" id=\"page-\(p + 1)\" data-page=\"\(p + 1)\">\n"
+                bodyHTML += "  <div class=\"page-number-divider\">Page \(p + 1)</div>\n"
+
                 for img in pageImages {
-                    embeddedImagePaths.insert(img.imagePath)
                     let relPath = (img.imagePath as NSString).lastPathComponent
-                    bodyHTML += "  <figure class=\"pdf-figure\"><img src=\"images/\(relPath)\" alt=\"Figure Page \(currentPage + 1)\" loading=\"lazy\" /></figure>\n"
+                    bodyHTML += "  <figure class=\"pdf-figure\"><img src=\"images/\(relPath)\" alt=\"Page \(p + 1)\" loading=\"lazy\" /></figure>\n"
                 }
-                
+
+                for block in pageBlocks {
+                    let rectAttr = "\(Int(block.rect.origin.x)),\(Int(block.rect.origin.y)),\(Int(block.rect.size.width)),\(Int(block.rect.size.height))"
+                    let escapedText = escapeHTML(block.text)
+
+                    switch block.kind {
+                    case .title:
+                        bodyHTML += "  <h1 data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h1>\n"
+                    case .heading1:
+                        bodyHTML += "  <h2 data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h2>\n"
+                    case .heading2:
+                        bodyHTML += "  <h3 data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h3>\n"
+                    case .heading3:
+                        bodyHTML += "  <h4 data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h4>\n"
+                    case .blockquote:
+                        bodyHTML += "  <blockquote data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</blockquote>\n"
+                    case .code:
+                        bodyHTML += "  <pre><code data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</code></pre>\n"
+                    case .listItem:
+                        bodyHTML += "  <ul><li data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</li></ul>\n"
+                    case .figureCaption:
+                        bodyHTML += "  <figcaption data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</figcaption>\n"
+                    case .paragraph:
+                        bodyHTML += "  <p data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</p>\n"
+                    }
+                }
+
                 bodyHTML += "</section>\n"
             }
-
-            let rectAttr = "\(Int(block.rect.origin.x)),\(Int(block.rect.origin.y)),\(Int(block.rect.size.width)),\(Int(block.rect.size.height))"
-            let escapedText = escapeHTML(block.text)
-
-            switch block.kind {
-            case .title:
-                bodyHTML += "<h1 data-pdf-page=\"\(currentPage + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h1>\n"
-            case .heading1:
-                bodyHTML += "<h2 data-pdf-page=\"\(currentPage + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h2>\n"
-            case .heading2:
-                bodyHTML += "<h3 data-pdf-page=\"\(currentPage + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h3>\n"
-            case .heading3:
-                bodyHTML += "<h4 data-pdf-page=\"\(currentPage + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h4>\n"
-            case .blockquote:
-                bodyHTML += "<blockquote data-pdf-page=\"\(currentPage + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</blockquote>\n"
-            case .code:
-                bodyHTML += "<pre><code data-pdf-page=\"\(currentPage + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</code></pre>\n"
-            case .listItem:
-                bodyHTML += "<ul><li data-pdf-page=\"\(currentPage + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</li></ul>\n"
-            case .figureCaption:
-                bodyHTML += "<figcaption data-pdf-page=\"\(currentPage + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</figcaption>\n"
-            case .paragraph:
-                bodyHTML += "<p data-pdf-page=\"\(currentPage + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</p>\n"
-            }
-        }
-
-        // Catch any orphan images on pages without text blocks
-        for img in images where !embeddedImagePaths.contains(img.imagePath) {
-            let relPath = (img.imagePath as NSString).lastPathComponent
-            bodyHTML += "\n<section class=\"pdf-page-marker\" id=\"page-\(img.pageIndex + 1)\" data-page=\"\(img.pageIndex + 1)\">\n"
-            bodyHTML += "  <div class=\"page-number-divider\">Page \(img.pageIndex + 1)</div>\n"
-            bodyHTML += "  <figure class=\"pdf-figure\"><img src=\"images/\(relPath)\" alt=\"Figure Page \(img.pageIndex + 1)\" loading=\"lazy\" /></figure>\n"
-            bodyHTML += "</section>\n"
         }
 
         let htmlDocument = """
@@ -117,6 +111,8 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                     margin-top: 1.4em;
                     margin-bottom: 0.6em;
                     font-weight: 700;
+                    break-after: avoid !important;
+                    -webkit-column-break-after: avoid !important;
                 }
                 h1 { font-size: 1.6em; }
                 h2 { font-size: 1.35em; }
@@ -132,25 +128,46 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                     border-left: 3px solid currentColor;
                     opacity: 0.85;
                     font-style: italic;
+                    break-inside: avoid !important;
+                    -webkit-column-break-inside: avoid !important;
                 }
                 pre {
                     background: rgba(128, 128, 128, 0.15);
                     padding: 12px;
                     border-radius: 8px;
                     overflow-x: auto;
+                    break-inside: avoid !important;
+                    -webkit-column-break-inside: avoid !important;
                 }
                 figcaption {
                     font-size: 0.9em;
                     opacity: 0.75;
                     text-align: center;
                     margin-bottom: 1.2em;
+                    break-inside: avoid !important;
+                    -webkit-column-break-inside: avoid !important;
+                }
+                .pdf-page-marker {
+                    display: block;
+                    box-sizing: border-box;
+                    width: 100%;
+                }
+                .pdf-figure {
+                    margin: 16px 0;
+                    padding: 0;
+                    text-align: center;
+                    break-inside: avoid !important;
+                    -webkit-column-break-inside: avoid !important;
                 }
                 img {
                     max-width: 100%;
-                    height: auto;
+                    max-height: 75vh;
+                    object-fit: contain;
                     border-radius: 8px;
                     display: block;
                     margin: 16px auto;
+                    break-inside: avoid !important;
+                    -webkit-column-break-inside: avoid !important;
                 }
             </style>
         </head>
