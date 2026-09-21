@@ -86,7 +86,9 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.stopSimulation()
+            Task { @MainActor [weak self] in
+                self?.stopSimulation()
+            }
         }
     }
 
@@ -429,8 +431,6 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
         }
         if (isAsleep || tickCount > 200) && draggedNodeID == nil { stopSimulation() }
     }
-
-    deinit { displayLink?.invalidate() }
 }
 
 // MARK: - Canvas View

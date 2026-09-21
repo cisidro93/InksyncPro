@@ -12,7 +12,9 @@ public final class AutoPagerEngine: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.stop()
+            Task { @MainActor [weak self] in
+                self?.stop()
+            }
         }
     }
 

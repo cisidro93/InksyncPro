@@ -38,7 +38,9 @@ final class iCloudFileSyncManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.query?.disableUpdates()
+            Task { @MainActor [weak self] in
+                self?.query?.disableUpdates()
+            }
         }
         
         let fgObs = NotificationCenter.default.addObserver(
@@ -46,8 +48,10 @@ final class iCloudFileSyncManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self, self.isSyncEnabled else { return }
-            self.query?.enableUpdates()
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isSyncEnabled else { return }
+                self.query?.enableUpdates()
+            }
         }
         
         observers = [bgObs, fgObs]
@@ -57,7 +61,6 @@ final class iCloudFileSyncManager: ObservableObject {
         for obs in observers {
             NotificationCenter.default.removeObserver(obs)
         }
-        stopQuery()
     }
 
     /// Check if iCloud Ubiquity container is available on this device.

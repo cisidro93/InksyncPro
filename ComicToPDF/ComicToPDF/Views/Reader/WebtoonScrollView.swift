@@ -95,6 +95,7 @@ struct WebtoonScrollView: UIViewRepresentable {
 
     // MARK: - Coordinator
 
+    @MainActor
     final class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
         var parentView: WebtoonScrollView
         weak var scrollView: UIScrollView?
@@ -125,9 +126,11 @@ struct WebtoonScrollView: UIViewRepresentable {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                guard let self = self, let sv = self.scrollView else { return }
-                self.updateAutoScroll(isActive: false, speed: 0, sv: sv)
-                self.imageCache.removeAllObjects()
+                Task { @MainActor [weak self] in
+                    guard let self = self, let sv = self.scrollView else { return }
+                    self.updateAutoScroll(isActive: false, speed: 0, sv: sv)
+                    self.imageCache.removeAllObjects()
+                }
             }
         }
 

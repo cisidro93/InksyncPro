@@ -56,7 +56,9 @@ final class AmbientBrightnessManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.stopTimer()
+            Task { @MainActor [weak self] in
+                self?.stopTimer()
+            }
         }
         
         NotificationCenter.default.addObserver(
@@ -64,8 +66,10 @@ final class AmbientBrightnessManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.evaluate()
-            self?.updateTimerState()
+            Task { @MainActor [weak self] in
+                self?.evaluate()
+                self?.updateTimerState()
+            }
         }
     }
     
