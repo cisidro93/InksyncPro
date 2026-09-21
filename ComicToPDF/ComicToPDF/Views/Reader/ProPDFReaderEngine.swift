@@ -521,6 +521,13 @@ struct ProPDFReaderEngine: View {
             .onChange(of: currentPageIndex) { _, newIndex in
                 saveReadingProgress()
                 extractAmbientColor(for: newIndex)
+                if prefs.isPDFSmartTiersActive {
+                    refreshSmartTierQuadrants()
+                    if currentTierIndex >= currentTierQuadrants.count {
+                        currentTierIndex = 0
+                    }
+                    focusOnTier(index: currentTierIndex, animated: false)
+                }
             }
             .onChange(of: prefs.pdfReflowMode) { _, enabled in
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
