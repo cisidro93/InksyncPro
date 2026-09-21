@@ -16,7 +16,8 @@ public struct ExtractedPDFImage: Identifiable, Sendable {
     }
 }
 
-public final class PDFImageExtractor: Sendable {
+@MainActor
+public final class PDFImageExtractor {
     public static let shared = PDFImageExtractor()
     private init() {}
 

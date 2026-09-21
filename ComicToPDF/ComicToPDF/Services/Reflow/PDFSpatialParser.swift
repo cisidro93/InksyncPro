@@ -49,7 +49,8 @@ public struct SpatialTextBlock: Identifiable, Sendable {
     }
 }
 
-public final class PDFSpatialParser: Sendable {
+@MainActor
+public final class PDFSpatialParser {
     public static let shared = PDFSpatialParser()
     private init() {}
 
