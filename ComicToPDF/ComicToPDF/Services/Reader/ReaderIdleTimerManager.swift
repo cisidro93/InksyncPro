@@ -34,6 +34,30 @@ final class ReaderIdleTimerManager: ObservableObject {
                 self?.reassertKeepAwake()
             }
             .store(in: &cancellables)
+
+        // 3. Suspend keep-awake and heartbeat when entering background to preserve battery
+        NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                self.stopHeartbeat()
+                if UIApplication.shared.isIdleTimerDisabled {
+                    UIApplication.shared.isIdleTimerDisabled = false
+                }
+            }
+            .store(in: &cancellables)
+
+        // 4. Resume keep-awake and heartbeat when returning to foreground if in active reader
+        NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                if self.activeReaderCount > 0 {
+                    self.reassertKeepAwake()
+                    self.startHeartbeat()
+                }
+            }
+            .store(in: &cancellables)
     }
 
     /// Call when a reader view appears
