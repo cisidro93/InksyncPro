@@ -149,7 +149,8 @@ struct ReaderSettingsSheet: View {
             HStack(spacing: 12) {
                 ForEach(PageTurnStyle.displayCases, id: \.self) { style in
                     PageTurnStyleCard(style: style, isSelected: currentTurnStyle == style) {
-                        UserDefaults.standard.set(style.rawValue, forKey: "pageTurnStyle")
+                        pageTurnStyleRaw = style.rawValue
+                        prefs.pageTurnStyle = style
                     }
                 }
             }
@@ -164,7 +165,7 @@ struct ReaderSettingsSheet: View {
             HStack(spacing: 8) {
                 ForEach(TapZoneStyle.allCases, id: \.self) { style in
                     TapZoneStyleCard(style: style, isSelected: tapZoneStyle == style) {
-                        UserDefaults.standard.set(style.rawValue, forKey: "tapZoneStyle")
+                        tapZoneStyleRaw = style.rawValue
                     }
                 }
             }

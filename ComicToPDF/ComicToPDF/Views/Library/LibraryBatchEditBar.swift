@@ -200,10 +200,12 @@ struct LibraryBatchEditBar: View {
 
     // MARK: - Actions
     private func moveToVault() {
-        for var pdf in selectedPDFs {
-            pdf.isPrivate = true
+        for pdf in selectedPDFs {
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx].isPrivate = true
+            }
         }
-        conversionManager.objectWillChange.send()
+        conversionManager.saveLibrary()
         onActionCompleted()
         onClearSelection()
         HapticEngine.success()
@@ -217,11 +219,13 @@ struct LibraryBatchEditBar: View {
     }
 
     private func assignPARACategory(_ category: String) {
-        for var pdf in selectedPDFs {
-            pdf.metadata.readingEventLabel = category
+        for pdf in selectedPDFs {
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx].metadata.readingEventLabel = category
+            }
         }
         showingPARAPicker = false
-        conversionManager.objectWillChange.send()
+        conversionManager.saveLibrary()
         onActionCompleted()
         onClearSelection()
         HapticEngine.success()
@@ -230,14 +234,16 @@ struct LibraryBatchEditBar: View {
     private func applyBulkTag(_ tag: String) {
         let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        for var pdf in selectedPDFs {
-            if !pdf.metadata.tags.contains(trimmed) {
-                pdf.metadata.tags.append(trimmed)
+        for pdf in selectedPDFs {
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                if !conversionManager.convertedPDFs[idx].metadata.tags.contains(trimmed) {
+                    conversionManager.convertedPDFs[idx].metadata.tags.append(trimmed)
+                }
             }
         }
         showingTagPicker = false
         tagInputText = ""
-        conversionManager.objectWillChange.send()
+        conversionManager.saveLibrary()
         onActionCompleted()
         onClearSelection()
         HapticEngine.success()
