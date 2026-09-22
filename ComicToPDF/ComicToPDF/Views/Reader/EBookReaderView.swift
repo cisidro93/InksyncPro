@@ -33,6 +33,7 @@ struct EBookReaderView: View {
     
     // Preferences — shared across all books
     @StateObject private var velocityEngine = ReaderVelocityEngine()
+    @State private var pageEntryTime = Date()
 
     private func recordEBookPageTurn() {
         let remaining = max(0, totalChapters - (currentIndex + 1))
@@ -365,9 +366,11 @@ struct EBookReaderView: View {
         // FIX 4: Save scroll fraction whenever the chapter page changes
         .onChange(of: chapterPage) { _, _ in
             saveProgress()
-            velocityEngine.recordPageTurn()
+            recordEBookPageTurn()
+            let elapsed = Date().timeIntervalSince(pageEntryTime)
+            pageEntryTime = Date()
             Task {
-                await ReadingPaceTracker.shared.recordPageTurn(wordsOnPage: 280, timeSpentSeconds: 12.0)
+                await ReadingPaceTracker.shared.recordPageTurn(wordsOnPage: 280, timeSpentSeconds: max(2.0, min(180.0, elapsed)))
             }
         }
         .onChange(of: showingSettingsPanel) { _, isShowing in

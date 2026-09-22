@@ -134,6 +134,7 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
 
     /// Toggles play / pause.
     func togglePlayPause() {
+        guard isActive else { return }
         if isPlaying {
             pause()
         } else {
@@ -287,31 +288,36 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
 
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.resume() }
+            guard let self = self, self.isActive else { return .noActionableNowPlayingItem }
+            Task { @MainActor in self.resume() }
             return .success
         }
 
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.pause() }
+            guard let self = self, self.isActive else { return .noActionableNowPlayingItem }
+            Task { @MainActor in self.pause() }
             return .success
         }
 
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.togglePlayPause() }
+            guard let self = self, self.isActive else { return .noActionableNowPlayingItem }
+            Task { @MainActor in self.togglePlayPause() }
             return .success
         }
 
         commandCenter.nextTrackCommand.isEnabled = true
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.nextBlock() }
+            guard let self = self, self.isActive else { return .noActionableNowPlayingItem }
+            Task { @MainActor in self.nextBlock() }
             return .success
         }
 
         commandCenter.previousTrackCommand.isEnabled = true
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.previousBlock() }
+            guard let self = self, self.isActive else { return .noActionableNowPlayingItem }
+            Task { @MainActor in self.previousBlock() }
             return .success
         }
     }

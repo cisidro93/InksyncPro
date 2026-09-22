@@ -48,6 +48,7 @@ struct ProPDFReaderEngine: View {
     // ✅ Fix: Inject AppSettingsManager so we can pass pencilOnlyDrawing to PageCanvasOverlay,
     // preventing a silent fatal crash from a missing @EnvironmentObject in PKCanvasRepresentation.
     @EnvironmentObject private var settingsManager: AppSettingsManager
+    @State private var pageEntryTime = Date()
 
     // Ambient page color extraction
     @State private var ambientPageColor: Color = .clear
@@ -1973,7 +1974,7 @@ struct ProPDFReaderEngine: View {
                 }
             }
             let remaining = max(0, totalPages - (clamped + 1))
-            velocityEngine.recordPageTurn(remainingPages: remaining)
+            velocityEngine.recordPageTurn(remainingPages: remaining, pdfID: pdf.id)
         }
         // Only update the SwiftUI binding. updateUIView() owns the single
         // authoritative call to pdfView.go(to:) via the isNavigatingProgrammatically
@@ -2109,9 +2110,11 @@ struct ProPDFReaderEngine: View {
         }
 
         // Live Reading Pace Tracking
+        let elapsed = Date().timeIntervalSince(pageEntryTime)
+        pageEntryTime = Date()
         Task {
             let pageWords = pdfView.currentPage?.string?.components(separatedBy: .whitespacesAndNewlines).filter({ !$0.isEmpty }).count ?? 250
-            await ReadingPaceTracker.shared.recordPageTurn(wordsOnPage: max(50, pageWords), timeSpentSeconds: 15.0)
+            await ReadingPaceTracker.shared.recordPageTurn(wordsOnPage: max(50, pageWords), timeSpentSeconds: max(2.0, min(180.0, elapsed)))
         }
         HapticEngine.selection()
 
