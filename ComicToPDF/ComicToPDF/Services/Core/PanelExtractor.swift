@@ -385,9 +385,25 @@ struct PanelExtractor {
         config: ComicTierGuideConfiguration? = nil,
         imageForGutterAnalysis: UIImage? = nil
     ) -> [ComicTierQuadrant] {
-        if config == nil {
-            let booxGridRaw = UserDefaults.standard.string(forKey: "boox_gridPreset") ?? BooxGridPreset.twoByTwo.rawValue
-            let booxFlowRaw = UserDefaults.standard.string(forKey: "boox_flowOrder") ?? BooxFlowOrder.nFlow.rawValue
+        let isWideDoubleSpread = imageSize.width > imageSize.height * 1.18
+
+        // If the user has configured custom per-quadrant overrides in NeoFlow Studio, honor them directly
+        let customOverrides: [Int: CGRect] = {
+            if let jsonStr = UserDefaults.standard.string(forKey: "boox_customBlockOverridesJSON"),
+               let data = jsonStr.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode([Int: CGRect].self, from: data),
+               !decoded.isEmpty {
+                return decoded
+            }
+            return [:]
+        }()
+
+        let booxGridRaw = UserDefaults.standard.string(forKey: "boox_gridPreset") ?? ""
+        let booxPreset = BooxGridPreset(rawValue: booxGridRaw)
+        let isAdvancedBooxPreset = booxPreset == .grid2x3 || booxPreset == .grid3x2 || booxPreset == .grid3x3 || booxPreset == .oneOverTwo || booxPreset == .twoOverOne
+
+        if config == nil && (!customOverrides.isEmpty || isAdvancedBooxPreset) {
+            let booxFlowRaw = UserDefaults.standard.string(forKey: "boox_flowOrder") ?? BooxFlowOrder.reverseNFlow.rawValue
             let booxSpread = UserDefaults.standard.bool(forKey: "boox_isSpreadMode")
             let booxSplit = UserDefaults.standard.double(forKey: "boox_verticalSplitRatio") != 0 ? UserDefaults.standard.double(forKey: "boox_verticalSplitRatio") : 0.50
             let booxH0 = UserDefaults.standard.double(forKey: "boox_horizontalSplit0") != 0 ? UserDefaults.standard.double(forKey: "boox_horizontalSplit0") : 0.50
@@ -402,9 +418,9 @@ struct PanelExtractor {
             }
 
             let booxConfig = BooxSectionFlowConfig(
-                gridPreset: BooxGridPreset(rawValue: booxGridRaw) ?? .twoByTwo,
+                gridPreset: booxPreset ?? .twoByTwo,
                 flowOrder: effectiveFlow,
-                isSpreadMode: booxSpread,
+                isSpreadMode: booxSpread || isWideDoubleSpread,
                 verticalSplitRatio: CGFloat(booxSplit),
                 horizontalSplitRatios: [CGFloat(booxH0), CGFloat(booxH1)],
                 topMarginTrim: CGFloat(UserDefaults.standard.double(forKey: "boox_topMarginTrim")),
@@ -414,14 +430,7 @@ struct PanelExtractor {
                 autoCropAfterPagination: UserDefaults.standard.bool(forKey: "boox_autoCropAfterPagination"),
                 connectionRedundancy: booxRedundancy,
                 redundancyRatio: CGFloat(booxRedRatio),
-                customBlockOverrides: {
-                    if let jsonStr = UserDefaults.standard.string(forKey: "boox_customBlockOverridesJSON"),
-                       let data = jsonStr.data(using: .utf8),
-                       let decoded = try? JSONDecoder().decode([Int: CGRect].self, from: data) {
-                        return decoded
-                    }
-                    return [:]
-                }()
+                customBlockOverrides: customOverrides
             )
             let booxBlocks = BooxSectionFlowEngine.shared.generateBlocks(config: booxConfig, space: .pdf)
             if !booxBlocks.isEmpty {
@@ -440,18 +449,8 @@ struct PanelExtractor {
                 }
             }
         }
-        let activeConfig = config ?? ComicTierGuideConfiguration(
-            preset: ComicTierLayoutPreset(rawValue: UserDefaults.standard.string(forKey: "comic_smartTierPreset") ?? "") ?? .threeTier,
-            tierCount: UserDefaults.standard.integer(forKey: "comic_smartTierCount") != 0 ? UserDefaults.standard.integer(forKey: "comic_smartTierCount") : 3,
-            columnCount: UserDefaults.standard.integer(forKey: "comic_smartTierColumnCount") != 0 ? UserDefaults.standard.integer(forKey: "comic_smartTierColumnCount") : 1,
-            overlap: UserDefaults.standard.double(forKey: "comic_smartTierOverlap") != 0 ? UserDefaults.standard.double(forKey: "comic_smartTierOverlap") : 0.15,
-            columnSplitRatio: UserDefaults.standard.double(forKey: "comic_smartTierColumnSplitRatio") != 0 ? UserDefaults.standard.double(forKey: "comic_smartTierColumnSplitRatio") : 0.50,
-            topMarginTrim: UserDefaults.standard.double(forKey: "comic_smartTierTopMarginTrim"),
-            bottomMarginTrim: UserDefaults.standard.double(forKey: "comic_smartTierBottomMarginTrim"),
-            leftMarginTrim: UserDefaults.standard.double(forKey: "comic_smartTierLeftTrim"),
-            rightMarginTrim: UserDefaults.standard.double(forKey: "comic_smartTierRightTrim"),
-            flowOrder: ComicReadingFlowOrder(rawValue: UserDefaults.standard.string(forKey: "comic_smartTierFlowOrder") ?? "") ?? (mangaMode ? .mangaRTL : .columnFirst)
-        )
+
+        let activeConfig = config ?? EBookPreferences.shared.comicTierConfiguration
 
         let isWideDoubleSpread = imageSize.width > imageSize.height * 1.18
         let leftTrim = max(0.0, min(0.25, CGFloat(activeConfig.leftMarginTrim)))

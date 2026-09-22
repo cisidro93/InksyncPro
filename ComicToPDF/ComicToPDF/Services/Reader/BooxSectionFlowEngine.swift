@@ -233,8 +233,8 @@ public final class BooxSectionFlowEngine: Sendable {
                 }
             } else {
                 let colName: String
-                if config.flowOrder == .reverseNFlow || config.flowOrder == .reverseZFlow {
-                    colName = (cell.col == 0) ? "Right Col" : (numCols == 2 ? "Left Col" : "Col \(cell.col + 1)")
+                if numCols == 2 {
+                    colName = (cell.col == 0) ? "Left Col" : "Right Col"
                 } else {
                     colName = "Col \(cell.col + 1)"
                 }

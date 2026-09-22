@@ -748,10 +748,23 @@ struct PPLReaderView: View {
     private func refreshGuidedPanels() {
         guard let pdfID = pdfID else { return }
         let model = PageModelStore.shared.getPageModel(for: pdfID, pageIndex: currentPageIndex)
-        guidedPanels = model.panels.sorted { a, b in
+        var panels = model.panels.sorted { a, b in
             if abs(a.origin.y - b.origin.y) > 50 { return a.origin.y < b.origin.y }
             return isMangaMode ? (a.origin.x > b.origin.x) : (a.origin.x < b.origin.x)
         }
+        if panels.isEmpty, let cgImg = bufferManager.currentImage {
+            let uiImg = UIImage(cgImage: cgImg)
+            let strides = PanelExtractor.generateSmartStrides(for: uiImg, isDualPage: false, mangaMode: isMangaMode)
+            panels = strides.map { s in
+                NormalizedRect(
+                    x: Double(s.boundingBox.minX * 1000.0),
+                    y: Double(s.boundingBox.minY * 1000.0),
+                    width: Double(s.boundingBox.width * 1000.0),
+                    height: Double(s.boundingBox.height * 1000.0)
+                )
+            }
+        }
+        guidedPanels = panels
     }
 
     private func nextGuidedPanel(geo: CGSize) {

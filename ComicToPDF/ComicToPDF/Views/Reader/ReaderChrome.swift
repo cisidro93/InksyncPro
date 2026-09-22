@@ -66,6 +66,8 @@ struct ReaderChrome: View {
     // Mode indicator
     var isSettingsActive: Bool = false
     var currentModeLabel: String? = nil
+    var isSmartTiersActive: Bool = false
+    var onToggleSmartTiers: (() -> Void)? = nil
 
     // Ambient tint from current page (Panels-style)
     var ambientColor: Color = .clear
@@ -360,10 +362,25 @@ struct ReaderChrome: View {
                         }
                     } else {
                         Button {
-                            NotificationCenter.default.post(name: NSNotification.Name("ComicReader_OpenPanelWorkspace"), object: nil)
+                            if let onToggle = onToggleSmartTiers {
+                                onToggle()
+                            } else {
+                                NotificationCenter.default.post(name: NSNotification.Name("ComicReader_ToggleSmartTiers"), object: nil)
+                            }
                             HapticEngine.selection()
                         } label: {
-                            Label("Adjust Smart Tiers & Flow", systemImage: "slider.horizontal.2.square")
+                            Label(
+                                isSmartTiersActive ? "Smart Tiers (Active)" : "Smart Tiers (Guided Flow)",
+                                systemImage: isSmartTiersActive ? "checkmark.circle.fill" : "rectangle.split.3x1"
+                            )
+                        }
+                        if isSmartTiersActive {
+                            Button {
+                                NotificationCenter.default.post(name: NSNotification.Name("ComicReader_OpenPanelWorkspace"), object: nil)
+                                HapticEngine.selection()
+                            } label: {
+                                Label("Adjust Smart Tiers & Flow", systemImage: "slider.horizontal.2.square")
+                            }
                         }
                     }
                 }

@@ -1517,6 +1517,8 @@ struct ComicReaderEngine: View {
     @State private var dialogueOCRTask: Task<Void, Never>? = nil
     /// Phase 4A: Auto-hide chrome — cancellable idle timer.
     @State private var chromeIdleTask: Task<Void, Never>? = nil
+    /// Guided View Stride target when crossing spread boundaries (0 = first stride, -1 = last stride)
+    @State private var guidedInitialStrideIndex: Int = 0
     
     var isMangaComic: Bool {
         pdf.metadata.isManga == true || pdf.contentType == .manga
@@ -2097,6 +2099,23 @@ struct ComicReaderEngine: View {
                 showAnnotations.toggle()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ComicReader_ToggleSmartTiers"))) { _ in
+            HapticEngine.selection()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                if readingMode == .panelNavigation {
+                    let targetMode: ComicReadingMode
+                    if lastPageTurnReadingMode != .panelNavigation && lastPageTurnReadingMode != .webtoonScroll {
+                        targetMode = lastPageTurnReadingMode
+                    } else {
+                        targetMode = isMangaActive ? .mangaRTL : .pageHorizontal
+                    }
+                    readingMode = targetMode
+                } else {
+                    lastPageTurnReadingMode = readingMode
+                    readingMode = .panelNavigation
+                }
+            }
+        }
         .ignoresSafeArea()
     } // closes GeometryReader
 } // end body
@@ -2117,7 +2136,11 @@ struct ComicReaderEngine: View {
             activeFilterPreset: activeFilterPreset,
             isMangaMode: isMangaActive,
             isChromeVisible: chromeVisible,
+            initialStrideIndex: guidedInitialStrideIndex,
             activeStrideLabel: $guidedPanelBadgeText,
+            onPageBoundaryCrossed: { newIndex, targetStride in
+                guidedInitialStrideIndex = targetStride
+            },
             onTapChrome: { chromeVisible.toggle() },
             onToggleReadingMode: {
                 let now = Date()
@@ -2419,6 +2442,24 @@ struct ComicReaderEngine: View {
             onEnhanceToggle: { withAnimation(.easeInOut) { showingFilterHUD.toggle() } },
             isSettingsActive: readingMode != .pageHorizontal,
             currentModeLabel: readingMode != .pageHorizontal ? readingMode.hudLabel : nil,
+            isSmartTiersActive: readingMode == .panelNavigation,
+            onToggleSmartTiers: {
+                HapticEngine.selection()
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    if readingMode == .panelNavigation {
+                        let targetMode: ComicReadingMode
+                        if lastPageTurnReadingMode != .panelNavigation && lastPageTurnReadingMode != .webtoonScroll {
+                            targetMode = lastPageTurnReadingMode
+                        } else {
+                            targetMode = isMangaActive ? .mangaRTL : .pageHorizontal
+                        }
+                        readingMode = targetMode
+                    } else {
+                        lastPageTurnReadingMode = readingMode
+                        readingMode = .panelNavigation
+                    }
+                }
+            },
             ambientColor: ambientPageColor,
             sessionStartTime: sessionStartTime,
             onSwipeDown: saveProgressAndDismiss,
@@ -3387,7 +3428,9 @@ struct ComicSpreadGuidedView: View {
     let activeFilterPreset: ReadingFilterPreset
     var isMangaMode: Bool = false
     var isChromeVisible: Bool = false
+    var initialStrideIndex: Int = 0
     var activeStrideLabel: Binding<String?>? = nil
+    var onPageBoundaryCrossed: ((_ targetPageIndex: Int, _ targetStrideIndex: Int) -> Void)? = nil
     var onTapChrome: () -> Void
     var onToggleReadingMode: (() -> Void)? = nil
 
@@ -3400,6 +3443,37 @@ struct ComicSpreadGuidedView: View {
     @State private var isAnalyzing: Bool = false
     @State private var isAdjustingInWorkspace: Bool = false
     @State private var lastTapTime: Date = .distantPast
+
+    init(
+        spread: [Int],
+        cache: ComicImageCache,
+        pdf: ConvertedPDF,
+        masterIndex: Binding<Int>,
+        spreads: [[Int]],
+        activeFilterPreset: ReadingFilterPreset,
+        isMangaMode: Bool = false,
+        isChromeVisible: Bool = false,
+        initialStrideIndex: Int = 0,
+        activeStrideLabel: Binding<String?>? = nil,
+        onPageBoundaryCrossed: ((_ targetPageIndex: Int, _ targetStrideIndex: Int) -> Void)? = nil,
+        onTapChrome: @escaping () -> Void,
+        onToggleReadingMode: (() -> Void)? = nil
+    ) {
+        self.spread = spread
+        self.cache = cache
+        self.pdf = pdf
+        self._masterIndex = masterIndex
+        self.spreads = spreads
+        self.activeFilterPreset = activeFilterPreset
+        self.isMangaMode = isMangaMode
+        self.isChromeVisible = isChromeVisible
+        self.initialStrideIndex = initialStrideIndex
+        self.activeStrideLabel = activeStrideLabel
+        self.onPageBoundaryCrossed = onPageBoundaryCrossed
+        self.onTapChrome = onTapChrome
+        self.onToggleReadingMode = onToggleReadingMode
+        self._currentStrideIndex = State(initialValue: initialStrideIndex)
+    }
     @State private var pendingSingleTapWorkItem: DispatchWorkItem? = nil
     @State private var dragOffset: CGSize = .zero
     @State private var showPanelBadge: Bool = false
@@ -3714,7 +3788,9 @@ struct ComicSpreadGuidedView: View {
         guard let currentSpreadIdx = spreads.firstIndex(where: { $0 == spread }) else { return }
         let nextSpreadIdx = currentSpreadIdx + 1
         if nextSpreadIdx < spreads.count {
-            masterIndex = spreads[nextSpreadIdx].first ?? masterIndex
+            let nextFirstPage = spreads[nextSpreadIdx].first ?? masterIndex
+            onPageBoundaryCrossed?(nextFirstPage, 0)
+            masterIndex = nextFirstPage
             currentStrideIndex = 0
         }
     }
@@ -3723,7 +3799,9 @@ struct ComicSpreadGuidedView: View {
         guard let currentSpreadIdx = spreads.firstIndex(where: { $0 == spread }) else { return }
         let prevSpreadIdx = currentSpreadIdx - 1
         if prevSpreadIdx >= 0 {
-            masterIndex = spreads[prevSpreadIdx].first ?? masterIndex
+            let prevFirstPage = spreads[prevSpreadIdx].first ?? masterIndex
+            onPageBoundaryCrossed?(prevFirstPage, -1)
+            masterIndex = prevFirstPage
             currentStrideIndex = -1
         }
     }
@@ -3757,11 +3835,12 @@ struct ComicSpreadGuidedView: View {
 
         Task.detached(priority: .userInitiated) {
             let isDualSpread = (spread.count == 2)
-            let p0 = await PanelExtractor.detectPanelsOrSmartStrides(in: img0, isDualPage: isDualSpread, mangaMode: manga)
+            let tierConfig = await MainActor.run { EBookPreferences.shared.comicTierConfiguration }
+            let p0 = await PanelExtractor.detectPanelsOrSmartStrides(in: img0, isDualPage: isDualSpread, mangaMode: manga, config: tierConfig)
 
             let p1: [PanelExtractor.Panel]
             if let _ = idx1, let img1 = img1 {
-                p1 = await PanelExtractor.detectPanelsOrSmartStrides(in: img1, isDualPage: isDualSpread, mangaMode: manga)
+                p1 = await PanelExtractor.detectPanelsOrSmartStrides(in: img1, isDualPage: isDualSpread, mangaMode: manga, config: tierConfig)
             } else {
                 p1 = []
             }
@@ -3793,13 +3872,19 @@ struct ComicSpreadGuidedView: View {
                 let firstPanels = p0
                 let secondIdx = idx1
                 let secondPanels = p1
+                let totalSteps = firstPanels.count + secondPanels.count
+
+                let firstPageName = manga ? "Right Page" : "Left Page"
+                let secondPageName = manga ? "Left Page" : "Right Page"
 
                 for (i, panel) in firstPanels.enumerated() {
-                    let lbl = panelLabel(for: panel, index: i, total: firstPanels.count)
+                    let subLbl = panelLabel(for: panel, index: i, total: firstPanels.count)
+                    let lbl = "\(firstPageName) · \(subLbl) (\(i + 1)/\(totalSteps))"
                     builtStrides.append(SpreadStride(pageIndex: firstIdx, panel: panel, label: lbl, subIndex: i, totalForPage: firstPanels.count))
                 }
                 for (i, panel) in secondPanels.enumerated() {
-                    let lbl = panelLabel(for: panel, index: i, total: secondPanels.count)
+                    let subLbl = panelLabel(for: panel, index: i, total: secondPanels.count)
+                    let lbl = "\(secondPageName) · \(subLbl) (\(firstPanels.count + i + 1)/\(totalSteps))"
                     builtStrides.append(SpreadStride(pageIndex: secondIdx, panel: panel, label: lbl, subIndex: i, totalForPage: secondPanels.count))
                 }
             } else {
@@ -3812,8 +3897,9 @@ struct ComicSpreadGuidedView: View {
             await MainActor.run {
                 self.strides = builtStrides
                 self.isAnalyzing = false
-                if self.currentStrideIndex == -1 && !builtStrides.isEmpty {
+                if (self.currentStrideIndex == -1 || self.initialStrideIndex == -1) && !builtStrides.isEmpty {
                     self.currentStrideIndex = builtStrides.count - 1
+                    self.onPageBoundaryCrossed?(self.masterIndex, 0)
                 } else if self.currentStrideIndex < 0 && !builtStrides.isEmpty {
                     self.currentStrideIndex = 0
                 }

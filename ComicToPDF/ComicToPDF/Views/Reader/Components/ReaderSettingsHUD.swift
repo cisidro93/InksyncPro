@@ -115,8 +115,23 @@ struct ReaderSettingsHUD: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
 
-                    Toggle(isOn: $prefs.isPDFSmartTiersActive) {
-                        Label("PDF Smart Tiers Guided Flow", systemImage: "rectangle.split.3x1")
+                    Toggle(
+                        isOn: Binding(
+                            get: { readingMode == .panelNavigation || prefs.isPDFSmartTiersActive },
+                            set: { isActive in
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                                    prefs.isPDFSmartTiersActive = isActive
+                                    if isActive {
+                                        readingMode = .panelNavigation
+                                    } else if readingMode == .panelNavigation {
+                                        readingMode = .pageHorizontal
+                                    }
+                                }
+                                HapticEngine.selection()
+                            }
+                        )
+                    ) {
+                        Label("Smart Tiers Guided Flow", systemImage: "rectangle.split.3x1")
                             .font(.system(size: isPad ? 13 : 12, weight: .semibold))
                             .foregroundColor(Color.inkTextPrimary)
                     }
