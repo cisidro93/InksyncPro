@@ -12,6 +12,8 @@ struct ReadingModeQuickPicker: View {
     var onDismiss: () -> Void
     var onSave: () -> Void
 
+    @State private var autoDismissTask: Task<Void, Never>? = nil
+
     private enum Mode: CaseIterable {
         case normal, manga, webtoon
 
@@ -42,7 +44,8 @@ struct ReadingModeQuickPicker: View {
         HStack(spacing: 6) {
             ForEach(Mode.allCases, id: \.label) { mode in
                 Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    autoDismissTask?.cancel()
+                    HapticEngine.selection()
                     withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
                         switch mode {
                         case .normal:
@@ -58,7 +61,12 @@ struct ReadingModeQuickPicker: View {
                     }
                     onSave()
                     // Auto-dismiss after selection
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { onDismiss() }
+                    autoDismissTask = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 1_200_000_000)
+                        if !Task.isCancelled {
+                            onDismiss()
+                        }
+                    }
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: mode.icon)
@@ -71,7 +79,7 @@ struct ReadingModeQuickPicker: View {
                     .padding(.vertical, 9)
                     .background(
                         currentMode == mode
-                            ? AnyShapeStyle(Theme.orange)
+                            ? AnyShapeStyle(Color.inkOrange)
                             : AnyShapeStyle(Color.primary.opacity(0.06)),
                         in: Capsule()
                     )
@@ -95,5 +103,8 @@ struct ReadingModeQuickPicker: View {
         .padding(.horizontal, 32)
         .padding(.bottom, 100)
         .transition(.move(edge: .bottom).combined(with: .opacity))
+        .onDisappear {
+            autoDismissTask?.cancel()
+        }
     }
 }

@@ -840,6 +840,9 @@ struct StudyNotebookView: View {
                 Logger.shared.log("StudyNotebook appeared for book: '\(bookTitle)'", category: "Notebook", type: .info)
                 initializeSDAnnotation()
             }
+            .onDisappear {
+                flushSave()
+            }
             .onChange(of: paperStyle) { _, newStyle in
                 if let nb = getOrCreateNotebook() {
                     nb.templateStyle = newStyle.rawValue
@@ -1054,6 +1057,37 @@ struct StudyNotebookView: View {
         }
     }
     
+    private func flushSave() {
+        saveTask?.cancel()
+        saveTask = nil
+        ocrTask?.cancel()
+        ocrTask = nil
+
+        let note = self.localNotes
+        let cues = self.cornellCuesText
+        let summary = self.cornellSummaryText
+        let drawing = self.canvasView.drawing
+        let drawingData = drawing.dataRepresentation()
+
+        if let activePage = self.activeReaderPageIndex {
+            self.activeNoteAnnotation?.pageIndex = activePage
+            self.referencedPageIndices.insert(activePage)
+        }
+        self.activeNoteAnnotation?.noteText = note
+        self.activeNoteAnnotation?.cornellCueText = cues
+        self.activeNoteAnnotation?.cornellSummaryText = summary
+        self.activeNoteAnnotation?.drawingData = drawingData
+        self.activeNoteAnnotation?.modifiedAt = Date()
+        if let annotation = self.activeNoteAnnotation {
+            SpotlightIndexer.shared.indexAnnotation(annotation)
+        }
+        try? self.modelContext.save()
+
+        if speechEngine.isPlaying {
+            speechEngine.stop()
+        }
+    }
+
     private func debounceSave() {
         saveTask?.cancel()
         saveTask = Task {

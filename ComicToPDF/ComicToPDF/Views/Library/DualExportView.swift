@@ -20,6 +20,8 @@ struct DualExportView: View {
     @State private var isProcessing = false
     @State private var mailResult: Result<MFMailComposeResult, Error>? = nil
     @State private var saveToFilesSuccessToast = false
+    @State private var showingExportErrorAlert = false
+    @State private var exportErrorMessage = ""
     
     var body: some View {
         NavigationStack {
@@ -296,6 +298,11 @@ struct DualExportView: View {
                     }
                 }
             }
+            .alert("Export Notice", isPresented: $showingExportErrorAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(exportErrorMessage)
+            }
         }
     }
     
@@ -304,12 +311,15 @@ struct DualExportView: View {
         Task {
             let url = await conversionManager.exportForCloudSync(pdf)
             await MainActor.run {
-                self.exportURL = url
                 self.isProcessing = false
-                self.showingShareSheet = true
-            }
-            if let safeURL = url {
-                Logger.shared.log("Exported for Cloud Sync: \(safeURL.lastPathComponent)", category: "Export", type: .success)
+                if let safeURL = url {
+                    self.exportURL = safeURL
+                    self.showingShareSheet = true
+                    Logger.shared.log("Exported for Cloud Sync: \(safeURL.lastPathComponent)", category: "Export", type: .success)
+                } else {
+                    self.exportErrorMessage = "Unable to prepare '\(pdf.name)' for Cloud Sync. Please ensure device storage is available."
+                    self.showingExportErrorAlert = true
+                }
             }
         }
     }
@@ -357,7 +367,11 @@ struct DualExportView: View {
                 Logger.shared.log("Prepared '\(destURL.lastPathComponent)' for Save to Files export", category: "Export", type: .success)
             } catch {
                 Logger.shared.log("Save to Files preparation failed: \(error.localizedDescription)", category: "Export", type: .error)
-                await MainActor.run { isProcessing = false }
+                await MainActor.run {
+                    self.isProcessing = false
+                    self.exportErrorMessage = "Could not prepare file for export: \(error.localizedDescription)"
+                    self.showingExportErrorAlert = true
+                }
             }
         }
     }
@@ -367,12 +381,15 @@ struct DualExportView: View {
         Task {
             let url = await conversionManager.exportForCloudSync(pdf)
             await MainActor.run {
-                self.exportURL = url
                 self.isProcessing = false
-                self.showingMailView = true
-            }
-            if let safeURL = url {
-                Logger.shared.log("Exported for Email: \(safeURL.lastPathComponent)", category: "Export", type: .success)
+                if let safeURL = url {
+                    self.exportURL = safeURL
+                    self.showingMailView = true
+                    Logger.shared.log("Exported for Email: \(safeURL.lastPathComponent)", category: "Export", type: .success)
+                } else {
+                    self.exportErrorMessage = "Unable to prepare '\(pdf.name)' for email. Please verify the document is accessible."
+                    self.showingExportErrorAlert = true
+                }
             }
         }
     }

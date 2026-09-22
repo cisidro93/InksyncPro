@@ -717,6 +717,9 @@ struct ProPDFReaderEngine: View {
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("PDFReader_OpenSmartTiersWorkspace"))) { _ in
                 isAdjustingSmartTiers = true
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ComicReader_OpenPanelWorkspace"))) { _ in
+                isAdjustingSmartTiers = true
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleMarkupMode"))) { _ in
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
                     isPencilMode.toggle()
@@ -4289,9 +4292,12 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let isDrawingActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || autoPencilActive
 
             // When in markup/drawing mode or auto-pencil is active, NEVER allow tap gesture to receive Apple Pencil touches
-            // so stippling, dotting 'i', punctuation, and quick pencil taps draw with 100% fidelity without turning pages.
+            // or finger inking touches (on iPhone or when finger drawing is allowed)
+            // so stippling, dotting 'i', punctuation, and quick taps draw with 100% fidelity without turning pages.
             if isDrawingActive && gestureRecognizer == tapGesture {
-                if touch.type == .pencil {
+                let pencilOnlyDrawingSetting = AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
+                let allowFinger = !isPad || !pencilOnlyDrawingSetting || currentToolMode == .eraser
+                if touch.type == .pencil || (allowFinger && parent.isPencilMode) {
                     return false
                 }
             }

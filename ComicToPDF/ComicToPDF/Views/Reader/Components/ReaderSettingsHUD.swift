@@ -126,7 +126,10 @@ struct ReaderSettingsHUD: View {
 
                     Button {
                         HapticEngine.selection()
-                        NotificationCenter.default.post(name: NSNotification.Name("ComicReader_OpenPanelWorkspace"), object: nil)
+                        onDismiss()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            NotificationCenter.default.post(name: NSNotification.Name("ComicReader_OpenPanelWorkspace"), object: nil)
+                        }
                     } label: {
                         HStack(spacing: 12) {
                             ZStack {
