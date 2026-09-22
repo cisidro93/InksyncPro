@@ -744,7 +744,10 @@ struct ProPDFReaderEngine: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
                 if prefs.isPDFSmartTiersActive {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        focusOnTier(index: currentTierIndex, animated: false)
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                         focusOnTier(index: currentTierIndex, animated: false)
                     }
                 }
@@ -2209,8 +2212,19 @@ struct ProPDFReaderEngine: View {
         let topSafeArea = pv.safeAreaInsets.top
         let bottomSafeArea = pv.safeAreaInsets.bottom
 
+        // Precise overlay clearances:
+        // KindleProgressFooterView sits at the bottom with ~36-40pt height + padding.
+        // ReaderChrome bottom bar sits at ~80-90pt.
+        // FloatingReaderClockOverlay sits at topSafeArea + 8pt (~24pt height).
+        let bottomReserved: CGFloat = chromeVisible
+            ? max(bottomSafeArea + 80.0, 100.0)
+            : (bottomSafeArea + (isPhone ? (isLandscape ? 38.0 : 46.0) : 52.0))
+        let topReserved: CGFloat = chromeVisible
+            ? max(topSafeArea + 60.0, 80.0)
+            : (topSafeArea + (isPhone ? (isLandscape ? 16.0 : 24.0) : 28.0))
+
         let safeWidth = max(100.0, pv.bounds.width - leftSafeArea - rightSafeArea - (isPhone ? 16.0 : 28.0))
-        let safeHeight = max(100.0, pv.bounds.height - topSafeArea - bottomSafeArea - (isPhone ? 20.0 : 32.0))
+        let safeHeight = max(100.0, pv.bounds.height - topReserved - bottomReserved)
 
         let colWidthOnPage = max(20.0, norm.width * cropBox.width)
         let tierHeightOnPage = max(20.0, norm.height * cropBox.height)
@@ -2218,14 +2232,16 @@ struct ProPDFReaderEngine: View {
         let scaleForWidth = safeWidth / colWidthOnPage
         let scaleForHeight = safeHeight / tierHeightOnPage
 
-        // Invariant: For multi-column reading, width must NEVER exceed screen width.
-        // In portrait: strict column-fit ensures every line of text reads edge-to-edge with zero horizontal pan.
-        // In landscape: clamp to fit comfortably without excessive height overflow.
+        // Golden Rule Invariant:
+        // In Landscape: Scale MUST clamp to fit height so that the entire tier (including bottom lines)
+        // is 100% visible on screen without any truncation: targetScale = min(scaleForHeight, scaleForWidth).
+        // In Portrait: Strict column-fit ensures edge-to-edge width readability with zero horizontal pan,
+        // clamped defensively to scaleForHeight so exceptionally tall tiers also stay within safe bounds.
         let rawTargetScale: CGFloat
         if isLandscape {
-            rawTargetScale = min(scaleForWidth, max(scaleForWidth * 0.78, scaleForHeight))
+            rawTargetScale = min(scaleForHeight, scaleForWidth)
         } else {
-            rawTargetScale = scaleForWidth
+            rawTargetScale = min(scaleForWidth, scaleForHeight * 1.05)
         }
 
         let minAllowed = max(0.4, fitScale * 0.85)
@@ -2242,14 +2258,6 @@ struct ProPDFReaderEngine: View {
 
         pv.scaleFactor = targetScale
         pv.layoutDocumentView()
-
-        // Point in PDF Page coordinates:
-        // Left edge of quadrant: cropBox.minX + (norm.minX * cropBox.width)
-        // Top edge of quadrant: cropBox.minY + (norm.maxY * cropBox.height)
-        let quadTopLeft = CGPoint(
-            x: cropBox.minX + (norm.minX * cropBox.width),
-            y: cropBox.minY + (norm.maxY * cropBox.height)
-        )
 
         let alignViewport: @MainActor () -> Void = { [weak pv] in
             guard let pv = pv,
@@ -2289,21 +2297,26 @@ struct ProPDFReaderEngine: View {
             }
 
             // Desired Y position:
-            // Top tier: anchor safely below Dynamic Island / notch
-            // Bottom tier: anchor safely above Home Indicator
-            // Middle tier: center vertically in viewport
+            // Top tier: anchor safely below topReserved
+            // Bottom tier: anchor safely above bottomReserved
+            // Middle tier: center vertically in safe visible space
             let rowIdx = quad.tierIndex
             let totalRows = quad.totalTiersInColumn
 
-            let desiredViewY: CGFloat
+            var desiredViewY: CGFloat
             if totalRows > 1 && rowIdx == 0 {
-                desiredViewY = topSafeArea + (isPhone ? 8.0 : 14.0)
-            } else if totalRows > 1 && rowIdx == (totalRows - 1) && scaledTierHeight < safeHeight {
-                desiredViewY = pv.bounds.height - bottomSafeArea - scaledTierHeight - (isPhone ? 8.0 : 14.0)
+                desiredViewY = topReserved
+            } else if totalRows > 1 && rowIdx == (totalRows - 1) {
+                desiredViewY = pv.bounds.height - bottomReserved - scaledTierHeight
             } else if scaledTierHeight < safeHeight {
-                desiredViewY = topSafeArea + (safeHeight - scaledTierHeight) / 2.0
+                desiredViewY = topReserved + (safeHeight - scaledTierHeight) / 2.0
             } else {
-                desiredViewY = topSafeArea + (isPhone ? 8.0 : 14.0)
+                desiredViewY = topReserved
+            }
+
+            // Invariant Safeguard: The bottom of the tier MUST NEVER extend past pv.bounds.height - bottomReserved!
+            if (desiredViewY + scaledTierHeight) > (pv.bounds.height - bottomReserved) {
+                desiredViewY = max(topReserved, pv.bounds.height - bottomReserved - scaledTierHeight)
             }
 
             let targetOffsetX = quadAbsX - desiredViewX

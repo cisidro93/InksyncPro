@@ -3940,8 +3940,8 @@ struct ComicSpreadGuidedView: View {
         let isTopEdge = (rawMaxY >= 0.88) || (rect.minY <= 0.03 * imgSize.height)
         let isBottomEdge = (rawMinY <= 0.12) || (rect.maxY >= 0.97 * imgSize.height)
         let isLandscape = proxy.width > proxy.height
-        let safeTop: CGFloat = max(isLandscape ? 12 : 16, safeAreaInsets.top + 6)
-        let safeBottom: CGFloat = max(isLandscape ? 12 : 16, safeAreaInsets.bottom + 6)
+        let safeTop: CGFloat = max(isLandscape ? 14.0 : 18.0, safeAreaInsets.top + 8.0)
+        let safeBottom: CGFloat = max(isLandscape ? 38.0 : 46.0, safeAreaInsets.bottom + 34.0)
 
         if isTopEdge {
             // Shift down so the top of the comic page / speech bubbles are 100% visible

@@ -1643,9 +1643,11 @@ extension EBookPageCurlReader {
             let isDark = parent.prefs.activeTheme.isDark
             let themeBg = parent.prefs.activeTheme.cssBackground
             let themeText = parent.prefs.activeTheme.cssText
+            let isMultiCol = isDualPageMode
             let js = """
             (function() {
                 var currentFrac = \(frac);
+                _isMultiCol = \(isMultiCol ? "true" : "false");
                 var el = document.getElementById('__inksync_live__');
                 if (el) { el.innerHTML = `\(safeCSS)`; }
                 if (window.updateAllInksyncHighlights) {

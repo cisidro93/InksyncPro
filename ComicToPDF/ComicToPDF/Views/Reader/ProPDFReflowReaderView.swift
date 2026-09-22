@@ -69,17 +69,15 @@ struct ProPDFReflowReaderView: View {
                 )
                 .onChange(of: webViewRef) { _, newWebView in
                     if newWebView != nil && !hasAnchoredInitialPage {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
                             scrollToCurrentPDFPage()
-                            hasAnchoredInitialPage = true
                         }
                     }
                 }
                 .onAppear {
                     if webViewRef != nil && !hasAnchoredInitialPage {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
                             scrollToCurrentPDFPage()
-                            hasAnchoredInitialPage = true
                         }
                     }
                 }
@@ -96,57 +94,13 @@ struct ProPDFReflowReaderView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
-            // Top Floating Mode Toggle Pill & Status
-            if let toggle = onToggleReflow, isChromeVisible {
-                HStack(spacing: 8) {
-                    Button(action: {
-                        HapticEngine.light()
-                        toggle()
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "doc.text")
-                                .font(.system(size: 12, weight: .bold))
-                            Text("Vector View")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 7)
-                        .background(Color.black.opacity(0.72).background(.ultraThinMaterial))
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
-                    }
-
-                    Spacer()
-
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(Color.inkGreen)
-                            .frame(width: 7, height: 7)
-                        Text("Reflow Mode")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.black.opacity(0.65).background(.ultraThinMaterial))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(Color.inkGreen.opacity(0.4), lineWidth: 0.8))
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-                .zIndex(20)
-            }
         }
         .task {
             await compileReflowLayout()
         }
     }
 
-    private func scrollToCurrentPDFPage() {
+    private func scrollToCurrentPDFPage(attempt: Int = 1) {
         guard let webView = webViewRef else { return }
         let targetPageNumber = currentPageIndex + 1
         let js = """
@@ -159,21 +113,39 @@ struct ProPDFReflowReaderView: View {
                     el = markers[idx];
                 }
             }
-            if (el) {
-                var rect = el.getBoundingClientRect();
-                var vp = document.getElementById('inksync-viewport') || document.body;
-                var vpRect = vp ? vp.getBoundingClientRect() : { left: 0 };
-                var offsetLeft = (rect.left - vpRect.left);
-                var pageStep = (typeof getPageStep === 'function') ? getPageStep() : window.innerWidth;
-                var colWidth = (typeof _isMultiCol !== 'undefined' && _isMultiCol) ? (pageStep / 2) : pageStep;
-                if (colWidth > 0 && typeof goToPage === 'function') {
-                    var targetPage = Math.max(0, Math.min(Math.floor(offsetLeft / colWidth), (typeof _totalPages !== 'undefined' ? _totalPages : 1) - 1));
-                    goToPage(targetPage, false);
-                }
+            if (!el) return -1;
+            if (typeof computeMetrics === 'function' && (_totalPages <= 1 || typeof _totalPages === 'undefined')) {
+                computeMetrics();
             }
+            if (typeof _totalPages === 'undefined' || _totalPages <= 1) {
+                return 0; // metrics still compiling, need retry
+            }
+            var rect = el.getBoundingClientRect();
+            var vp = document.getElementById('inksync-viewport') || document.body;
+            var vpRect = vp ? vp.getBoundingClientRect() : { left: 0 };
+            var offsetLeft = (rect.left - vpRect.left);
+            var pageStep = (typeof getPageStep === 'function') ? getPageStep() : window.innerWidth;
+            var colWidth = (typeof _isMultiCol !== 'undefined' && _isMultiCol) ? (pageStep / 2) : pageStep;
+            if (colWidth > 0 && typeof goToPage === 'function') {
+                var targetPage = Math.max(0, Math.min(Math.floor(offsetLeft / colWidth), _totalPages - 1));
+                goToPage(targetPage, false);
+                return 1; // success
+            }
+            return -1;
         })();
         """
-        webView.evaluateJavaScript(js, completionHandler: nil)
+        webView.evaluateJavaScript(js) { result, _ in
+            let code = result as? Int ?? -1
+            if code == 1 {
+                self.hasAnchoredInitialPage = true
+            } else if attempt < 5 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    self.scrollToCurrentPDFPage(attempt: attempt + 1)
+                }
+            } else {
+                self.hasAnchoredInitialPage = true
+            }
+        }
     }
 
     private func syncCurrentPDFPageFromReflow() {

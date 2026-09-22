@@ -1334,16 +1334,18 @@ public struct BooxSectionFlowWorkspace: View {
                             )
 
                             // Golden Rule Column Fit Invariant:
-                            // Fits the column/tier width to the reading display area with comfortable reading margins:
+                            // Fits the column/tier to the display area with comfortable reading margins:
                             let safeW = max(100.0, viewW - (isLandscape ? 36.0 : 20.0))
-                            let safeH = max(100.0, viewH - (isLandscape ? 24.0 : 40.0))
+                            let topReserved: CGFloat = isLandscape ? 20.0 : 36.0
+                            let bottomReserved: CGFloat = isLandscape ? 36.0 : 48.0
+                            let safeH = max(100.0, viewH - topReserved - bottomReserved)
 
                             let scaleForW = safeW / cropBox.width
                             let scaleForH = safeH / cropBox.height
 
-                            // In portrait: strict column-fit ensures every line of text reads edge-to-edge with zero horizontal pan.
-                            // In landscape: clamp to fit comfortably without excessive height overflow.
-                            let fitScale: CGFloat = isLandscape ? min(scaleForW, max(scaleForW * 0.78, scaleForH)) : scaleForW
+                            // In landscape: clamp to fit height so the entire tier (including bottom lines) fits with zero cutoff.
+                            // In portrait: strict column-fit edge-to-edge readability with zero horizontal pan.
+                            let fitScale: CGFloat = isLandscape ? min(scaleForH, scaleForW) : min(scaleForW, scaleForH * 1.05)
 
                             let renderedW = cropBox.width * fitScale
                             let renderedH = cropBox.height * fitScale
@@ -1352,22 +1354,28 @@ public struct BooxSectionFlowWorkspace: View {
                             let posX = viewW / 2.0
 
                             // Desired Y position:
-                            // Top tier: anchor top near top of screen
-                            // Bottom tier: anchor bottom near bottom of screen
+                            // Top tier: anchor top below topReserved
+                            // Bottom tier: anchor bottom safely above bottomReserved
                             // Middle tier: center vertically
                             let totalRows = config.gridPreset.rowCount
                             let rowIdx = block.rowIndex
 
                             let posY: CGFloat = {
+                                var rawY: CGFloat
                                 if totalRows > 1 && rowIdx == 0 {
-                                    return 14.0 + (renderedH / 2.0)
-                                } else if totalRows > 1 && rowIdx == (totalRows - 1) && renderedH < safeH {
-                                    return viewH - 18.0 - (renderedH / 2.0)
+                                    rawY = topReserved + (renderedH / 2.0)
+                                } else if totalRows > 1 && rowIdx == (totalRows - 1) {
+                                    rawY = viewH - bottomReserved - (renderedH / 2.0)
                                 } else if renderedH < safeH {
-                                    return viewH / 2.0
+                                    rawY = topReserved + (safeH / 2.0)
                                 } else {
-                                    return 14.0 + (renderedH / 2.0)
+                                    rawY = topReserved + (renderedH / 2.0)
                                 }
+                                // Zero bottom cutoff invariant
+                                if (rawY + (renderedH / 2.0)) > (viewH - bottomReserved) {
+                                    rawY = max(topReserved + (renderedH / 2.0), viewH - bottomReserved - (renderedH / 2.0))
+                                }
+                                return rawY
                             }()
 
                             if let croppedCG = thumb.cgImage?.cropping(to: cropBox) {
