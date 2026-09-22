@@ -781,10 +781,10 @@ struct ProPDFReaderEngine: View {
     // MARK: - Subviews for Fast Compiler Type-Checking
 
     @ViewBuilder private var mainContentView: some View {
-        if isReflowMode {
+        if isReflowMode, let doc = pdfDocument {
             ProPDFReflowReaderView(
                 pdf: pdf,
-                pdfDocument: pdfDocument,
+                pdfDocument: doc,
                 currentPageIndex: $currentPageIndex,
                 isChromeVisible: chromeVisible,
                 onDismiss: {
@@ -1654,6 +1654,11 @@ struct ProPDFReaderEngine: View {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                     isReflowMode.toggle()
                     prefs.pdfReflowMode = isReflowMode
+                }
+                if !isReflowMode {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        jumpToPage(currentPageIndex)
+                    }
                 }
                 HapticEngine.medium()
             },

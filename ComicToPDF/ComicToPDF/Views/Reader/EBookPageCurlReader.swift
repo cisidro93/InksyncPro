@@ -227,6 +227,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             let direction: UIPageViewController.NavigationDirection = isForward ? .forward : .reverse
             context.coordinator.safeSetViewControllers(vcs, direction: direction, animated: false) { _ in
                 context.coordinator.mountPrimaryWebViewOnRoot()
+                context.coordinator.takePageSnapshot(for: targetIndex)
             }
         }
     }
@@ -1825,7 +1826,7 @@ extension EBookPageCurlReader {
             }
         }
 
-        private func takePageSnapshot(for pageIndex: Int) {
+        fileprivate func takePageSnapshot(for pageIndex: Int) {
             guard let wv = primaryWebView, wv.bounds.width > 1, wv.bounds.height > 1 else { return }
             let config = WKSnapshotConfiguration()
             config.rect = wv.bounds
