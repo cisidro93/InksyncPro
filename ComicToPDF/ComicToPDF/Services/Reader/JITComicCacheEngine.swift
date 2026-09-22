@@ -56,11 +56,14 @@ public actor JITComicCacheEngine {
     public static let shared = JITComicCacheEngine()
     
     private var memoryCache: [String: UIImage] = [:]
+    private var memoryAccessOrder: [String] = []
     private var mipmapCache: [String: UIImage] = [:]
+    private var mipmapAccessOrder: [String] = []
     private var activePreloadTasks: [String: Task<Void, Never>] = [:]
     
     private var currentTier: DeviceMemoryTier = .current
     private var isUnderMemoryPressure: Bool = false
+    private var memoryPressureResetTask: Task<Void, Never>? = nil
     
     public init() {
         // Listen for OS Memory Pressure Warnings via Swift async notifications sequence
@@ -109,30 +112,56 @@ public actor JITComicCacheEngine {
     /// Synchronously retrieves full-resolution image or mipmap from memory cache if available.
     public func cachedImage(archiveURL: URL, index: Int) -> UIImage? {
         let key = cacheKey(archiveURL: archiveURL, index: index)
-        return memoryCache[key] ?? mipmapCache[key]
+        if let img = memoryCache[key] {
+            touchKey(key, in: &memoryAccessOrder)
+            return img
+        }
+        if let mip = mipmapCache[key] {
+            touchKey(key, in: &mipmapAccessOrder)
+            return mip
+        }
+        return nil
     }
     
     // MARK: - Internal Storage & Memory Eviction
     
+    private func touchKey(_ key: String, in orderList: inout [String]) {
+        if let idx = orderList.firstIndex(of: key) {
+            orderList.remove(at: idx)
+        }
+        orderList.append(key)
+    }
+    
     private func storeImage(_ image: UIImage, forKey key: String) {
         let maxLimit = isUnderMemoryPressure ? 2 : currentTier.maxFullResPages
         
-        while memoryCache.count >= maxLimit {
-            if let oldestKey = memoryCache.keys.first {
+        touchKey(key, in: &memoryAccessOrder)
+        memoryCache[key] = image
+        
+        // Strict LRU eviction: remove the oldest (least recently accessed) pages first
+        while memoryCache.count > maxLimit {
+            if let oldestKey = memoryAccessOrder.first {
+                memoryAccessOrder.removeFirst()
                 memoryCache.removeValue(forKey: oldestKey)
+            } else {
+                break
             }
         }
-        memoryCache[key] = image
         activePreloadTasks.removeValue(forKey: key)
     }
     
     private func storeMipmap(_ image: UIImage, forKey key: String) {
-        if mipmapCache.count >= 16 {
-            if let oldestKey = mipmapCache.keys.first {
+        touchKey(key, in: &mipmapAccessOrder)
+        mipmapCache[key] = image
+        
+        while mipmapCache.count > 16 {
+            if let oldestKey = mipmapAccessOrder.first {
+                mipmapAccessOrder.removeFirst()
                 mipmapCache.removeValue(forKey: oldestKey)
+            } else {
+                break
             }
         }
-        mipmapCache[key] = image
         activePreloadTasks.removeValue(forKey: key)
     }
     
@@ -169,9 +198,15 @@ public actor JITComicCacheEngine {
         
         // Purge mipmaps and clamp full-res cache
         mipmapCache.removeAll()
+        mipmapAccessOrder.removeAll()
+        
+        // LRU Eviction: drop oldest accessed pages, preserving the 2 most recently viewed
         while memoryCache.count > 2 {
-            if let firstKey = memoryCache.keys.first {
-                memoryCache.removeValue(forKey: firstKey)
+            if let oldestKey = memoryAccessOrder.first {
+                memoryAccessOrder.removeFirst()
+                memoryCache.removeValue(forKey: oldestKey)
+            } else {
+                break
             }
         }
         
@@ -180,9 +215,11 @@ public actor JITComicCacheEngine {
             await ArchiveStreamEngine.shared.closeAllSessions()
         }
         
-        // Restore normal governor behavior after 10 seconds
-        Task {
+        // Restore normal governor behavior after 10 seconds (canceling prior timer to prevent races)
+        memoryPressureResetTask?.cancel()
+        memoryPressureResetTask = Task {
             try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard !Task.isCancelled else { return }
             self.resetMemoryPressureFlag()
         }
     }
@@ -193,7 +230,11 @@ public actor JITComicCacheEngine {
         activePreloadTasks.values.forEach { $0.cancel() }
         activePreloadTasks.removeAll()
         mipmapCache.removeAll()
+        mipmapAccessOrder.removeAll()
         memoryCache.removeAll()
+        memoryAccessOrder.removeAll()
+        memoryPressureResetTask?.cancel()
+        memoryPressureResetTask = nil
         Task {
             await ArchiveStreamEngine.shared.closeAllSessions()
         }
@@ -205,7 +246,9 @@ public actor JITComicCacheEngine {
     
     public func clearCache() {
         memoryCache.removeAll()
+        memoryAccessOrder.removeAll()
         mipmapCache.removeAll()
+        mipmapAccessOrder.removeAll()
         activePreloadTasks.values.forEach { $0.cancel() }
         activePreloadTasks.removeAll()
     }

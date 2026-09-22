@@ -1528,6 +1528,7 @@ struct PDFKitView: UIViewRepresentable {
     // Explicitly destroys the CGPDFDocument bridge when SwiftUI collapses the representable,
     // permanently ending the dreaded iPadOS backend Memory leak.
     static func dismantleUIView(_ uiView: PDFView, coordinator: Coordinator) {
+        NotificationCenter.default.removeObserver(coordinator)
         coordinator.loadTask?.cancel()
         uiView.document = nil
         uiView.removeFromSuperview()
@@ -1538,6 +1539,10 @@ struct PDFKitView: UIViewRepresentable {
         var loadTask: Task<Void, Never>?
         
         init(_ parent: PDFKitView) { self.parent = parent }
+        
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
         
         @objc func handleTap(_ gesture: UITapGestureRecognizer) { parent.onSingleTap() }
         

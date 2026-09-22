@@ -48,6 +48,15 @@ struct CanvasInkBearingView: UIViewRepresentable {
         }
     }
 
+    static func dismantleUIView(_ uiView: PKCanvasView, coordinator: Coordinator) {
+        if let picker = coordinator.toolPicker {
+            picker.setVisible(false, forFirstResponder: uiView)
+            picker.removeObserver(uiView)
+            coordinator.toolPicker = nil
+        }
+        uiView.resignFirstResponder()
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }

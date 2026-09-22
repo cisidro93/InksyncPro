@@ -35,9 +35,17 @@ struct EBookReaderView: View {
 
 
     
-        // Per-book progress key: fingerprinted by filename
-    private var progressKey: String { "ebook_progress_\(fileURL.lastPathComponent.hashValue)" }
-    private var pageKey: String { "ebook_page_\(fileURL.lastPathComponent.hashValue)" }
+    private var bookIdentifier: String {
+        if let id = pdf?.id {
+            return id.uuidString
+        }
+        let cleanName = fileURL.lastPathComponent.components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
+        return cleanName.isEmpty ? "default_book" : cleanName
+    }
+
+    // Per-book progress key: fingerprinted by stable identifier (deterministic across app launches)
+    private var progressKey: String { "ebook_progress_\(bookIdentifier)" }
+    private var pageKey: String { "ebook_page_\(bookIdentifier)" }
 
     
     // State
@@ -111,7 +119,7 @@ struct EBookReaderView: View {
     @State private var activeFootnoteText: String? = nil
     @State private var showRSVPSpeedReader = false
     // Key for persisting the scroll fraction alongside the chapter index
-    private var fractionKey: String { "ebook_fraction_\(fileURL.lastPathComponent.hashValue)" }
+    private var fractionKey: String { "ebook_fraction_\(bookIdentifier)" }
 
     private var rsvpContentText: String {
         guard let dir = unzipDir,
@@ -232,7 +240,7 @@ struct EBookReaderView: View {
                                     }
                                 },
                                 pdfID: pdf?.id,
-                                initialScrollFraction: UserDefaults.standard.double(forKey: "ebook_fraction_\(fileURL.lastPathComponent.hashValue)"),
+                                initialScrollFraction: UserDefaults.standard.double(forKey: fractionKey),
                                 onScrollFractionChanged: { fraction in
                                     chapterScrollFraction = fraction
                                     saveProgress()
@@ -276,7 +284,7 @@ struct EBookReaderView: View {
                                     activeHighlightToEdit = findMatchingAnnotation(tappedText: highlight.id.uuidString)
                                 },
                                 pdfID: pdf?.id,
-                                initialScrollFraction: UserDefaults.standard.double(forKey: "ebook_fraction_\(fileURL.lastPathComponent.hashValue)"),
+                                initialScrollFraction: UserDefaults.standard.double(forKey: fractionKey),
                                 onScrollFractionChanged: { fraction in
                                     chapterScrollFraction = fraction
                                     saveProgress()
@@ -1112,9 +1120,10 @@ struct EBookReaderView: View {
         let parsed = await EBookParser.shared.parse(epub: sourceURL)
         
         // Unzip for content serving (WKWebView needs local file access)
-        // Deterministic cache key: filename + mtime → same book reopens instantly
+        // Deterministic cache key: bookIdentifier + mtime → same book reopens instantly across launches
         let mtime = (try? sourceURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
-        let cacheKey = abs("\(sourceURL.lastPathComponent)_\(Int(mtime.timeIntervalSince1970))".hashValue)
+        let mtimeEpoch = Int(mtime.timeIntervalSince1970)
+        let cacheKey = "\(bookIdentifier)_\(mtimeEpoch)"
         let dest = FileManager.default.temporaryDirectory.appendingPathComponent("EBook_\(cacheKey)")
 
         do {

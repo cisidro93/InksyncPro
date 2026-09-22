@@ -17,10 +17,7 @@ final class InstallGuardService: @unchecked Sendable {
         let sentinelURL = supportDir.appendingPathComponent(".inksync_install_sentinel_v1", isDirectory: false)
         let sentinelExists = fileManager.fileExists(atPath: sentinelURL.path)
         
-        // Exclude Documents and Application Support folders from iCloud Backup to prevent database restore on reinstall
-        if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
-            excludeDirectoryFromBackup(url: docDir)
-        }
+        // Note: Documents directory is intentionally backup-eligible to protect user libraries (App Store Guideline 5.1.1).
         excludeDirectoryFromBackup(url: supportDir)
 
         let shouldNuke = !sentinelExists
@@ -54,53 +51,31 @@ final class InstallGuardService: @unchecked Sendable {
     }
     
     private func performNuke(supportDir: URL) {
-        // 1. Vaporize Documents Directory Contents (Nukes all ghost CBZs/PDFs automatically synced by iCloud)
-        if let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
-            if let items = try? fileManager.contentsOfDirectory(at: docDir, includingPropertiesForKeys: nil) {
-                for item in items { try? fileManager.removeItem(at: item) }
-            }
-        }
+        // 1. User documents in Documents/ are SACRED and MUST NEVER be deleted.
+        // We strictly protect user files, vaults, and custom imports.
         
-        // 2. Vaporize Application Support Directory Contents (Wipes SQLite database and SwiftData stores)
+        // 2. Clear stale lock files and ephemeral database artifacts in Application Support
         if let items = try? fileManager.contentsOfDirectory(at: supportDir, includingPropertiesForKeys: nil) {
+            let protectedDirectories = ["InksyncVault", "progress", "ThumbnailCache"]
             for item in items {
-                // Skip the sentinel itself — it shouldn't exist yet but be safe.
-                if item.lastPathComponent.hasPrefix(".inksync_install_sentinel") { continue }
-                try? fileManager.removeItem(at: item)
+                let name = item.lastPathComponent
+                if name.hasPrefix(".inksync_install_sentinel") { continue }
+                if protectedDirectories.contains(name) { continue }
+                // Only clean legacy ephemeral database or cache files on clean install
+                if name.hasSuffix(".sqlite") || name.hasSuffix(".sqlite-shm") || name.hasSuffix(".sqlite-wal") || name.hasPrefix("tmp_") {
+                    try? fileManager.removeItem(at: item)
+                }
             }
         }
         
-        // 3. Vaporize restored UserDefaults to prevent backup configuration from dirtying the clean install
-        if let bundleID = Bundle.main.bundleIdentifier {
-            userDefaults.removePersistentDomain(forName: bundleID)
-            userDefaults.synchronize()
-        }
-        
-        // 4. Vaporize App Group UserDefaults (wipes widgets cache/metadata)
+        // 3. Clear App Group transient caches if present
         let groupSuiteName = "group.com.antigravity.inksync"
         if let groupDefaults = UserDefaults(suiteName: groupSuiteName) {
             groupDefaults.removePersistentDomain(forName: groupSuiteName)
             groupDefaults.synchronize()
         }
         
-        // 5. Vaporize all secure Keychain items for a fresh start
-        wipeKeychain()
-        
-        Logger.shared.log("InksyncProApp: Fresh install nuke complete. Ghost data eradicated.", category: "Migration", type: .warning)
-    }
-    
-    private func wipeKeychain() {
-        let secClasses = [
-            kSecClassGenericPassword,
-            kSecClassInternetPassword,
-            kSecClassCertificate,
-            kSecClassKey,
-            kSecClassIdentity
-        ]
-        for secClass in secClasses {
-            let query = [kSecClass: secClass] as [String: Any]
-            SecItemDelete(query as CFDictionary)
-        }
+        Logger.shared.log("InksyncProApp: Clean install guard verified. User documents protected.", category: "Migration", type: .info)
     }
     
     private func writeSentinel(at url: URL, supportDir: URL) {

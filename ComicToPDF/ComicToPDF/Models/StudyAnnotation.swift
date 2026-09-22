@@ -66,7 +66,17 @@ public enum AdlerMarker: String, Codable, Sendable, CaseIterable, Identifiable {
 /// Deterministic, deep-linkable document passage citation.
 public struct PassageCitation: Codable, Sendable, Equatable, Hashable, Identifiable {
     public var id: String {
-        "\(documentID.uuidString)-\(pageNumber)-\(anchorID ?? "none")-\(highlightedText.hashValue)"
+        let textHash = PassageCitation.stableHash(highlightedText)
+        return "\(documentID.uuidString)-\(pageNumber)-\(anchorID ?? "none")-\(textHash)"
+    }
+
+    private static func stableHash(_ string: String) -> String {
+        var hash: UInt64 = 14695981039346656037
+        for byte in string.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1099511628211
+        }
+        return String(hash, radix: 16)
     }
 
     public let documentID: UUID

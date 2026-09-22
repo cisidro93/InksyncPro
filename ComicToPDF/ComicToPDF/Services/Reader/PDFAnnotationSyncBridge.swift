@@ -94,7 +94,42 @@ final class PDFAnnotationSyncBridge {
                 // Primary: reconstruct tight line-by-line quads from recorded text scoped strictly to this single page
                 if let text = annotation.selectedText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     let pageText = page.string ?? ""
-                    if let range = pageText.range(of: text, options: .caseInsensitive) {
+                    let expectedBounds: CGRect? = annotation.bounds.map { b in
+                        CGRect(
+                            x: pageBounds.minX + (b.x * pageBounds.width),
+                            y: pageBounds.minY + (b.y * pageBounds.height),
+                            width: b.width * pageBounds.width,
+                            height: b.height * pageBounds.height
+                        )
+                    }
+
+                    // Find all occurrences on page and disambiguate against expected bounds
+                    var matchedRange: Range<String.Index>? = nil
+                    var searchStart = pageText.startIndex
+                    var candidates: [(range: Range<String.Index>, bounds: CGRect)] = []
+
+                    while searchStart < pageText.endIndex,
+                          let foundRange = pageText.range(of: text, options: .caseInsensitive, range: searchStart..<pageText.endIndex) {
+                        let nsRange = NSRange(foundRange, in: pageText)
+                        if let sel = page.selection(for: nsRange) {
+                            candidates.append((foundRange, sel.bounds(for: page)))
+                        }
+                        searchStart = foundRange.upperBound
+                    }
+
+                    if let expected = expectedBounds, candidates.count > 1 {
+                        // Select the candidate whose bounding center aligns closest to the saved geometry
+                        let best = candidates.min { a, b in
+                            let distA = hypot(a.bounds.midX - expected.midX, a.bounds.midY - expected.midY)
+                            let distB = hypot(b.bounds.midX - expected.midX, b.bounds.midY - expected.midY)
+                            return distA < distB
+                        }
+                        matchedRange = best?.range ?? candidates.first?.range
+                    } else {
+                        matchedRange = candidates.first?.range
+                    }
+
+                    if let range = matchedRange {
                         let nsRange = NSRange(range, in: pageText)
                         if let pageSel = page.selection(for: nsRange) {
                             let lines = pageSel.selectionsByLine()

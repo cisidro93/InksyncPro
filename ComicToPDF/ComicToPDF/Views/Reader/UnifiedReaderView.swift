@@ -141,12 +141,14 @@ struct UnifiedReaderView: View {
         } else if pdf.contentType == .book {
             if activeEngineOverride == .comic {
                 return (.comic, "Manual engine override active: comic mode requested for book.")
-            } else {
+            } else if isPDFDocument {
                 return (.proPDF, "Identified as .book content type. Native PDF engine active.")
+            } else {
+                return (.comic, "Identified as .book content type on non-PDF archive. ComicReaderEngine active.")
             }
         } else {
-            if activeEngineOverride == .book {
-                return (.proPDF, "Manual engine override active: book mode requested for archive.")
+            if activeEngineOverride == .book && isPDFDocument {
+                return (.proPDF, "Manual engine override active: book mode requested for PDF.")
             } else {
                 return (.comic, "Comic archive format (CBZ/CBR/CB7/ZIP/RAR). Continuous vertical/spread canvas active.")
             }
