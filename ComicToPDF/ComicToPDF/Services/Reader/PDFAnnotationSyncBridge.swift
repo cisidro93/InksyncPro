@@ -652,20 +652,23 @@ private final class BackgroundWriteOperation: @unchecked Sendable {
             let writeSuccess: Bool
             if let bm = self.linkedBookmarkData {
                 let sem = DispatchSemaphore(value: 0)
-                var success = false
+                final class SuccessBox: @unchecked Sendable {
+                    var value: Bool = false
+                }
+                let box = SuccessBox()
                 Task {
                     do {
                         try await BookmarkResolver.shared.withWriteAccess(bm) { writeURL in
-                            success = self.document.write(to: writeURL)
+                            box.value = self.document.write(to: writeURL)
                         }
                     } catch {
                         Logger.shared.log("PDFAnnotationSync: Coordinated write failed: \(error.localizedDescription)", category: "PDF", type: .error)
-                        success = false
+                        box.value = false
                     }
                     sem.signal()
                 }
                 sem.wait()
-                writeSuccess = success
+                writeSuccess = box.value
             } else {
                 writeSuccess = self.document.write(to: self.targetURL)
             }

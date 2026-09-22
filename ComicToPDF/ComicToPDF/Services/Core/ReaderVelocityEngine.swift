@@ -3,6 +3,7 @@ import Combine
 
 /// A helper class to track page reading speeds and dynamically estimate remaining reading times.
 /// Employs Kindle-like outlier filtering (ignoring quick flips < 2s and long pauses > 3 mins).
+@MainActor
 class ReaderVelocityEngine: ObservableObject {
     @Published var estimatedTimeRemaining: String = "Learning speed..."
 

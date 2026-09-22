@@ -89,7 +89,6 @@ struct EBookReaderView: View {
     @State private var chapterPage: Int = 0
     @State private var chapterTotalPages: Int = 1
     @State private var startAtEndOfChapter: Bool = false
-    @StateObject private var velocityEngine = ReaderVelocityEngine()
 
     private var sanitizedChapterPage: Int {
         min(max(1, chapterPage + 1), max(1, chapterTotalPages))
