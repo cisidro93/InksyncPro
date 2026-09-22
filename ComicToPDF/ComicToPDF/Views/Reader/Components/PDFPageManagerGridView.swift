@@ -222,22 +222,34 @@ struct PDFPageManagerGridView: View {
         isSaving = true
         let targetPDF = pdf
         let newPageCount = doc.pageCount
+        guard let pdfData = doc.dataRepresentation() else {
+            isSaving = false
+            return
+        }
 
         Task {
-            let writeSuccess = await Task.detached(priority: .userInitiated) { () -> Bool in
-                if case .linked(let bookmarkData) = targetPDF.sourceMode {
+            let writeSuccess: Bool
+            if case .linked(let bookmarkData) = targetPDF.sourceMode {
+                do {
+                    writeSuccess = try await BookmarkResolver.shared.withWriteAccess(bookmarkData) { writeURL in
+                        try pdfData.write(to: writeURL, options: .atomic)
+                        return true
+                    }
+                } catch {
+                    Logger.shared.log("PDFPageManagerGridView: Linked write failed: \(error.localizedDescription)", category: "PDFPageManager", type: .error)
+                    writeSuccess = false
+                }
+            } else {
+                writeSuccess = await Task.detached(priority: .userInitiated) { [pdfData, targetURL = targetPDF.url] () -> Bool in
                     do {
-                        return try await BookmarkResolver.shared.withWriteAccess(bookmarkData) { writeURL in
-                            return doc.write(to: writeURL)
-                        }
+                        try pdfData.write(to: targetURL, options: .atomic)
+                        return true
                     } catch {
-                        Logger.shared.log("PDFPageManagerGridView: Linked write failed: \(error.localizedDescription)", category: "PDFPageManager", type: .error)
+                        Logger.shared.log("PDFPageManagerGridView: Local write failed: \(error.localizedDescription)", category: "PDFPageManager", type: .error)
                         return false
                     }
-                } else {
-                    return doc.write(to: targetPDF.url)
-                }
-            }.value
+                }.value
+            }
 
             if writeSuccess {
                 ConversionManager.shared.updatePDFPageCount(targetPDF.id, newPageCount: newPageCount)
