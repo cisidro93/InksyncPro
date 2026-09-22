@@ -1988,6 +1988,7 @@ struct ProPDFReaderEngine: View {
         if currentPageIndex >= doc.pageCount {
             currentPageIndex = max(0, doc.pageCount - 1)
         }
+        ConversionManager.shared.updatePDFPageCount(pdf.id, newPageCount: doc.pageCount)
         pdfViewReference?.layoutDocumentView()
         saveReadingProgress()
     }
@@ -2067,7 +2068,7 @@ struct ProPDFReaderEngine: View {
                 // goToNextPage handles twoUp spread boundaries natively —
                 // we never need to manually compute +1 or +2; PDFKit knows.
                 pdfView.goToNextPage(nil)
-                velocityEngine.recordPageTurn(remainingPages: remaining)
+                velocityEngine.recordPageTurn(remainingPages: remaining, pdfID: pdf.id)
             } else {
                 attemptPDFSeriesContinuation()
             }
@@ -2081,7 +2082,7 @@ struct ProPDFReaderEngine: View {
                 pdfView.layer.add(transition, forKey: "pageFlipAnimation")
 
                 pdfView.goToPreviousPage(nil)
-                velocityEngine.recordPageTurn(remainingPages: remaining)
+                velocityEngine.recordPageTurn(remainingPages: remaining, pdfID: pdf.id)
             }
         }
 

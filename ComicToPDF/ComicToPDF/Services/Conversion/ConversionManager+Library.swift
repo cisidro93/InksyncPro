@@ -327,6 +327,7 @@ extension ConversionManager {
     func createBackupData() -> BackupData { return BackupData(version: "1.0", date: Date(), settings: AppSettingsManager.shared.conversionSettings, collections: collections, presets: AppSettingsManager.shared.conversionPresets) }
     func restoreFromBackup(_ backup: BackupData) { AppSettingsManager.shared.conversionSettings = backup.settings; self.collections = backup.collections; AppSettingsManager.shared.conversionPresets = backup.presets; saveLibrary(); AppSettingsManager.shared.save() }
     func updatePDFMetadata(_ pdf: ConvertedPDF, metadata: PDFMetadata) { if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) { convertedPDFs[idx].metadata = metadata; pruneEmptyCollections(); saveLibrary() } }
+    func updatePDFPageCount(_ pdfID: UUID, newPageCount: Int) { if let idx = convertedPDFs.firstIndex(where: { $0.id == pdfID }) { convertedPDFs[idx].pageCount = newPageCount; saveLibrary() } }
 
     /// Physically renames the underlying .cbz, .epub, or .pdf on the iOS Storage and updates the database pointer.
     func generateRenameFilename(pdf: ConvertedPDF, newSeriesName: String) -> String {

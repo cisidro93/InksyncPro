@@ -182,6 +182,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
            oldParent.prefs.activeTheme.id != self.prefs.activeTheme.id ||
            oldParent.prefs.customThemeBg != self.prefs.customThemeBg ||
            oldParent.prefs.customThemeText != self.prefs.customThemeText ||
+           oldParent.prefs.readingFilter != self.prefs.readingFilter ||
            oldParent.prefs.lineHeight != self.prefs.lineHeight ||
            oldParent.prefs.letterSpacing != self.prefs.letterSpacing ||
            oldParent.prefs.wordSpacing != self.prefs.wordSpacing ||

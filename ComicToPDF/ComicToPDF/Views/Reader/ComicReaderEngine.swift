@@ -1884,7 +1884,7 @@ struct ComicReaderEngine: View {
             if newIndex > maxPageIndexVisited {
                 maxPageIndexVisited = newIndex
                 let remainingPages = max(0, cache.pageCount - 1 - newIndex)
-                velocityEngine.recordPageDuration(elapsed, remainingPages: remainingPages)
+                velocityEngine.recordPageDuration(elapsed, remainingPages: remainingPages, pdfID: pdf.id)
             }
             if let avgSpeed = velocityEngine.averageDuration {
                 cache.updateReadingVelocity(secondsPerPage: avgSpeed)

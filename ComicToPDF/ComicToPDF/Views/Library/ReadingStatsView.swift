@@ -387,7 +387,11 @@ struct ReadingStatsView: View {
         symbols = Array(symbols[firstIdx...] + symbols[..<firstIdx])
 
         return symbols.enumerated().map { idx, name in
-            let pagesForDay = tracker.pagesReadOn(dayOfWeekIndex: (idx + firstIdx) % 7)
+            // Gregorian weekday index (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+            let gregorianDay = (idx + firstIdx) % 7
+            // ReaderProgressTracker expects ISO week index (0 = Monday, ..., 6 = Sunday)
+            let trackerIndex = (gregorianDay + 6) % 7
+            let pagesForDay = tracker.pagesReadOn(dayOfWeekIndex: trackerIndex)
             return (day: name, pages: pagesForDay)
         }
     }

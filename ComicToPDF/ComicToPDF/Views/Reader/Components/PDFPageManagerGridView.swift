@@ -14,6 +14,7 @@ struct PDFPageManagerGridView: View {
     @State private var isSelectionMode = false
     @State private var showDeleteConfirmation = false
     @State private var gridRefreshID = UUID()
+    @State private var isSaving = false
 
     private var totalPages: Int {
         pdfDocument?.pageCount ?? pdf.pageCount
@@ -151,6 +152,28 @@ struct PDFPageManagerGridView: View {
             } message: {
                 Text("This will permanently remove the selected pages from this PDF file.")
             }
+            .overlay {
+                if isSaving {
+                    ZStack {
+                        Color.black.opacity(0.35)
+                            .ignoresSafeArea()
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(1.2)
+                            Text("Saving Changes...")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 16)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(color: .black.opacity(0.3), radius: 12, y: 6)
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
+            }
+            .allowsHitTesting(!isSaving)
         }
     }
 
@@ -195,11 +218,34 @@ struct PDFPageManagerGridView: View {
     }
 
     private func persistDocumentChanges() {
-        if let doc = pdfDocument {
-            doc.write(to: pdf.url)
+        guard let doc = pdfDocument else { return }
+        isSaving = true
+        let targetPDF = pdf
+        let newPageCount = doc.pageCount
+
+        Task {
+            let writeSuccess = await Task.detached(priority: .userInitiated) { () -> Bool in
+                if case .linked(let bookmarkData) = targetPDF.sourceMode {
+                    do {
+                        return try await BookmarkResolver.shared.withWriteAccess(bookmarkData) { writeURL in
+                            return doc.write(to: writeURL)
+                        }
+                    } catch {
+                        Logger.shared.log("PDFPageManagerGridView: Linked write failed: \(error.localizedDescription)", category: "PDFPageManager", type: .error)
+                        return false
+                    }
+                } else {
+                    return doc.write(to: targetPDF.url)
+                }
+            }.value
+
+            if writeSuccess {
+                ConversionManager.shared.updatePDFPageCount(targetPDF.id, newPageCount: newPageCount)
+            }
+            self.gridRefreshID = UUID()
+            self.isSaving = false
+            self.onDocumentModified?()
         }
-        gridRefreshID = UUID()
-        onDocumentModified?()
     }
 }
 
@@ -237,8 +283,10 @@ private struct PDFPageThumbnailCard: View {
         guard let doc = pdfDocument, pageIndex < doc.pageCount, let page = doc.page(at: pageIndex) else { return }
         Task {
             let size = CGSize(width: 140, height: 190)
-            let thumb = page.thumbnail(of: size, for: .mediaBox)
-            await MainActor.run {
+            let thumb = await Task.detached(priority: .userInitiated) { () -> UIImage in
+                return page.thumbnail(of: size, for: .mediaBox)
+            }.value
+            if !Task.isCancelled {
                 self.thumbnailImage = thumb
             }
         }

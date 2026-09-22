@@ -324,12 +324,20 @@ final class PDFAnnotationSyncBridge {
 
     @MainActor
     private static func serializeAndWriteAsync(document: PDFDocument, targetURL: URL, pdfID: UUID) {
+        let linkedBookmarkData: Data? = {
+            if let pdf = ConversionManager.shared.convertedPDFs.first(where: { $0.id == pdfID }),
+               case .linked(let bm) = pdf.sourceMode {
+                return bm
+            }
+            return nil
+        }()
         let didAccess = targetURL.startAccessingSecurityScopedResource()
         let op = BackgroundWriteOperation(
             document: document,
             targetURL: targetURL,
             pdfID: pdfID,
-            didAccessSecurityScope: didAccess
+            didAccessSecurityScope: didAccess,
+            linkedBookmarkData: linkedBookmarkData
         )
         op.start()
     }
@@ -611,13 +619,15 @@ private final class BackgroundWriteOperation: @unchecked Sendable {
     let targetURL: URL
     let pdfID: UUID
     let didAccessSecurityScope: Bool
+    let linkedBookmarkData: Data?
     var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 
-    init(document: PDFDocument, targetURL: URL, pdfID: UUID, didAccessSecurityScope: Bool) {
+    init(document: PDFDocument, targetURL: URL, pdfID: UUID, didAccessSecurityScope: Bool, linkedBookmarkData: Data? = nil) {
         self.document = document
         self.targetURL = targetURL
         self.pdfID = pdfID
         self.didAccessSecurityScope = didAccessSecurityScope
+        self.linkedBookmarkData = linkedBookmarkData
     }
 
     @MainActor
@@ -639,7 +649,27 @@ private final class BackgroundWriteOperation: @unchecked Sendable {
                 }
             }
 
-            let writeSuccess = self.document.write(to: self.targetURL)
+            let writeSuccess: Bool
+            if let bm = self.linkedBookmarkData {
+                let sem = DispatchSemaphore(value: 0)
+                var success = false
+                Task {
+                    do {
+                        try await BookmarkResolver.shared.withWriteAccess(bm) { writeURL in
+                            success = self.document.write(to: writeURL)
+                        }
+                    } catch {
+                        Logger.shared.log("PDFAnnotationSync: Coordinated write failed: \(error.localizedDescription)", category: "PDF", type: .error)
+                        success = false
+                    }
+                    sem.signal()
+                }
+                sem.wait()
+                writeSuccess = success
+            } else {
+                writeSuccess = self.document.write(to: self.targetURL)
+            }
+
             if writeSuccess {
                 Logger.shared.log("PDFAnnotationSync: Persisted PDF with annotations to disk at \(self.targetURL.lastPathComponent)", category: "PDF", type: .success)
             } else {

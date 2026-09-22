@@ -32,8 +32,13 @@ struct EBookReaderView: View {
     @State private var showSleepTimerPicker = false
     
     // Preferences — shared across all books
+    @StateObject private var velocityEngine = ReaderVelocityEngine()
 
-
+    private func recordEBookPageTurn() {
+        let remaining = max(0, totalChapters - (currentIndex + 1))
+        let targetID = pdf?.id ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent })?.id
+        velocityEngine.recordPageTurn(remainingPages: remaining, pdfID: targetID)
+    }
     
     private var bookIdentifier: String {
         if let id = pdf?.id {
@@ -204,7 +209,7 @@ struct EBookReaderView: View {
                                 onNext:      nextChapter,
                                 onPrev:      prevChapter,
                                 onCenterTap: toggleHUD,
-                                onPageTurn:  { /* Keep HUD active while navigating */ },
+                                onPageTurn:  { recordEBookPageTurn() },
                                 isHUDShowing: showHUD,
                                 onHighlightCreated: { selectedText in
                                     guard !isApplyingHighlightDirectly else { return }
@@ -265,7 +270,7 @@ struct EBookReaderView: View {
                                 onNext:      nextChapter,
                                 onPrev:      prevChapter,
                                 onCenterTap: toggleHUD,
-                                onPageTurn:  { /* Keep HUD active while navigating */ },
+                                onPageTurn:  { recordEBookPageTurn() },
                                 onHighlightCreated: { selectedText in
                                     guard let p = pdf else { return }
                                     let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
@@ -1202,6 +1207,7 @@ struct EBookReaderView: View {
             // Update ConversionManager library item metadata so shelves & stats immediately reflect reading state
             if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == p.id }) {
                 conversionManager.convertedPDFs[idx].metadata.lastReadPage = currentIndex
+                conversionManager.saveProgressOnly()
             }
         }
     }

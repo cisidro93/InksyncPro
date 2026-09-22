@@ -209,14 +209,7 @@ struct PPLReaderView: View {
     }
 
     private var areNavigationGesturesEnabled: Bool {
-        if isDrawingMode {
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let pencilOnly = settingsManager.conversionSettings.pencilOnlyDrawing
-            if !isPad || !pencilOnly {
-                return false
-            }
-        }
-        return true
+        !isDrawingMode
     }
 
     // MARK: - Current Content

@@ -124,6 +124,7 @@ final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizer
     }
 
     func togglePlayPause() {
+        guard isActive else { return }
         if isPlaying {
             pause()
         } else {
@@ -271,31 +272,36 @@ final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizer
 
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.resume() }
+            guard let self = self, self.isActive else { return .noActionableNowPlayingItem }
+            Task { @MainActor in self.resume() }
             return .success
         }
 
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.pause() }
+            guard let self = self, self.isActive else { return .noActionableNowPlayingItem }
+            Task { @MainActor in self.pause() }
             return .success
         }
 
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.togglePlayPause() }
+            guard let self = self, self.isActive else { return .noActionableNowPlayingItem }
+            Task { @MainActor in self.togglePlayPause() }
             return .success
         }
 
         commandCenter.nextTrackCommand.isEnabled = true
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.nextSentence() }
+            guard let self = self, self.isActive else { return .noActionableNowPlayingItem }
+            Task { @MainActor in self.nextSentence() }
             return .success
         }
 
         commandCenter.previousTrackCommand.isEnabled = true
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.previousSentence() }
+            guard let self = self, self.isActive else { return .noActionableNowPlayingItem }
+            Task { @MainActor in self.previousSentence() }
             return .success
         }
     }

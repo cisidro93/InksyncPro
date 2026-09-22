@@ -29,24 +29,45 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_bookThemes") private var bookThemesData: Data = Data()
     var bookThemes: [String: String] {
         get { (try? JSONDecoder().decode([String: String].self, from: bookThemesData)) ?? [:] }
-        set { bookThemesData = (try? JSONEncoder().encode(newValue)) ?? Data() }
+        set {
+            bookThemesData = (try? JSONEncoder().encode(newValue)) ?? Data()
+            objectWillChange.send()
+        }
     }
 
     // Custom theme slot
-    @AppStorage("ebook_customThemeBg")   var customThemeBg: String   = "#FFFFFF"
-    @AppStorage("ebook_customThemeText") var customThemeText: String  = "#1A1A1A"
+    @AppStorage("ebook_customThemeBg")   var customThemeBg: String   = "#FFFFFF" {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_customThemeText") var customThemeText: String  = "#1A1A1A" {
+        didSet { objectWillChange.send() }
+    }
 
     // MARK: - Typography
-    @AppStorage("ebook_fontFamily")     var fontFamily: String  = EBookFontFamily.newYork.rawValue
+    @AppStorage("ebook_fontFamily")     var fontFamily: String  = EBookFontFamily.newYork.rawValue {
+        didSet { objectWillChange.send() }
+    }
     @AppStorage("ebook_isBionicReadingEnabled") var isBionicReadingEnabled: Bool = false {
         didSet { objectWillChange.send() }
     }
-    @AppStorage("ebook_fontSize")       var fontSize: Double    = 18
-    @AppStorage("ebook_lineHeight")     var lineHeight: Double  = 1.6
-    @AppStorage("ebook_letterSpacing")  var letterSpacing: Double = 0.0   // em
-    @AppStorage("ebook_wordSpacing")    var wordSpacing: Double   = 0.0   // em
-    @AppStorage("ebook_textAlign")      var textAlign: String   = EBookTextAlign.justify.rawValue
-    @AppStorage("ebook_hyphenation")    var hyphenation: Bool   = true
+    @AppStorage("ebook_fontSize")       var fontSize: Double    = 18 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_lineHeight")     var lineHeight: Double  = 1.6 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_letterSpacing")  var letterSpacing: Double = 0.0 { // em
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_wordSpacing")    var wordSpacing: Double   = 0.0 { // em
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_textAlign")      var textAlign: String   = EBookTextAlign.justify.rawValue {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_hyphenation")    var hyphenation: Bool   = true {
+        didSet { objectWillChange.send() }
+    }
     @AppStorage("ebook_isBoldTextEnabled") var isBoldTextEnabled: Bool = false {
         didSet { objectWillChange.send() }
     }
@@ -55,24 +76,47 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_bookTypography") private var bookTypographyData: Data = Data()
     var bookTypographyProfiles: [String: BookTypographyProfile] {
         get { (try? JSONDecoder().decode([String: BookTypographyProfile].self, from: bookTypographyData)) ?? [:] }
-        set { bookTypographyData = (try? JSONEncoder().encode(newValue)) ?? Data() }
+        set {
+            bookTypographyData = (try? JSONEncoder().encode(newValue)) ?? Data()
+            objectWillChange.send()
+        }
     }
 
     // MARK: - Layout
-    @AppStorage("ebook_textMargin")     var textMargin: Double      = 24
-    @AppStorage("ebook_paraIndent")     var paragraphIndent: Double = 1.2  // em
-    @AppStorage("ebook_paraSpacing")    var paragraphSpacing: Double = 0.5 // em
+    @AppStorage("ebook_textMargin")     var textMargin: Double      = 24 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_paraIndent")     var paragraphIndent: Double = 1.2 { // em
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_paraSpacing")    var paragraphSpacing: Double = 0.5 { // em
+        didSet { objectWillChange.send() }
+    }
 
     // MARK: - Reading Mode
-    @AppStorage("ebook_pagination")     var paginationMode: String = EBookPaginationMode.paged.rawValue
-    @AppStorage("ebook_columns")        var columnCount: Int       = 0 // 0 = Auto, 1 = Single, 2 = Double
+    @AppStorage("ebook_pagination")     var paginationMode: String = EBookPaginationMode.paged.rawValue {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_columns")        var columnCount: Int       = 0 { // 0 = Auto, 1 = Single, 2 = Double
+        didSet { objectWillChange.send() }
+    }
 
     // MARK: - Reader Features
-    @AppStorage("ebook_readingRuler")   var showReadingRuler: Bool  = false
-    @AppStorage("ebook_rulerYPosition") var rulerYPosition: Double  = 0.4   // fraction of screen height
-    @AppStorage("ebook_autoScroll")     var autoScroll: Bool        = false
-    @AppStorage("ebook_autoScrollSpeed") var autoScrollSpeed: Double = 1.0  // multiplier
-    @AppStorage("ebook_showReadingSpeedStats") var showReadingSpeedStats: Bool = false
+    @AppStorage("ebook_readingRuler")   var showReadingRuler: Bool  = false {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_rulerYPosition") var rulerYPosition: Double  = 0.4 { // fraction of screen height
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_autoScroll")     var autoScroll: Bool        = false {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_autoScrollSpeed") var autoScrollSpeed: Double = 1.0 { // multiplier
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_showReadingSpeedStats") var showReadingSpeedStats: Bool = false {
+        didSet { objectWillChange.send() }
+    }
 
     // MARK: - Display Idle Timer / Always-On
     @AppStorage("ebook_keepScreenAwakeWhileReading") var keepScreenAwakeWhileReading: Bool = true {
@@ -101,7 +145,9 @@ class EBookPreferences: ObservableObject {
     }
 
     // Progress display mode (cycles on tap: 0=page, 1=remaining, 2=timeLeft, 3=WPM, 4=hidden)
-    @AppStorage("ebook_progressMode")   var progressMode: Int = 0
+    @AppStorage("ebook_progressMode")   var progressMode: Int = 0 {
+        didSet { objectWillChange.send() }
+    }
 
     // MARK: - Customizable Tap Zones Layout
     @AppStorage("tapZoneStyle") var tapZoneStyleRaw: String = TapZoneStyle.classic.rawValue
@@ -126,7 +172,10 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_readingFilter") var readingFilterRaw: String = ReadingFilter.none.rawValue
     var readingFilter: ReadingFilter {
         get { ReadingFilter(rawValue: readingFilterRaw) ?? .none }
-        set { readingFilterRaw = newValue.rawValue }
+        set { 
+            readingFilterRaw = newValue.rawValue
+            objectWillChange.send()
+        }
     }
 
     // MARK: - PDF Specific Layouts

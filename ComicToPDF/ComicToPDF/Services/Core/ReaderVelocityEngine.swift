@@ -23,22 +23,26 @@ class ReaderVelocityEngine: ObservableObject {
 
     /// Convenience method: records the time spent on the previous page automatically.
     /// Call this each time the reader navigates to a new page.
-    func recordPageTurn(remainingPages: Int = 100) {
+    func recordPageTurn(remainingPages: Int = 100, pdfID: UUID? = nil) {
         let now = Date()
         if let last = lastPageTimestamp {
             let elapsed = now.timeIntervalSince(last)
-            recordPageDuration(elapsed, remainingPages: remainingPages)
+            recordPageDuration(elapsed, remainingPages: remainingPages, pdfID: pdfID)
         }
         lastPageTimestamp = now
     }
 
-    func recordPageDuration(_ duration: Double, remainingPages: Int) {
+    func recordPageDuration(_ duration: Double, remainingPages: Int, pdfID: UUID? = nil) {
         // Filter outliers
         guard duration >= minValidDuration && duration <= maxValidDuration else { return }
 
         pageDurations.append(duration)
         if pageDurations.count > maxSamples {
             pageDurations.removeFirst()
+        }
+
+        if let id = pdfID {
+            ReaderProgressTracker.shared.logPageTurn(pdfID: id, pages: 1, seconds: duration)
         }
 
         recalculateEstimate(remainingPages: remainingPages)

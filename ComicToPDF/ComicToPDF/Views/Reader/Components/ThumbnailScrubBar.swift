@@ -169,6 +169,11 @@ struct ThumbnailScrubBar: View {
                 scrubIndex = newIndex
             }
         }
+        .onChange(of: totalPages) { _, newTotal in
+            if scrubIndex >= newTotal {
+                scrubIndex = max(0, newTotal - 1)
+            }
+        }
     }
     
     // MARK: - Floating Preview Pill

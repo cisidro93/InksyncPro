@@ -365,6 +365,7 @@ struct ContentView: View {
         case .read(let pdf, let initialReadingMode):
             UnifiedReaderView(pdf: pdf, allBooks: conversionManager.convertedPDFs, initialReadingMode: initialReadingMode)
                 .environmentObject(conversionManager)
+                .environmentObject(settingsManager)
         case .advancedWorkspace(let pdf):
             AdvancedWorkspaceView(pdf: pdf)
                 .environmentObject(conversionManager)

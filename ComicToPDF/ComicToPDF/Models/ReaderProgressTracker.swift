@@ -280,16 +280,28 @@ class ReaderProgressTracker: ObservableObject {
     }
 
     /// Record pages turned and time spent during a session turn.
-    /// Call this on every page turn from ReaderView.
+    /// Call this on every page turn from any active reader engine.
     func logPageTurn(pdfID: UUID, pages: Int, seconds: Double) {
         guard pages > 0, seconds > 0 else { return }
-        guard var prog = progressMap[pdfID] else { return }
+        var prog = progressMap[pdfID] ?? ReadingProgress(
+            pdfID: pdfID,
+            lastOpenedAt: Date(),
+            currentPageIndex: 0,
+            totalPagesRead: 0,
+            completionFraction: 0.0,
+            readingSessionDates: [Date()]
+        )
         let event = ReadingSessionEvent(date: Date(), pagesRead: pages, secondsSpent: seconds)
         var events = prog.sessionEvents ?? []
         events.append(event)
         // Trim to last 200 events to prevent unbounded growth
         if events.count > 200 { events.removeFirst(events.count - 200) }
         prog.sessionEvents = events
+        prog.totalPagesRead += pages
+        prog.lastOpenedAt = Date()
+        if !prog.readingSessionDates.contains(where: { Calendar.current.isDateInToday($0) }) {
+            prog.readingSessionDates.append(Date())
+        }
         progressMap[pdfID] = prog
         save(pdfID: pdfID)
     }

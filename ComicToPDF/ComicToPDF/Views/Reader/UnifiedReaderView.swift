@@ -363,6 +363,19 @@ struct UnifiedReaderView: View {
             ReaderIdleTimerManager.shared.leaveReader()
             VolumeButtonPageTurnManager.shared.stopListening()
         }
+        .onChange(of: prefs.volumeButtonsTurnPages) { enabled in
+            if enabled {
+                VolumeButtonPageTurnManager.shared.onVolumeUp = {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+                }
+                VolumeButtonPageTurnManager.shared.onVolumeDown = {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+                }
+                VolumeButtonPageTurnManager.shared.startListening()
+            } else {
+                VolumeButtonPageTurnManager.shared.stopListening()
+            }
+        }
         .readerKeyboardShortcuts(
             onNextPage: {
                 NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
@@ -394,6 +407,8 @@ struct UnifiedReaderView: View {
                 dismiss()
             }
         )
+        .environmentObject(ConversionManager.shared)
+        .environmentObject(AppSettingsManager.shared)
     }
     
     // MARK: - Split-Screen Divider

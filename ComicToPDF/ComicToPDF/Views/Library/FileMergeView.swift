@@ -243,6 +243,12 @@ struct FileMergeView: View {
                     } else {
                         let fileURL = (try? BookmarkResolver.shared.resolveIfLinked(first)) ?? first.url
                         Task.detached(priority: .userInitiated) {
+                            let didAccess = fileURL.startAccessingSecurityScopedResource()
+                            defer {
+                                if didAccess {
+                                    fileURL.stopAccessingSecurityScopedResource()
+                                }
+                            }
                             if let comicInfo = ComicInfoParser.parse(from: fileURL), let writer = comicInfo.writer, !writer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 await MainActor.run {
                                     viewModel.author = writer
