@@ -121,6 +121,8 @@ struct ReaderChrome: View {
         onEnhanceToggle: (() -> Void)? = nil,
         isSettingsActive: Bool = false,
         currentModeLabel: String? = nil,
+        isSmartTiersActive: Bool = false,
+        onToggleSmartTiers: (() -> Void)? = nil,
         ambientColor: Color = .clear,
         sessionStartTime: Date? = nil,
         onSwipeDown: (() -> Void)? = nil,
@@ -162,6 +164,8 @@ struct ReaderChrome: View {
         self.onEnhanceToggle = onEnhanceToggle
         self.isSettingsActive = isSettingsActive
         self.currentModeLabel = currentModeLabel
+        self.isSmartTiersActive = isSmartTiersActive
+        self.onToggleSmartTiers = onToggleSmartTiers
         self.ambientColor = ambientColor
         self.sessionStartTime = sessionStartTime
         self.onSwipeDown = onSwipeDown

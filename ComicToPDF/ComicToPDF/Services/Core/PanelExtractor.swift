@@ -400,7 +400,7 @@ struct PanelExtractor {
 
         let booxGridRaw = UserDefaults.standard.string(forKey: "boox_gridPreset") ?? ""
         let booxPreset = BooxGridPreset(rawValue: booxGridRaw)
-        let isAdvancedBooxPreset = booxPreset == .grid2x3 || booxPreset == .grid3x2 || booxPreset == .grid3x3 || booxPreset == .oneOverTwo || booxPreset == .twoOverOne
+        let isAdvancedBooxPreset = booxPreset == .twoByThree || booxPreset == .threeByTwo || booxPreset == .threeByThree || booxPreset == .oneOverTwo || booxPreset == .twoOverOne
 
         if config == nil && (!customOverrides.isEmpty || isAdvancedBooxPreset) {
             let booxFlowRaw = UserDefaults.standard.string(forKey: "boox_flowOrder") ?? BooxFlowOrder.reverseNFlow.rawValue
@@ -450,9 +450,34 @@ struct PanelExtractor {
             }
         }
 
-        let activeConfig = config ?? EBookPreferences.shared.comicTierConfiguration
+        let activeConfig: ComicTierGuideConfiguration = {
+            if let config = config {
+                return config
+            }
+            let presetRaw = UserDefaults.standard.string(forKey: "comic_smartTierPreset") ?? ComicTierLayoutPreset.threeTier.rawValue
+            let tierCount = UserDefaults.standard.integer(forKey: "comic_smartTierCount") != 0 ? UserDefaults.standard.integer(forKey: "comic_smartTierCount") : 3
+            let columnCount = UserDefaults.standard.integer(forKey: "comic_smartTierColumnCount") != 0 ? UserDefaults.standard.integer(forKey: "comic_smartTierColumnCount") : 1
+            let overlap = UserDefaults.standard.double(forKey: "comic_smartTierOverlap") != 0 ? UserDefaults.standard.double(forKey: "comic_smartTierOverlap") : 0.15
+            let splitRatio = UserDefaults.standard.double(forKey: "comic_smartTierColumnSplitRatio") != 0 ? UserDefaults.standard.double(forKey: "comic_smartTierColumnSplitRatio") : 0.50
+            let topTrim = UserDefaults.standard.double(forKey: "comic_smartTierTopMarginTrim")
+            let bottomTrim = UserDefaults.standard.double(forKey: "comic_smartTierBottomMarginTrim")
+            let leftTrim = UserDefaults.standard.double(forKey: "comic_smartTierLeftTrim")
+            let rightTrim = UserDefaults.standard.double(forKey: "comic_smartTierRightTrim")
+            let flowOrderRaw = UserDefaults.standard.string(forKey: "comic_smartTierFlowOrder") ?? (mangaMode ? ComicReadingFlowOrder.mangaRTL.rawValue : ComicReadingFlowOrder.columnFirst.rawValue)
+            return ComicTierGuideConfiguration(
+                preset: ComicTierLayoutPreset(rawValue: presetRaw) ?? .threeTier,
+                tierCount: tierCount,
+                columnCount: columnCount,
+                overlap: overlap,
+                columnSplitRatio: splitRatio,
+                topMarginTrim: topTrim,
+                bottomMarginTrim: bottomTrim,
+                leftMarginTrim: leftTrim,
+                rightMarginTrim: rightTrim,
+                flowOrder: ComicReadingFlowOrder(rawValue: flowOrderRaw) ?? (mangaMode ? .mangaRTL : .columnFirst)
+            )
+        }()
 
-        let isWideDoubleSpread = imageSize.width > imageSize.height * 1.18
         let leftTrim = max(0.0, min(0.25, CGFloat(activeConfig.leftMarginTrim)))
         let rightTrim = max(0.0, min(0.25, CGFloat(activeConfig.rightMarginTrim)))
         let activeW = max(0.2, 1.0 - (leftTrim + rightTrim))
