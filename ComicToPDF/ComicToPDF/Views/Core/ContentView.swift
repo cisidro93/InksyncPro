@@ -235,7 +235,7 @@ struct ContentView: View {
                     withAnimation(.easeOut(duration: 0.25)) {
                         isLogoMorphComplete = true
                     }
-                    if AppBuildInfo.isNewBuildAfterUpdate {
+                    if AppBuildInfo.isNewBuildAfterUpdate && !SharedImportCoordinator.shared.hasPendingShareImport() && AppRouter.shared.activeFullScreen == nil {
                         Logger.shared.log("Startup: auto-presenting What's New sheet for build \(AppBuildInfo.formattedBadge)", category: "Lifecycle", type: .info)
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                             showingWhatsNewSheet = true
@@ -416,24 +416,46 @@ struct ContentView: View {
 
     private func handleShareImport(notification: Notification) {
         Task { @MainActor in
+            isAppLoading = false
+            isLogoMorphComplete = true
+            showingWhatsNewSheet = false
+            showingSettingsInspector = false
+            showingBatchMergeReorder = false
+            conversionManager.pendingSeriesGroup = nil
+            conversionManager.isPresentingPanelEditor = false
+            AppRouter.shared.dismissSheet()
             router.selectedTab = 0
-            withAnimation(.spring()) {
-                activeToast = ToastMessage(
-                    title: "Files Imported",
-                    message: "Shared files added to your library.",
-                    systemImage: "arrow.down.doc.fill",
-                    type: .success
-                )
-            }
-            if let pdf = notification.object as? ConvertedPDF {
-                self.selectedPDF = pdf
-                AppRouter.shared.presentFullScreen(.read(pdf))
-            } else {
+
+            let targetPDF: ConvertedPDF? = (notification.object as? ConvertedPDF) ?? {
                 let filenames = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
                 if let name = filenames.first,
                    let match = conversionManager.convertedPDFs.first(where: { (item: ConvertedPDF) -> Bool in item.url.lastPathComponent == name }) {
-                    self.selectedPDF = match
-                    AppRouter.shared.presentFullScreen(.read(match))
+                    return match
+                }
+                return nil
+            }()
+
+            if let pdf = targetPDF {
+                withAnimation(.spring()) {
+                    activeToast = ToastMessage(
+                        title: "Files Imported",
+                        message: "\(pdf.name) ready to read.",
+                        systemImage: "arrow.down.doc.fill",
+                        type: .success
+                    )
+                }
+                // Brief yield to guarantee any active sheet dismiss transition settles before presenting full screen
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                self.selectedPDF = pdf
+                AppRouter.shared.presentFullScreen(.read(pdf))
+            } else {
+                withAnimation(.spring()) {
+                    activeToast = ToastMessage(
+                        title: "Files Imported",
+                        message: "Shared files added to your library.",
+                        systemImage: "arrow.down.doc.fill",
+                        type: .success
+                    )
                 }
             }
         }
@@ -441,9 +463,28 @@ struct ContentView: View {
 
     private func handleDirectFileOpen(notification: Notification) {
         Task { @MainActor in
+            isAppLoading = false
+            isLogoMorphComplete = true
+            showingWhatsNewSheet = false
+            showingSettingsInspector = false
+            showingBatchMergeReorder = false
+            conversionManager.pendingSeriesGroup = nil
+            conversionManager.isPresentingPanelEditor = false
+            AppRouter.shared.dismissSheet()
             router.selectedTab = 0
-            if let pdf = notification.object as? ConvertedPDF {
-                self.selectedPDF = pdf
+
+            let targetPDF: ConvertedPDF? = {
+                if let pdf = notification.object as? ConvertedPDF {
+                    return pdf
+                } else if let destURL = notification.object as? URL {
+                    return conversionManager.convertedPDFs.first(where: { (item: ConvertedPDF) -> Bool in
+                        item.url.lastPathComponent == destURL.lastPathComponent
+                    })
+                }
+                return nil
+            }()
+
+            if let pdf = targetPDF {
                 withAnimation(.spring()) {
                     activeToast = ToastMessage(
                         title: "Added to Library",
@@ -452,22 +493,9 @@ struct ContentView: View {
                         type: .success
                     )
                 }
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                self.selectedPDF = pdf
                 AppRouter.shared.presentFullScreen(.read(pdf))
-            } else if let destURL = notification.object as? URL {
-                withAnimation(.spring()) {
-                    activeToast = ToastMessage(
-                        title: "Added to Library",
-                        message: "\(destURL.lastPathComponent) ready to read.",
-                        systemImage: "checkmark.circle.fill",
-                        type: .success
-                    )
-                }
-                if let newlyImported = conversionManager.convertedPDFs.first(where: { (item: ConvertedPDF) -> Bool in
-                    item.url.lastPathComponent == destURL.lastPathComponent
-                }) {
-                    self.selectedPDF = newlyImported
-                    AppRouter.shared.presentFullScreen(.read(newlyImported))
-                }
             }
             _ = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
         }
@@ -475,6 +503,11 @@ struct ContentView: View {
 
     private func handleOpenURL(_ url: URL) {
         Logger.shared.log("onOpenURL received: \(url.absoluteString)", category: "Import")
+        isAppLoading = false
+        isLogoMorphComplete = true
+        showingWhatsNewSheet = false
+        AppRouter.shared.dismissSheet()
+
         if let destination = UniversalLinkBridge.shared.parse(url: url) {
             if let targetPDF = conversionManager.convertedPDFs.first(where: { (item: ConvertedPDF) -> Bool in item.id == destination.documentID }) {
                 self.selectedPDF = targetPDF

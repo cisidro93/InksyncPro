@@ -227,6 +227,12 @@ targets:
           - UTTypeIdentifier: com.inksyncpro.library.dragpayload
             UTTypeDescription: InksyncPro Library Drag Payload
             UTTypeConformsTo: [public.data]
+          - UTTypeIdentifier: com.antigravity.InksyncPro.sharedFileData
+            UTTypeDescription: InkSync Pro Shared File Data
+            UTTypeConformsTo: [public.data]
+          - UTTypeIdentifier: com.antigravity.InksyncPro.sharedFileName
+            UTTypeDescription: InkSync Pro Shared File Name
+            UTTypeConformsTo: [public.text, public.plain-text]
 
   ComicToPDFShare:
     type: app-extension

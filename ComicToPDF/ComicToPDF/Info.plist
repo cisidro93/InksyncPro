@@ -175,6 +175,35 @@
             <key>UTTypeTagSpecification</key>
             <dict/>
         </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>InkSync Pro Shared File Data</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.antigravity.InksyncPro.sharedFileData</string>
+            <key>UTTypeTagSpecification</key>
+            <dict/>
+        </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.text</string>
+                <string>public.plain-text</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>InkSync Pro Shared File Name</string>
+            <key>UTTypeIconFiles</key>
+            <array/>
+            <key>UTTypeIdentifier</key>
+            <string>com.antigravity.InksyncPro.sharedFileName</string>
+            <key>UTTypeTagSpecification</key>
+            <dict/>
+        </dict>
     </array>
 
     <key>UTImportedTypeDeclarations</key>

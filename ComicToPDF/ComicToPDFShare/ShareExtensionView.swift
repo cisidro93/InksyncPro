@@ -999,10 +999,16 @@ struct ShareExtensionView: View {
                 let fileSize = Int64(data.count)
                 if (totalBytes + fileSize) < maxTotalBytes {
                     totalBytes += fileSize
-                    let dict: [String: Any] = [
+                    var dict: [String: Any] = [
                         fileTypeKey: data,
-                        fileNameKey: file.name
+                        fileNameKey: file.name,
+                        UTType.data.identifier: data,
+                        UTType.utf8PlainText.identifier: file.name
                     ]
+                    let ext = (file.name as NSString).pathExtension.lowercased()
+                    if let specificUTI = UTType(filenameExtension: ext)?.identifier {
+                        dict[specificUTI] = data
+                    }
                     newItems.append(dict)
 
                     print("[ShareExt] Staged '\(file.name)' (\(fileSize) bytes) to shared pasteboard bridge")
@@ -1012,15 +1018,7 @@ struct ShareExtensionView: View {
 
         if !newItems.isEmpty {
             UIPasteboard.general.items = newItems
-            if let first = newItems.first,
-               let firstData = first[fileTypeKey] as? Data,
-               let firstName = first[fileNameKey] as? String {
-                UIPasteboard.general.setData(firstData, forPasteboardType: fileTypeKey)
-                if let nameData = firstName.data(using: .utf8) {
-                    UIPasteboard.general.setData(nameData, forPasteboardType: fileNameKey)
-                }
-                UIPasteboard.general.setValue(firstName, forPasteboardType: fileNameKey)
-            }
+            print("[ShareExt] UIPasteboard.general.items populated with \(newItems.count) item(s)")
         }
     }
 

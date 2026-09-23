@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import UIKit
+import UniformTypeIdentifiers
 
 // MARK: - SharedImportCoordinator
 //
@@ -135,10 +136,14 @@ final class SharedImportCoordinator: ObservableObject {
                     for (idx, name) in ingestedNames.enumerated() {
                         let fileURL = inboxDir.appendingPathComponent(name)
                         let shouldOpen = activeTargets.contains(name) || (name == targetFilename) || (activeTargets.isEmpty && targetFilename == nil && idx == 0)
-                        let pdf = manager.registerDirectFile(at: fileURL, autoOpen: false)
+                        let pdf = manager.registerDirectFile(at: fileURL, autoOpen: shouldOpen)
                         if shouldOpen && firstPDF == nil {
                             firstPDF = pdf
                         }
+                    }
+
+                    if firstPDF == nil, let firstName = ingestedNames.first {
+                        firstPDF = manager.convertedPDFs.first(where: { $0.url.lastPathComponent == firstName })
                     }
 
                     manager.scanLibrary()
@@ -367,30 +372,55 @@ final class SharedImportCoordinator: ObservableObject {
 
             // 1. Check multi-item pasteboard array
             for item in UIPasteboard.general.items {
-                if let pbData = item[fileTypeKey] as? Data,
-                   !pbData.isEmpty,
-                   let pbName = (item[fileNameKey] as? String)
-                        ?? (item[fileNameKey] as? Data).flatMap({ String(data: $0, encoding: .utf8) }),
-                   !pbName.isEmpty {
-                    let dest = inboxDir.appendingPathComponent(pbName)
+                let pbData: Data? = (item[fileTypeKey] as? Data)
+                    ?? (item[UTType.data.identifier] as? Data)
+                    ?? (item[UTType.pdf.identifier] as? Data)
+
+                if let pbData, !pbData.isEmpty {
+                    var pbName = (item[fileNameKey] as? String)
+                        ?? (item[fileNameKey] as? Data).flatMap({ String(data: $0, encoding: .utf8) })
+                        ?? (item[UTType.utf8PlainText.identifier] as? String)
+                        ?? (item[UTType.plainText.identifier] as? String)
+
+                    if pbName == nil || pbName?.isEmpty == true {
+                        pbName = self.pendingTargetFilenames.first
+                    }
+
+                    let resolvedName: String = {
+                        if let name = pbName, !name.isEmpty { return name }
+                        let ext = Self.detectExtensionFromBytes(pbData) ?? "pdf"
+                        return "SharedDocument_\(Int(Date().timeIntervalSince1970)).\(ext)"
+                    }()
+
+                    let dest = inboxDir.appendingPathComponent(resolvedName)
                     if (try? pbData.write(to: dest, options: .atomic)) != nil {
-                        ingestedFilenames.insert(pbName)
-                        Logger.shared.log("SharedImportCoordinator: Ingested file '\(pbName)' (\(pbData.count) bytes) from UIPasteboard multi-item bridge", category: "ShareImport", type: .success)
+                        ingestedFilenames.insert(resolvedName)
+                        Logger.shared.log("SharedImportCoordinator: Ingested file '\(resolvedName)' (\(pbData.count) bytes) from UIPasteboard multi-item bridge", category: "ShareImport", type: .success)
                     }
                 }
             }
 
             // 2. Check root-level pasteboard data (backward-compatibility fallback)
-            if let rootData = UIPasteboard.general.data(forPasteboardType: fileTypeKey),
-               !rootData.isEmpty,
-               let rootName = (UIPasteboard.general.value(forPasteboardType: fileNameKey) as? String)
-                    ?? UIPasteboard.general.data(forPasteboardType: fileNameKey).flatMap({ String(data: $0, encoding: .utf8) }),
-               !rootName.isEmpty,
-               !ingestedFilenames.contains(rootName) {
-                let dest = inboxDir.appendingPathComponent(rootName)
-                if (try? rootData.write(to: dest, options: .atomic)) != nil {
-                    ingestedFilenames.insert(rootName)
-                    Logger.shared.log("SharedImportCoordinator: Ingested file '\(rootName)' (\(rootData.count) bytes) from UIPasteboard root bridge", category: "ShareImport", type: .success)
+            if ingestedFilenames.isEmpty {
+                let rootData = UIPasteboard.general.data(forPasteboardType: fileTypeKey)
+                    ?? UIPasteboard.general.data(forPasteboardType: UTType.data.identifier)
+                    ?? UIPasteboard.general.data(forPasteboardType: UTType.pdf.identifier)
+
+                if let rootData, !rootData.isEmpty {
+                    let rootName = (UIPasteboard.general.value(forPasteboardType: fileNameKey) as? String)
+                        ?? UIPasteboard.general.data(forPasteboardType: fileNameKey).flatMap({ String(data: $0, encoding: .utf8) })
+                        ?? UIPasteboard.general.string
+                        ?? self.pendingTargetFilenames.first
+                        ?? {
+                            let ext = Self.detectExtensionFromBytes(rootData) ?? "pdf"
+                            return "SharedDocument_\(Int(Date().timeIntervalSince1970)).\(ext)"
+                        }()
+
+                    let dest = inboxDir.appendingPathComponent(rootName)
+                    if (try? rootData.write(to: dest, options: .atomic)) != nil {
+                        ingestedFilenames.insert(rootName)
+                        Logger.shared.log("SharedImportCoordinator: Ingested file '\(rootName)' (\(rootData.count) bytes) from UIPasteboard root bridge", category: "ShareImport", type: .success)
+                    }
                 }
             }
 
@@ -400,6 +430,10 @@ final class SharedImportCoordinator: ObservableObject {
                     var filtered = item
                     filtered.removeValue(forKey: fileTypeKey)
                     filtered.removeValue(forKey: fileNameKey)
+                    // If the item only contained our data bridge keys, drop it completely
+                    if filtered.count <= 2 && (filtered[UTType.data.identifier] != nil || filtered[UTType.utf8PlainText.identifier] != nil) {
+                        return nil
+                    }
                     return filtered.isEmpty ? nil : filtered
                 }
                 UIPasteboard.general.setData(Data(), forPasteboardType: fileTypeKey)
@@ -592,6 +626,10 @@ final class SharedImportCoordinator: ObservableObject {
     }
 
     func hasPendingShareImport() -> Bool {
+        if !pendingTargetFilenames.isEmpty {
+            return true
+        }
+
         if appGroupIDs.contains(where: {
             (UserDefaults(suiteName: $0)?.double(forKey: "pendingShareImportTimestamp") ?? 0) > 0 ||
             UserDefaults(suiteName: $0)?.bool(forKey: "hasPendingShareImport") == true
@@ -601,11 +639,16 @@ final class SharedImportCoordinator: ObservableObject {
 
         // Sideload / Unsigned IPA Fallback Bridge: Check UIPasteboard.general for non-empty file data
         let fileTypeKey = "com.antigravity.InksyncPro.sharedFileData"
+        let fileNameKey = "com.antigravity.InksyncPro.sharedFileName"
         if let pbData = UIPasteboard.general.data(forPasteboardType: fileTypeKey), !pbData.isEmpty {
             return true
         }
         if UIPasteboard.general.items.contains(where: {
             if let data = $0[fileTypeKey] as? Data, !data.isEmpty { return true }
+            if ($0[fileNameKey] != nil || !self.pendingTargetFilenames.isEmpty),
+               let data = $0[UTType.data.identifier] as? Data, !data.isEmpty {
+                return true
+            }
             return false
         }) {
             return true
@@ -633,6 +676,28 @@ final class SharedImportCoordinator: ObservableObject {
     }
 
     // MARK: - Magic Byte Helper
+
+    nonisolated static func detectExtensionFromBytes(_ data: Data) -> String? {
+        guard data.count >= 4 else { return nil }
+        // PDF (%PDF)
+        if data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46 { return "pdf" }
+        // RAR (Rar!)
+        if data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && data[3] == 0x21 { return "cbr" }
+        // ZIP / CBZ / EPUB (PK\x03\x04 or PK\x05\x06)
+        if (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04) ||
+           (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x05 && data[3] == 0x06) {
+            let header = String(decoding: data.prefix(500), as: UTF8.self)
+            if header.contains("mimetype") && (header.contains("epub+zip") || header.contains("epub")) {
+                return "epub"
+            }
+            return "cbz"
+        }
+        // 7-Zip (7z\xBC\xAF\x27\x1C)
+        if data[0] == 0x37 && data[1] == 0x7A && data[2] == 0xBC && data[3] == 0xAF {
+            return "cb7"
+        }
+        return nil
+    }
 
     nonisolated static func detectExtensionFromMagicBytes(_ fileURL: URL) -> String? {
         guard let fileHandle = try? FileHandle(forReadingFrom: fileURL),
