@@ -913,20 +913,27 @@ struct ShareExtensionView: View {
 
         for container in containers {
             let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
-            let stagingURL = container.appendingPathComponent("ShareStaging", isDirectory: true)
-            let pendingURL = container.appendingPathComponent("PendingConversions", isDirectory: true)
             try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
-            try? FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
-            try? FileManager.default.createDirectory(at: pendingURL, withIntermediateDirectories: true)
 
             let destInbox = inboxURL.appendingPathComponent(file.name)
-            let destStaging = stagingURL.appendingPathComponent(file.name)
 
-            let didStageInbox = (file.url.path == destInbox.path) || Self.safeCopyOrWrite(from: file.url, to: destInbox)
-            if didStageInbox {
-                if file.url.path != destStaging.path {
-                    _ = Self.safeCopyOrWrite(from: destInbox, to: destStaging)
+            // Fast-path 1: File is already in this container's Inbox
+            if file.url.path == destInbox.path {
+                successfulStagings += 1
+                break
+            }
+
+            // Fast-path 2: File already exists with identical size
+            if FileManager.default.fileExists(atPath: destInbox.path) {
+                let srcSize = (try? FileManager.default.attributesOfItem(atPath: file.url.path)[.size] as? Int64) ?? 0
+                let dstSize = (try? FileManager.default.attributesOfItem(atPath: destInbox.path)[.size] as? Int64) ?? 0
+                if srcSize > 0 && srcSize == dstSize {
+                    successfulStagings += 1
+                    break
                 }
+            }
+
+            if Self.safeCopyOrWrite(from: file.url, to: destInbox) {
                 successfulStagings += 1
                 break // Primary container successfully staged!
             }

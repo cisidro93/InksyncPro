@@ -153,8 +153,7 @@ final class SharedImportCoordinator: ObservableObject {
                         firstPDF = manager.convertedPDFs.first(where: { $0.url.lastPathComponent == firstName })
                     }
 
-                    manager.scanLibrary()
-
+                    // 1. Post notification immediately so ContentView launches the reader with 0 latency
                     NotificationCenter.default.post(
                         name: NSNotification.Name("InksyncPro.ShareImportReceived"),
                         object: firstPDF
@@ -162,6 +161,9 @@ final class SharedImportCoordinator: ObservableObject {
                     NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
                     let toastMsg = ingestedNames.count == 1 ? "Added '\(ingestedNames[0])' to Library" : "Added \(ingestedNames.count) books to Library"
                     NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": toastMsg])
+
+                    // 2. Refresh library catalog asynchronously without delaying the reader presentation
+                    manager.scanLibrary()
                 } else {
                     Logger.shared.log(
                         "SharedImportCoordinator: No files ingested on this pass — clearing flags to prevent infinite drain loop.",

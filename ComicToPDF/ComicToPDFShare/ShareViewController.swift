@@ -96,10 +96,10 @@ class ShareViewController: UIViewController {
         }
 
         // ── Step 4: Graceful Handover Teardown ──
-        // SwiftUI Link initiates SpringBoard app-switching. We wait 1.0s to allow the transition
+        // SwiftUI Link initiates SpringBoard app-switching. We wait 200ms to allow the transition
         // to complete before completing the extension request, preventing premature cancellation.
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 200_000_000)
             self?.completeHostAppHandover()
         }
     }
