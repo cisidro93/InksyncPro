@@ -388,50 +388,70 @@ final class SharedImportCoordinator: ObservableObject {
                 let rawData = item[fileTypeKey] ?? item[UTType.data.identifier] ?? item[UTType.pdf.identifier]
                 let pbData: Data? = (rawData as? Data) ?? (rawData as? NSData).map { Data(referencing: $0) }
 
-                if let pbData, !pbData.isEmpty {
-                    let rawName = item[fileNameKey] ?? item[UTType.utf8PlainText.identifier] ?? item[UTType.plainText.identifier]
-                    var pbName: String? = (rawName as? String)
-                        ?? (rawName as? Data).flatMap({ String(data: $0, encoding: .utf8) })
-                        ?? (rawName as? NSData).flatMap({ String(data: Data(referencing: $0), encoding: .utf8) })
+                // Minimum size check: Valid document archives / PDFs are never < 100 bytes
+                guard let pbData, pbData.count >= 100 else { continue }
 
-                    if pbName == nil || pbName?.isEmpty == true {
-                        pbName = self.pendingTargetFilenames.first
+                let rawName = item[fileNameKey]
+                var pbName: String? = (rawName as? String)
+                    ?? (rawName as? Data).flatMap({ String(data: $0, encoding: .utf8) })
+                    ?? (rawName as? NSData).flatMap({ String(data: Data(referencing: $0), encoding: .utf8) })
+
+                if pbName == nil || pbName?.isEmpty == true {
+                    pbName = self.pendingTargetFilenames.first
+                }
+
+                // Guard 1: pbData must NOT be identical to the filename string
+                if let name = pbName, let nameData = name.data(using: .utf8), pbData == nameData {
+                    Logger.shared.log("SharedImportCoordinator: Rejected pasteboard item because payload matches filename string '\(name)' (\(pbData.count) bytes)", category: "ShareImport", type: .warning)
+                    continue
+                }
+
+                // Guard 2: Detect format by magic bytes. If no known document magic bytes and no explicit fileTypeKey, skip!
+                let detectedExt = Self.detectExtensionFromBytes(pbData)
+                if detectedExt == nil && item[fileTypeKey] == nil {
+                    Logger.shared.log("SharedImportCoordinator: Rejected pasteboard item lacking valid document magic bytes (\(pbData.count) bytes)", category: "ShareImport", type: .warning)
+                    continue
+                }
+
+                let effectiveExt: String = detectedExt
+                    ?? (pbName.flatMap { ($0 as NSString).pathExtension.lowercased() })
+                    ?? "pdf"
+
+                let resolvedName: String = {
+                    if let name = pbName, !name.isEmpty {
+                        let curExt = (name as NSString).pathExtension.lowercased()
+                        if curExt.isEmpty || !supportedExtensions.contains(curExt) {
+                            return "\((name as NSString).deletingPathExtension).\(effectiveExt)"
+                        }
+                        return name
                     }
+                    return "SharedDocument_\(Int(Date().timeIntervalSince1970)).\(effectiveExt)"
+                }()
 
-                    let resolvedName: String = {
-                        if let name = pbName, !name.isEmpty { return name }
-                        let ext = Self.detectExtensionFromBytes(pbData) ?? "pdf"
-                        return "SharedDocument_\(Int(Date().timeIntervalSince1970)).\(ext)"
-                    }()
-
-                    let dest = inboxDir.appendingPathComponent(resolvedName)
-                    if (try? pbData.write(to: dest, options: .atomic)) != nil {
-                        ingestedFilenames.insert(resolvedName)
-                        Logger.shared.log("SharedImportCoordinator: Ingested file '\(resolvedName)' (\(pbData.count) bytes) from UIPasteboard multi-item bridge", category: "ShareImport", type: .success)
-                    }
+                let dest = inboxDir.appendingPathComponent(resolvedName)
+                if (try? pbData.write(to: dest, options: .atomic)) != nil {
+                    ingestedFilenames.insert(resolvedName)
+                    Logger.shared.log("SharedImportCoordinator: Ingested file '\(resolvedName)' (\(pbData.count) bytes) from UIPasteboard multi-item bridge", category: "ShareImport", type: .success)
                 }
             }
 
-            // 2. Check root-level pasteboard data (backward-compatibility fallback)
+            // 2. Check root-level pasteboard data (backward-compatibility fallback, ONLY for explicit fileTypeKey)
             if ingestedFilenames.isEmpty {
-                let rootData = UIPasteboard.general.data(forPasteboardType: fileTypeKey)
-                    ?? UIPasteboard.general.data(forPasteboardType: UTType.data.identifier)
-                    ?? UIPasteboard.general.data(forPasteboardType: UTType.pdf.identifier)
-
-                if let rootData, !rootData.isEmpty {
+                if let rootData = UIPasteboard.general.data(forPasteboardType: fileTypeKey), rootData.count >= 100 {
                     let rootName = (UIPasteboard.general.value(forPasteboardType: fileNameKey) as? String)
                         ?? UIPasteboard.general.data(forPasteboardType: fileNameKey).flatMap({ String(data: $0, encoding: .utf8) })
-                        ?? UIPasteboard.general.string
                         ?? self.pendingTargetFilenames.first
                         ?? {
                             let ext = Self.detectExtensionFromBytes(rootData) ?? "pdf"
                             return "SharedDocument_\(Int(Date().timeIntervalSince1970)).\(ext)"
                         }()
 
-                    let dest = inboxDir.appendingPathComponent(rootName)
-                    if (try? rootData.write(to: dest, options: .atomic)) != nil {
-                        ingestedFilenames.insert(rootName)
-                        Logger.shared.log("SharedImportCoordinator: Ingested file '\(rootName)' (\(rootData.count) bytes) from UIPasteboard root bridge", category: "ShareImport", type: .success)
+                    if rootData != rootName.data(using: .utf8) {
+                        let dest = inboxDir.appendingPathComponent(rootName)
+                        if (try? rootData.write(to: dest, options: .atomic)) != nil {
+                            ingestedFilenames.insert(rootName)
+                            Logger.shared.log("SharedImportCoordinator: Ingested file '\(rootName)' (\(rootData.count) bytes) from UIPasteboard root bridge", category: "ShareImport", type: .success)
+                        }
                     }
                 }
             }
@@ -442,14 +462,11 @@ final class SharedImportCoordinator: ObservableObject {
                     var filtered = item
                     filtered.removeValue(forKey: fileTypeKey)
                     filtered.removeValue(forKey: fileNameKey)
-                    // If the item only contained our data bridge keys, drop it completely
-                    if filtered.count <= 2 && (filtered[UTType.data.identifier] != nil || filtered[UTType.utf8PlainText.identifier] != nil) {
+                    if filtered.count <= 1 && (filtered[UTType.data.identifier] != nil) {
                         return nil
                     }
                     return filtered.isEmpty ? nil : filtered
                 }
-                UIPasteboard.general.setData(Data(), forPasteboardType: fileTypeKey)
-                UIPasteboard.general.setValue("", forPasteboardType: fileNameKey)
             }
         }
 
@@ -649,16 +666,18 @@ final class SharedImportCoordinator: ObservableObject {
             return true
         }
 
-        // Sideload / Unsigned IPA Fallback Bridge: Check UIPasteboard.general for non-empty file data
+        // Sideload / Unsigned IPA Fallback Bridge: Check UIPasteboard.general for valid document file data
         let fileTypeKey = "com.antigravity.InksyncPro.sharedFileData"
         let fileNameKey = "com.antigravity.InksyncPro.sharedFileName"
-        if let pbData = UIPasteboard.general.data(forPasteboardType: fileTypeKey), !pbData.isEmpty {
+        if let pbData = UIPasteboard.general.data(forPasteboardType: fileTypeKey), pbData.count >= 100 {
             return true
         }
         if UIPasteboard.general.items.contains(where: {
-            if let data = $0[fileTypeKey] as? Data, !data.isEmpty { return true }
+            if let data = $0[fileTypeKey] as? Data, data.count >= 100 { return true }
             if ($0[fileNameKey] != nil || !self.pendingTargetFilenames.isEmpty),
-               let data = $0[UTType.data.identifier] as? Data, !data.isEmpty {
+               let data = $0[UTType.data.identifier] as? Data,
+               data.count >= 100,
+               Self.detectExtensionFromBytes(data) != nil {
                 return true
             }
             return false
