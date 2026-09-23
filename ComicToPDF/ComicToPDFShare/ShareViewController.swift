@@ -4,20 +4,16 @@ import UniformTypeIdentifiers
 
 // MARK: - ShareViewController
 //
-// Crash-Immune iOS Share Extension open-host-app pattern:
+// Modern iOS Share Extension host-app launch architecture:
 //
-//  1. Present the SwiftUI UI.
-//  2. When the user taps "Import to InkSync Pro Library", the view stages files
-//     to the primary App Group container and triggers `onOpenApp`.
-//  3. `openHostAppAndComplete()` uses a multi-strategy launcher:
-//     - Strategy A: UIResponder chain traversal for `openURL:`.
-//     - Strategy B: Dynamic `UIApplication.sharedApplication` invocation.
-//     - Strategy C: `extensionContext` dynamic method invocation strictly guarded by `responds(to:)`.
-//     NOTE: Calling `extensionContext.open()` directly causes `NSInvalidArgumentException`
-//     because `_UIActivityExtensionContext` does not implement `openURL:completionHandler:`
-//     on Share Extensions (it is restricted to Today/iMessage extensions).
-//  4. `completeHostAppHandover()` completes the extension request smoothly after handover.
-//  5. Write `pendingShareImportTimestamp` and `hasPendingShareImport` to all App Group suites.
+//  1. Present the SwiftUI UI (ShareExtensionView).
+//  2. When the user taps "Import to InkSync Pro Library", files are staged
+//     to the App Group containers and bridged unconditionally to UIPasteboard.general.
+//  3. The "Open InkSync Pro" button is rendered as a native SwiftUI Link(destination: deepLinkURL).
+//     Direct user interaction with SwiftUI Link activates SpringBoard's system URL dispatcher,
+//     reliably launching the host app on iOS 17 and iOS 18 without hitting sandbox selector restrictions.
+//  4. Simultaneously, onOpenApp is called to set App Group flags, trigger tactile haptics,
+//     and cleanly dismiss the extension after allowing SpringBoard time to bring InkSync Pro forward.
 
 class ShareViewController: UIViewController {
 
@@ -83,122 +79,27 @@ class ShareViewController: UIViewController {
             }
         }
 
-        // ── Step 2: Multi-Strategy Host App Launch (100% Crash-Immune via C ABI) ──
-        var didOpen = false
+        // ── Step 2: Tactile Feedback ──
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
 
-        let openSelector = NSSelectorFromString("openURL:")
-        let openOptsSelector = NSSelectorFromString("openURL:options:completionHandler:")
-        typealias OpenURLFunc = @convention(c) (NSObject, Selector, NSURL) -> Bool
-        typealias OpenOptsFunc = @convention(c) (NSObject, Selector, NSURL, NSDictionary, ((Bool) -> Void)?) -> Void
-
-        // Strategy A: UIResponder Chain Traversal (self -> window -> host application)
-        var responder: UIResponder? = self
-        while let r = responder {
-            if r.responds(to: openOptsSelector) {
-                if let imp = r.method(for: openOptsSelector) {
-                    let fn = unsafeBitCast(imp, to: OpenOptsFunc.self)
-                    fn(r, openOptsSelector, deepLinkURL as NSURL, [:] as NSDictionary) { [weak self] _ in
-                        Task { @MainActor in
-                            self?.completeHostAppHandover()
-                        }
-                    }
-                    didOpen = true
-                    break
-                }
-            } else if r.responds(to: openSelector) {
-                if let imp = r.method(for: openSelector) {
-                    let fn = unsafeBitCast(imp, to: OpenURLFunc.self)
-                    _ = fn(r, openSelector, deepLinkURL as NSURL)
-                    didOpen = true
-                    break
-                }
-            }
-            responder = r.next
-        }
-
-        if !didOpen {
-            var winResponder: UIResponder? = self.view.window?.rootViewController ?? self.view.window
-            while let r = winResponder {
-                if r.responds(to: openOptsSelector) {
-                    if let imp = r.method(for: openOptsSelector) {
-                        let fn = unsafeBitCast(imp, to: OpenOptsFunc.self)
-                        fn(r, openOptsSelector, deepLinkURL as NSURL, [:] as NSDictionary) { [weak self] _ in
-                            Task { @MainActor in
-                                self?.completeHostAppHandover()
-                            }
-                        }
-                        didOpen = true
-                        break
-                    }
-                } else if r.responds(to: openSelector) {
-                    if let imp = r.method(for: openSelector) {
-                        let fn = unsafeBitCast(imp, to: OpenURLFunc.self)
-                        _ = fn(r, openSelector, deepLinkURL as NSURL)
-                        didOpen = true
-                        break
-                    }
-                }
-                winResponder = r.next
-            }
-        }
-
-        // Strategy B: Dynamic UIApplication Runtime Invocation (via C ABI)
-        if !didOpen {
-            if let appClass = NSClassFromString("UIApplication") as? NSObject.Type {
-                let sharedAppSel = NSSelectorFromString("sharedApplication")
-                if appClass.responds(to: sharedAppSel) {
-                    typealias SharedAppFunc = @convention(c) (AnyClass, Selector) -> NSObject?
-                    let sharedImp = appClass.method(for: sharedAppSel)
-                    let sharedFn = unsafeBitCast(sharedImp, to: SharedAppFunc.self)
-                    if let sharedApp = sharedFn(appClass, sharedAppSel) {
-                        if sharedApp.responds(to: openOptsSelector) {
-                            if let imp = sharedApp.method(for: openOptsSelector) {
-                                let fn = unsafeBitCast(imp, to: OpenOptsFunc.self)
-                                fn(sharedApp, openOptsSelector, deepLinkURL as NSURL, [:] as NSDictionary) { [weak self] _ in
-                                    Task { @MainActor in
-                                        self?.completeHostAppHandover()
-                                    }
-                                }
-                                didOpen = true
-                            }
-                        } else if sharedApp.responds(to: openSelector) {
-                            if let imp = sharedApp.method(for: openSelector) {
-                                let fn = unsafeBitCast(imp, to: OpenURLFunc.self)
-                                _ = fn(sharedApp, openSelector, deepLinkURL as NSURL)
-                                didOpen = true
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Strategy C: Dynamic NSExtensionContext Selector Check
-        // Strictly guarded with responds(to:) so _UIActivityExtensionContext NEVER throws unrecognized selector exception
-        if !didOpen, let ext = extensionContext {
+        // ── Step 3: Dynamic Extension Context Open Fallback ──
+        if let ext = extensionContext {
             let extOpenSel = NSSelectorFromString("openURL:completionHandler:")
             if ext.responds(to: extOpenSel) {
                 typealias ExtOpenMethod = @convention(c) (NSObject, Selector, NSURL, ((Bool) -> Void)?) -> Void
                 if let imp = ext.method(for: extOpenSel) {
                     let fn = unsafeBitCast(imp, to: ExtOpenMethod.self)
-                    fn(ext, extOpenSel, deepLinkURL as NSURL) { [weak self] _ in
-                        Task { @MainActor in
-                            self?.completeHostAppHandover()
-                        }
-                    }
-                    didOpen = true
+                    fn(ext, extOpenSel, deepLinkURL as NSURL, nil)
                 }
             }
         }
 
-        // ── Step 3: Tactile Feedback & Clean Handover Teardown ──
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.success)
-
-        // Dismiss the share extension cleanly after user-initiated tap
-        let delayNanos: UInt64 = didOpen ? 600_000_000 : 400_000_000
+        // ── Step 4: Graceful Handover Teardown ──
+        // SwiftUI Link initiates SpringBoard app-switching. We wait 1.0s to allow the transition
+        // to complete before completing the extension request, preventing premature cancellation.
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: delayNanos)
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             self?.completeHostAppHandover()
         }
     }
