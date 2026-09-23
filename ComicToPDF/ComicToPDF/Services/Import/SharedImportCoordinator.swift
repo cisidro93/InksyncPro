@@ -454,6 +454,7 @@ final class SharedImportCoordinator: ObservableObject {
 
         // Sideload / Unsigned IPA Fallback Bridge: Check UIPasteboard.general (supports both multi-file items and single-file data)
         await MainActor.run {
+            let mainFM = FileManager.default
             let fileTypeKey = "com.antigravity.InksyncPro.sharedFileData"
             let fileNameKey = "com.antigravity.InksyncPro.sharedFileName"
 
@@ -527,8 +528,8 @@ final class SharedImportCoordinator: ObservableObject {
 
                 // If file already exists with same size, avoid re-writing:
                 var shouldWrite = true
-                if fm.fileExists(atPath: dest.path) {
-                    let existingSize = (try? fm.attributesOfItem(atPath: dest.path)[.size] as? Int64) ?? 0
+                if mainFM.fileExists(atPath: dest.path) {
+                    let existingSize = (try? mainFM.attributesOfItem(atPath: dest.path)[.size] as? Int64) ?? 0
                     if existingSize == Int64(pbData.count) {
                         shouldWrite = false
                         ingestedFilenames.insert(resolvedName)

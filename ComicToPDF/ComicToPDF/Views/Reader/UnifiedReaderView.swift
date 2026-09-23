@@ -373,7 +373,7 @@ struct UnifiedReaderView: View {
             ReaderIdleTimerManager.shared.leaveReader()
             VolumeButtonPageTurnManager.shared.stopListening()
         }
-        .onChange(of: prefs.volumeButtonsTurnPages) { enabled in
+        .onChange(of: prefs.volumeButtonsTurnPages) { _, enabled in
             if enabled {
                 VolumeButtonPageTurnManager.shared.onVolumeUp = {
                     NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
