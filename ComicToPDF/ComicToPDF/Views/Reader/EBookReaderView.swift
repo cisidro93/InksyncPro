@@ -341,7 +341,6 @@ struct EBookReaderView: View {
             totalPages:  $chapterTotalPages,
             startAtEndOfChapter: startAtEndOfChapter,
             spineIndex:  currentIndex,
-            targetAnchor: pendingTargetAnchor,
             isPencilMode: isPencilMode,
             onNext:      nextChapter,
             onPrev:      prevChapter,
@@ -390,7 +389,8 @@ struct EBookReaderView: View {
             webViewRef: $webViewReference,
             onFootnoteTapped: { text in
                 activeFootnoteText = text
-            }
+            },
+            targetAnchor: pendingTargetAnchor
         )
         .clipped()
         .id("ebook_\(prefs.pageTurnStyle.rawValue)")
@@ -872,6 +872,7 @@ struct EBookReaderView: View {
         startAtEndOfChapter = false
         chapterPage = 0
         chapterScrollFraction = 0.0
+        pendingTargetAnchor = nil
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { currentIndex += 1 }
         saveProgress()
         trackEBookProgress()
@@ -893,6 +894,7 @@ struct EBookReaderView: View {
         startAtEndOfChapter = true
         chapterPage = 0
         chapterScrollFraction = 1.0
+        pendingTargetAnchor = nil
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { currentIndex -= 1 }
         saveProgress()
         trackEBookProgress()
