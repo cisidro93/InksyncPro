@@ -48,6 +48,7 @@ final class SharedImportCoordinator: ObservableObject {
     private var isIngesting = false
     private var inFlightDirectOpens: Set<String> = []
     private var pendingTargetFilenames: [String] = []
+    private var drainPassCount: Int = 0
 
     // MARK: - Entry Points
 
@@ -117,8 +118,14 @@ final class SharedImportCoordinator: ObservableObject {
                 for name in ingestedNames {
                     self.pendingAutoSelectFilenames.insert(name)
                 }
+
+                // Snapshot and clear the active targets processed in this pass
+                let activeTargets = Set(self.pendingTargetFilenames)
+                self.pendingTargetFilenames.removeAll()
+
                 if !ingestedNames.isEmpty {
                     Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
+                    self.drainPassCount = 0
                     Logger.shared.log(
                         "SharedImportCoordinator: Completed import of \(ingestedNames.count) file(s): \(ingestedNames.joined(separator: ", "))",
                         category: "ShareImport", type: .success
@@ -130,13 +137,13 @@ final class SharedImportCoordinator: ObservableObject {
                     let manager = self.conversionManager ?? ConversionManager.shared
                     var firstPDF: ConvertedPDF? = nil
 
-                    let activeTargets = Set(self.pendingTargetFilenames)
-                    self.pendingTargetFilenames.removeAll()
-
                     for (idx, name) in ingestedNames.enumerated() {
                         let fileURL = inboxDir.appendingPathComponent(name)
-                        let shouldOpen = activeTargets.contains(name) || (name == targetFilename) || (activeTargets.isEmpty && targetFilename == nil && idx == 0)
-                        let pdf = manager.registerDirectFile(at: fileURL, autoOpen: shouldOpen)
+                        let cleanTarget = targetFilename?.removingPercentEncoding ?? targetFilename
+                        let shouldOpen = activeTargets.contains(name) ||
+                            (cleanTarget != nil && name.localizedCaseInsensitiveCompare(cleanTarget!) == .orderedSame) ||
+                            (activeTargets.isEmpty && targetFilename == nil && idx == 0)
+                        let pdf = manager.registerDirectFile(at: fileURL, autoOpen: false)
                         if shouldOpen && firstPDF == nil {
                             firstPDF = pdf
                         }
@@ -157,16 +164,22 @@ final class SharedImportCoordinator: ObservableObject {
                     NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": toastMsg])
                 } else {
                     Logger.shared.log(
-                        "SharedImportCoordinator: No files ingested — leaving flags set for next foreground retry.",
-                        category: "ShareImport", type: .warning
+                        "SharedImportCoordinator: No files ingested on this pass — clearing flags to prevent infinite drain loop.",
+                        category: "ShareImport", type: .info
                     )
+                    // If no files were found after all retries, reset share flags to avoid infinite foreground triggers
+                    Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
                 }
                 self.isIngesting = false
 
-                // If new targets arrived while processing, trigger a follow-up drain pass
-                if !self.pendingTargetFilenames.isEmpty {
-                    Logger.shared.log("SharedImportCoordinator: Draining \(self.pendingTargetFilenames.count) pending targets in follow-up pass", category: "ShareImport", type: .info)
-                    self.coordinateImport(targetFilename: nil, retryCount: 3, retryDelaySeconds: 0.3)
+                // If new targets arrived specifically while processing, trigger at most ONE follow-up drain pass
+                if !self.pendingTargetFilenames.isEmpty && self.drainPassCount < 1 {
+                    self.drainPassCount += 1
+                    Logger.shared.log("SharedImportCoordinator: Draining \(self.pendingTargetFilenames.count) newly arrived targets in follow-up pass (pass \(self.drainPassCount))", category: "ShareImport", type: .info)
+                    self.coordinateImport(targetFilename: nil, retryCount: 2, retryDelaySeconds: 0.3)
+                } else {
+                    self.drainPassCount = 0
+                    self.pendingTargetFilenames.removeAll()
                 }
             }
         }
@@ -372,15 +385,14 @@ final class SharedImportCoordinator: ObservableObject {
 
             // 1. Check multi-item pasteboard array
             for item in UIPasteboard.general.items {
-                let pbData: Data? = (item[fileTypeKey] as? Data)
-                    ?? (item[UTType.data.identifier] as? Data)
-                    ?? (item[UTType.pdf.identifier] as? Data)
+                let rawData = item[fileTypeKey] ?? item[UTType.data.identifier] ?? item[UTType.pdf.identifier]
+                let pbData: Data? = (rawData as? Data) ?? (rawData as? NSData).map { Data(referencing: $0) }
 
                 if let pbData, !pbData.isEmpty {
-                    var pbName = (item[fileNameKey] as? String)
-                        ?? (item[fileNameKey] as? Data).flatMap({ String(data: $0, encoding: .utf8) })
-                        ?? (item[UTType.utf8PlainText.identifier] as? String)
-                        ?? (item[UTType.plainText.identifier] as? String)
+                    let rawName = item[fileNameKey] ?? item[UTType.utf8PlainText.identifier] ?? item[UTType.plainText.identifier]
+                    var pbName: String? = (rawName as? String)
+                        ?? (rawName as? Data).flatMap({ String(data: $0, encoding: .utf8) })
+                        ?? (rawName as? NSData).flatMap({ String(data: Data(referencing: $0), encoding: .utf8) })
 
                     if pbName == nil || pbName?.isEmpty == true {
                         pbName = self.pendingTargetFilenames.first

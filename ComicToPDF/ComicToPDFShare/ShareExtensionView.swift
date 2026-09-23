@@ -612,27 +612,10 @@ struct ShareExtensionView: View {
                 }
             }
 
-            // Immediately pre-stage all discovered files into App Group Inbox & PendingConversions
+            // Pre-stage all discovered files into App Group Inbox & PendingConversions if available
             for file in filesToProcess {
                 try? self.markForConversion(file)
             }
-            
-            let appGroupIDs = [
-                "group.com.antigravity.InksyncPro",
-                "group.com.antigravity.ComicToPDF",
-                "group.com.antigravity.inksync"
-            ]
-            let timestamp = Date().timeIntervalSince1970
-            for gid in appGroupIDs {
-                if let ud = UserDefaults(suiteName: gid) {
-                    ud.set(timestamp, forKey: "pendingShareImportTimestamp")
-                    ud.set(true, forKey: "hasPendingShareImport")
-                    ud.synchronize()
-                }
-            }
-
-            // Immediately bridge discovered files to pasteboard as early safety net
-            self.bridgeFilesToPasteboard(filesToProcess)
 
             self.selectedFiles = filesToProcess
             self.isLoading = false
@@ -961,7 +944,7 @@ struct ShareExtensionView: View {
 
         var newItems: [[String: Any]] = []
         var totalBytes: Int64 = 0
-        let maxTotalBytes: Int64 = 75_000_000 // 75MB total safety cap to prevent jetsam
+        let maxTotalBytes: Int64 = 200_000_000 // 200MB safety cap to support large comics & manga volumes
 
         for file in files {
             // Find the best existing accessible copy of this file
@@ -1018,6 +1001,19 @@ struct ShareExtensionView: View {
 
         if !newItems.isEmpty {
             UIPasteboard.general.items = newItems
+
+            // In addition to multi-item array, set primary item directly on root pasteboard
+            if let first = newItems.first,
+               let firstData = (first[fileTypeKey] as? Data) ?? (first[UTType.data.identifier] as? Data),
+               let firstName = (first[fileNameKey] as? String) ?? (first[UTType.utf8PlainText.identifier] as? String) {
+                UIPasteboard.general.setData(firstData, forPasteboardType: fileTypeKey)
+                UIPasteboard.general.setValue(firstName, forPasteboardType: fileNameKey)
+                if let plainData = firstName.data(using: .utf8) {
+                    UIPasteboard.general.setData(plainData, forPasteboardType: UTType.utf8PlainText.identifier)
+                }
+                print("[ShareExt] Root UIPasteboard populated for '\(firstName)' (\(firstData.count) bytes)")
+            }
+
             print("[ShareExt] UIPasteboard.general.items populated with \(newItems.count) item(s)")
         }
     }

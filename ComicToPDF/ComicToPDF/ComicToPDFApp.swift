@@ -124,8 +124,8 @@ struct InksyncProApp: App {
                 .onAppear {
                     // Inject ConversionManager into SharedImportCoordinator on app launch
                     SharedImportCoordinator.shared.conversionManager = ConversionManager.shared
-                    // Check for any pending imports from Share Extension on launch if already bootstrapped
-                    if LibraryService.shared.hasBootstrapped {
+                    // Check for any pending imports from Share Extension on launch if already bootstrapped and pending
+                    if LibraryService.shared.hasBootstrapped && SharedImportCoordinator.shared.hasPendingShareImport() {
                         SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
                     }
                 }
@@ -146,7 +146,7 @@ struct InksyncProApp: App {
                          break
                     case .active:
                          SecurityManager.shared.handleAppForegrounding()
-                         if LibraryService.shared.hasBootstrapped {
+                         if LibraryService.shared.hasBootstrapped && SharedImportCoordinator.shared.hasPendingShareImport() {
                              SharedImportCoordinator.shared.coordinateImport(retryCount: 3, retryDelaySeconds: 0.5)
                          }
                          NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
@@ -221,6 +221,12 @@ struct InksyncProApp: App {
                         }
                     }
                 }
+        }
+        .onOpenURL { url in
+            Logger.shared.log("InksyncProApp: WindowGroup onOpenURL received '\(url.absoluteString)'", category: "System", type: .info)
+            Task { @MainActor in
+                await SharedImportCoordinator.shared.handleIncomingURL(url)
+            }
         }
     }
     
