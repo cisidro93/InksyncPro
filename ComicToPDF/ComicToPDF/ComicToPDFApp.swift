@@ -220,13 +220,12 @@ struct InksyncProApp: App {
                             }
                         }
                     }
+                .onOpenURL { url in
+                    Logger.shared.log("InksyncProApp: onOpenURL received '\(url.absoluteString)'", category: "System", type: .info)
+                    Task { @MainActor in
+                        await SharedImportCoordinator.shared.handleIncomingURL(url)
+                    }
                 }
-        }
-        .onOpenURL { url in
-            Logger.shared.log("InksyncProApp: WindowGroup onOpenURL received '\(url.absoluteString)'", category: "System", type: .info)
-            Task { @MainActor in
-                await SharedImportCoordinator.shared.handleIncomingURL(url)
-            }
         }
     }
     

@@ -98,7 +98,7 @@ private struct FilterChip: View {
                     .font(.system(size: 12, weight: isSelected ? .bold : .medium, design: .rounded))
                     .foregroundColor(isSelected ? .white : Color.inkTextPrimary)
 
-                if count > 0 {
+                if count >= 1 { // swiftlint:disable:this empty_count
                     Text("\(count)")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundColor(isSelected ? chipColor : Color.inkSecondary)
