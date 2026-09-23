@@ -3398,6 +3398,11 @@ struct PDFSelectionSnapshot: Sendable {
     let pageIndex: Int
     let lines: [PDFSelectionLine]
     let normalizedBounds: CodableCGRect?
+
+    var boundsOnPage: CGRect {
+        guard let first = lines.first else { return .zero }
+        return lines.dropFirst().reduce(first.bounds) { $0.union($1.bounds) }
+    }
 }
 
 // MARK: - Native iOS Contextual Menu Integration
