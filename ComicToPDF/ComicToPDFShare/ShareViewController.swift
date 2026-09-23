@@ -83,53 +83,91 @@ class ShareViewController: UIViewController {
             }
         }
 
-        // ── Step 2: Multi-Strategy Host App Launch (Crash-Immune) ──
+        // ── Step 2: Multi-Strategy Host App Launch (100% Crash-Immune via C ABI) ──
         var didOpen = false
+
+        let openSelector = NSSelectorFromString("openURL:")
+        let openOptsSelector = NSSelectorFromString("openURL:options:completionHandler:")
+        typealias OpenURLFunc = @convention(c) (NSObject, Selector, NSURL) -> Bool
+        typealias OpenOptsFunc = @convention(c) (NSObject, Selector, NSURL, NSDictionary, ((Bool) -> Void)?) -> Void
 
         // Strategy A: UIResponder Chain Traversal (self -> window -> host application)
         var responder: UIResponder? = self
-        let openSelector = NSSelectorFromString("openURL:")
         while let r = responder {
-            if r.responds(to: openSelector) {
-                _ = r.perform(openSelector, with: deepLinkURL)
-                didOpen = true
-                break
-            }
-            responder = r.next
-        }
-        if !didOpen {
-            var winResponder: UIResponder? = self.view.window?.rootViewController ?? self.view.window
-            while let r = winResponder {
-                if r.responds(to: openSelector) {
-                    _ = r.perform(openSelector, with: deepLinkURL)
+            if r.responds(to: openOptsSelector) {
+                if let imp = r.method(for: openOptsSelector) {
+                    let fn = unsafeBitCast(imp, to: OpenOptsFunc.self)
+                    fn(r, openOptsSelector, deepLinkURL as NSURL, [:] as NSDictionary) { [weak self] _ in
+                        Task { @MainActor in
+                            self?.completeHostAppHandover()
+                        }
+                    }
                     didOpen = true
                     break
                 }
-                winResponder = r.next
+            } else if r.responds(to: openSelector) {
+                if let imp = r.method(for: openSelector) {
+                    let fn = unsafeBitCast(imp, to: OpenURLFunc.self)
+                    _ = fn(r, openSelector, deepLinkURL as NSURL)
+                    didOpen = true
+                    break
+                }
             }
+            responder = r.next
         }
 
-        // Strategy B: Dynamic UIApplication Runtime Invocation
         if !didOpen {
-            if let appClass = NSClassFromString("UIApplication") as? NSObject.Type,
-               let sharedApp = appClass.perform(NSSelectorFromString("sharedApplication"))?.takeUnretainedValue() as? NSObject {
-                let openOptsSel = NSSelectorFromString("openURL:options:completionHandler:")
-                if sharedApp.responds(to: openOptsSel) {
-                    typealias OpenOptsMethod = @convention(c) (NSObject, Selector, NSURL, NSDictionary, ((Bool) -> Void)?) -> Void
-                    if let imp = sharedApp.method(for: openOptsSel) {
-                        let fn = unsafeBitCast(imp, to: OpenOptsMethod.self)
-                        fn(sharedApp, openOptsSel, deepLinkURL as NSURL, [:] as NSDictionary) { [weak self] _ in
+            var winResponder: UIResponder? = self.view.window?.rootViewController ?? self.view.window
+            while let r = winResponder {
+                if r.responds(to: openOptsSelector) {
+                    if let imp = r.method(for: openOptsSelector) {
+                        let fn = unsafeBitCast(imp, to: OpenOptsFunc.self)
+                        fn(r, openOptsSelector, deepLinkURL as NSURL, [:] as NSDictionary) { [weak self] _ in
                             Task { @MainActor in
                                 self?.completeHostAppHandover()
                             }
                         }
                         didOpen = true
+                        break
                     }
-                } else {
-                    let legacySel = NSSelectorFromString("openURL:")
-                    if sharedApp.responds(to: legacySel) {
-                        _ = sharedApp.perform(legacySel, with: deepLinkURL)
+                } else if r.responds(to: openSelector) {
+                    if let imp = r.method(for: openSelector) {
+                        let fn = unsafeBitCast(imp, to: OpenURLFunc.self)
+                        _ = fn(r, openSelector, deepLinkURL as NSURL)
                         didOpen = true
+                        break
+                    }
+                }
+                winResponder = r.next
+            }
+        }
+
+        // Strategy B: Dynamic UIApplication Runtime Invocation (via C ABI)
+        if !didOpen {
+            if let appClass = NSClassFromString("UIApplication") as? NSObject.Type {
+                let sharedAppSel = NSSelectorFromString("sharedApplication")
+                if appClass.responds(to: sharedAppSel) {
+                    typealias SharedAppFunc = @convention(c) (AnyClass, Selector) -> NSObject?
+                    let sharedImp = appClass.method(for: sharedAppSel)
+                    let sharedFn = unsafeBitCast(sharedImp, to: SharedAppFunc.self)
+                    if let sharedApp = sharedFn(appClass, sharedAppSel) {
+                        if sharedApp.responds(to: openOptsSelector) {
+                            if let imp = sharedApp.method(for: openOptsSelector) {
+                                let fn = unsafeBitCast(imp, to: OpenOptsFunc.self)
+                                fn(sharedApp, openOptsSelector, deepLinkURL as NSURL, [:] as NSDictionary) { [weak self] _ in
+                                    Task { @MainActor in
+                                        self?.completeHostAppHandover()
+                                    }
+                                }
+                                didOpen = true
+                            }
+                        } else if sharedApp.responds(to: openSelector) {
+                            if let imp = sharedApp.method(for: openSelector) {
+                                let fn = unsafeBitCast(imp, to: OpenURLFunc.self)
+                                _ = fn(sharedApp, openSelector, deepLinkURL as NSURL)
+                                didOpen = true
+                            }
+                        }
                     }
                 }
             }

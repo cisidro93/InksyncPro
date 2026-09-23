@@ -420,23 +420,31 @@ struct ReaderSettingsSheet: View {
     private var toolsSection: some View {
         SettingsSection(title: "Tools", icon: "wrench.and.screwdriver") {
             SettingsActionRow(label: "Jump to Page…", icon: "arrow.right.circle") {
-                onJumpToPage()
                 dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    onJumpToPage()
+                }
             }
             Divider().padding(.leading, 44)
             SettingsActionRow(label: "Table of Contents", icon: "list.bullet.rectangle") {
-                onTOC()
                 dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    onTOC()
+                }
             }
             Divider().padding(.leading, 44)
             SettingsActionRow(label: "Share This Page", icon: "square.and.arrow.up") {
-                onSharePage()
                 dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    onSharePage()
+                }
             }
             Divider().padding(.leading, 44)
             SettingsActionRow(label: "Sleep Timer…", icon: "moon.zzz") {
-                onSleepTimer()
                 dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    onSleepTimer()
+                }
             }
         }
     }

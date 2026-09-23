@@ -191,7 +191,8 @@ class PageModelStore: ObservableObject {
         newModel.panels = panels.map { panel in
             let rect = panel.boundingBox
             if rect.maxX <= 1.1 && rect.maxY <= 1.1 {
-                 return NormalizedRect(x: rect.minX * 1000, y: rect.minY * 1000, width: rect.width * 1000, height: rect.height * 1000)
+                 let yTopLeft = 1.0 - rect.origin.y - rect.height
+                 return NormalizedRect(x: rect.minX * 1000, y: yTopLeft * 1000, width: rect.width * 1000, height: rect.height * 1000)
             } else {
                  allNormalized = false
                  return NormalizedRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)

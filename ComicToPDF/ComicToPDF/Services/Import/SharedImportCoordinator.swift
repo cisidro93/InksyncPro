@@ -394,15 +394,17 @@ final class SharedImportCoordinator: ObservableObject {
                 }
             }
 
-            // Cleanly remove ONLY our shared import types without wiping user's text clipboard
-            UIPasteboard.general.items = UIPasteboard.general.items.compactMap { item in
-                var filtered = item
-                filtered.removeValue(forKey: fileTypeKey)
-                filtered.removeValue(forKey: fileNameKey)
-                return filtered.isEmpty ? nil : filtered
+            if !ingestedFilenames.isEmpty {
+                // Cleanly remove ONLY our shared import types after successful ingestion without wiping user's text clipboard
+                UIPasteboard.general.items = UIPasteboard.general.items.compactMap { item in
+                    var filtered = item
+                    filtered.removeValue(forKey: fileTypeKey)
+                    filtered.removeValue(forKey: fileNameKey)
+                    return filtered.isEmpty ? nil : filtered
+                }
+                UIPasteboard.general.setData(Data(), forPasteboardType: fileTypeKey)
+                UIPasteboard.general.setValue("", forPasteboardType: fileNameKey)
             }
-            UIPasteboard.general.setData(Data(), forPasteboardType: fileTypeKey)
-            UIPasteboard.general.setValue("", forPasteboardType: fileNameKey)
         }
 
         var visitedContainers: Set<URL> = []

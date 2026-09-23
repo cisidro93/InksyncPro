@@ -987,21 +987,22 @@ struct ShareExtensionView: View {
                     ]
                     newItems.append(dict)
 
-                    // Also write the first file to the root pasteboard for backward-compatibility
-                    if newItems.count == 1 {
-                        UIPasteboard.general.setData(data, forPasteboardType: fileTypeKey)
-                        if let nameData = file.name.data(using: .utf8) {
-                            UIPasteboard.general.setData(nameData, forPasteboardType: fileNameKey)
-                        }
-                        UIPasteboard.general.setValue(file.name, forPasteboardType: fileNameKey)
-                    }
                     print("[ShareExt] Staged '\(file.name)' (\(fileSize) bytes) to shared pasteboard bridge")
                 }
             }
         }
 
         if !newItems.isEmpty {
-            UIPasteboard.general.addItems(newItems)
+            UIPasteboard.general.items = newItems
+            if let first = newItems.first,
+               let firstData = first[fileTypeKey] as? Data,
+               let firstName = first[fileNameKey] as? String {
+                UIPasteboard.general.setData(firstData, forPasteboardType: fileTypeKey)
+                if let nameData = firstName.data(using: .utf8) {
+                    UIPasteboard.general.setData(nameData, forPasteboardType: fileNameKey)
+                }
+                UIPasteboard.general.setValue(firstName, forPasteboardType: fileNameKey)
+            }
         }
     }
 
