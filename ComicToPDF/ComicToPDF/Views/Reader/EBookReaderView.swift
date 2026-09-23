@@ -191,121 +191,7 @@ struct EBookReaderView: View {
                 } else if let err = errorMessage {
                     readerErrorView(err)
                 } else if let meta = metadata, !meta.spineItems.isEmpty {
-                    ZStack {
-                        if prefs.paginationMode == EBookPaginationMode.paged.rawValue {
-                            // ── Native UIPageViewController Page Curl ──────────────
-                            // Uses UIPageViewController(.pageCurl) — the same native
-                            // iOS page curl used by the comic and PDF readers.
-                            EBookPageCurlReader(
-                                spineItem:   meta.spineItems[safe: currentIndex] ?? meta.spineItems[0],
-                                unzipDir:    unzipDir,
-                                prefs:       prefs,
-                                colorScheme: colorScheme,
-                                currentPage: $chapterPage,
-                                initialPage: chapterPage,
-                                totalPages:  $chapterTotalPages,
-                                startAtEndOfChapter: startAtEndOfChapter,
-                                spineIndex:  currentIndex,
-                                targetAnchor: pendingTargetAnchor,
-                                isPencilMode: isPencilMode,
-                                onNext:      nextChapter,
-                                onPrev:      prevChapter,
-                                onCenterTap: toggleHUD,
-                                onPageTurn:  { recordEBookPageTurn() },
-                                isHUDShowing: showHUD,
-                                onHighlightCreated: { selectedText in
-                                    guard !isApplyingHighlightDirectly else { return }
-                                    let defaultColor = EBookPreferences.shared.defaultHighlightColor.rawValue
-                                    applyHighlight(text: selectedText, colorHex: defaultColor, symbol: nil)
-                                },
-                                onHighlightCreatedWithMetadata: { idStr, selectedText, colorHex in
-                                    let hId = UUID(uuidString: idStr) ?? UUID()
-                                    saveHighlightFromDirectDOM(id: hId, text: selectedText, colorHex: colorHex)
-                                },
-                                onHighlightTapped: { tappedIdentifier in
-                                    if let sdMatch = findMatchingAnnotation(tappedText: tappedIdentifier) {
-                                        withAnimation(.easeInOut(duration: 0.18)) {
-                                            selectedTextForHUD = sdMatch.selectedText ?? tappedIdentifier
-                                            activeHighlightToEdit = sdMatch
-                                        }
-                                    } else {
-                                        withAnimation(.easeInOut(duration: 0.18)) {
-                                            selectedTextForHUD = tappedIdentifier
-                                        }
-                                    }
-                                    HapticEngine.selection()
-                                },
-                                onTextSelected: { text in
-                                    withAnimation(.easeInOut(duration: 0.18)) {
-                                        selectedTextForHUD = text
-                                    }
-                                },
-                                onSelectionDismissed: {
-                                    guard !isApplyingHighlightDirectly else { return }
-                                    withAnimation(.easeInOut(duration: 0.18)) {
-                                        selectedTextForHUD = nil
-                                    }
-                                },
-                                pdfID: pdf?.id,
-                                initialScrollFraction: UserDefaults.standard.double(forKey: fractionKey),
-                                onScrollFractionChanged: { fraction in
-                                    chapterScrollFraction = fraction
-                                    saveProgress()
-                                },
-                                webViewRef: $webViewReference,
-                                onFootnoteTapped: { text in
-                                    activeFootnoteText = text
-                                }
-                            )
-                            .clipped()
-                            .id("ebook_\(prefs.pageTurnStyle.rawValue)")
-                        } else {
-                            // ── Scroll Mode (continuous vertical) ──────────────────
-                            EBookWebReader(
-                                spineItem:   meta.spineItems[safe: currentIndex] ?? meta.spineItems[0],
-                                unzipDir:    unzipDir,
-                                prefs:       prefs,
-                                colorScheme: colorScheme,
-                                currentPage: $chapterPage,
-                                initialPage: chapterPage,
-                                totalPages:  $chapterTotalPages,
-                                onNext:      nextChapter,
-                                onPrev:      prevChapter,
-                                onCenterTap: toggleHUD,
-                                onPageTurn:  { recordEBookPageTurn() },
-                                onHighlightCreated: { selectedText in
-                                    guard let p = pdf else { return }
-                                    let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
-                                    let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
-                                    let highlight = Annotation(
-                                        pdfID: p.id,
-                                        pageIndex: currentIndex,
-                                        chapterTitle: spineLabel,
-                                        kind: .highlight,
-                                        createdAt: Date(),
-                                        modifiedAt: Date(),
-                                        colorHex: prefs.defaultHighlightColor.rawValue,
-                                        selectedText: selectedText
-                                    )
-                                    AnnotationStore.shared.add(highlight)
-                                    activeHighlightToEdit = findMatchingAnnotation(tappedText: highlight.id.uuidString)
-                                },
-                                pdfID: pdf?.id,
-                                initialScrollFraction: UserDefaults.standard.double(forKey: fractionKey),
-                                onScrollFractionChanged: { fraction in
-                                    chapterScrollFraction = fraction
-                                    saveProgress()
-                                },
-                                webViewRef: $webViewReference,
-                                onFootnoteTapped: { text in
-                                    activeFootnoteText = text
-                                }
-                            )
-                            .id("ebook_web_\(currentIndex)")
-                        }
-                        
-                        EdgeBrightnessGestureZone()
-                    }
+                    readerCanvasView(meta: meta)
                 }
             }
             .readingFilter(prefs.readingFilter)
@@ -428,6 +314,131 @@ struct EBookReaderView: View {
                 showToastMessage(msg)
             }
         }
+    }
+
+    // MARK: - Reader Canvas
+    @ViewBuilder
+    private func readerCanvasView(meta: EBookMetadata) -> some View {
+        ZStack {
+            if prefs.paginationMode == EBookPaginationMode.paged.rawValue {
+                pagedCurlReaderView(meta: meta)
+            } else {
+                scrollWebReaderView(meta: meta)
+            }
+            EdgeBrightnessGestureZone()
+        }
+    }
+
+    @ViewBuilder
+    private func pagedCurlReaderView(meta: EBookMetadata) -> some View {
+        EBookPageCurlReader(
+            spineItem:   meta.spineItems[safe: currentIndex] ?? meta.spineItems[0],
+            unzipDir:    unzipDir,
+            prefs:       prefs,
+            colorScheme: colorScheme,
+            currentPage: $chapterPage,
+            initialPage: chapterPage,
+            totalPages:  $chapterTotalPages,
+            startAtEndOfChapter: startAtEndOfChapter,
+            spineIndex:  currentIndex,
+            targetAnchor: pendingTargetAnchor,
+            isPencilMode: isPencilMode,
+            onNext:      nextChapter,
+            onPrev:      prevChapter,
+            onCenterTap: toggleHUD,
+            onPageTurn:  { recordEBookPageTurn() },
+            isHUDShowing: showHUD,
+            onHighlightCreated: { selectedText in
+                guard !isApplyingHighlightDirectly else { return }
+                let defaultColor = EBookPreferences.shared.defaultHighlightColor.rawValue
+                applyHighlight(text: selectedText, colorHex: defaultColor, symbol: nil)
+            },
+            onHighlightCreatedWithMetadata: { idStr, selectedText, colorHex in
+                let hId = UUID(uuidString: idStr) ?? UUID()
+                saveHighlightFromDirectDOM(id: hId, text: selectedText, colorHex: colorHex)
+            },
+            onHighlightTapped: { tappedIdentifier in
+                if let sdMatch = findMatchingAnnotation(tappedText: tappedIdentifier) {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selectedTextForHUD = sdMatch.selectedText ?? tappedIdentifier
+                        activeHighlightToEdit = sdMatch
+                    }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selectedTextForHUD = tappedIdentifier
+                    }
+                }
+                HapticEngine.selection()
+            },
+            onTextSelected: { text in
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    selectedTextForHUD = text
+                }
+            },
+            onSelectionDismissed: {
+                guard !isApplyingHighlightDirectly else { return }
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    selectedTextForHUD = nil
+                }
+            },
+            pdfID: pdf?.id,
+            initialScrollFraction: UserDefaults.standard.double(forKey: fractionKey),
+            onScrollFractionChanged: { fraction in
+                chapterScrollFraction = fraction
+                saveProgress()
+            },
+            webViewRef: $webViewReference,
+            onFootnoteTapped: { text in
+                activeFootnoteText = text
+            }
+        )
+        .clipped()
+        .id("ebook_\(prefs.pageTurnStyle.rawValue)")
+    }
+
+    @ViewBuilder
+    private func scrollWebReaderView(meta: EBookMetadata) -> some View {
+        EBookWebReader(
+            spineItem:   meta.spineItems[safe: currentIndex] ?? meta.spineItems[0],
+            unzipDir:    unzipDir,
+            prefs:       prefs,
+            colorScheme: colorScheme,
+            currentPage: $chapterPage,
+            initialPage: chapterPage,
+            totalPages:  $chapterTotalPages,
+            onNext:      nextChapter,
+            onPrev:      prevChapter,
+            onCenterTap: toggleHUD,
+            onPageTurn:  { recordEBookPageTurn() },
+            onHighlightCreated: { selectedText in
+                guard let p = pdf else { return }
+                let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
+                let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
+                let highlight = Annotation(
+                    pdfID: p.id,
+                    pageIndex: currentIndex,
+                    chapterTitle: spineLabel,
+                    kind: .highlight,
+                    createdAt: Date(),
+                    modifiedAt: Date(),
+                    colorHex: prefs.defaultHighlightColor.rawValue,
+                    selectedText: selectedText
+                )
+                AnnotationStore.shared.add(highlight)
+                activeHighlightToEdit = findMatchingAnnotation(tappedText: highlight.id.uuidString)
+            },
+            pdfID: pdf?.id,
+            initialScrollFraction: UserDefaults.standard.double(forKey: fractionKey),
+            onScrollFractionChanged: { fraction in
+                chapterScrollFraction = fraction
+                saveProgress()
+            },
+            webViewRef: $webViewReference,
+            onFootnoteTapped: { text in
+                activeFootnoteText = text
+            }
+        )
+        .id("ebook_web_\(currentIndex)")
     }
 
     // MARK: - Top Bar (Glass HUD)
