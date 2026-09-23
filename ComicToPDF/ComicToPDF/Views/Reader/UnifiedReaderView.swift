@@ -159,35 +159,45 @@ struct UnifiedReaderView: View {
         let (engine, rationale) = resolvedReaderEngine
         let ext = pdf.url.pathExtension.lowercased()
         let fileSizeStr = ByteCountFormatter.string(fromByteCount: pdf.fileSize, countStyle: .file)
-        
-        var headerPreview = "unknown"
-        let resolvedURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
-        let didAccess = resolvedURL.startAccessingSecurityScopedResource()
-        defer { if didAccess { resolvedURL.stopAccessingSecurityScopedResource() } }
-        if let handle = try? FileHandle(forReadingFrom: resolvedURL) {
-            defer { try? handle.close() }
-            if let data = try? handle.read(upToCount: 8), !data.isEmpty {
-                let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
-                let ascii = String(data: data, encoding: .ascii)?.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ") ?? ""
-                headerPreview = "Hex: [\(hex)] ASCII: '\(ascii)'"
+        let docName = pdf.name
+        let fileSize = pdf.fileSize
+        let contentTypeRaw = pdf.contentType.rawValue
+        let hasOverride = pdf.metadata.hasFormatOverride ?? false
+        let isPDF = isPDFDocument
+        let engineOverrideRaw = activeEngineOverride?.rawValue ?? "none"
+        let engineDisplayName = engine.displayName
+        let urlString = pdf.url.absoluteString
+        let isMismatch = (isPDF && engine == .comic && activeEngineOverride == nil)
+
+        Task.detached(priority: .utility) {
+            var headerPreview = "unknown"
+            let resolvedURL = LibraryFileRecord.resolveSandboxURL(urlString)
+            let didAccess = resolvedURL.startAccessingSecurityScopedResource()
+            defer { if didAccess { resolvedURL.stopAccessingSecurityScopedResource() } }
+            if let handle = try? FileHandle(forReadingFrom: resolvedURL) {
+                defer { try? handle.close() }
+                if let data = try? handle.read(upToCount: 8), !data.isEmpty {
+                    let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
+                    let ascii = String(data: data, encoding: .ascii)?.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ") ?? ""
+                    headerPreview = "Hex: [\(hex)] ASCII: '\(ascii)'"
+                }
             }
+
+            let report = """
+            [ReaderRouting] [\(trigger)]
+              • Document: '\(docName)'
+              • Extension: .\(ext.isEmpty ? "none" : ext)
+              • File Size: \(fileSizeStr) (\(fileSize) bytes)
+              • Header Bytes: \(headerPreview)
+              • Evaluated ContentType: .\(contentTypeRaw) (hasFormatOverride: \(hasOverride))
+              • Binary IsPDF: \(isPDF)
+              • Active Engine Override: \(engineOverrideRaw)
+              • MOUNTED READER: \(engineDisplayName)
+              • Decision Rationale: \(rationale)
+            """
+
+            Logger.shared.log(report, category: "ReaderRouting", type: isMismatch ? .warning : .info)
         }
-        
-        let report = """
-        [ReaderRouting] [\(trigger)]
-          • Document: '\(pdf.name)'
-          • Extension: .\(ext.isEmpty ? "none" : ext)
-          • File Size: \(fileSizeStr) (\(pdf.fileSize) bytes)
-          • Header Bytes: \(headerPreview)
-          • Evaluated ContentType: .\(pdf.contentType.rawValue) (hasFormatOverride: \(pdf.metadata.hasFormatOverride ?? false))
-          • Binary IsPDF: \(isPDFDocument)
-          • Active Engine Override: \(activeEngineOverride?.rawValue ?? "none")
-          • MOUNTED READER: \(engine.displayName)
-          • Decision Rationale: \(rationale)
-        """
-        
-        let isMismatch = (isPDFDocument && engine == .comic && activeEngineOverride == nil)
-        Logger.shared.log(report, category: "ReaderRouting", type: isMismatch ? .warning : .info)
     }
 
     var body: some View {

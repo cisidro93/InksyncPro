@@ -77,6 +77,15 @@ class Logger: ObservableObject, @unchecked Sendable {
     
     private let queue = DispatchQueue(label: "com.comicvault.logger", qos: .utility)
     
+    // I/O & UI Buffering to eliminate flash thrashing and main-thread micro-stutter
+    private var pendingLogBuffer: String = ""
+    private var lastFlushTime: Date = Date()
+    private var isFlushScheduled = false
+    
+    private var pendingParsedLogs: [LogEntry] = []
+    private var isUIBatchScheduled = false
+    private let bufferLock = NSLock()
+    
     private init() {
         // Load initial logs on startup (async)
         let fileURL = self.logFileURL
@@ -98,6 +107,15 @@ class Logger: ObservableObject, @unchecked Sendable {
             DispatchQueue.main.async {
                 self.parsedLogs = parsed
             }
+        }
+        
+        // Flush volatile log buffer when app enters background
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            self?.flushPendingLogsSync()
         }
     }
     
@@ -122,53 +140,110 @@ class Logger: ObservableObject, @unchecked Sendable {
     nonisolated func log(_ message: String, category: String = "INFO", type: LogType = .info) {
         let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         // Format: [12:00:00] [INFO] [Category] Message
-        let logEntry = "[\(timestamp)] [\(type.rawValue)] [\(category)] \(message)\n"
+        let logEntryText = "[\(timestamp)] [\(type.rawValue)] [\(category)] \(message)\n"
         
         print("\(type.rawValue): \(message)") // Keep console output
         
-        // Update UI Memory
         let entryObject = LogEntry(id: UUID(), timestamp: Date(), type: type, category: category, message: message)
         
-        DispatchQueue.main.async {
-            Self.shared.parsedLogs.insert(entryObject, at: 0)
-            if Self.shared.parsedLogs.count > 500 { Self.shared.parsedLogs.removeLast() }
-            
-            // ✅ PHASE 8: Universal Alerts
-            // Immediately broadcast critical failures to the SwiftUI View layer
-            // so active bugs pop up on the user's screen instead of silently dropping.
-            if type == .error {
+        // 1. Batched UI updates: errors dispatch immediately; routine logs batch every 250ms
+        Self.shared.bufferLock.lock()
+        Self.shared.pendingParsedLogs.append(entryObject)
+        let isError = (type == .error)
+        let shouldScheduleUI = !Self.shared.isUIBatchScheduled && !isError
+        if shouldScheduleUI {
+            Self.shared.isUIBatchScheduled = true
+        }
+        Self.shared.bufferLock.unlock()
+        
+        if isError {
+            DispatchQueue.main.async {
+                Self.shared.flushParsedLogsToMainActor()
                 NotificationCenter.default.post(
                     name: NSNotification.Name("GlobalErrorTriggered"),
                     object: nil,
                     userInfo: ["message": message, "category": category]
                 )
             }
+        } else if shouldScheduleUI {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                Self.shared.flushParsedLogsToMainActor()
+            }
         }
         
-        let fileURL = self.logFileURL
-        queue.async {
-            // Append to file
-            if let data = logEntry.data(using: .utf8) {
-                if FileManager.default.fileExists(atPath: fileURL.path) {
-                    if let fileHandle = try? FileHandle(forWritingTo: fileURL) {
-                        _ = try? fileHandle.seekToEnd()
-                        try? fileHandle.write(contentsOf: data)
-                        try? fileHandle.close()
-                    }
-                } else {
-                    try? data.write(to: fileURL)
+        // 2. Buffered Disk I/O: buffer data and flush in batches to avoid CPU/flash thrashing
+        Self.shared.queue.async {
+            Self.shared.pendingLogBuffer += logEntryText
+            let shouldFlushNow = (type == .error) ||
+                                 Self.shared.pendingLogBuffer.count > 16384 ||
+                                 Date().timeIntervalSince(Self.shared.lastFlushTime) >= 2.0
+            if shouldFlushNow {
+                Self.shared.flushBufferToDisk()
+            } else if !Self.shared.isFlushScheduled {
+                Self.shared.isFlushScheduled = true
+                Self.shared.queue.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                    self?.isFlushScheduled = false
+                    self?.flushBufferToDisk()
                 }
             }
         }
     }
     
     @MainActor
+    private func flushParsedLogsToMainActor() {
+        bufferLock.lock()
+        isUIBatchScheduled = false
+        guard !pendingParsedLogs.isEmpty else {
+            bufferLock.unlock()
+            return
+        }
+        let batch = pendingParsedLogs
+        pendingParsedLogs.removeAll(keepingCapacity: true)
+        bufferLock.unlock()
+        
+        // Prepend new batch (newest first)
+        self.parsedLogs.insert(contentsOf: batch.reversed(), at: 0)
+        if self.parsedLogs.count > 500 {
+            self.parsedLogs.removeLast(self.parsedLogs.count - 500)
+        }
+    }
+    
+    private func flushBufferToDisk() {
+        guard !pendingLogBuffer.isEmpty else { return }
+        let data = pendingLogBuffer.data(using: .utf8)
+        pendingLogBuffer = ""
+        lastFlushTime = Date()
+        guard let data = data else { return }
+        
+        let fileURL = self.logFileURL
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            if let fileHandle = try? FileHandle(forWritingTo: fileURL) {
+                _ = try? fileHandle.seekToEnd()
+                try? fileHandle.write(contentsOf: data)
+                try? fileHandle.close()
+            }
+        } else {
+            try? data.write(to: fileURL)
+        }
+    }
+    
+    private func flushPendingLogsSync() {
+        queue.sync {
+            self.flushBufferToDisk()
+        }
+    }
+    
+    @MainActor
     func getLogs() -> String {
+        Self.shared.flushPendingLogsSync()
         return (try? String(contentsOf: logFileURL, encoding: .utf8)) ?? ""
     }
     
     @MainActor
     func clearLogs() {
+        Self.shared.queue.sync {
+            self.pendingLogBuffer = ""
+        }
         try? FileManager.default.removeItem(at: logFileURL)
         self.parsedLogs.removeAll()
         log("Logs Cleared", category: "SYSTEM", type: .system)

@@ -263,9 +263,12 @@ struct SeriesDetailView: View {
         let allTags = currentIssues.flatMap { $0.metadata.tags }.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         self.cachedSeriesTags = Array(Set(allTags)).sorted()
         
-        // Cache virtual omnibuses for this series
+        // Cache virtual omnibuses for this series using O(1) dictionary lookup
         let allOmnibuses = conversionManager.virtualOmnibuses
-        Logger.shared.log("🔍 [Flight Recorder] 👁️ [Virtual Volume] Caching visibility. total omnibuses: \(allOmnibuses.count), series title: '\(series.title)', series ID: '\(series.id)'", category: "Debug")
+        var pdfMap: [UUID: ConvertedPDF] = [:]
+        for pdf in conversionManager.convertedPDFs {
+            pdfMap[pdf.id] = pdf
+        }
         
         self.cachedSeriesVirtualOmnibuses = allOmnibuses.filter { omnibus in
             // 1. Explicit connection context (parentSeriesID) matches series.id
@@ -280,9 +283,7 @@ struct SeriesDetailView: View {
             if nameMatch { return true }
             
             // 3. Match if any issue inside the omnibus belongs to this series (case-insensitive)
-            let resolvedFiles = omnibus.fileIDs.compactMap { id in
-                conversionManager.convertedPDFs.first(where: { $0.id == id })
-            }
+            let resolvedFiles = omnibus.fileIDs.compactMap { pdfMap[$0] }
             
             // 4. Match if this is a custom collection (folder) and any file in the omnibus belongs to it
             if let folderUUID = UUID(uuidString: series.id) {

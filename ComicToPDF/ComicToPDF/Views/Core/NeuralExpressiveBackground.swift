@@ -4,13 +4,19 @@ import SwiftUI
 /// Animates multiple blurred, overlapping color blobs to create a breathing "AI aura" background.
 struct NeuralExpressiveBackground: View {
     let isAnimating: Bool
+    @Environment(\.scenePhase) private var scenePhase
     @State private var animate = false
 
     init(isAnimating: Bool = true) {
         self.isAnimating = isAnimating
     }
 
+    private var shouldAnimate: Bool {
+        isAnimating && scenePhase == .active && !ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+
     private func startAnimation() {
+        guard shouldAnimate else { return }
         animate = false
         withAnimation(
             .easeInOut(duration: 8.0)
@@ -56,11 +62,11 @@ struct NeuralExpressiveBackground: View {
             .blur(radius: 64)
             .drawingGroup() // Optimises rendering on iOS GPUs
             .onAppear {
-                if isAnimating {
+                if shouldAnimate {
                     startAnimation()
                 }
             }
-            .onChange(of: isAnimating) { _, newValue in
+            .onChange(of: shouldAnimate) { _, newValue in
                 if newValue {
                     startAnimation()
                 } else {

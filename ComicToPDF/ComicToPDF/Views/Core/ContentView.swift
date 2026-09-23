@@ -219,6 +219,7 @@ struct ContentView: View {
                 
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                     isAppLoading = false
+                    isLogoBreathing = false
                 }
                 
                 // Offload heavy scans, smart grouping, and disk maintenance to background task

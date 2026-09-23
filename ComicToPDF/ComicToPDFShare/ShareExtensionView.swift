@@ -479,29 +479,44 @@ struct ShareExtensionView: View {
 
                 for provider in attachments {
                     let registered = provider.registeredTypeIdentifiers
-                    let baseName = provider.suggestedName ?? "SharedDocument_\(UUID().uuidString.prefix(6))"
+                    let discoveredName = await Self.discoverOriginalFilename(from: provider)
+                    let baseName = discoveredName ?? provider.suggestedName ?? "SharedDocument_\(UUID().uuidString.prefix(6))"
 
-                    // Try registered type identifiers first!
-                    var candidateTypes: [String] = registered
-                    let fallbackTypes = [
-                        UTType.data.identifier,
-                        UTType.item.identifier,
-                        UTType.content.identifier,
+                    // Try registered type identifiers with priority given to file URLs and specific document UTIs
+                    let priorityTypes = [
+                        UTType.fileURL.identifier,
+                        "public.file-url",
                         UTType.pdf.identifier,
                         "com.adobe.pdf",
                         UTType.epub.identifier,
                         "org.idpf.epub-container",
-                        UTType.fileURL.identifier,
-                        "public.file-url",
                         "com.macrabbit.comicbookzip",
                         "com.antigravity.cbz",
                         UTType.zip.identifier,
                         "com.macrabbit.comicbookrar",
                         "com.antigravity.cbr",
-                        "org.7-zip.7-zip-archive",
+                        "org.7-zip.7-zip-archive"
+                    ]
+                    var candidateTypes: [String] = []
+                    for p in priorityTypes {
+                        if registered.contains(p) || provider.hasItemConformingToTypeIdentifier(p) {
+                            if !candidateTypes.contains(p) {
+                                candidateTypes.append(p)
+                            }
+                        }
+                    }
+                    for r in registered {
+                        if !candidateTypes.contains(r) {
+                            candidateTypes.append(r)
+                        }
+                    }
+                    let fallbackTypes = [
+                        UTType.data.identifier,
+                        UTType.item.identifier,
+                        UTType.content.identifier,
+                        "public.data",
                         "public.archive",
-                        "public.zip-archive",
-                        "public.data"
+                        "public.zip-archive"
                     ]
                     for fallback in fallbackTypes {
                         if !candidateTypes.contains(fallback) {
@@ -571,10 +586,12 @@ struct ShareExtensionView: View {
                         targetExt = Self.detectFileExtension(from: finalURL) ?? (Self.supportedExtensions.contains(ext) ? ext : "pdf")
                     }
 
-                    // Preserve the authentic original filename from finalURL / source item
+                    // Preserve the authentic original filename from discoveredName / finalURL / source item
                     let sourceFilename = finalURL.lastPathComponent
                     let effectiveBase: String
-                    if !sourceFilename.isEmpty && !sourceFilename.hasPrefix("SharedDocument_") && !sourceFilename.hasPrefix("temp_") && !sourceFilename.hasPrefix("tmp_") {
+                    if let discovered = discoveredName, !discovered.isEmpty, !discovered.hasPrefix("SharedDocument_") {
+                        effectiveBase = (discovered as NSString).deletingPathExtension
+                    } else if !sourceFilename.isEmpty && !sourceFilename.hasPrefix("SharedDocument_") && !sourceFilename.hasPrefix("temp_") && !sourceFilename.hasPrefix("tmp_") {
                         effectiveBase = (sourceFilename as NSString).deletingPathExtension
                     } else if let suggested = provider.suggestedName, !suggested.isEmpty, !suggested.hasPrefix("SharedDocument_") {
                         effectiveBase = (suggested as NSString).deletingPathExtension
@@ -623,6 +640,41 @@ struct ShareExtensionView: View {
     }
 
     // MARK: - Async Item Loaders
+
+    @MainActor
+    static func discoverOriginalFilename(from provider: NSItemProvider) async -> String? {
+        if let suggested = provider.suggestedName, !suggested.isEmpty,
+           !suggested.hasPrefix("SharedDocument_"), !suggested.hasPrefix("temp_"), !suggested.hasPrefix("tmp_") {
+            return suggested
+        }
+
+        let fileUrlTypes = [UTType.fileURL.identifier, "public.file-url"]
+        for typeId in fileUrlTypes {
+            if provider.hasItemConformingToTypeIdentifier(typeId) || provider.registeredTypeIdentifiers.contains(typeId) {
+                let name: String? = await withCheckedContinuation { continuation in
+                    provider.loadItem(forTypeIdentifier: typeId, options: nil) { item, error in
+                        guard error == nil, let item = item else {
+                            continuation.resume(returning: nil)
+                            return
+                        }
+                        if let url = item as? URL, url.isFileURL {
+                            continuation.resume(returning: url.lastPathComponent)
+                        } else if let nsURL = item as? NSURL, let u = nsURL as URL?, u.isFileURL {
+                            continuation.resume(returning: u.lastPathComponent)
+                        } else if let str = item as? String, let u = URL(string: str), u.isFileURL {
+                            continuation.resume(returning: u.lastPathComponent)
+                        } else {
+                            continuation.resume(returning: nil)
+                        }
+                    }
+                }
+                if let name = name, !name.isEmpty, !name.hasPrefix("temp_"), !name.hasPrefix("tmp_"), !name.hasPrefix("SharedDocument_") {
+                    return name
+                }
+            }
+        }
+        return nil
+    }
 
     @MainActor
     static func tryLoadItem(provider: NSItemProvider, typeId: String, filename: String) async -> URL? {
@@ -1007,6 +1059,9 @@ struct ShareExtensionView: View {
 
         if !newItems.isEmpty {
             UIPasteboard.general.items = newItems
+            if let firstFile = files.first {
+                UIPasteboard.general.setValue(firstFile.name, forPasteboardType: fileNameKey)
+            }
             print("[ShareExt] UIPasteboard.general.items populated with \(newItems.count) item(s)")
         }
     }

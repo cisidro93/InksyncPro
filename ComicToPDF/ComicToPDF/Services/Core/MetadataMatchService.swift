@@ -37,10 +37,39 @@ class MetadataMatchService: ObservableObject {
         let coverUrl: String?
     }
     
+    private var lastRebuiltSignature: Int?
+    
     private init() {}
     
-    // Group files by parent folder or series name
+    // Group files by parent folder or series name with signature-checked caching
     func rebuildClusters(pdfs: [ConvertedPDF]) {
+        if pdfs.isEmpty {
+            if !self.activeClusters.isEmpty {
+                self.activeClusters = []
+                self.lastRebuiltSignature = nil
+            }
+            return
+        }
+        
+        var hasher = Hasher()
+        hasher.combine(pdfs.count)
+        for pdf in pdfs {
+            hasher.combine(pdf.id)
+            hasher.combine(pdf.metadata.series)
+            hasher.combine(pdf.metadata.universalSeriesID)
+        }
+        let currentSig = hasher.finalize()
+        if currentSig == lastRebuiltSignature && !activeClusters.isEmpty {
+            return // Zero-work fast path: library set is unchanged
+        }
+        lastRebuiltSignature = currentSig
+        
+        // Preserve existing cluster IDs and in-progress statuses across re-scans
+        var existingByName: [String: SeriesCluster] = [:]
+        for cluster in self.activeClusters {
+            existingByName[cluster.name] = cluster
+        }
+        
         var groups: [String: [ConvertedPDF]] = [:]
         for pdf in pdfs {
             let key = pdf.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -51,13 +80,17 @@ class MetadataMatchService: ObservableObject {
         }
         
         self.activeClusters = groups.map { name, issues in
+            let existing = existingByName[name]
+            let clusterID = existing?.id ?? UUID()
             let status: SeriesCluster.Status
-            if issues.contains(where: { $0.metadata.universalSeriesID != nil }) {
+            if let existingStatus = existing?.status, case .searching = existingStatus {
+                status = .searching
+            } else if issues.contains(where: { $0.metadata.universalSeriesID != nil }) {
                 status = .matched(seriesName: name)
             } else {
                 status = .idle
             }
-            return SeriesCluster(id: UUID(), name: name, pdfs: issues, status: status)
+            return SeriesCluster(id: clusterID, name: name, pdfs: issues, status: status)
         }.sorted(by: { $0.name < $1.name })
     }
     

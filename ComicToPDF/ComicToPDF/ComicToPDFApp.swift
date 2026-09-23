@@ -114,6 +114,7 @@ struct InksyncProApp: App {
     }
     
     @AppStorage("selectedTheme") private var selectedTheme: AppearanceMode = .system
+    static var lastForegroundScanTimestamp: Date = Date()
     
     var body: some Scene {
         WindowGroup { 
@@ -148,8 +149,15 @@ struct InksyncProApp: App {
                          SecurityManager.shared.handleAppForegrounding()
                          if LibraryService.shared.hasBootstrapped && SharedImportCoordinator.shared.hasPendingShareImport() {
                              SharedImportCoordinator.shared.coordinateImport(retryCount: 3, retryDelaySeconds: 0.5)
+                         } else {
+                             // Throttle routine foreground rescans: at least 30s must elapse to prevent
+                             // thrashing disk enumerators and rebuilding caches on simple app switches.
+                             let now = Date()
+                             if now.timeIntervalSince(InksyncProApp.lastForegroundScanTimestamp) >= 30.0 {
+                                 InksyncProApp.lastForegroundScanTimestamp = now
+                                 NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+                             }
                          }
-                         NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
                     @unknown default: break
                     }
                 }

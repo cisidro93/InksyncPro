@@ -2116,6 +2116,12 @@ struct ComicReaderEngine: View {
                 }
             }
         }
+        .onDisappear {
+            ambientColorTask?.cancel()
+            dialogueOCRTask?.cancel()
+            chromeIdleTask?.cancel()
+            cache.cancelAllPrefetchTasks()
+        }
         .ignoresSafeArea()
     } // closes GeometryReader
 } // end body
