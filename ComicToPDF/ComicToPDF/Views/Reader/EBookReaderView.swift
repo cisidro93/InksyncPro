@@ -421,20 +421,7 @@ struct EBookReaderView: View {
             handleCurrentIndexChanged()
         }
         .onReceive(NotificationCenter.default.publisher(for: .annotationsDidChange)) { notif in
-            if let deletedID = notif.userInfo?["deletedID"] as? UUID {
-                let idStr = deletedID.uuidString
-                let activeWV = resolveActiveWebView() ?? webViewReference
-                activeWV?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(idStr)'); }")
-            }
-            if let deletedText = notif.userInfo?["text"] as? String, !deletedText.isEmpty {
-                let safeText = deletedText
-                    .replacingOccurrences(of: "\\", with: "\\\\")
-                    .replacingOccurrences(of: "`", with: "\\`")
-                    .replacingOccurrences(of: "\"", with: "\\\"")
-                    .replacingOccurrences(of: "\n", with: " ")
-                let activeWV = resolveActiveWebView() ?? webViewReference
-                activeWV?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight(`\(safeText)`); }")
-            }
+            handleAnnotationsDidChange(notif)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShowToast"))) { notif in
             if let msg = notif.userInfo?["message"] as? String {
@@ -1054,6 +1041,22 @@ struct EBookReaderView: View {
             """
             let activeWV = resolveActiveWebView() ?? webViewReference
             activeWV?.evaluateJavaScript(js, completionHandler: nil)
+        }
+    }
+
+    private func handleAnnotationsDidChange(_ notif: Notification) {
+        let activeWV = resolveActiveWebView() ?? webViewReference
+        if let deletedID = notif.userInfo?["deletedID"] as? UUID {
+            let idStr = deletedID.uuidString
+            activeWV?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(idStr)'); }")
+        }
+        if let deletedText = notif.userInfo?["text"] as? String, !deletedText.isEmpty {
+            let safeText = deletedText
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "`", with: "\\`")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: " ")
+            activeWV?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight(`\(safeText)`); }")
         }
     }
 
