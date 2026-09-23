@@ -220,6 +220,7 @@ struct InksyncProApp: App {
                             }
                         }
                     }
+                }
                 .onOpenURL { url in
                     Logger.shared.log("InksyncProApp: onOpenURL received '\(url.absoluteString)'", category: "System", type: .info)
                     Task { @MainActor in
