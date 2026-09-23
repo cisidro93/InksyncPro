@@ -38,6 +38,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
     var onScrollFractionChanged: ((Double) -> Void)? = nil
     @Binding var webViewRef: WKWebView?
     var onFootnoteTapped: ((String) -> Void)? = nil
+    var targetAnchor: String? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -1510,25 +1511,33 @@ extension EBookPageCurlReader {
             let fragment = url.fragment ?? ""
 
             if navigationAction.navigationType == .linkActivated || !fragment.isEmpty {
-                // Post navigation event to EBookReaderView
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("Reader_JumpToChapterHref"),
-                    object: nil,
-                    userInfo: ["href": fileName, "fragment": fragment]
-                )
+                let currentFileName = (parent.spineItem.href as NSString).lastPathComponent
+                let isSameChapter = fileName.isEmpty || fileName == currentFileName || url.path.isEmpty || url.path == "/"
 
-                // Check if fragment targets a footnote vs a section heading anchor
+                if !isSameChapter {
+                    // Navigate to a different chapter via EBookReaderView
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("Reader_JumpToChapterHref"),
+                        object: nil,
+                        userInfo: ["href": fileName, "fragment": fragment]
+                    )
+                    decisionHandler(.cancel)
+                    return
+                }
+
+                // In-chapter link or footnote
                 if !fragment.isEmpty {
                     let js = """
                     (function() {
-                        var el = document.getElementById('\(fragment)') || document.getElementsByName('\(fragment)')[0];
+                        var fragment = "\(fragment)";
+                        var el = document.getElementById(fragment) || document.getElementsByName(fragment)[0];
                         if (el) {
                             var tag = el.tagName.toLowerCase();
                             var isFN = el.classList.contains('footnote') || el.getAttribute('epub:type') === 'noteref' || el.getAttribute('epub:type') === 'footnote' || el.getAttribute('rel') === 'footnote' || el.id.toLowerCase().indexOf('fn') === 0 || el.id.toLowerCase().indexOf('note') === 0;
                             if (isFN) {
                                 var text = el.innerText || el.textContent;
                                 if (text && text.trim().length > 0 && text.trim().length < 1200) {
-                                    window.webkit.messageHandlers.footnote.postMessage({ "id": '\(fragment)', "text": text.trim() });
+                                    window.webkit.messageHandlers.footnote.postMessage({ "id": fragment, "text": text.trim() });
                                     return;
                                 }
                             }
@@ -1536,17 +1545,17 @@ extension EBookPageCurlReader {
                             var rect = el.getBoundingClientRect();
                             var vp = document.getElementById('inksync-viewport') || document.body;
                             var vpRect = vp ? vp.getBoundingClientRect() : { left: 0 };
-                            var offsetLeft = (rect.left - vpRect.left);
-                            var pageStep = getPageStep();
+                            var currentShift = (typeof _currentShift !== 'undefined') ? _currentShift : 0;
+                            var absLeft = (rect.left - vpRect.left) + currentShift;
+                            var pageStep = (typeof getPageStep === 'function') ? getPageStep() : (window.innerWidth || 1);
                             var colWidth = _isMultiCol ? (pageStep / 2) : pageStep;
                             if (colWidth > 0) {
-                                var targetPage = Math.max(0, Math.min(Math.floor(offsetLeft / colWidth), _totalPages - 1));
-                                goToPage(targetPage);
-                                 try {
-                                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.metrics) {
-                                         window.webkit.messageHandlers.metrics.postMessage({ current: _targetPage, total: _totalPages });
-                                     }
-                                 } catch(e) {}
+                                var targetPage = Math.max(0, Math.min(Math.floor(absLeft / colWidth), _totalPages - 1));
+                                if (typeof goToPage === 'function') {
+                                    goToPage(targetPage, false);
+                                } else if (window.goToInksyncPage) {
+                                    window.goToInksyncPage(targetPage, false);
+                                }
                             }
                         }
                     })();
@@ -1614,6 +1623,10 @@ extension EBookPageCurlReader {
                     targetPage = currentPageIndex
                 }
 
+                if let anchor = parent.targetAnchor, !anchor.isEmpty {
+                    targetPage = clampedCurrent
+                }
+
                 currentPageIndex = targetPage
                 parent.currentPage = targetPage
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(targetPage), false);")
@@ -1621,6 +1634,12 @@ extension EBookPageCurlReader {
                 safeSetViewControllers(vcs, direction: .forward, animated: false)
                 reportScrollFraction()
             } else {
+                if clampedCurrent != currentPageIndex {
+                    currentPageIndex = clampedCurrent
+                    parent.currentPage = clampedCurrent
+                    let vcs = spreadViewControllers(for: clampedCurrent)
+                    safeSetViewControllers(vcs, direction: .forward, animated: false)
+                }
                 reportScrollFraction()
             }
 
@@ -2247,6 +2266,7 @@ extension EBookPageCurlReader {
 
             return """
             var _targetPage = \(initialPage >= 99999 ? 99999 : max(0, initialPage));
+            var _targetAnchor = "\(parent.targetAnchor ?? "")";
             var _totalPages = 1;
             var _isMultiCol = \(isMultiCol ? "true" : "false");
             var _isDarkTheme = \(isDarkTheme ? "true" : "false");
@@ -2333,7 +2353,18 @@ extension EBookPageCurlReader {
 
                 var totalSpreads = Math.max(1, Math.ceil((scrollW - 10) / pageStep));
                 _totalPages = _isMultiCol ? (totalSpreads * 2) : totalSpreads;
-                if (_targetPage >= 99999) {
+                if (_targetAnchor && _targetAnchor.length > 0) {
+                    var anchorEl = document.getElementById(_targetAnchor) || document.getElementsByName(_targetAnchor)[0];
+                    if (anchorEl) {
+                        var aRect = anchorEl.getBoundingClientRect();
+                        var absLeft = (aRect.left - (vp ? vp.getBoundingClientRect().left : 0)) + _currentShift;
+                        var colWidth = _isMultiCol ? (pageStep / 2) : pageStep;
+                        if (colWidth > 0) {
+                            _targetPage = Math.max(0, Math.min(Math.floor(absLeft / colWidth), _totalPages - 1));
+                        }
+                    }
+                    _targetAnchor = "";
+                } else if (_targetPage >= 99999) {
                     _targetPage = Math.max(0, _totalPages - 1);
                 }
                 applyPagePosition(false);

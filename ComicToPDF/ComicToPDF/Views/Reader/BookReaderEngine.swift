@@ -389,7 +389,14 @@ struct EPUBWebView: View {
                                     return;
                                 }
                             }
-                            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            if (typeof goToPage === 'function') {
+                                var pageStep = window.innerWidth || 1;
+                                var rawPage = Math.floor(el.getBoundingClientRect().left / pageStep);
+                                var currentP = (typeof _currentPage !== 'undefined') ? _currentPage : 0;
+                                goToPage(Math.max(0, rawPage + currentP), false);
+                            } else {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }
                         }
                     })();
                     """

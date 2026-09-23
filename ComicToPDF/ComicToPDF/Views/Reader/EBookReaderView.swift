@@ -61,6 +61,7 @@ struct EBookReaderView: View {
     @State private var showChapterList = false
     @State private var showHUD = true
     @State private var isPencilMode = false
+    @State private var pendingTargetAnchor: String? = nil
     @State private var hudIdleTask: Task<Void, Never>? = nil
 
     private func startHUDIdleTimer(delay: UInt64 = 3_500_000_000) {
@@ -205,6 +206,7 @@ struct EBookReaderView: View {
                                 totalPages:  $chapterTotalPages,
                                 startAtEndOfChapter: startAtEndOfChapter,
                                 spineIndex:  currentIndex,
+                                targetAnchor: pendingTargetAnchor,
                                 isPencilMode: isPencilMode,
                                 onNext:      nextChapter,
                                 onPrev:      prevChapter,
@@ -1004,9 +1006,21 @@ struct EBookReaderView: View {
         showSearch = false
         showAnnotations = false
 
-        guard let href = notification.userInfo?["href"] as? String, !href.isEmpty, let meta = metadata else { return }
-        let cleanTarget = href.lowercased()
-        guard let targetIdx = meta.spineItems.firstIndex(where: { $0.href.lowercased().hasSuffix(cleanTarget) }) else { return }
+        guard let rawHref = notification.userInfo?["href"] as? String, !rawHref.isEmpty, let meta = metadata else { return }
+        let fragment = notification.userInfo?["fragment"] as? String ?? ""
+
+        let cleanTarget = (rawHref.components(separatedBy: "#").first ?? rawHref).lowercased()
+        let targetFileName = (cleanTarget as NSString).lastPathComponent.lowercased()
+
+        guard let targetIdx = meta.spineItems.firstIndex(where: {
+            let itemHref = $0.href.lowercased()
+            let itemFileName = ($0.href as NSString).lastPathComponent.lowercased()
+            return itemHref == cleanTarget || itemHref.hasSuffix("/" + cleanTarget) || itemFileName == targetFileName
+        }) else { return }
+
+        let targetFragment = fragment.isEmpty ? nil : fragment
+        self.pendingTargetAnchor = targetFragment
+
         if targetIdx != currentIndex {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 isGoingForward = targetIdx >= currentIndex
@@ -1014,15 +1028,32 @@ struct EBookReaderView: View {
                 chapterPage = 0
                 saveProgress()
             }
-        }
-        if let fragment = notification.userInfo?["fragment"] as? String, !fragment.isEmpty {
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                if let wv = resolveActiveWebView() ?? webViewReference {
-                    let js = "document.getElementById('\(fragment)')?.scrollIntoView({ behavior: 'smooth', block: 'start' });"
-                    _ = try? await wv.evaluateJavaScript(js)
+        } else if let targetFragment = targetFragment {
+            // Anchor navigation within current chapter
+            let js = """
+            (function() {
+                var fragment = "\(targetFragment)";
+                var el = document.getElementById(fragment) || document.getElementsByName(fragment)[0];
+                if (el) {
+                    var vp = document.getElementById('inksync-viewport');
+                    var rect = el.getBoundingClientRect();
+                    var absLeft = vp ? (rect.left - vp.getBoundingClientRect().left) : (rect.left + (_currentShift || 0));
+                    var pageStep = (typeof getPageStep === 'function') ? getPageStep() : (window.innerWidth || 1);
+                    var isMulti = (typeof _isMultiCol !== 'undefined') ? _isMultiCol : false;
+                    var colWidth = isMulti ? (pageStep / 2) : pageStep;
+                    if (colWidth > 0) {
+                        var targetPage = Math.max(0, Math.min(Math.floor(absLeft / colWidth), _totalPages - 1));
+                        if (typeof goToPage === 'function') {
+                            goToPage(targetPage, false);
+                        } else if (window.goToInksyncPage) {
+                            window.goToInksyncPage(targetPage, false);
+                        }
+                    }
                 }
-            }
+            })();
+            """
+            let activeWV = resolveActiveWebView() ?? webViewReference
+            activeWV?.evaluateJavaScript(js, completionHandler: nil)
         }
     }
 

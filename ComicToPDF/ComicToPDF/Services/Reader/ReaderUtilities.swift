@@ -178,7 +178,7 @@ final class SleepTimerManager: ObservableObject {
 
 /// Centralized reader layout and gesture constants (eliminates magic numbers)
 enum ReaderLayoutConstants {
-    static let brightnessZoneWidth: CGFloat = 38.0
+    static let brightnessZoneWidth: CGFloat = 20.0
     static let minBrightnessThreshold: CGFloat = 0.05
     static let maxBrightnessThreshold: CGFloat = 1.0
     static let defaultAnimationDuration: Double = 0.2
@@ -194,6 +194,7 @@ struct EdgeBrightnessGestureZone: View {
     @State private var showHUD: Bool = false
     @State private var currentLevel: CGFloat = UIScreen.main.brightness
     @State private var dismissTask: Task<Void, Never>? = nil
+    @State private var isVerticalDragActive: Bool = false
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -203,8 +204,25 @@ struct EdgeBrightnessGestureZone: View {
                     .frame(width: ReaderLayoutConstants.brightnessZoneWidth)
                     .allowsHitTesting(true)
                     .gesture(
-                        DragGesture(minimumDistance: 14)
+                        DragGesture(minimumDistance: 12)
                             .onChanged { value in
+                                // Disambiguate: horizontal movement indicates a page-turn gesture.
+                                // Require vertical displacement to exceed horizontal displacement by at least 1.8x.
+                                let horizontalDist = abs(value.translation.width)
+                                let verticalDist = abs(value.translation.height)
+
+                                if !isVerticalDragActive {
+                                    if horizontalDist > verticalDist {
+                                        // User is swiping horizontally to turn page back — ignore completely!
+                                        return
+                                    }
+                                    if verticalDist >= 14 && verticalDist > horizontalDist * 1.8 {
+                                        isVerticalDragActive = true
+                                    } else {
+                                        return
+                                    }
+                                }
+
                                 let delta = value.translation.height - lastDragTranslationY
                                 lastDragTranslationY = value.translation.height
                                 let currentBrightness = UIScreen.main.brightness
@@ -229,6 +247,7 @@ struct EdgeBrightnessGestureZone: View {
                             }
                             .onEnded { _ in
                                 lastDragTranslationY = 0
+                                isVerticalDragActive = false
                             }
                     )
                 Spacer()
