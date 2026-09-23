@@ -264,6 +264,13 @@ struct ShareExtensionView: View {
                             )
                             .shadow(color: Color(red: 0.15, green: 0.78, blue: 0.45).opacity(0.4), radius: 10, y: 4)
                         }
+
+                        Button(action: { onCancel() }) {
+                            Text("Done")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white.opacity(0.65))
+                                .padding(.top, 2)
+                        }
                     }
                     .padding(32)
                     .background(.ultraThinMaterial)
@@ -869,11 +876,9 @@ struct ShareExtensionView: View {
                         }
                     }
 
-                    // Sideload Fallback: If App Groups are unavailable, bridge via UIPasteboard.general
+                    // Sideload Fallback: If App Groups are unavailable, bridge all files via UIPasteboard.general
                     if !Self.hasWorkingAppGroup() {
-                        for file in selectedFiles {
-                            bridgeFileToPasteboard(file)
-                        }
+                        bridgeFilesToPasteboard(selectedFiles)
                     }
 
                     showingSuccess = true
@@ -931,20 +936,39 @@ struct ShareExtensionView: View {
     }
 
     @MainActor
-    private func bridgeFileToPasteboard(_ file: SharedFile) {
-        let accessing = file.url.startAccessingSecurityScopedResource()
-        defer { if accessing { file.url.stopAccessingSecurityScopedResource() } }
-        
-        let fileSize = (try? file.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-        // Limit to 35MB to prevent memory jetsam on pasteboard
-        if fileSize > 0 && fileSize < 35_000_000,
-           let data = try? Data(contentsOf: file.url, options: .mappedIfSafe) {
-            UIPasteboard.general.setData(data, forPasteboardType: "com.antigravity.InksyncPro.sharedFileData")
-            if let nameData = file.name.data(using: .utf8) {
-                UIPasteboard.general.setData(nameData, forPasteboardType: "com.antigravity.InksyncPro.sharedFileName")
+    private func bridgeFilesToPasteboard(_ files: [SharedFile]) {
+        let fileTypeKey = "com.antigravity.InksyncPro.sharedFileData"
+        let fileNameKey = "com.antigravity.InksyncPro.sharedFileName"
+
+        var newItems: [[String: Any]] = []
+        var totalBytes: Int64 = 0
+        let maxTotalBytes: Int64 = 50_000_000 // 50MB total safety cap to prevent jetsam
+
+        for file in files {
+            let accessing = file.url.startAccessingSecurityScopedResource()
+            defer { if accessing { file.url.stopAccessingSecurityScopedResource() } }
+
+            let fileSize = (try? file.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+            if fileSize > 0 && (totalBytes + fileSize) < maxTotalBytes,
+               let data = try? Data(contentsOf: file.url, options: .mappedIfSafe) {
+                totalBytes += fileSize
+                var dict: [String: Any] = [
+                    fileTypeKey: data,
+                    fileNameKey: file.name
+                ]
+                newItems.append(dict)
+
+                // Also write the first file to the root pasteboard for backward-compatibility
+                if newItems.count == 1 {
+                    UIPasteboard.general.setData(data, forPasteboardType: fileTypeKey)
+                    UIPasteboard.general.setValue(file.name, forPasteboardType: fileNameKey)
+                }
+                print("[ShareExt] Staged '\(file.name)' (\(fileSize) bytes) to shared pasteboard bridge")
             }
-            UIPasteboard.general.setValue(file.name, forPasteboardType: "com.antigravity.InksyncPro.sharedFileName")
-            print("[ShareExt] Staged '\(file.name)' (\(fileSize) bytes) to shared pasteboard bridge")
+        }
+
+        if !newItems.isEmpty {
+            UIPasteboard.general.addItems(newItems)
         }
     }
 

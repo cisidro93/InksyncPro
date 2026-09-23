@@ -135,7 +135,7 @@ final class SharedImportCoordinator: ObservableObject {
                     for (idx, name) in ingestedNames.enumerated() {
                         let fileURL = inboxDir.appendingPathComponent(name)
                         let shouldOpen = activeTargets.contains(name) || (name == targetFilename) || (activeTargets.isEmpty && targetFilename == nil && idx == 0)
-                        let pdf = manager.registerDirectFile(at: fileURL, autoOpen: shouldOpen)
+                        let pdf = manager.registerDirectFile(at: fileURL, autoOpen: false)
                         if shouldOpen && firstPDF == nil {
                             firstPDF = pdf
                         }
@@ -360,20 +360,46 @@ final class SharedImportCoordinator: ObservableObject {
 
         var ingestedFilenames: Set<String> = []
 
-        // Sideload / Unsigned IPA Fallback Bridge: Check UIPasteboard.general
+        // Sideload / Unsigned IPA Fallback Bridge: Check UIPasteboard.general (supports both multi-file items and single-file data)
         await MainActor.run {
-            if let pbData = UIPasteboard.general.data(forPasteboardType: "com.antigravity.InksyncPro.sharedFileData"),
-               let pbName = (UIPasteboard.general.value(forPasteboardType: "com.antigravity.InksyncPro.sharedFileName") as? String)
-                    ?? UIPasteboard.general.data(forPasteboardType: "com.antigravity.InksyncPro.sharedFileName").flatMap({ String(data: $0, encoding: .utf8) }),
-               !pbName.isEmpty {
-                let dest = inboxDir.appendingPathComponent(pbName)
-                if (try? pbData.write(to: dest, options: .atomic)) != nil {
-                    ingestedFilenames.insert(pbName)
-                    UIPasteboard.general.setData(Data(), forPasteboardType: "com.antigravity.InksyncPro.sharedFileData")
-                    UIPasteboard.general.setData(Data(), forPasteboardType: "com.antigravity.InksyncPro.sharedFileName")
-                    UIPasteboard.general.setValue("", forPasteboardType: "com.antigravity.InksyncPro.sharedFileName")
-                    Logger.shared.log("SharedImportCoordinator: Ingested file '\(pbName)' (\(pbData.count) bytes) from UIPasteboard fallback bridge", category: "ShareImport", type: .success)
+            let fileTypeKey = "com.antigravity.InksyncPro.sharedFileData"
+            let fileNameKey = "com.antigravity.InksyncPro.sharedFileName"
+
+            // 1. Check multi-item pasteboard array
+            for item in UIPasteboard.general.items {
+                if let pbData = item[fileTypeKey] as? Data,
+                   !pbData.isEmpty,
+                   let pbName = (item[fileNameKey] as? String)
+                        ?? (item[fileNameKey] as? Data).flatMap({ String(data: $0, encoding: .utf8) }),
+                   !pbName.isEmpty {
+                    let dest = inboxDir.appendingPathComponent(pbName)
+                    if (try? pbData.write(to: dest, options: .atomic)) != nil {
+                        ingestedFilenames.insert(pbName)
+                        Logger.shared.log("SharedImportCoordinator: Ingested file '\(pbName)' (\(pbData.count) bytes) from UIPasteboard multi-item bridge", category: "ShareImport", type: .success)
+                    }
                 }
+            }
+
+            // 2. Check root-level pasteboard data (backward-compatibility fallback)
+            if let rootData = UIPasteboard.general.data(forPasteboardType: fileTypeKey),
+               !rootData.isEmpty,
+               let rootName = (UIPasteboard.general.value(forPasteboardType: fileNameKey) as? String)
+                    ?? UIPasteboard.general.data(forPasteboardType: fileNameKey).flatMap({ String(data: $0, encoding: .utf8) }),
+               !rootName.isEmpty,
+               !ingestedFilenames.contains(rootName) {
+                let dest = inboxDir.appendingPathComponent(rootName)
+                if (try? rootData.write(to: dest, options: .atomic)) != nil {
+                    ingestedFilenames.insert(rootName)
+                    Logger.shared.log("SharedImportCoordinator: Ingested file '\(rootName)' (\(rootData.count) bytes) from UIPasteboard root bridge", category: "ShareImport", type: .success)
+                }
+            }
+
+            // Cleanly remove ONLY our shared import types without wiping user's text clipboard
+            UIPasteboard.general.items = UIPasteboard.general.items.compactMap { item in
+                var filtered = item
+                filtered.removeValue(forKey: fileTypeKey)
+                filtered.removeValue(forKey: fileNameKey)
+                return filtered.isEmpty ? nil : filtered
             }
         }
 
@@ -569,8 +595,15 @@ final class SharedImportCoordinator: ObservableObject {
             return true
         }
 
-        // Sideload / Unsigned IPA Fallback Bridge: Check UIPasteboard.general
-        if UIPasteboard.general.contains(pasteboardTypes: ["com.antigravity.InksyncPro.sharedFileData"]) {
+        // Sideload / Unsigned IPA Fallback Bridge: Check UIPasteboard.general for non-empty file data
+        let fileTypeKey = "com.antigravity.InksyncPro.sharedFileData"
+        if let pbData = UIPasteboard.general.data(forPasteboardType: fileTypeKey), !pbData.isEmpty {
+            return true
+        }
+        if UIPasteboard.general.items.contains(where: {
+            if let data = $0[fileTypeKey] as? Data, !data.isEmpty { return true }
+            return false
+        }) {
             return true
         }
 

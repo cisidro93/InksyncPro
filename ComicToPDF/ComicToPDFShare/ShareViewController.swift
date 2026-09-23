@@ -86,16 +86,27 @@ class ShareViewController: UIViewController {
         // ── Step 2: Multi-Strategy Host App Launch (Crash-Immune) ──
         var didOpen = false
 
-        // Strategy A: UIResponder Chain Traversal (window root -> host application)
-        var responder: UIResponder? = self.view.window?.rootViewController ?? self
+        // Strategy A: UIResponder Chain Traversal (self -> window -> host application)
+        var responder: UIResponder? = self
+        let openSelector = NSSelectorFromString("openURL:")
         while let r = responder {
-            let openSelector = Selector(("openURL:"))
             if r.responds(to: openSelector) {
                 _ = r.perform(openSelector, with: deepLinkURL)
                 didOpen = true
                 break
             }
             responder = r.next
+        }
+        if !didOpen {
+            var winResponder: UIResponder? = self.view.window?.rootViewController ?? self.view.window
+            while let r = winResponder {
+                if r.responds(to: openSelector) {
+                    _ = r.perform(openSelector, with: deepLinkURL)
+                    didOpen = true
+                    break
+                }
+                winResponder = r.next
+            }
         }
 
         // Strategy B: Dynamic UIApplication Runtime Invocation
@@ -143,9 +154,11 @@ class ShareViewController: UIViewController {
         }
 
         // ── Step 3: Safety Fallback Teardown ──
-        // Defer completion until after SpringBoard has initiated the transition
+        // If SpringBoard accepted the open, complete smoothly after transition.
+        // If system restricts auto-launching (e.g. iOS 18), give the user 4s to tap "Done" or "Open InkSync Pro".
+        let delayNanos: UInt64 = didOpen ? 800_000_000 : 4_000_000_000
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            try? await Task.sleep(nanoseconds: delayNanos)
             self?.completeHostAppHandover()
         }
     }
