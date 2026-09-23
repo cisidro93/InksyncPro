@@ -139,7 +139,14 @@ struct CloudConnectionSettingsView: View {
                 .environmentObject(ConversionManager.shared)
         }
         .sheet(isPresented: $showOPDSBrowser) {
-            OPDSBrowserView()
+            NavigationStack {
+                OPDSServersView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showOPDSBrowser = false }
+                        }
+                    }
+            }
         }
     }
 

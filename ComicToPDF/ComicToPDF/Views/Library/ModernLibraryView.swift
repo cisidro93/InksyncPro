@@ -808,7 +808,16 @@ struct ModernLibraryView: View {
                 AppRouter.shared.dismissSheet()
             }
         case .opdsBrowser:
-            OPDSBrowserView()
+            NavigationStack {
+                OPDSServersView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                AppRouter.shared.dismissSheet()
+                            }
+                        }
+                    }
+            }
         }
     }
     

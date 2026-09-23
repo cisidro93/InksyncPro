@@ -113,6 +113,56 @@ struct DevicesView: View {
                         }
                         .padding(.horizontal, 16)
                     }
+
+                    // ── MEDIA SERVERS (OPDS) ───────────────────────────
+                    Text("MEDIA SERVERS (OPDS)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.inkTextSecondary)
+                        .tracking(1.2)
+                        .padding(.leading, 24)
+                        .padding(.top, 24)
+                        .padding(.bottom, 8)
+
+                    NavigationLink(destination: OPDSServersView()) {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.purple.opacity(0.18))
+                                    .frame(width: 44, height: 44)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(Color.purple.opacity(0.35), lineWidth: 1)
+                                    )
+                                Image(systemName: "server.rack")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundColor(.purple)
+                            }
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("OPDS Media Catalogs")
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                    .foregroundColor(Color.inkTextPrimary)
+                                Text("Calibre-Web, Kavita, Komga, Standard Ebooks")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(Color.inkTextSecondary)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(Color.inkSecondary)
+                        }
+                        .padding(14)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(Color.inkBorderSubtle, lineWidth: 0.8)
+                        )
+                        .padding(.horizontal, 16)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.bottom, 24)
             }
