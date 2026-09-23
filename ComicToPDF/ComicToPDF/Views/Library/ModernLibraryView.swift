@@ -798,7 +798,7 @@ struct ModernLibraryView: View {
             .onDisappear {
                 if let pending = AppRouter.shared.pendingSheet {
                     AppRouter.shared.pendingSheet = nil
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                         AppRouter.shared.presentSheet(pending)
                     }
                 }

@@ -20,7 +20,14 @@ class AppRouter: ObservableObject {
     
     func presentSheet(_ sheet: LibrarySheetDestination) {
         Logger.shared.log("AppRouter: presentSheet(\(sheet))", category: "Navigation", type: .info)
-        activeSheet = sheet
+        if activeSheet != nil {
+            activeSheet = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                self.activeSheet = sheet
+            }
+        } else {
+            activeSheet = sheet
+        }
     }
     
     func presentFullScreen(_ screen: LibraryFullScreenDestination) {
