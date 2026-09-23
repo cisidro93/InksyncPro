@@ -103,6 +103,14 @@ struct ReadingModeQuickPicker: View {
         .padding(.horizontal, 32)
         .padding(.bottom, 100)
         .transition(.move(edge: .bottom).combined(with: .opacity))
+        .onAppear {
+            autoDismissTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if !Task.isCancelled {
+                    onDismiss()
+                }
+            }
+        }
         .onDisappear {
             autoDismissTask?.cancel()
         }

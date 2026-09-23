@@ -372,6 +372,9 @@ struct UnifiedReaderView: View {
         .onDisappear {
             ReaderIdleTimerManager.shared.leaveReader()
             VolumeButtonPageTurnManager.shared.stopListening()
+            PDFSpeechNarrationEngine.shared.stop()
+            EPUBNarrationEngine.shared.stop()
+            ComicDialogueSpeechEngine.shared.stop()
         }
         .onChange(of: prefs.volumeButtonsTurnPages) { _, enabled in
             if enabled {

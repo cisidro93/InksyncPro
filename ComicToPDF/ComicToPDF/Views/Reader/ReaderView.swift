@@ -127,7 +127,7 @@ struct ReaderView: View {
         GeometryReader { geo in
             ZStack {
                 // ✅ Route: text-based EPUB → EBookReaderView, image formats (CBZ/CBR/PDF) → comicReaderBody
-                if fileURL.pathExtension.lowercased() == "epub" && contentType == .book {
+                if fileURL.pathExtension.lowercased() == "epub" && contentType != .comic {
                     EBookReaderView(
                         fileURL: fileURL,
                         title: fileURL.deletingPathExtension().lastPathComponent,

@@ -157,8 +157,9 @@ final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizer
 
     func nextSentence() {
         guard currentSentenceIndex < sentences.count - 1 else {
+            let completion = onChapterFinished
             stop()
-            onChapterFinished?()
+            completion?()
             return
         }
         currentSentenceIndex += 1
@@ -193,8 +194,9 @@ final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizer
     
     private func speakCurrentSentence() {
         guard currentSentenceIndex < sentences.count else {
+            let completion = onChapterFinished
             stop()
-            onChapterFinished?()
+            completion?()
             return
         }
         
@@ -250,8 +252,9 @@ final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizer
             currentSentenceIndex += 1
             speakCurrentSentence()
         } else {
+            let completion = onChapterFinished
             stop()
-            onChapterFinished?()
+            completion?()
         }
     }
 

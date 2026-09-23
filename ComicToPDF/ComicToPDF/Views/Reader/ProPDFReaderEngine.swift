@@ -64,6 +64,7 @@ struct ProPDFReaderEngine: View {
     @State private var articleColumnStep: Int = 0
     @State private var chromeIdleTask: Task<Void, Never>? = nil
     @State private var loadTask: Task<Void, Never>? = nil
+    @State private var pageAdvanceTask: Task<Void, Never>? = nil
     @State private var accessedSecurityScopedURL: URL? = nil
     // Hyperlink Destination Preview HUD State
     @State private var pendingLinkPreview: (pageIndex: Int, targetPage: PDFPage)? = nil
@@ -463,6 +464,8 @@ struct ProPDFReaderEngine: View {
         zoomPillTask?.cancel()
         chromeIdleTask?.cancel()
         ambientColorTask?.cancel()
+        pageAdvanceTask?.cancel()
+        pageAdvanceTask = nil
         speechEngine.stop()
         pdfViewReference?.document = nil
         pdfViewReference = nil
@@ -533,6 +536,9 @@ struct ProPDFReaderEngine: View {
     private func applyCropObservers<Content: View>(to content: Content) -> some View {
         content
             .onChange(of: currentPageIndex) { _, newIndex in
+                if speechEngine.isActive && speechEngine.activePageIndex != newIndex {
+                    stopPDFNarration()
+                }
                 saveReadingProgress()
                 extractAmbientColor(for: newIndex)
                 if prefs.isPDFSmartTiersActive {
@@ -2398,8 +2404,9 @@ struct ProPDFReaderEngine: View {
             onPageAdvanceRequested: {
                 if currentPageIndex + 1 < totalPages {
                     advancePage(forward: true)
-                    Task {
+                    pageAdvanceTask = Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 350_000_000)
+                        guard !Task.isCancelled else { return }
                         startPDFNarration()
                     }
                 }
@@ -2409,6 +2416,8 @@ struct ProPDFReaderEngine: View {
     }
 
     private func stopPDFNarration() {
+        pageAdvanceTask?.cancel()
+        pageAdvanceTask = nil
         speechEngine.stop()
     }
 
@@ -3238,7 +3247,8 @@ struct ProPDFReaderEngine: View {
     }
 
     private func speakText(_ text: String) {
-        speechEngine.playSingle(text: text, pageIndex: currentPageIndex, title: pdf.name)
+        let bounds = activeTappedAnnotationBounds ?? activeSelectionSnapshot?.boundsOnPage ?? .zero
+        speechEngine.playSingle(text: text, boundsInPage: bounds, pageIndex: currentPageIndex, title: pdf.name)
     }
 
     private func createZettelkastenCard(text: String) {

@@ -13,10 +13,8 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
     @ObservedObject var engine: Engine
     var onClose: () -> Void
 
-    @State private var isExpanded: Bool = false
     @State private var showVoiceSheet: Bool = false
     @StateObject private var previewSynth = VoicePreviewSynthesizer()
-    @Environment(\.horizontalSizeClass) private var hSizeClass
     @Environment(\.colorScheme) private var colorScheme
 
     private let speedOptions: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
@@ -230,7 +228,7 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                             .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
                     )
                     .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.08), radius: 8, y: 3)
-                    .frame(maxWidth: min(400, (UIScreen.main.bounds.width - 32)))
+                    .frame(maxWidth: 400)
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
@@ -285,7 +283,7 @@ final class VoicePreviewSynthesizer: NSObject, ObservableObject, AVSpeechSynthes
         activeTestingVoiceId = voice.identifier
         HapticEngine.selection()
 
-        let sampleText = "Hello! This is \(voice.name). Ready to read your comic."
+        let sampleText = "Hello! This is \(voice.name). Ready to read aloud."
         let utterance = AVSpeechUtterance(string: sampleText)
         utterance.voice = voice
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate

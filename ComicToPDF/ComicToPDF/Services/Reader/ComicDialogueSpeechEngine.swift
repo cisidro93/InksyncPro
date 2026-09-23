@@ -152,12 +152,9 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
             speakCurrentBlock()
         } else {
             // End of page dialogue: notify page advance or stop
-            if let onPageAdvance = onPageAdvanceRequested {
-                stop()
-                onPageAdvance()
-            } else {
-                stop()
-            }
+            let onPageAdvance = onPageAdvanceRequested
+            stop()
+            onPageAdvance?()
         }
     }
 
@@ -199,6 +196,7 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
         activeBlock = nil
         dialogueBlocks.removeAll()
         currentWordRange = NSRange(location: 0, length: 0)
+        onPageAdvanceRequested = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }

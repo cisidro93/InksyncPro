@@ -241,12 +241,9 @@ final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechSynthe
             speakCurrentBlock()
         } else {
             // End of page reached: request page advance
-            if let onPageAdvance = onPageAdvanceRequested {
-                stop()
-                onPageAdvance()
-            } else {
-                stop()
-            }
+            let onPageAdvance = onPageAdvanceRequested
+            stop()
+            onPageAdvance?()
         }
     }
 
@@ -289,6 +286,8 @@ final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechSynthe
         activeSentenceLineRectsInPage.removeAll()
         sentenceBlocks.removeAll()
         currentWordRange = NSRange(location: 0, length: 0)
+        onSentenceChanged = nil
+        onPageAdvanceRequested = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }

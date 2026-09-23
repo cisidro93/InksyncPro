@@ -63,6 +63,7 @@ struct EBookReaderView: View {
     @State private var isPencilMode = false
     @State private var pendingTargetAnchor: String? = nil
     @State private var hudIdleTask: Task<Void, Never>? = nil
+    @State private var shouldAutoResumeNarrationOnChapterLoad: Bool = false
 
     private func startHUDIdleTimer(delay: UInt64 = 3_500_000_000) {
         // Keep HUD active while navigating; dismissal is explicit by tapping reading canvas
@@ -247,6 +248,8 @@ struct EBookReaderView: View {
         .task { await loadBook() }
         .onDisappear { 
             hudIdleTask?.cancel()
+            shouldAutoResumeNarrationOnChapterLoad = false
+            clearSentenceHighlightInWebKit()
             narrationEngine.stop()
             cleanup()
             saveProgress() 
@@ -305,6 +308,14 @@ struct EBookReaderView: View {
         }
         .onChange(of: currentIndex) { _, _ in
             handleCurrentIndexChanged()
+            if shouldAutoResumeNarrationOnChapterLoad {
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    guard shouldAutoResumeNarrationOnChapterLoad else { return }
+                    shouldAutoResumeNarrationOnChapterLoad = false
+                    startNarration()
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .annotationsDidChange)) { notif in
             handleAnnotationsDidChange(notif)
@@ -868,8 +879,13 @@ struct EBookReaderView: View {
     
     // MARK: - Navigation
     private func nextChapter() {
+        if !shouldAutoResumeNarrationOnChapterLoad && narrationEngine.isActive {
+            narrationEngine.stop()
+            clearSentenceHighlightInWebKit()
+        }
         if currentIndex >= totalChapters - 1 {
             // Last chapter — try to jump to next volume in series
+            shouldAutoResumeNarrationOnChapterLoad = false
             attemptSeriesContinuation()
             return
         }
@@ -894,6 +910,11 @@ struct EBookReaderView: View {
     }
 
     private func prevChapter() {
+        shouldAutoResumeNarrationOnChapterLoad = false
+        if narrationEngine.isActive {
+            narrationEngine.stop()
+            clearSentenceHighlightInWebKit()
+        }
         guard currentIndex > 0 else { return }
         HapticEngine.medium()
         isGoingForward = false
@@ -1031,6 +1052,11 @@ struct EBookReaderView: View {
         self.pendingTargetAnchor = targetFragment
 
         if targetIdx != currentIndex {
+            shouldAutoResumeNarrationOnChapterLoad = false
+            if narrationEngine.isActive {
+                narrationEngine.stop()
+                clearSentenceHighlightInWebKit()
+            }
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 isGoingForward = targetIdx >= currentIndex
                 currentIndex = targetIdx
@@ -1967,6 +1993,7 @@ struct EBookReaderView: View {
     }
 
     private func toggleNarration() {
+        shouldAutoResumeNarrationOnChapterLoad = false
         if narrationEngine.isActive {
             clearSentenceHighlightInWebKit()
             narrationEngine.stop()
@@ -1990,7 +2017,10 @@ struct EBookReaderView: View {
                         },
                         onChapterFinished: {
                             clearSentenceHighlightInWebKit()
-                            nextChapter()
+                            if currentIndex + 1 < totalChapters {
+                                shouldAutoResumeNarrationOnChapterLoad = true
+                                nextChapter()
+                            }
                         }
                     )
                 }
@@ -2019,6 +2049,7 @@ struct EBookReaderView: View {
     // MARK: - Narration Floating HUD
     @ViewBuilder private var narrationFloatingHUD: some View {
         EPUBSpeechHUDView(engine: narrationEngine) {
+            shouldAutoResumeNarrationOnChapterLoad = false
             clearSentenceHighlightInWebKit()
             narrationEngine.stop()
         }

@@ -1517,6 +1517,8 @@ struct ComicReaderEngine: View {
     @State private var dialogueOCRTask: Task<Void, Never>? = nil
     /// Phase 4A: Auto-hide chrome — cancellable idle timer.
     @State private var chromeIdleTask: Task<Void, Never>? = nil
+    /// Auto-page advance task for dialogue narration
+    @State private var speechAdvanceTask: Task<Void, Never>? = nil
     /// Guided View Stride target when crossing spread boundaries (0 = first stride, -1 = last stride)
     @State private var guidedInitialStrideIndex: Int = 0
     
@@ -1759,7 +1761,7 @@ struct ComicReaderEngine: View {
                     Spacer()
                     ComicSpeechHUDView(engine: speechEngine) {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            speechEngine.stop()
+                            stopPageNarration()
                         }
                     }
                     .padding(.bottom, chromeVisible ? 140 : 44)
@@ -1875,9 +1877,11 @@ struct ComicReaderEngine: View {
             isReaderFocused = true
         }
         .onDisappear {
-            speechEngine.stop()
+            stopPageNarration()
         }
         .onChange(of: currentIndex) { oldIndex, newIndex in
+            speechAdvanceTask?.cancel()
+            speechAdvanceTask = nil
             if speechEngine.isActive && speechEngine.activePageIndex != newIndex {
                 speechEngine.stop()
             }
@@ -2899,6 +2903,12 @@ struct ComicReaderEngine: View {
         return CGRect(x: x, y: y, width: w, height: h)
     }
 
+    private func stopPageNarration() {
+        speechAdvanceTask?.cancel()
+        speechAdvanceTask = nil
+        speechEngine.stop()
+    }
+
     private func startPageNarration() {
         dialogueOCRTask?.cancel()
         dialogueOCRTask = Task {
@@ -2917,8 +2927,9 @@ struct ComicReaderEngine: View {
                 onPageAdvanceRequested: {
                     if currentIndex + 1 < cache.pageCount {
                         nextPage()
-                        Task {
+                        speechAdvanceTask = Task { @MainActor in
                             try? await Task.sleep(nanoseconds: 300_000_000)
+                            guard !Task.isCancelled else { return }
                             startPageNarration()
                         }
                     }
@@ -2981,8 +2992,9 @@ struct ComicReaderEngine: View {
                                 onPageAdvanceRequested: {
                                     if currentIndex + 1 < cache.pageCount {
                                         nextPage()
-                                        Task {
+                                        speechAdvanceTask = Task { @MainActor in
                                             try? await Task.sleep(nanoseconds: 300_000_000)
+                                            guard !Task.isCancelled else { return }
                                             startPageNarration()
                                         }
                                     }
