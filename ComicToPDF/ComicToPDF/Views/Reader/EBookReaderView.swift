@@ -633,6 +633,11 @@ struct EBookReaderView: View {
                             get: { progressFraction },
                             set: { newVal in
                                 let target = Int((newVal * Double(totalChapters - 1)).rounded())
+                                if target != currentIndex {
+                                    pendingTargetAnchor = nil
+                                    chapterPage = 0
+                                    chapterScrollFraction = 0.0
+                                }
                                 withAnimation(.easeInOut(duration: 0.18)) { currentIndex = target }
                                 saveProgress()
                                 startHUDIdleTimer()
@@ -748,6 +753,7 @@ struct EBookReaderView: View {
                                         currentIndex = item.index
                                         chapterPage = 0
                                         chapterScrollFraction = 0.0
+                                        pendingTargetAnchor = nil
                                         showChapterList = false
                                     }
                                     dismissHUD()
@@ -948,6 +954,7 @@ struct EBookReaderView: View {
             }
         } else {
             isGoingForward = chapterIdx >= currentIndex
+            pendingTargetAnchor = nil
             currentIndex = chapterIdx
             chapterPage = 0
             saveProgress()
@@ -974,6 +981,7 @@ struct EBookReaderView: View {
             if chapterIdx != currentIndex {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                     isGoingForward = chapterIdx >= currentIndex
+                    pendingTargetAnchor = nil
                     currentIndex = chapterIdx
                 }
             }
@@ -991,6 +999,7 @@ struct EBookReaderView: View {
             } else if targetPage < totalChapters && notification.userInfo?["chapterPage"] == nil {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                     isGoingForward = targetPage >= currentIndex
+                    pendingTargetAnchor = nil
                     currentIndex = targetPage
                     chapterPage = 0
                     saveProgress()
