@@ -398,11 +398,8 @@ struct ContentView: View {
     private func handleWillEnterForeground() {
         Logger.shared.log("App returned to foreground — coordinating shared import", category: "Import")
         Task { @MainActor in
-            if SharedImportCoordinator.shared.hasPendingShareImport() {
-                SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.6)
-            } else {
-                conversionManager.scanLibrary()
-            }
+            SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
+            conversionManager.scanLibrary()
         }
     }
 

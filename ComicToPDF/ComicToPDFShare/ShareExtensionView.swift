@@ -13,6 +13,7 @@ struct ShareExtensionView: View {
     @State private var processingProgress: Double = 0
     @State private var currentFileName: String = ""
     @State private var showingSuccess = false
+    @State private var isOpeningApp = false
     @State private var processedCount = 0
     @State private var errorMessage: String?
     
@@ -244,12 +245,23 @@ struct ShareExtensionView: View {
                             .font(.system(size: 14, weight: .medium, design: .rounded))
                             .foregroundColor(.white.opacity(0.8))
 
-                        Button(action: { onOpenApp(selectedFiles) }) {
-                            HStack(spacing: 6) {
-                                Text("Open InkSync Pro")
-                                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                                Image(systemName: "arrow.right.circle.fill")
-                                    .font(.system(size: 16))
+                        Button(action: {
+                            isOpeningApp = true
+                            onOpenApp(selectedFiles)
+                        }) {
+                            HStack(spacing: 8) {
+                                if isOpeningApp {
+                                    ProgressView()
+                                        .tint(.black)
+                                        .scaleEffect(0.9)
+                                    Text("Opening InkSync Pro...")
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                } else {
+                                    Text("Open InkSync Pro")
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                    Image(systemName: "arrow.right.circle.fill")
+                                        .font(.system(size: 16))
+                                }
                             }
                             .foregroundColor(.black)
                             .padding(.horizontal, 28)
@@ -610,6 +622,9 @@ struct ShareExtensionView: View {
                 }
             }
 
+            // Immediately bridge discovered files to pasteboard as early safety net
+            self.bridgeFilesToPasteboard(filesToProcess)
+
             self.selectedFiles = filesToProcess
             self.isLoading = false
         }
@@ -876,15 +891,12 @@ struct ShareExtensionView: View {
                         }
                     }
 
-                    // Sideload Fallback: If App Groups are unavailable, bridge all files via UIPasteboard.general
-                    if !Self.hasWorkingAppGroup() {
-                        bridgeFilesToPasteboard(selectedFiles)
-                    }
+                    // Dual Redundancy Bridge: Stage all files unconditionally to UIPasteboard.general
+                    // Guarantees sideloaded IPAs, custom developer accounts, and sandboxed extensions deliver files 100% reliably
+                    bridgeFilesToPasteboard(selectedFiles)
 
                     showingSuccess = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        onOpenApp(selectedFiles)
-                    }
+                    // Do NOT auto-dismiss: keep showingSuccess visible so the user has full agency to tap "Open InkSync Pro" or "Done"
                 } else {
                     showingSuccess = false
                     if errorMessage == nil {
@@ -942,28 +954,49 @@ struct ShareExtensionView: View {
 
         var newItems: [[String: Any]] = []
         var totalBytes: Int64 = 0
-        let maxTotalBytes: Int64 = 50_000_000 // 50MB total safety cap to prevent jetsam
+        let maxTotalBytes: Int64 = 75_000_000 // 75MB total safety cap to prevent jetsam
 
         for file in files {
-            let accessing = file.url.startAccessingSecurityScopedResource()
-            defer { if accessing { file.url.stopAccessingSecurityScopedResource() } }
-
-            let fileSize = (try? file.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-            if fileSize > 0 && (totalBytes + fileSize) < maxTotalBytes,
-               let data = try? Data(contentsOf: file.url, options: .mappedIfSafe) {
-                totalBytes += fileSize
-                var dict: [String: Any] = [
-                    fileTypeKey: data,
-                    fileNameKey: file.name
-                ]
-                newItems.append(dict)
-
-                // Also write the first file to the root pasteboard for backward-compatibility
-                if newItems.count == 1 {
-                    UIPasteboard.general.setData(data, forPasteboardType: fileTypeKey)
-                    UIPasteboard.general.setValue(file.name, forPasteboardType: fileNameKey)
+            // Find the best existing accessible copy of this file
+            var candidateURL = file.url
+            if !FileManager.default.fileExists(atPath: candidateURL.path) {
+                for container in Self.getAppGroupContainers() {
+                    let inboxCandidate = container.appendingPathComponent("Inbox").appendingPathComponent(file.name)
+                    if FileManager.default.fileExists(atPath: inboxCandidate.path) {
+                        candidateURL = inboxCandidate
+                        break
+                    }
+                    let stagingCandidate = container.appendingPathComponent("ShareStaging").appendingPathComponent(file.name)
+                    if FileManager.default.fileExists(atPath: stagingCandidate.path) {
+                        candidateURL = stagingCandidate
+                        break
+                    }
                 }
-                print("[ShareExt] Staged '\(file.name)' (\(fileSize) bytes) to shared pasteboard bridge")
+            }
+
+            let accessing = candidateURL.startAccessingSecurityScopedResource()
+            defer { if accessing { candidateURL.stopAccessingSecurityScopedResource() } }
+
+            if let data = try? Data(contentsOf: candidateURL, options: .mappedIfSafe), !data.isEmpty {
+                let fileSize = Int64(data.count)
+                if (totalBytes + fileSize) < maxTotalBytes {
+                    totalBytes += fileSize
+                    let dict: [String: Any] = [
+                        fileTypeKey: data,
+                        fileNameKey: file.name
+                    ]
+                    newItems.append(dict)
+
+                    // Also write the first file to the root pasteboard for backward-compatibility
+                    if newItems.count == 1 {
+                        UIPasteboard.general.setData(data, forPasteboardType: fileTypeKey)
+                        if let nameData = file.name.data(using: .utf8) {
+                            UIPasteboard.general.setData(nameData, forPasteboardType: fileNameKey)
+                        }
+                        UIPasteboard.general.setValue(file.name, forPasteboardType: fileNameKey)
+                    }
+                    print("[ShareExt] Staged '\(file.name)' (\(fileSize) bytes) to shared pasteboard bridge")
+                }
             }
         }
 

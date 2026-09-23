@@ -401,6 +401,8 @@ final class SharedImportCoordinator: ObservableObject {
                 filtered.removeValue(forKey: fileNameKey)
                 return filtered.isEmpty ? nil : filtered
             }
+            UIPasteboard.general.setData(Data(), forPasteboardType: fileTypeKey)
+            UIPasteboard.general.setValue("", forPasteboardType: fileNameKey)
         }
 
         var visitedContainers: Set<URL> = []

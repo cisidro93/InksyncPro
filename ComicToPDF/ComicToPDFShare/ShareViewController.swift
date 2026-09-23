@@ -1,7 +1,6 @@
 import UIKit
 import SwiftUI
 import UniformTypeIdentifiers
-import UserNotifications
 
 // MARK: - ShareViewController
 //
@@ -154,20 +153,12 @@ class ShareViewController: UIViewController {
             }
         }
 
-        // ── Step 3: iOS 18+ Notification Launcher & Teardown ──
-        // On iOS 18+, Apple strictly prevents share extensions from foregrounding the host app.
-        // A local notification gives the user an instant, native 1-tap pathway to jump into InkSync Pro.
-        let center = UNUserNotificationCenter.current()
-        let content = UNMutableNotificationContent()
-        content.title = "InkSync Pro"
-        let bookName = files.first?.name ?? "Document"
-        content.body = "“\(bookName)” added to Library. Tap to open and read."
-        content.sound = .default
-        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        center.add(req, withCompletionHandler: nil)
+        // ── Step 3: Tactile Feedback & Clean Handover Teardown ──
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
 
-        // Dismiss the share extension promptly without hanging
-        let delayNanos: UInt64 = didOpen ? 600_000_000 : 350_000_000
+        // Dismiss the share extension cleanly after user-initiated tap
+        let delayNanos: UInt64 = didOpen ? 600_000_000 : 400_000_000
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: delayNanos)
             self?.completeHostAppHandover()
