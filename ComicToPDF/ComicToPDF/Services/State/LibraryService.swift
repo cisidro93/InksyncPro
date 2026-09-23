@@ -10,6 +10,7 @@ final class LibraryService: ObservableObject {
     @Published var items: [ConvertedPDF] = []
     @Published var collections: [PDFCollection] = []
     @Published var virtualOmnibuses: [VirtualOmnibus] = []
+    @Published var hasBootstrapped: Bool = false
     
     private init() {}
     

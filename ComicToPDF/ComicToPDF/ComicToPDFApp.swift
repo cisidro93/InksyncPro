@@ -65,9 +65,6 @@ struct InksyncProApp: App {
     
     // ✅ Global Thread-Safe Model Container
     nonisolated static let sharedModelContainer: ModelContainer = {
-        // Ensure nuke guard runs BEFORE the container is initialized and locks SQLite files
-        InstallGuardService.shared.executeGuard()
-        
         let schema = Schema([
             SDConvertedPDF.self,
             SDPDFCollection.self,
@@ -127,8 +124,10 @@ struct InksyncProApp: App {
                 .onAppear {
                     // Inject ConversionManager into SharedImportCoordinator on app launch
                     SharedImportCoordinator.shared.conversionManager = ConversionManager.shared
-                    // Check for any pending imports from Share Extension on launch
-                    SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
+                    // Check for any pending imports from Share Extension on launch if already bootstrapped
+                    if LibraryService.shared.hasBootstrapped {
+                        SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
+                    }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {
@@ -147,7 +146,9 @@ struct InksyncProApp: App {
                          break
                     case .active:
                          SecurityManager.shared.handleAppForegrounding()
-                         SharedImportCoordinator.shared.coordinateImport(retryCount: 3, retryDelaySeconds: 0.5)
+                         if LibraryService.shared.hasBootstrapped {
+                             SharedImportCoordinator.shared.coordinateImport(retryCount: 3, retryDelaySeconds: 0.5)
+                         }
                          NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
                     @unknown default: break
                     }

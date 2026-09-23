@@ -205,6 +205,11 @@ struct ContentView: View {
                 
                 // Always fetch the latest SwiftData on startup to ensure conversionManager matches the DB.
                 await LibraryService.shared.loadLibrary()
+                LibraryService.shared.hasBootstrapped = true
+                
+                if SharedImportCoordinator.shared.hasPendingShareImport() {
+                    SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
+                }
                 
                 // Enforce a minimum display duration of 0.4s for smooth splash breathing animation
                 let elapsed = Date().timeIntervalSince(startTime)
@@ -398,8 +403,14 @@ struct ContentView: View {
     private func handleWillEnterForeground() {
         Logger.shared.log("App returned to foreground — coordinating shared import", category: "Import")
         Task { @MainActor in
-            SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
-            conversionManager.scanLibrary()
+            guard LibraryService.shared.hasBootstrapped else { return }
+            if SharedImportCoordinator.shared.hasPendingShareImport() {
+                // Active share import in progress — coordinateImport handles scanLibrary internally after ingest
+                SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.5)
+            } else {
+                // Normal foreground return (no pending share) — just refresh the library
+                conversionManager.scanLibrary()
+            }
         }
     }
 

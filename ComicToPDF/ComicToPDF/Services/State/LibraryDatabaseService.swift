@@ -43,10 +43,7 @@ actor LibraryDatabaseService {
     private var buffer: [WriteRequest] = []
     private var debounceTask: Task<Void, Never>?
 
-    private init() {
-        // Ensure install guard executes before database bootstrap or connection is established
-        InstallGuardService.shared.executeGuard()
-    }
+    private init() {}
 
     // MARK: - Bootstrap
 
