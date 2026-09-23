@@ -101,6 +101,17 @@ struct LibraryControlCenterView: View {
                                     transitionToSheet(.smartListImporter)
                                 }
                             )
+                            
+                            // OPDS Catalogs
+                            cardButton(
+                                title: "OPDS Catalogs",
+                                subtitle: "Calibre, Kavita, Komga",
+                                icon: "server.rack",
+                                gradient: Gradient(colors: [Color.purple, Color(hex: "#7928ca")]),
+                                action: {
+                                    transitionToSheet(.opdsBrowser)
+                                }
+                            )
                         }
                         .padding(.horizontal)
                     }

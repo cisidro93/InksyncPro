@@ -29,6 +29,7 @@ struct CloudConnectionSettingsView: View {
     @State private var isConnectingDropbox = false
     @State private var errorMessage: String?
     @State private var showDropboxBrowser  = false
+    @State private var showOPDSBrowser     = false
 
     var body: some View {
         Form {
@@ -109,6 +110,17 @@ struct CloudConnectionSettingsView: View {
                 }
             }
 
+            // MARK: - OPDS Catalogs
+            Section(header: Text("OPDS Home Servers & Catalogs")) {
+                browseRow(
+                    title: "OPDS Catalogs",
+                    subtitle: "Browse Calibre-Web, Kavita, Komga, Standard Ebooks",
+                    color: Color.purple
+                ) {
+                    showOPDSBrowser = true
+                }
+            }
+
             // MARK: - How It Works
             Section(header: Text("How It Works")) {
                 howItWorksRow(icon: "1.circle", text: "Tap Connect — a secure OAuth sign-in sheet appears without ever leaving the app. InksyncPro never sees your password.")
@@ -125,6 +137,9 @@ struct CloudConnectionSettingsView: View {
         .sheet(isPresented: $showDropboxBrowser) {
             CloudFileBrowserView(provider: .dropbox)
                 .environmentObject(ConversionManager.shared)
+        }
+        .sheet(isPresented: $showOPDSBrowser) {
+            OPDSBrowserView()
         }
     }
 

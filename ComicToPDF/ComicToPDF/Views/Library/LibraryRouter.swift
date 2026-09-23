@@ -24,6 +24,7 @@ enum LibrarySheetDestination: Identifiable {
     case virtualOmnibusEditor(VirtualOmnibus?, initialFileIDs: [UUID] = [], suggestedName: String = "", parentSeriesID: String? = nil)
     case controlCenter
     case whatsNew
+    case opdsBrowser
     
     var id: String {
         switch self {
@@ -31,6 +32,7 @@ enum LibrarySheetDestination: Identifiable {
         case .wifi: return "wifi"
         case .merge: return "merge"
         case .cloudBrowser: return "cloudBrowser"
+        case .opdsBrowser: return "opdsBrowser"
         case .cloudSync(let p): return "cloudSync_\(p.id)"
         case .export(let p): return "export_\(p.id)"
         case .importQueue: return "importQueue"

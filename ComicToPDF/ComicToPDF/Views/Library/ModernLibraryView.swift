@@ -807,6 +807,8 @@ struct ModernLibraryView: View {
             WhatsNewInBuildSheet {
                 AppRouter.shared.dismissSheet()
             }
+        case .opdsBrowser:
+            OPDSBrowserView()
         }
     }
     
@@ -1047,6 +1049,13 @@ struct ModernLibraryView: View {
                 selected: $viewModel.contentShelf,
                 counts: contentShelfCounts
             )
+            .padding(.bottom, 4)
+
+            // Dynamic Smart Filter Bar
+            LibraryFilterChipBar(
+                selectedFilter: $viewModel.filterState,
+                counts: libraryFilterCounts
+            )
             .padding(.bottom, 8)
 
 
@@ -1168,6 +1177,35 @@ struct ModernLibraryView: View {
             }
         }
         
+        return counts
+    }
+
+    private var libraryFilterCounts: [LibraryFilterState: Int] {
+        var counts: [LibraryFilterState: Int] = [
+            .all: cachedVisiblePDFs.count,
+            .unread: 0,
+            .reading: 0,
+            .completed: 0,
+            .onDrive: 0,
+            .cloudLibrary: 0
+        ]
+        for pdf in cachedVisiblePDFs {
+            let maxPages = max(pdf.pageCount, 1)
+            let read = pdf.metadata.lastReadPage ?? 0
+            if read == 0 {
+                counts[.unread, default: 0] += 1
+            } else if read >= maxPages - 1 {
+                counts[.completed, default: 0] += 1
+            } else {
+                counts[.reading, default: 0] += 1
+            }
+
+            if case .linked = pdf.sourceMode {
+                counts[.onDrive, default: 0] += 1
+            } else if case .cloud = pdf.sourceMode {
+                counts[.cloudLibrary, default: 0] += 1
+            }
+        }
         return counts
     }
 

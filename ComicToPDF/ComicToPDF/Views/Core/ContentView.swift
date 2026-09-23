@@ -428,11 +428,18 @@ struct ContentView: View {
 
             let targetPDF: ConvertedPDF? = (notification.object as? ConvertedPDF) ?? {
                 let filenames = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
-                if let name = filenames.first,
-                   let match = conversionManager.convertedPDFs.first(where: { (item: ConvertedPDF) -> Bool in item.url.lastPathComponent == name }) {
-                    return match
+                if let name = filenames.first {
+                    let cleanName = name.removingPercentEncoding ?? name
+                    if let match = conversionManager.convertedPDFs.first(where: { item in
+                        let itemClean = item.url.lastPathComponent.removingPercentEncoding ?? item.url.lastPathComponent
+                        return itemClean.localizedCaseInsensitiveCompare(cleanName) == .orderedSame ||
+                               item.name.localizedCaseInsensitiveCompare(cleanName) == .orderedSame ||
+                               item.url.deletingPathExtension().lastPathComponent.localizedCaseInsensitiveCompare((cleanName as NSString).deletingPathExtension) == .orderedSame
+                    }) {
+                        return match
+                    }
                 }
-                return nil
+                return conversionManager.convertedPDFs.first
             }()
 
             if let pdf = targetPDF {
@@ -477,11 +484,14 @@ struct ContentView: View {
                 if let pdf = notification.object as? ConvertedPDF {
                     return pdf
                 } else if let destURL = notification.object as? URL {
-                    return conversionManager.convertedPDFs.first(where: { (item: ConvertedPDF) -> Bool in
-                        item.url.lastPathComponent == destURL.lastPathComponent
+                    let destName = destURL.lastPathComponent.removingPercentEncoding ?? destURL.lastPathComponent
+                    return conversionManager.convertedPDFs.first(where: { item in
+                        let itemClean = item.url.lastPathComponent.removingPercentEncoding ?? item.url.lastPathComponent
+                        return itemClean.localizedCaseInsensitiveCompare(destName) == .orderedSame ||
+                               item.name.localizedCaseInsensitiveCompare(destName) == .orderedSame
                     })
                 }
-                return nil
+                return conversionManager.convertedPDFs.first
             }()
 
             if let pdf = targetPDF {

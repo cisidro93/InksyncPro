@@ -7,6 +7,7 @@ struct PanelEditorView: View {
     @Environment(\.dismiss) var dismiss
     
     @State private var selectedIndex: Int? = nil
+    @State private var isDetecting = false
     
     var body: some View {
         NavigationStack {
@@ -48,7 +49,22 @@ struct PanelEditorView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack {
+                    HStack(spacing: 12) {
+                        Button {
+                            autoDetectPanels()
+                        } label: {
+                            HStack(spacing: 4) {
+                                if isDetecting {
+                                    ProgressView().scaleEffect(0.8)
+                                } else {
+                                    Image(systemName: "sparkles")
+                                }
+                                Text("Auto-Detect")
+                            }
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        }
+                        .disabled(isDetecting)
+
                         Button("Add Panel") {
                             addPanel()
                         }
@@ -73,6 +89,27 @@ struct PanelEditorView: View {
     func addPanel() {
         panels.append(CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
         selectedIndex = panels.count - 1
+    }
+
+    func autoDetectPanels() {
+        guard !isDetecting else { return }
+        isDetecting = true
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.prepare()
+
+        Task {
+            let detected = await ComicPanelDetectorEngine.shared.detectPanels(in: image)
+            await MainActor.run {
+                if !detected.isEmpty {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        self.panels = detected
+                        self.selectedIndex = 0
+                    }
+                    generator.impactOccurred()
+                }
+                self.isDetecting = false
+            }
+        }
     }
 }
 
