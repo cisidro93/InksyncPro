@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct ShareExtensionView: View {
@@ -713,6 +714,15 @@ struct ShareExtensionView: View {
 
     // MARK: - App Group File Operations
 
+    nonisolated static func hasWorkingAppGroup() -> Bool {
+        let groupIDs = [
+            "group.com.antigravity.InksyncPro",
+            "group.com.antigravity.ComicToPDF",
+            "group.com.antigravity.inksync"
+        ]
+        return groupIDs.contains { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil }
+    }
+
     nonisolated static func getAppGroupContainers() -> [URL] {
         var containers: [URL] = []
         let groupIDs = [
@@ -752,56 +762,23 @@ struct ShareExtensionView: View {
         let accessing = sourceURL.startAccessingSecurityScopedResource()
         defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
         
+        // Stage to the primary accessible container first without memory bloat
         for container in containers {
-            let stagingURL = container.appendingPathComponent("ShareStaging", isDirectory: true)
             let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
-            let pendingURL = container.appendingPathComponent("PendingConversions", isDirectory: true)
-            try? FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+            let stagingURL = container.appendingPathComponent("ShareStaging", isDirectory: true)
             try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
-            try? FileManager.default.createDirectory(at: pendingURL, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
 
-            let destURL = stagingURL.appendingPathComponent(cleanDest)
             let inboxDestURL = inboxURL.appendingPathComponent(cleanDest)
-            let pendingDestURL = pendingURL.appendingPathComponent(cleanDest)
+            let stagingDestURL = stagingURL.appendingPathComponent(cleanDest)
 
-            try? FileManager.default.removeItem(at: destURL)
-            try? FileManager.default.removeItem(at: inboxDestURL)
-            try? FileManager.default.removeItem(at: pendingDestURL)
-            
-            var didCopy = false
-            
-            // Priority 1: Zero-copy APFS File System Block Clone
-            do {
-                try FileManager.default.copyItem(at: sourceURL, to: destURL)
-                try? FileManager.default.copyItem(at: destURL, to: inboxDestURL)
-                try? FileManager.default.copyItem(at: destURL, to: pendingDestURL)
-                didCopy = true
-            } catch {
-                // Priority 2: Coordinated read via NSFileCoordinator
-                let coordinator = NSFileCoordinator()
-                var coordError: NSError?
-                coordinator.coordinate(readingItemAt: sourceURL, options: .withoutChanges, error: &coordError) { coordinatedURL in
-                    let innerAccess = coordinatedURL.startAccessingSecurityScopedResource()
-                    defer { if innerAccess { coordinatedURL.stopAccessingSecurityScopedResource() } }
-                    if (try? FileManager.default.copyItem(at: coordinatedURL, to: destURL)) != nil {
-                        try? FileManager.default.copyItem(at: destURL, to: inboxDestURL)
-                        try? FileManager.default.copyItem(at: destURL, to: pendingDestURL)
-                        didCopy = true
-                    }
-                }
-            }
-
-            // Priority 3: Memory-mapped atomic stream fallback
-            if !didCopy, let sourceData = try? Data(contentsOf: sourceURL, options: .alwaysMapped) {
-                if (try? sourceData.write(to: destURL, options: .atomic)) != nil {
-                    try? sourceData.write(to: inboxDestURL, options: .atomic)
-                    try? sourceData.write(to: pendingDestURL, options: .atomic)
-                    didCopy = true
-                }
-            }
-
-            if didCopy && primaryResultURL == nil {
-                primaryResultURL = destURL
+            if safeCopyOrWrite(from: sourceURL, to: inboxDestURL) {
+                // Keep ShareStaging in sync with Inbox without duplicate RAM reading
+                try? FileManager.default.removeItem(at: stagingDestURL)
+                _ = safeCopyOrWrite(from: inboxDestURL, to: stagingDestURL)
+                
+                primaryResultURL = inboxDestURL
+                break // Successfully staged to primary container — break early!
             }
         }
         
@@ -817,24 +794,20 @@ struct ShareExtensionView: View {
         
         var primaryResultURL: URL? = nil
         for container in containers {
-            let stagingURL = container.appendingPathComponent("ShareStaging", isDirectory: true)
             let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
-            let pendingURL = container.appendingPathComponent("PendingConversions", isDirectory: true)
-            try? FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+            let stagingURL = container.appendingPathComponent("ShareStaging", isDirectory: true)
             try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
-            try? FileManager.default.createDirectory(at: pendingURL, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
 
-            let destURL = stagingURL.appendingPathComponent(destFilename)
             let inboxDest = inboxURL.appendingPathComponent(destFilename)
-            let pendingDest = pendingURL.appendingPathComponent(destFilename)
-            try? FileManager.default.removeItem(at: destURL)
+            let stagingDest = stagingURL.appendingPathComponent(destFilename)
             try? FileManager.default.removeItem(at: inboxDest)
-            try? FileManager.default.removeItem(at: pendingDest)
+            try? FileManager.default.removeItem(at: stagingDest)
             
-            if (try? data.write(to: destURL, options: .atomic)) != nil {
-                try? data.write(to: inboxDest, options: .atomic)
-                try? data.write(to: pendingDest, options: .atomic)
-                if primaryResultURL == nil { primaryResultURL = destURL }
+            if (try? data.write(to: inboxDest, options: .atomic)) != nil {
+                try? FileManager.default.copyItem(at: inboxDest, to: stagingDest)
+                primaryResultURL = inboxDest
+                break // Success on primary container!
             }
         }
         return primaryResultURL
@@ -895,8 +868,16 @@ struct ShareExtensionView: View {
                             ud.synchronize()
                         }
                     }
+
+                    // Sideload Fallback: If App Groups are unavailable, bridge via UIPasteboard.general
+                    if !Self.hasWorkingAppGroup() {
+                        for file in selectedFiles {
+                            bridgeFileToPasteboard(file)
+                        }
+                    }
+
                     showingSuccess = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         onOpenApp(selectedFiles)
                     }
                 } else {
@@ -924,41 +905,23 @@ struct ShareExtensionView: View {
         var successfulStagings = 0
 
         for container in containers {
-            let pendingURL = container.appendingPathComponent("PendingConversions", isDirectory: true)
             let inboxURL = container.appendingPathComponent("Inbox", isDirectory: true)
-            try? FileManager.default.createDirectory(at: pendingURL, withIntermediateDirectories: true)
+            let stagingURL = container.appendingPathComponent("ShareStaging", isDirectory: true)
+            let pendingURL = container.appendingPathComponent("PendingConversions", isDirectory: true)
             try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: pendingURL, withIntermediateDirectories: true)
 
-            let manifest = ConversionManifest(
-                sourceFile: file.name,
-                dateAdded: Date(),
-                status: .pending
-            )
-            let manifestURL = pendingURL.appendingPathComponent("\(file.name).manifest.json")
-            if let data = try? JSONEncoder().encode(manifest) {
-                try? data.write(to: manifestURL, options: .atomic)
-            }
-
-            let destPending = pendingURL.appendingPathComponent(file.name)
             let destInbox = inboxURL.appendingPathComponent(file.name)
+            let destStaging = stagingURL.appendingPathComponent(file.name)
 
-            var didStagePending = false
-            var didStageInbox = false
-
-            if file.url.path == destPending.path {
-                didStagePending = true
-            } else {
-                didStagePending = Self.safeCopyOrWrite(from: file.url, to: destPending)
-            }
-
-            if file.url.path == destInbox.path {
-                didStageInbox = true
-            } else {
-                didStageInbox = Self.safeCopyOrWrite(from: file.url, to: destInbox)
-            }
-
-            if didStagePending || didStageInbox {
+            let didStageInbox = (file.url.path == destInbox.path) || Self.safeCopyOrWrite(from: file.url, to: destInbox)
+            if didStageInbox {
+                if file.url.path != destStaging.path {
+                    _ = Self.safeCopyOrWrite(from: destInbox, to: destStaging)
+                }
                 successfulStagings += 1
+                break // Primary container successfully staged!
             }
         }
 
@@ -967,7 +930,29 @@ struct ShareExtensionView: View {
         }
     }
 
+    @MainActor
+    private func bridgeFileToPasteboard(_ file: SharedFile) {
+        let accessing = file.url.startAccessingSecurityScopedResource()
+        defer { if accessing { file.url.stopAccessingSecurityScopedResource() } }
+        
+        let fileSize = (try? file.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+        // Limit to 35MB to prevent memory jetsam on pasteboard
+        if fileSize > 0 && fileSize < 35_000_000,
+           let data = try? Data(contentsOf: file.url, options: .mappedIfSafe) {
+            UIPasteboard.general.setData(data, forPasteboardType: "com.antigravity.InksyncPro.sharedFileData")
+            if let nameData = file.name.data(using: .utf8) {
+                UIPasteboard.general.setData(nameData, forPasteboardType: "com.antigravity.InksyncPro.sharedFileName")
+            }
+            UIPasteboard.general.setValue(file.name, forPasteboardType: "com.antigravity.InksyncPro.sharedFileName")
+            print("[ShareExt] Staged '\(file.name)' (\(fileSize) bytes) to shared pasteboard bridge")
+        }
+    }
+
     nonisolated static func safeCopyOrWrite(from sourceURL: URL, to destURL: URL) -> Bool {
+        if sourceURL.path == destURL.path && FileManager.default.fileExists(atPath: destURL.path) {
+            return true
+        }
+
         let accessing = sourceURL.startAccessingSecurityScopedResource()
         defer { if accessing { sourceURL.stopAccessingSecurityScopedResource() } }
 
@@ -979,7 +964,20 @@ struct ShareExtensionView: View {
             try FileManager.default.copyItem(at: sourceURL, to: destURL)
             return true
         } catch {
-            if let data = try? Data(contentsOf: sourceURL, options: .alwaysMapped) {
+            // Priority 2: Coordinated read via NSFileCoordinator
+            var didCopy = false
+            let coordinator = NSFileCoordinator()
+            var coordError: NSError?
+            coordinator.coordinate(readingItemAt: sourceURL, options: .withoutChanges, error: &coordError) { coordinatedURL in
+                let innerAccess = coordinatedURL.startAccessingSecurityScopedResource()
+                defer { if innerAccess { coordinatedURL.stopAccessingSecurityScopedResource() } }
+                if (try? FileManager.default.copyItem(at: coordinatedURL, to: destURL)) != nil {
+                    didCopy = true
+                }
+            }
+            if didCopy { return true }
+
+            if let data = try? Data(contentsOf: sourceURL, options: .mappedIfSafe) {
                 if (try? data.write(to: destURL, options: .atomic)) != nil {
                     return true
                 }

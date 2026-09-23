@@ -399,10 +399,10 @@ struct ContentView: View {
         Logger.shared.log("App returned to foreground — coordinating shared import", category: "Import")
         Task { @MainActor in
             if SharedImportCoordinator.shared.hasPendingShareImport() {
-                SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.8)
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                SharedImportCoordinator.shared.coordinateImport(retryCount: 4, retryDelaySeconds: 0.6)
+            } else {
+                conversionManager.scanLibrary()
             }
-            conversionManager.scanLibrary()
         }
     }
 

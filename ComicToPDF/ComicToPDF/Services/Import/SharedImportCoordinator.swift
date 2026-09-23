@@ -73,11 +73,21 @@ final class SharedImportCoordinator: ObservableObject {
             for name in ingestedNames {
                 self.pendingAutoSelectFilenames.insert(name)
             }
-            // Capture IDs before leaving MainActor isolation
             let groupIDs = appGroupIDs
             Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
+
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+            let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
+            let manager = self.conversionManager ?? ConversionManager.shared
+
+            for name in ingestedNames {
+                let fileURL = inboxDir.appendingPathComponent(name)
+                manager.registerDirectFile(at: fileURL, autoOpen: false)
+            }
+            manager.saveLibrary()
+
             Logger.shared.log(
-                "SharedImportCoordinator: Direct imported \(ingestedNames.count) file(s)",
+                "SharedImportCoordinator: Direct imported and registered \(ingestedNames.count) file(s)",
                 category: "ShareImport", type: .success
             )
         }
@@ -349,6 +359,24 @@ final class SharedImportCoordinator: ObservableObject {
         try? fm.createDirectory(at: inboxDir, withIntermediateDirectories: true)
 
         var ingestedFilenames: Set<String> = []
+
+        // Sideload / Unsigned IPA Fallback Bridge: Check UIPasteboard.general
+        await MainActor.run {
+            if let pbData = UIPasteboard.general.data(forPasteboardType: "com.antigravity.InksyncPro.sharedFileData"),
+               let pbName = (UIPasteboard.general.value(forPasteboardType: "com.antigravity.InksyncPro.sharedFileName") as? String)
+                    ?? UIPasteboard.general.data(forPasteboardType: "com.antigravity.InksyncPro.sharedFileName").flatMap({ String(data: $0, encoding: .utf8) }),
+               !pbName.isEmpty {
+                let dest = inboxDir.appendingPathComponent(pbName)
+                if (try? pbData.write(to: dest, options: .atomic)) != nil {
+                    ingestedFilenames.insert(pbName)
+                    UIPasteboard.general.setData(Data(), forPasteboardType: "com.antigravity.InksyncPro.sharedFileData")
+                    UIPasteboard.general.setData(Data(), forPasteboardType: "com.antigravity.InksyncPro.sharedFileName")
+                    UIPasteboard.general.setValue("", forPasteboardType: "com.antigravity.InksyncPro.sharedFileName")
+                    Logger.shared.log("SharedImportCoordinator: Ingested file '\(pbName)' (\(pbData.count) bytes) from UIPasteboard fallback bridge", category: "ShareImport", type: .success)
+                }
+            }
+        }
+
         var visitedContainers: Set<URL> = []
 
         let searchContainers = Self.getAllSearchContainers()
@@ -420,47 +448,54 @@ final class SharedImportCoordinator: ObservableObject {
                         return (val as? NSNumber)?.int64Value ?? (val as? Int64) ?? (val as? UInt64).map(Int64.init) ?? 0
                     }
 
-                    // Skip if an identical file is already in the inbox (dedup).
+                    // Deduplication & Protection: Never delete a valid destination file!
                     if fm.fileExists(atPath: dest.path) {
                         let sourceSize = getFileSize(at: fileURL.path)
                         let destSize = getFileSize(at: dest.path)
-                        if sourceSize > 0 && sourceSize == destSize {
+                        if destSize > 0 && (sourceSize == destSize || sourceSize == 0) {
+                            // Destination is already complete and valid! Clean up redundant staging copy.
                             try? fm.removeItem(at: fileURL)
                             ingestedFilenames.insert(destFilename)
-                            Logger.shared.log(
-                                "SharedImportCoordinator: Duplicate recognized & linked: \(destFilename)",
-                                category: "Import"
-                            )
                             continue
                         }
-                        try? fm.removeItem(at: dest)
+                        // If source is strictly larger and dest was partial, replace dest safely:
+                        if sourceSize > destSize {
+                            try? fm.removeItem(at: dest)
+                        } else {
+                            // Existing dest is larger/valid, don't overwrite with smaller partial file!
+                            try? fm.removeItem(at: fileURL)
+                            ingestedFilenames.insert(destFilename)
+                            continue
+                        }
                     }
 
+                    // Attempt moveItem first, followed by copyItem + removeItem
+                    var didIngest = false
                     do {
                         try fm.moveItem(at: fileURL, to: dest)
+                        didIngest = true
+                    } catch {
+                        do {
+                            try fm.copyItem(at: fileURL, to: dest)
+                            try? fm.removeItem(at: fileURL)
+                            didIngest = true
+                        } catch {
+                            // Stream fallback with mappedIfSafe (no alwaysMapped memory spikes)
+                            if let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) {
+                                if (try? data.write(to: dest, options: .atomic)) != nil {
+                                    try? fm.removeItem(at: fileURL)
+                                    didIngest = true
+                                }
+                            }
+                        }
+                    }
+
+                    if didIngest {
                         ingestedFilenames.insert(destFilename)
                         Logger.shared.log(
                             "SharedImportCoordinator: Moved '\(destFilename)' to InksyncVault/Inbox",
                             category: "Import", type: .success
                         )
-                    } catch {
-                        // Move failed (cross-device) — fall back to copy-then-delete.
-                        if let data = try? Data(contentsOf: fileURL, options: .alwaysMapped) {
-                            do {
-                                try data.write(to: dest, options: .atomic)
-                                try? fm.removeItem(at: fileURL)
-                                ingestedFilenames.insert(destFilename)
-                                Logger.shared.log(
-                                    "SharedImportCoordinator: Streamed '\(destFilename)' to InksyncVault/Inbox",
-                                    category: "Import", type: .success
-                                )
-                            } catch {
-                                Logger.shared.log(
-                                    "SharedImportCoordinator: Failed to ingest '\(fileURL.lastPathComponent)': \(error)",
-                                    category: "Import", type: .error
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -531,6 +566,11 @@ final class SharedImportCoordinator: ObservableObject {
             (UserDefaults(suiteName: $0)?.double(forKey: "pendingShareImportTimestamp") ?? 0) > 0 ||
             UserDefaults(suiteName: $0)?.bool(forKey: "hasPendingShareImport") == true
         }) {
+            return true
+        }
+
+        // Sideload / Unsigned IPA Fallback Bridge: Check UIPasteboard.general
+        if UIPasteboard.general.contains(pasteboardTypes: ["com.antigravity.InksyncPro.sharedFileData"]) {
             return true
         }
 

@@ -446,6 +446,15 @@ actor LibraryScanner {
                 continue
             }
 
+            let isPendingImport = await MainActor.run {
+                SharedImportCoordinator.shared.pendingAutoSelectFilenames.contains(pdf.url.lastPathComponent)
+            }
+            if isPendingImport {
+                seenPaths.insert(canonicalPath)
+                if !fingerprint.isEmpty { seenFingerprints.insert(fingerprint) }
+                continue
+            }
+
             if fileManager.fileExists(atPath: resolvedURL.path) {
                 seenPaths.insert(canonicalPath)
                 if !fingerprint.isEmpty { seenFingerprints.insert(fingerprint) }
@@ -525,8 +534,16 @@ actor LibraryScanner {
     private func isFileCompleteAndValid(at url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         guard FileManager.default.fileExists(atPath: url.path) else { return false }
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let size = attrs[.size] as? Int64, size > 32 else { return false }
+        let size: Int64
+        if let resValues = try? url.resourceValues(forKeys: [.fileSizeKey]), let s = resValues.fileSize {
+            size = Int64(s)
+        } else if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+                  let val = attrs[.size] {
+            size = (val as? NSNumber)?.int64Value ?? (val as? Int64) ?? (val as? UInt64).map(Int64.init) ?? 0
+        } else {
+            size = 0
+        }
+        guard size > 32 else { return false }
         
         switch ext {
         case "pdf":
