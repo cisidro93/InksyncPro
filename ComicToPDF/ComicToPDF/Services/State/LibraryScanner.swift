@@ -244,10 +244,28 @@ actor LibraryScanner {
                             if !metadata.tags.contains(tag) { metadata.tags.append(tag) }
                         }
                     }
+                } else if ext == "epub" {
+                    let accessing = fileURL.startAccessingSecurityScopedResource()
+                    if let parsedInfo = await EBookParser.shared.parse(epub: fileURL) {
+                        if !parsedInfo.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            metadata.title = parsedInfo.title
+                        }
+                        if !parsedInfo.author.isEmpty { metadata.writer = parsedInfo.author }
+                        if !parsedInfo.publisher.isEmpty { metadata.publisher = parsedInfo.publisher }
+                        if !parsedInfo.description.isEmpty { metadata.summary = parsedInfo.description }
+                        if !metadata.tags.contains("EPUB Book") { metadata.tags.append("EPUB Book") }
+                        if inferredContentType == .book {
+                            metadata.series = nil
+                        }
+                    }
+                    if accessing { fileURL.stopAccessingSecurityScopedResource() }
                 }
 
                 let cleanTitle = fileURL.deletingPathExtension().lastPathComponent
                 var displayName = cleanTitle.isEmpty ? fileURL.lastPathComponent : cleanTitle
+                if ext == "epub" && !metadata.title.isEmpty {
+                    displayName = metadata.title
+                }
                 if fileURL.pathExtension.lowercased() == "pdf" {
                     if let recoveredTitle = await MainActor.run(body: { PDFTitleRecoverer.recoverPDFTitle(from: fileURL) }) {
                         displayName = recoveredTitle

@@ -24,9 +24,16 @@ actor LibraryModelActor {
         }
     }
 
+    private var isHealing: Bool = false
+
     /// Runs all slow file-check, re-anchoring, self-healing, cascade-delete, and other cleaning logic.
     /// Returns true if any database modifications were saved.
-    func performSelfHealingAndCleanup() async throws -> Bool {
+    /// Synchronous and atomic within the actor to guarantee zero re-entrancy and zero model invalidation.
+    func performSelfHealingAndCleanup() throws -> Bool {
+        guard !isHealing else { return false }
+        isHealing = true
+        defer { isHealing = false }
+
         let descriptor = FetchDescriptor<SDConvertedPDF>()
         let documents = try modelContext.fetch(descriptor)
         
@@ -217,37 +224,10 @@ actor LibraryModelActor {
                 Logger.shared.log("LibraryRepository: healed content type for '\(doc.name)' from \(currentType) to \(inferredType)", category: "Library", type: .success)
             }
 
-            // 3. EPUB metadata backfilling:
-            if doc.url.pathExtension.lowercased() == "epub" {
-                if doc.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || doc.metadata.title == doc.name || !doc.metadata.tags.contains("EPUB Book") {
-                    let accessing = doc.url.startAccessingSecurityScopedResource()
-                    if let epubMeta = await EBookParser.shared.parse(epub: doc.url) {
-                        if !epubMeta.title.isEmpty {
-                            doc.metadata.title = epubMeta.title
-                        }
-                        if !epubMeta.author.isEmpty {
-                            doc.metadata.writer = epubMeta.author
-                        }
-                        if !epubMeta.publisher.isEmpty {
-                            doc.metadata.publisher = epubMeta.publisher
-                        }
-                        if !epubMeta.description.isEmpty {
-                            doc.metadata.summary = epubMeta.description
-                        }
-                        if !doc.metadata.tags.contains("EPUB Book") {
-                            doc.metadata.tags.append("EPUB Book")
-                        }
-                        didUpdate = true
-                        Logger.shared.log("LibraryRepository: backfilled EPUB metadata for '\(doc.name)'", category: "Library", type: .success)
-                    }
-                    if accessing { doc.url.stopAccessingSecurityScopedResource() }
-                }
-
-                // If it's a book (novel) and grouped into a series, clear it to treat it as a single book
-                if doc.contentType == .book && doc.metadata.series != nil {
-                    doc.metadata.series = nil
-                    didUpdate = true
-                }
+            // 3. Clear series for novel books
+            if doc.contentType == .book && doc.metadata.series != nil {
+                doc.metadata.series = nil
+                didUpdate = true
             }
         }
         
@@ -435,45 +415,179 @@ actor LibraryModelActor {
     func performSmartGrouping() throws -> Int {
         return MigrationService.performSmartGroupingInternal(context: modelContext)
     }
+
+    // MARK: - Decoupled EPUB Metadata Backfill
+
+    struct EPUBMetadataCandidate: Sendable {
+        let id: UUID
+        let url: URL
+        let name: String
+    }
+
+    struct EPUBMetadataUpdate: Sendable {
+        let id: UUID
+        let title: String
+        let author: String
+        let publisher: String
+        let summary: String
+        let isBook: Bool
+    }
+
+    /// Queries EPUB files that are genuinely missing metadata tags or titles.
+    /// Synchronous and fast — returns plain value types so no managed objects are held across suspension points.
+    func fetchEPUBsNeedingMetadata() throws -> [EPUBMetadataCandidate] {
+        let descriptor = FetchDescriptor<SDConvertedPDF>()
+        let documents = try modelContext.fetch(descriptor)
+        return documents.compactMap { doc in
+            guard doc.url.pathExtension.lowercased() == "epub" else { return nil }
+            let titleEmpty = doc.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let missingTag = !doc.metadata.tags.contains("EPUB Book")
+            if titleEmpty || missingTag {
+                return EPUBMetadataCandidate(id: doc.id, url: doc.url, name: doc.name)
+            }
+            return nil
+        }
+    }
+
+    /// Applies batch-parsed EPUB metadata updates in a single, synchronous transaction.
+    func applyEPUBMetadataUpdates(_ updates: [EPUBMetadataUpdate]) throws -> Bool {
+        guard !updates.isEmpty else { return false }
+        let updateDict = Dictionary(uniqueKeysWithValues: updates.map { ($0.id, $0) })
+        let targetIDs = Set(updates.map { $0.id })
+
+        let descriptor = FetchDescriptor<SDConvertedPDF>()
+        let documents = try modelContext.fetch(descriptor)
+        var didUpdate = false
+
+        for doc in documents where targetIDs.contains(doc.id) {
+            guard let update = updateDict[doc.id] else { continue }
+            if !update.title.isEmpty { doc.metadata.title = update.title }
+            if !update.author.isEmpty { doc.metadata.writer = update.author }
+            if !update.publisher.isEmpty { doc.metadata.publisher = update.publisher }
+            if !update.summary.isEmpty { doc.metadata.summary = update.summary }
+            if !doc.metadata.tags.contains("EPUB Book") {
+                doc.metadata.tags.append("EPUB Book")
+            }
+            if update.isBook && doc.metadata.series != nil {
+                doc.metadata.series = nil
+            }
+            didUpdate = true
+            Logger.shared.log("LibraryRepository: backfilled EPUB metadata for '\(doc.name)'", category: "Library", type: .success)
+        }
+
+        if didUpdate {
+            try modelContext.save()
+        }
+        return didUpdate
+    }
 }
 
 /// The main application coordinator for library database management.
-final class LibraryRepository: Sendable {
+final class LibraryRepository: @unchecked Sendable {
     static let shared = LibraryRepository(container: InksyncProApp.sharedModelContainer)
-    
+
     private let modelContainer: ModelContainer
     private let actor: LibraryModelActor
-    
+    private let lock = NSLock()
+    private var isSelfHealingInProgress = false
+
     init(container: ModelContainer) {
         self.modelContainer = container
         self.actor = LibraryModelActor(modelContainer: container)
     }
-    
+
     /// Asynchronously fetches all library items and collections from SwiftData background context using fast loading.
     func loadLibrary() async throws -> ([ConvertedPDF], [PDFCollection]) {
         let pdfs = try await actor.fetchDocumentsFast()
         let cols = try await actor.fetchAllCollections()
-        Task.detached(priority: .utility) { [weak self] in
-            _ = try? await self?.actor.performSelfHealingAndCleanup()
+
+        lock.lock()
+        let shouldStart = !isSelfHealingInProgress
+        if shouldStart {
+            isSelfHealingInProgress = true
         }
+        lock.unlock()
+
+        if shouldStart {
+            Task.detached(priority: .utility) { [weak self] in
+                defer {
+                    self?.lock.lock()
+                    self?.isSelfHealingInProgress = false
+                    self?.lock.unlock()
+                }
+                guard let self else { return }
+                _ = try? await self.actor.performSelfHealingAndCleanup()
+                await self.backfillEPUBMetadataIfNeeded()
+            }
+        }
+
         return (pdfs, cols)
     }
-    
+
+    /// Safely extracts EPUB metadata in the background outside the database actor,
+    /// then commits updates in an atomic batch.
+    func backfillEPUBMetadataIfNeeded() async {
+        do {
+            let candidates = try await actor.fetchEPUBsNeedingMetadata()
+            guard !candidates.isEmpty else { return }
+
+            var updates: [LibraryModelActor.EPUBMetadataUpdate] = []
+            for candidate in candidates {
+                let accessing = candidate.url.startAccessingSecurityScopedResource()
+                let epubMeta = await EBookParser.shared.parse(epub: candidate.url)
+                if accessing { candidate.url.stopAccessingSecurityScopedResource() }
+
+                if let epub = epubMeta {
+                    updates.append(LibraryModelActor.EPUBMetadataUpdate(
+                        id: candidate.id,
+                        title: epub.title,
+                        author: epub.author,
+                        publisher: epub.publisher,
+                        summary: epub.description,
+                        isBook: true
+                    ))
+                }
+            }
+
+            if !updates.isEmpty {
+                _ = try await actor.applyEPUBMetadataUpdates(updates)
+            }
+        } catch {
+            Logger.shared.log("LibraryRepository: EPUB metadata backfill encountered error: \(error.localizedDescription)", category: "Library", type: .warning)
+        }
+    }
+
     /// Runs all slow file-check, re-anchoring, self-healing, cascade-delete, and other cleaning logic in the background.
     func performSelfHealingAndCleanup() async throws -> Bool {
-        try await actor.performSelfHealingAndCleanup()
+        lock.lock()
+        let shouldStart = !isSelfHealingInProgress
+        if shouldStart {
+            isSelfHealingInProgress = true
+        }
+        lock.unlock()
+
+        guard shouldStart else { return false }
+        defer {
+            lock.lock()
+            isSelfHealingInProgress = false
+            lock.unlock()
+        }
+
+        let didHeal = try await actor.performSelfHealingAndCleanup()
+        await backfillEPUBMetadataIfNeeded()
+        return didHeal
     }
-    
+
     /// Runs direct background batch insertion for newly imported items.
     func batchInsert(newPDFs: [ConvertedPDF]) async throws {
         try await actor.batchInsertPDFs(newPDFs: newPDFs)
     }
-    
+
     /// Synchronizes both collections and files on a background model context.
     func sync(pdfs: [ConvertedPDF], collections: [PDFCollection]) async throws {
         try await actor.syncToSwiftData(pdfs: pdfs, collections: collections)
     }
-    
+
     /// Runs smart grouping on the thread-isolated background actor context.
     func performSmartGrouping() async throws -> Int {
         try await actor.performSmartGrouping()
