@@ -176,3 +176,49 @@ public struct PDFTierGuideConfiguration: Codable, Equatable, Sendable {
         flowOrder: .columnFirst
     )
 }
+
+// MARK: - Boox Bridge Synchronization
+
+extension PDFTierGuideConfiguration {
+    public func asBooxConfig() -> BooxSectionFlowConfig {
+        let preset: BooxGridPreset
+        switch (columnCount, tiersPerColumn) {
+        case (1, 1): preset = .oneByOne
+        case (1, 2): preset = .oneByTwo
+        case (1, 3): preset = .oneByThree
+        case (2, 1): preset = .twoByOne
+        case (2, 2): preset = .twoByTwo
+        case (2, 3): preset = .twoByThree
+        case (3, 2): preset = .threeByTwo
+        case (3, 3): preset = .threeByThree
+        default:
+            preset = columnCount == 1 ? .oneByThree : (columnCount == 3 ? .threeByThree : .twoByThree)
+        }
+
+        let booxFlow: BooxFlowOrder
+        switch flowOrder {
+        case .columnFirst: booxFlow = .nFlow
+        case .rowFirst: booxFlow = .zFlow
+        case .mangaRTL: booxFlow = .reverseNFlow
+        }
+
+        let hSplits: [CGFloat] = tiersPerColumn == 3 ? [0.33, 0.66] : [0.50]
+
+        return BooxSectionFlowConfig(
+            gridPreset: preset,
+            flowOrder: booxFlow,
+            isSpreadMode: false,
+            verticalSplitRatio: columnSplitRatio,
+            horizontalSplitRatios: hSplits,
+            topMarginTrim: topMarginTrim,
+            bottomMarginTrim: bottomMarginTrim,
+            leftMarginTrim: leftMarginTrim,
+            rightMarginTrim: rightMarginTrim,
+            autoCropAfterPagination: false,
+            connectionRedundancy: verticalOverlap > 0.01,
+            redundancyRatio: verticalOverlap,
+            customBlockOverrides: [:]
+        )
+    }
+}
+

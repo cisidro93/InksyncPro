@@ -476,6 +476,7 @@ struct PDFSmartTiersQuickAdjustHUD: View {
         Button {
             HapticEngine.medium()
             prefs.pdfTierConfiguration = config
+            prefs.booxSectionFlowConfig = config.asBooxConfig()
             onApplyConfiguration(config, selectedTierIndex)
             isPresented = false
         } label: {

@@ -1315,9 +1315,22 @@ public struct BooxSectionFlowWorkspace: View {
                     let viewW = viewportGeo.size.width
                     let viewH = viewportGeo.size.height
                     let isLandscape = viewW > viewH
+                    let insets = viewportGeo.safeAreaInsets
+                    let isPhone = UIDevice.current.userInterfaceIdiom == .phone
+
+                    let leftSafeArea = insets.leading
+                    let rightSafeArea = insets.trailing
+                    let topSafeArea = insets.top
+                    let bottomSafeArea = insets.bottom
+
+                    let sideMargin: CGFloat = isPhone ? 16.0 : 28.0
+                    let safeW = max(100.0, viewW - leftSafeArea - rightSafeArea - sideMargin)
+                    let topReserved: CGFloat = topSafeArea + (isPhone ? (isLandscape ? 16.0 : 24.0) : 28.0)
+                    let bottomReserved: CGFloat = bottomSafeArea + (isPhone ? (isLandscape ? 38.0 : 46.0) : 52.0)
+                    let safeH = max(100.0, viewH - topReserved - bottomReserved)
 
                     ZStack {
-                        Color.black.ignoresSafeArea()
+                        Color.inkBackground.ignoresSafeArea()
 
                         if let thumb = renderedThumbnail, previewBlockIndex < activeBlocks.count {
                             let block = activeBlocks[previewBlockIndex]
@@ -1333,30 +1346,32 @@ public struct BooxSectionFlowWorkspace: View {
                                 height: max(1.0, min(cgH, targetNorm.height * cgH))
                             )
 
-                            // Golden Rule Column Fit Invariant:
-                            // Fits the column/tier to the display area with comfortable reading margins:
-                            let safeW = max(100.0, viewW - (isLandscape ? 36.0 : 20.0))
-                            let topReserved: CGFloat = isLandscape ? 20.0 : 36.0
-                            let bottomReserved: CGFloat = isLandscape ? 36.0 : 48.0
-                            let safeH = max(100.0, viewH - topReserved - bottomReserved)
+                            // Uniform Page Zooming Invariant across all tiers:
+                            // Fit scale is anchored to the maximum tier dimensions across all blocks on the page,
+                            // ensuring that every tier is displayed with the exact same optical magnification.
+                            let allTargetNorms = activeBlocks.map { config.connectionRedundancy ? $0.redundantRect : $0.normalizedRect }
+                            let maxCropW = max(20.0, (allTargetNorms.map(\.width).max() ?? targetNorm.width) * cgW)
+                            let maxCropH = max(20.0, (allTargetNorms.map(\.height).max() ?? targetNorm.height) * cgH)
 
-                            let scaleForW = safeW / cropBox.width
-                            let scaleForH = safeH / cropBox.height
+                            let uniformScaleForW = safeW / maxCropW
+                            let uniformScaleForH = safeH / maxCropH
 
                             // In landscape: clamp to fit height so the entire tier (including bottom lines) fits with zero cutoff.
                             // In portrait: strict column-fit edge-to-edge readability with zero horizontal pan.
-                            let fitScale: CGFloat = isLandscape ? min(scaleForH, scaleForW) : min(scaleForW, scaleForH * 1.05)
+                            let fitScale: CGFloat = isLandscape ? min(uniformScaleForH, uniformScaleForW) : min(uniformScaleForW, uniformScaleForH * 1.05)
 
                             let renderedW = cropBox.width * fitScale
                             let renderedH = cropBox.height * fitScale
 
-                            // Desired X position: centered horizontally
-                            let posX = viewW / 2.0
+                            // Desired X position matching the actual reader:
+                            let posX: CGFloat
+                            if renderedW < safeW {
+                                posX = leftSafeArea + (viewW - leftSafeArea - rightSafeArea) / 2.0
+                            } else {
+                                posX = leftSafeArea + (isPhone ? 8.0 : 14.0) + (renderedW / 2.0)
+                            }
 
-                            // Desired Y position:
-                            // Top tier: anchor top below topReserved
-                            // Bottom tier: anchor bottom safely above bottomReserved
-                            // Middle tier: center vertically
+                            // Desired Y position matching the actual reader:
                             let totalRows = config.gridPreset.rowCount
                             let rowIdx = block.rowIndex
 

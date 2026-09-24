@@ -38,7 +38,12 @@ public final class ComicPanelDetectorEngine: Sendable {
     // MARK: - Vision Rectangle Detection
 
     private func detectVisionRectangles(cgImage: CGImage) async -> [CGRect] {
-        await withCheckedContinuation { continuation in
+        // Query personalized thresholds and learned framing padding from AdaptiveLearningManager
+        let currentConfidence = await MainActor.run { AdaptiveLearningManager.shared.currentBaseConfidence }
+        let currentMinSize = await MainActor.run { AdaptiveLearningManager.shared.currentMinimumSize }
+        let padding = await MainActor.run { AdaptiveLearningManager.shared.preferredMarginPadding }
+
+        return await withCheckedContinuation { continuation in
             let request = VNDetectRectanglesRequest { request, error in
                 guard error == nil, let observations = request.results as? [VNRectangleObservation], !observations.isEmpty else {
                     continuation.resume(returning: [])
@@ -55,14 +60,21 @@ public final class ComicPanelDetectorEngine: Sendable {
                     let normalizedH = obs.boundingBox.size.height
 
                     // Filter out microscopic frames or full-bleed page borders
-                    guard normalizedW >= 0.15, normalizedH >= 0.10,
+                    guard normalizedW >= CGFloat(currentMinSize * 0.8), normalizedH >= CGFloat(currentMinSize * 0.6),
                           !(normalizedW > 0.97 && normalizedH > 0.97) else { continue }
 
+                    // Apply personalized learned framing margins
+                    let padX = normalizedW * CGFloat(padding)
+                    let padY = normalizedH * CGFloat(padding)
+
+                    let clampedX = max(0.0, min(1.0, normalizedX - padX))
+                    let clampedY = max(0.0, min(1.0, normalizedY - padY))
+
                     let rect = CGRect(
-                        x: max(0.0, min(1.0, normalizedX)),
-                        y: max(0.0, min(1.0, normalizedY)),
-                        width: min(1.0, normalizedW),
-                        height: min(1.0, normalizedH)
+                        x: clampedX,
+                        y: clampedY,
+                        width: min(1.0 - clampedX, normalizedW + (padX * 2)),
+                        height: min(1.0 - clampedY, normalizedH + (padY * 2))
                     )
                     rects.append(rect)
                 }
@@ -74,8 +86,8 @@ public final class ComicPanelDetectorEngine: Sendable {
 
             request.minimumAspectRatio = 0.2
             request.maximumAspectRatio = 5.0
-            request.minimumSize = 0.12
-            request.minimumConfidence = 0.65
+            request.minimumSize = Float(min(0.20, max(0.04, currentMinSize)))
+            request.minimumConfidence = Float(min(0.85, max(0.25, currentConfidence)))
             request.quadratureTolerance = 15.0
             request.maximumObservations = 24
 

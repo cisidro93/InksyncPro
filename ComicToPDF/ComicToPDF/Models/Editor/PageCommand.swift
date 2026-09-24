@@ -27,16 +27,15 @@ enum PageCommand {
             let size = CGSize(width: rect.width, height: rect.height)
             Task { @MainActor in AdaptiveLearningManager.shared.recordUserDeletedPanel(size: size) }
 
-        case .movePanel(let index, _, let newRect):
+        case .movePanel(let index, let oldRect, let newRect):
             guard index >= 0 && index < model.panels.count else { return }
             model.panels[index] = newRect
+            Task { @MainActor in AdaptiveLearningManager.shared.recordUserAdjustedPanel(oldRect: oldRect, newRect: newRect) }
 
         case .resizePanel(let index, let oldRect, let newRect):
             guard index >= 0 && index < model.panels.count else { return }
             model.panels[index] = newRect
-            let oldSize = CGSize(width: oldRect.width, height: oldRect.height)
-            let newSize = CGSize(width: newRect.width, height: newRect.height)
-            Task { @MainActor in AdaptiveLearningManager.shared.recordUserResizedPanel(oldSize: oldSize, newSize: newSize) }
+            Task { @MainActor in AdaptiveLearningManager.shared.recordUserAdjustedPanel(oldRect: oldRect, newRect: newRect) }
 
         case .commitProposals(let proposals):
             model.panels.append(contentsOf: proposals)
@@ -76,16 +75,15 @@ enum PageCommand {
             let size = CGSize(width: rect.width, height: rect.height)
             Task { @MainActor in AdaptiveLearningManager.shared.recordUserAddedPanel(size: size) }
 
-        case .movePanel(let index, let oldRect, _):
+        case .movePanel(let index, let oldRect, let newRect):
             guard index >= 0 && index < model.panels.count else { return }
             model.panels[index] = oldRect
+            Task { @MainActor in AdaptiveLearningManager.shared.recordUserAdjustedPanel(oldRect: newRect, newRect: oldRect) }
 
         case .resizePanel(let index, let oldRect, let newRect):
             guard index >= 0 && index < model.panels.count else { return }
             model.panels[index] = oldRect
-            let oldSize = CGSize(width: oldRect.width, height: oldRect.height)
-            let newSize = CGSize(width: newRect.width, height: newRect.height)
-            Task { @MainActor in AdaptiveLearningManager.shared.recordUserResizedPanel(oldSize: newSize, newSize: oldSize) }
+            Task { @MainActor in AdaptiveLearningManager.shared.recordUserAdjustedPanel(oldRect: newRect, newRect: oldRect) }
 
         case .commitProposals(let proposals):
             // Undo commit = remove the added panels and put them back in proposals

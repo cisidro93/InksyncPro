@@ -26,68 +26,24 @@ public final class PDFSmartTierEngine {
         config: PDFTierGuideConfiguration,
         isMangaRTL: Bool = false
     ) -> [PDFTierQuadrant] {
-        let cropBox = page.bounds(for: .cropBox)
-        let leftTrim = max(0.0, min(0.25, config.leftMarginTrim))
-        let rightTrim = max(0.0, min(0.25, config.rightMarginTrim))
-        let topTrim = max(0.0, min(0.25, config.topMarginTrim))
-        let botTrim = max(0.0, min(0.25, config.bottomMarginTrim))
-        let effectiveRTL = isMangaRTL || config.flowOrder == .mangaRTL
-
-        let cacheKey = "\(pageIndex)_\(cropBox.width)_\(cropBox.height)_\(config.preset.rawValue)_\(config.columnCount)_\(config.tiersPerColumn)_\(config.columnSplitRatio)_\(config.verticalOverlap)_\(leftTrim)_\(rightTrim)_\(topTrim)_\(botTrim)_\(config.flowOrder.rawValue)_\(effectiveRTL)"
-
-        if let cached = quadrantCache[cacheKey] {
-            return cached
+        var booxConfig = config.asBooxConfig()
+        if isMangaRTL {
+            booxConfig.flowOrder = .reverseNFlow
         }
-
-        let activeW = max(0.2, 1.0 - (leftTrim + rightTrim))
-
-        let quadrants: [PDFTierQuadrant]
-        switch config.preset {
-        case .autoColumns:
-            quadrants = generateAutoColumnQuadrants(
-                page: page,
-                pageIndex: pageIndex,
-                cropBox: cropBox,
-                config: config,
-                isMangaRTL: effectiveRTL
-            )
-        case .singleColumn:
-            let col0 = CGRect(x: leftTrim, y: 0.0, width: activeW, height: 1.0)
-            quadrants = generateColumnQuadrants(
-                columns: [col0],
-                config: config,
-                isMangaRTL: effectiveRTL
-            )
-        case .twoColumn:
-            let split = max(0.2, min(0.8, config.columnSplitRatio))
-            let gutter: CGFloat = 0.02 * activeW
-            let col0W = max(0.05, (activeW * split) - (gutter / 2.0))
-            let col1X = leftTrim + (activeW * split) + (gutter / 2.0)
-            let col1W = max(0.05, (leftTrim + activeW) - col1X)
-            let col0 = CGRect(x: leftTrim, y: 0.0, width: col0W, height: 1.0)
-            let col1 = CGRect(x: col1X, y: 0.0, width: col1W, height: 1.0)
-            let cols = effectiveRTL ? [col1, col0] : [col0, col1]
-            quadrants = generateColumnQuadrants(
-                columns: cols,
-                config: config,
-                isMangaRTL: effectiveRTL
-            )
-        case .threeColumn:
-            let gutter: CGFloat = 0.02 * activeW
-            let colW = max(0.05, (activeW - (gutter * 2.0)) / 3.0)
-            let col0 = CGRect(x: leftTrim, y: 0.0, width: colW, height: 1.0)
-            let col1 = CGRect(x: leftTrim + colW + gutter, y: 0.0, width: colW, height: 1.0)
-            let col2 = CGRect(x: leftTrim + (colW + gutter) * 2.0, y: 0.0, width: colW, height: 1.0)
-            let cols = effectiveRTL ? [col2, col1, col0] : [col0, col1, col2]
-            quadrants = generateColumnQuadrants(
-                columns: cols,
-                config: config,
-                isMangaRTL: effectiveRTL
+        let blocks = BooxSectionFlowEngine.shared.generateBlocks(config: booxConfig, space: .pdf)
+        return blocks.map { b in
+            PDFTierQuadrant(
+                id: b.id,
+                columnIndex: b.columnIndex,
+                tierIndex: b.rowIndex,
+                totalColumns: booxConfig.gridPreset.columnCount,
+                totalTiersInColumn: booxConfig.gridPreset.rowCount,
+                stepOrder: b.stepOrder,
+                totalInPage: b.totalBlocks,
+                normalizedRect: booxConfig.connectionRedundancy ? b.redundantRect : b.normalizedRect,
+                label: b.label
             )
         }
-
-        quadrantCache[cacheKey] = quadrants
-        return quadrants
     }
 
     // MARK: - Column & Tier Subdivisions

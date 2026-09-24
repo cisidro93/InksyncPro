@@ -14,10 +14,12 @@ class AdaptiveLearningManager: ObservableObject {
     @AppStorage("ai_metric_deletedPanels") var deletedPanelsCount: Int = 0
     @AppStorage("ai_metric_addedPanels") var addedPanelsCount: Int = 0
     @AppStorage("ai_metric_resizedPanels") var resizedPanelsCount: Int = 0
+    @AppStorage("ai_metric_adjustedPanels") var adjustedPanelsCount: Int = 0
     
     // Core parameters we will mutate
     @AppStorage("ai_param_baseConfidence") var currentBaseConfidence: Double = 0.6 // Apple Vision Default
     @AppStorage("ai_param_minimumSize") var currentMinimumSize: Double = 0.1 // 10% of screen Default
+    @AppStorage("ai_param_marginPadding") var preferredMarginPadding: Double = 0.015 // 1.5% margin padding Default
     
     // MARK: - Event Hooks
     
@@ -58,6 +60,31 @@ class AdaptiveLearningManager: ObservableObject {
             Logger.shared.log("AI: Adjusted minimum size threshold downward to \(String(format: "%.3f", currentMinimumSize)) based on expanded panel.", category: "AI")
         }
     }
+
+    /// Records when a user fine-tunes or nudges a panel in either the reader or canvas editor.
+    /// Learns the user's preferred framing margins (tight vs roomy) and updates size tolerances.
+    func recordUserAdjustedPanel(oldRect: NormalizedRect, newRect: NormalizedRect) {
+        adjustedPanelsCount += 1
+        
+        let oldW = oldRect.width / 1000.0
+        let oldH = oldRect.height / 1000.0
+        let newW = newRect.width / 1000.0
+        let newH = newRect.height / 1000.0
+        
+        recordUserResizedPanel(oldSize: CGSize(width: oldW, height: oldH), newSize: CGSize(width: newW, height: newH))
+        
+        // Analyze margin expansion / contraction preference:
+        let areaRatio = (newW * newH) / max(0.001, (oldW * oldH))
+        if areaRatio > 1.05 {
+            // User prefers more breathing room around their panels
+            preferredMarginPadding = min(0.06, preferredMarginPadding + 0.002)
+            Logger.shared.log("AI Personalized Engine: Learned user preference for roomier panel framing (margin: \(String(format: "%.1f", preferredMarginPadding * 100))%)", category: "AI")
+        } else if areaRatio < 0.95 {
+            // User prefers tighter, more focused panel framing
+            preferredMarginPadding = max(0.002, preferredMarginPadding - 0.002)
+            Logger.shared.log("AI Personalized Engine: Learned user preference for tighter panel framing (margin: \(String(format: "%.1f", preferredMarginPadding * 100))%)", category: "AI")
+        }
+    }
     
     // MARK: - The AI Brain
     
@@ -85,24 +112,26 @@ class AdaptiveLearningManager: ObservableObject {
     func resetToFactorySettings() {
         currentBaseConfidence = 0.6
         currentMinimumSize = 0.1
+        preferredMarginPadding = 0.015
         resetEpoch()
-        Logger.shared.log("AI: Factory reset — confidence 0.60, minSize 10%", category: "AI", type: .warning)
+        Logger.shared.log("AI: Factory reset — confidence 0.60, minSize 10%, margin 1.5%", category: "AI", type: .warning)
     }
     
     private func resetEpoch() {
         deletedPanelsCount = 0
         addedPanelsCount = 0
         resizedPanelsCount = 0
+        adjustedPanelsCount = 0
     }
     
     // MARK: - Current State Access
     
-    var currentSettings: (minConfidence: Double, minSize: Double) {
-        return (minConfidence: currentBaseConfidence, minSize: currentMinimumSize)
+    var currentSettings: (minConfidence: Double, minSize: Double, marginPadding: Double) {
+        return (minConfidence: currentBaseConfidence, minSize: currentMinimumSize, marginPadding: preferredMarginPadding)
     }
     
     var diagnosticString: String {
-        return "Confidence: \(String(format: "%.2f", currentBaseConfidence)) | Min Size: \(String(format: "%.0f", currentMinimumSize * 100))%"
+        return "Confidence: \(String(format: "%.2f", currentBaseConfidence)) | Min Size: \(String(format: "%.0f", currentMinimumSize * 100))% | Margin: \(String(format: "%.1f", preferredMarginPadding * 100))%"
     }
     
     // MARK: - Import / Export File Methods
@@ -110,18 +139,22 @@ class AdaptiveLearningManager: ObservableObject {
     struct EngineStateDTO: Codable {
         let baseConfidence: Double
         let minimumSize: Double
+        let marginPadding: Double?
         let deletedPanels: Int
         let addedPanels: Int
         let resizedPanels: Int
+        let adjustedPanels: Int?
     }
     
     func exportState() -> Data? {
         let state = EngineStateDTO(
             baseConfidence: currentBaseConfidence,
             minimumSize: currentMinimumSize,
+            marginPadding: preferredMarginPadding,
             deletedPanels: deletedPanelsCount,
             addedPanels: addedPanelsCount,
-            resizedPanels: resizedPanelsCount
+            resizedPanels: resizedPanelsCount,
+            adjustedPanels: adjustedPanelsCount
         )
         return try? JSONEncoder().encode(state)
     }
@@ -136,18 +169,22 @@ class AdaptiveLearningManager: ObservableObject {
         
         let isIdentical = state.baseConfidence == self.currentBaseConfidence &&
                           state.minimumSize == self.currentMinimumSize &&
+                          (state.marginPadding ?? 0.015) == self.preferredMarginPadding &&
                           state.deletedPanels == self.deletedPanelsCount &&
                           state.addedPanels == self.addedPanelsCount &&
-                          state.resizedPanels == self.resizedPanelsCount
+                          state.resizedPanels == self.resizedPanelsCount &&
+                          (state.adjustedPanels ?? 0) == self.adjustedPanelsCount
                           
         if isIdentical { return .identical }
 
         currentBaseConfidence = state.baseConfidence
         currentMinimumSize = state.minimumSize
+        if let pad = state.marginPadding { preferredMarginPadding = pad }
         deletedPanelsCount = state.deletedPanels
         addedPanelsCount = state.addedPanels
         resizedPanelsCount = state.resizedPanels
-        Logger.shared.log("AI: Successfully imported Engine State. Conf:\(state.baseConfidence), MinSize:\(state.minimumSize)", category: "AI", type: .success)
+        if let adj = state.adjustedPanels { adjustedPanelsCount = adj }
+        Logger.shared.log("AI: Successfully imported Engine State. Conf:\(state.baseConfidence), MinSize:\(state.minimumSize), Margin:\(preferredMarginPadding)", category: "AI", type: .success)
         return .success
     }
 }

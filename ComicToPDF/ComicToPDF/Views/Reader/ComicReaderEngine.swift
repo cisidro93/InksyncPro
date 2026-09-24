@@ -3671,7 +3671,8 @@ struct ComicSpreadGuidedView: View {
         let activeImg = (activeStride.pageIndex == spread[0]) ? image0 : image1
 
         if let img = activeImg {
-            let metrics = calculateMetrics(for: size, image: img, panel: activeStride.panel, safeAreaInsets: safeArea)
+            let pagePanels = strides.filter { $0.pageIndex == activeStride.pageIndex }.map(\.panel)
+            let metrics = calculateMetrics(for: size, image: img, panel: activeStride.panel, allPagePanels: pagePanels, safeAreaInsets: safeArea)
 
             Image(uiImage: img)
                 .resizable()
@@ -3938,6 +3939,7 @@ struct ComicSpreadGuidedView: View {
         for proxy: CGSize,
         image: UIImage,
         panel: PanelExtractor.Panel,
+        allPagePanels: [PanelExtractor.Panel]? = nil,
         safeAreaInsets: EdgeInsets = EdgeInsets()
     ) -> ViewMetrics {
         guard proxy.width > 0, proxy.height > 0, proxy.width.isFinite, proxy.height.isFinite else {
@@ -3992,8 +3994,24 @@ struct ComicSpreadGuidedView: View {
             return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
         }
 
-        let scaleX = proxy.width / mappedW
-        let scaleY = proxy.height / mappedH
+        // Uniform Page Zooming Invariant across all strides/tiers:
+        // Use the maximum width and height across all panels on this page to determine base scale,
+        // preventing jarring scale jumps between adjacent panels/tiers on the same page.
+        let uniformNormW: CGFloat
+        let uniformNormH: CGFloat
+        if let allPanels = allPagePanels, allPanels.count > 1 {
+            uniformNormW = max(0.05, allPanels.map(\.boundingBox.width).max() ?? normW)
+            uniformNormH = max(0.05, allPanels.map(\.boundingBox.height).max() ?? normH)
+        } else {
+            uniformNormW = normW
+            uniformNormH = normH
+        }
+
+        let uniformMappedW = uniformNormW * renderW
+        let uniformMappedH = uniformNormH * renderH
+
+        let scaleX = proxy.width / max(1.0, uniformMappedW)
+        let scaleY = proxy.height / max(1.0, uniformMappedH)
         guard scaleX > 0, scaleY > 0, scaleX.isFinite, scaleY.isFinite else {
             return ViewMetrics(scale: 1.0, offsetX: 0, offsetY: 0)
         }

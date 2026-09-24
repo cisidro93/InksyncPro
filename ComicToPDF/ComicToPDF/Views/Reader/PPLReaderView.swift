@@ -56,6 +56,13 @@ struct PPLReaderView: View {
     @State private var guidedPanels: [NormalizedRect] = []
     @State private var hasInitializedGuidedReading = false
 
+    // ── Live In-Reader Panel Adjustment & Adaptive Learning ─────────────────
+    @State private var isAdjustingActivePanel = false
+    @State private var activePanelAdjustRect: NormalizedRect = .full
+    @State private var originalPanelAdjustRect: NormalizedRect = .full
+    @State private var activePanelDragHandle: PanelAdjustmentHandle? = nil
+    @State private var dragStartAdjustRect: NormalizedRect = .full
+
     // effectiveDoublePage: orientation-intelligence implementation.
     // Single source of truth is autoLandscapeDualPage — the reader automatically
     // uses dual-page in landscape and single-page in portrait.
@@ -184,7 +191,7 @@ struct PPLReaderView: View {
         }
         .overlay(alignment: .bottom) {
             // Guided Reading panel progress indicator
-            if isGuidedReadingActive && !guidedPanels.isEmpty {
+            if isGuidedReadingActive && !guidedPanels.isEmpty && !isAdjustingActivePanel {
                 HStack(spacing: 6) {
                     Image(systemName: "viewfinder")
                         .font(.system(size: 11, weight: .semibold))
@@ -195,6 +202,23 @@ struct PPLReaderView: View {
                     Text("· Double-tap to exit")
                         .font(.system(size: 10, weight: .regular))
                         .foregroundStyle(Color.secondary)
+
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.18))
+                        .frame(width: 1, height: 12)
+
+                    Button {
+                        HapticEngine.selection()
+                        startPanelAdjustment()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "slider.horizontal.2.square")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Adjust")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(.orange)
+                    }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
@@ -206,10 +230,17 @@ struct PPLReaderView: View {
                 .animation(.spring(response: 0.35, dampingFraction: 0.8), value: guidedPanelIndex)
             }
         }
+        .overlay {
+            if isAdjustingActivePanel {
+                livePanelAdjustmentOverlay(geo: geo)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .zIndex(600)
+            }
+        }
     }
 
     private var areNavigationGesturesEnabled: Bool {
-        !isDrawingMode
+        !isDrawingMode && !isAdjustingActivePanel
     }
 
     // MARK: - Current Content
@@ -864,6 +895,367 @@ struct PPLReaderView: View {
                     let lastIdx = guidedPanels.count - 1
                     guidedPanelIndex = lastIdx
                     withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[lastIdx] }
+                }
+            }
+    // MARK: - Live In-Reader Panel Adjustment & Adaptive Learning
+
+    private enum PanelAdjustmentHandle: Equatable {
+        case topLeft, topRight, bottomLeft, bottomRight
+        case topEdge, bottomEdge, leftEdge, rightEdge
+        case move
+    }
+
+    private func startPanelAdjustment() {
+        guard guidedPanelIndex < guidedPanels.count else { return }
+        originalPanelAdjustRect = guidedPanels[guidedPanelIndex]
+        activePanelAdjustRect = guidedPanels[guidedPanelIndex]
+        withAnimation(.easeInOut(duration: 0.25)) {
+            bufferManager.lockedRect = .full
+            isAdjustingActivePanel = true
+        }
+    }
+
+    private func commitPanelAdjustment() {
+        guard let pdfID = pdfID, guidedPanelIndex < guidedPanels.count else {
+            isAdjustingActivePanel = false
+            return
+        }
+
+        let oldRect = originalPanelAdjustRect
+        let newRect = activePanelAdjustRect
+
+        // 1. Commit new panel geometry to PageModelStore
+        var model = PageModelStore.shared.getPageModel(for: pdfID, pageIndex: currentPageIndex)
+        if model.panels.isEmpty {
+            model.panels = guidedPanels
+        }
+        if guidedPanelIndex < model.panels.count {
+            model.panels[guidedPanelIndex] = newRect
+        } else {
+            model.panels.append(newRect)
+        }
+        PageModelStore.shared.savePageModel(model, for: pdfID)
+
+        // 2. Feed correction to AdaptiveLearningManager for continuous personalization
+        AdaptiveLearningManager.shared.recordUserAdjustedPanel(oldRect: oldRect, newRect: newRect)
+
+        // 3. Update active guided reading sequence
+        guidedPanels[guidedPanelIndex] = newRect
+
+        // 4. Smoothly focus camera into the new panel
+        HapticEngine.notification(.success)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            bufferManager.lockedRect = newRect
+            isAdjustingActivePanel = false
+        }
+    }
+
+    private func cancelPanelAdjustment() {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            if guidedPanelIndex < guidedPanels.count {
+                bufferManager.lockedRect = guidedPanels[guidedPanelIndex]
+            }
+            isAdjustingActivePanel = false
+        }
+    }
+
+    private func nudgePanel(dx: Double, dy: Double) {
+        let newX = max(0.0, min(1000.0 - activePanelAdjustRect.width, activePanelAdjustRect.x + dx))
+        let newY = max(0.0, min(1000.0 - activePanelAdjustRect.height, activePanelAdjustRect.y + dy))
+        activePanelAdjustRect = NormalizedRect(
+            x: newX,
+            y: newY,
+            width: activePanelAdjustRect.width,
+            height: activePanelAdjustRect.height
+        )
+        HapticEngine.selection()
+    }
+
+    private func expandPanel(by delta: Double) {
+        let newW = max(50.0, min(1000.0, activePanelAdjustRect.width + (delta * 2.0)))
+        let newH = max(50.0, min(1000.0, activePanelAdjustRect.height + (delta * 2.0)))
+        let newX = max(0.0, min(1000.0 - newW, activePanelAdjustRect.x - delta))
+        let newY = max(0.0, min(1000.0 - newH, activePanelAdjustRect.y - delta))
+        activePanelAdjustRect = NormalizedRect(x: newX, y: newY, width: newW, height: newH)
+        HapticEngine.selection()
+    }
+
+    @ViewBuilder
+    private func panelDragHandle(
+        handle: PanelAdjustmentHandle,
+        position: CGPoint,
+        renderW: CGFloat,
+        renderH: CGFloat
+    ) -> some View {
+        let isCorner = handle == .topLeft || handle == .topRight || handle == .bottomLeft || handle == .bottomRight
+        let isMove = handle == .move
+
+        ZStack {
+            Color.clear
+                .frame(width: isMove ? 50 : 44, height: isMove ? 50 : 44)
+                .contentShape(Rectangle())
+
+            if isMove {
+                Circle()
+                    .fill(Color.orange.opacity(0.85))
+                    .frame(width: 22, height: 22)
+                    .overlay(
+                        Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                    )
+                    .shadow(color: .black.opacity(0.4), radius: 3)
+            } else if isCorner {
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 14, height: 14)
+                    .overlay(Circle().stroke(Color.orange, lineWidth: 2.5))
+                    .shadow(color: .black.opacity(0.4), radius: 3)
+            } else {
+                Capsule()
+                    .fill(Color.white)
+                    .frame(
+                        width: (handle == .topEdge || handle == .bottomEdge) ? 22 : 6,
+                        height: (handle == .topEdge || handle == .bottomEdge) ? 6 : 22
+                    )
+                    .overlay(Capsule().stroke(Color.orange, lineWidth: 1.5))
+                    .shadow(color: .black.opacity(0.4), radius: 3)
+            }
+        }
+        .position(position)
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { val in
+                    if activePanelDragHandle != handle {
+                        activePanelDragHandle = handle
+                        dragStartAdjustRect = activePanelAdjustRect
+                    }
+                    let dx1000 = (val.translation.width / renderW) * 1000.0
+                    let dy1000 = (val.translation.height / renderH) * 1000.0
+
+                    var rX = dragStartAdjustRect.x
+                    var rY = dragStartAdjustRect.y
+                    var rW = dragStartAdjustRect.width
+                    var rH = dragStartAdjustRect.height
+
+                    switch handle {
+                    case .topLeft:
+                        let maxDx = rW - 50.0
+                        let maxDy = rH - 50.0
+                        let cDx = min(dx1000, maxDx)
+                        let cDy = min(dy1000, maxDy)
+                        rX = max(0.0, dragStartAdjustRect.x + cDx)
+                        rY = max(0.0, dragStartAdjustRect.y + cDy)
+                        rW = max(50.0, dragStartAdjustRect.maxX - rX)
+                        rH = max(50.0, dragStartAdjustRect.maxY - rY)
+                    case .topRight:
+                        let maxDy = rH - 50.0
+                        let cDy = min(dy1000, maxDy)
+                        rY = max(0.0, dragStartAdjustRect.y + cDy)
+                        rH = max(50.0, dragStartAdjustRect.maxY - rY)
+                        rW = max(50.0, min(1000.0 - rX, dragStartAdjustRect.width + dx1000))
+                    case .bottomLeft:
+                        let maxDx = rW - 50.0
+                        let cDx = min(dx1000, maxDx)
+                        rX = max(0.0, dragStartAdjustRect.x + cDx)
+                        rW = max(50.0, dragStartAdjustRect.maxX - rX)
+                        rH = max(50.0, min(1000.0 - rY, dragStartAdjustRect.height + dy1000))
+                    case .bottomRight:
+                        rW = max(50.0, min(1000.0 - rX, dragStartAdjustRect.width + dx1000))
+                        rH = max(50.0, min(1000.0 - rY, dragStartAdjustRect.height + dy1000))
+                    case .topEdge:
+                        let maxDy = rH - 50.0
+                        let cDy = min(dy1000, maxDy)
+                        rY = max(0.0, dragStartAdjustRect.y + cDy)
+                        rH = max(50.0, dragStartAdjustRect.maxY - rY)
+                    case .bottomEdge:
+                        rH = max(50.0, min(1000.0 - rY, dragStartAdjustRect.height + dy1000))
+                    case .leftEdge:
+                        let maxDx = rW - 50.0
+                        let cDx = min(dx1000, maxDx)
+                        rX = max(0.0, dragStartAdjustRect.x + cDx)
+                        rW = max(50.0, dragStartAdjustRect.maxX - rX)
+                    case .rightEdge:
+                        rW = max(50.0, min(1000.0 - rX, dragStartAdjustRect.width + dx1000))
+                    case .move:
+                        rX = max(0.0, min(1000.0 - rW, dragStartAdjustRect.x + dx1000))
+                        rY = max(0.0, min(1000.0 - rH, dragStartAdjustRect.y + dy1000))
+                    }
+
+                    activePanelAdjustRect = NormalizedRect(x: rX, y: rY, width: rW, height: rH)
+                }
+                .onEnded { _ in
+                    activePanelDragHandle = nil
+                    HapticEngine.selection()
+                }
+        )
+    }
+
+    @ViewBuilder
+    private func livePanelAdjustmentOverlay(geo: GeometryProxy) -> some View {
+        let viewW = geo.size.width
+        let viewH = geo.size.height
+
+        if let cgImg = bufferManager.currentImage {
+            let imgW = CGFloat(cgImg.width)
+            let imgH = CGFloat(cgImg.height)
+            let imgRatio = imgW / max(1.0, imgH)
+            let containerRatio = viewW / max(1.0, viewH)
+
+            let renderW: CGFloat = (imgRatio > containerRatio) ? viewW : (viewH * imgRatio)
+            let renderH: CGFloat = (imgRatio > containerRatio) ? (viewW / imgRatio) : viewH
+            let originX = (viewW - renderW) / 2.0
+            let originY = (viewH - renderH) / 2.0
+
+            let pX = originX + (renderW * (activePanelAdjustRect.x / 1000.0))
+            let pY = originY + (renderH * (activePanelAdjustRect.y / 1000.0))
+            let pW = max(20.0, renderW * (activePanelAdjustRect.width / 1000.0))
+            let pH = max(20.0, renderH * (activePanelAdjustRect.height / 1000.0))
+
+            ZStack {
+                // Dimmed backdrop highlighting the active panel cutout
+                Color.black.opacity(0.45).ignoresSafeArea()
+                    .contentShape(Rectangle())
+
+                // Active Panel Focus Boundary
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.orange, style: StrokeStyle(lineWidth: 2.5, dash: [6, 4]))
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.12)))
+                    .frame(width: pW, height: pH)
+                    .position(x: pX + pW / 2.0, y: pY + pH / 2.0)
+                    .shadow(color: Color.orange.opacity(0.5), radius: 8)
+
+                // Move Center Handle
+                panelDragHandle(handle: .move, position: CGPoint(x: pX + pW / 2.0, y: pY + pH / 2.0), renderW: renderW, renderH: renderH)
+
+                // 4 Corner Handles
+                panelDragHandle(handle: .topLeft, position: CGPoint(x: pX, y: pY), renderW: renderW, renderH: renderH)
+                panelDragHandle(handle: .topRight, position: CGPoint(x: pX + pW, y: pY), renderW: renderW, renderH: renderH)
+                panelDragHandle(handle: .bottomLeft, position: CGPoint(x: pX, y: pY + pH), renderW: renderW, renderH: renderH)
+                panelDragHandle(handle: .bottomRight, position: CGPoint(x: pX + pW, y: pY + pH), renderW: renderW, renderH: renderH)
+
+                // 4 Edge Handles
+                panelDragHandle(handle: .topEdge, position: CGPoint(x: pX + pW / 2.0, y: pY), renderW: renderW, renderH: renderH)
+                panelDragHandle(handle: .bottomEdge, position: CGPoint(x: pX + pW / 2.0, y: pY + pH), renderW: renderW, renderH: renderH)
+                panelDragHandle(handle: .leftEdge, position: CGPoint(x: pX, y: pY + pH / 2.0), renderW: renderW, renderH: renderH)
+                panelDragHandle(handle: .rightEdge, position: CGPoint(x: pX + pW, y: pY + pH / 2.0), renderW: renderW, renderH: renderH)
+
+                // Top Floating Control Bar: Reset, Cancel, Save & Learn
+                VStack {
+                    HStack(spacing: 12) {
+                        Button {
+                            cancelPanelAdjustment()
+                        } label: {
+                            Text("Cancel")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
+
+                        Spacer()
+
+                        // Panel Dimensions Badge
+                        Text("W: \(Int(activePanelAdjustRect.width / 10))%  H: \(Int(activePanelAdjustRect.height / 10))%")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(Color.black.opacity(0.6)))
+
+                        Spacer()
+
+                        Button {
+                            commitPanelAdjustment()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "brain.head.profile")
+                                    .font(.system(size: 12, weight: .bold))
+                                Text("Save & Learn")
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(Color.orange, in: Capsule())
+                            .shadow(color: Color.orange.opacity(0.4), radius: 6, y: 2)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, max(geo.safeAreaInsets.top, 16.0))
+
+                    Spacer()
+
+                    // Bottom Floating Nudge & Scale Toolbar
+                    HStack(spacing: 10) {
+                        // Directional Nudges
+                        HStack(spacing: 4) {
+                            Button { nudgePanel(dx: -10, dy: 0) } label: {
+                                Image(systemName: "arrow.left")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .frame(width: 32, height: 32)
+                            }
+                            Button { nudgePanel(dx: 10, dy: 0) } label: {
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .frame(width: 32, height: 32)
+                            }
+                            Button { nudgePanel(dx: 0, dy: -10) } label: {
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .frame(width: 32, height: 32)
+                            }
+                            Button { nudgePanel(dx: 0, dy: 10) } label: {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .frame(width: 32, height: 32)
+                            }
+                        }
+                        .foregroundColor(.white)
+                        .background(Capsule().fill(Color.inkSurfaceRaised.opacity(0.92)))
+
+                        Rectangle()
+                            .fill(Color.white.opacity(0.2))
+                            .frame(width: 1, height: 20)
+
+                        // Padding adjustments
+                        HStack(spacing: 4) {
+                            Button { expandPanel(by: -10) } label: {
+                                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .frame(width: 32, height: 32)
+                            }
+                            Button { expandPanel(by: 10) } label: {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .frame(width: 32, height: 32)
+                            }
+                        }
+                        .foregroundColor(.white)
+                        .background(Capsule().fill(Color.inkSurfaceRaised.opacity(0.92)))
+
+                        Rectangle()
+                            .fill(Color.white.opacity(0.2))
+                            .frame(width: 1, height: 20)
+
+                        Button {
+                            activePanelAdjustRect = originalPanelAdjustRect
+                            HapticEngine.selection()
+                        } label: {
+                            Text("Reset")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.primary.opacity(0.15), lineWidth: 0.8))
+                    .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+                    .padding(.bottom, max(geo.safeAreaInsets.bottom, 24.0))
                 }
             }
         }

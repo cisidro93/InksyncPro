@@ -2241,14 +2241,20 @@ struct ProPDFReaderEngine: View {
             ? max(topSafeArea + 60.0, 80.0)
             : (topSafeArea + (isPhone ? (isLandscape ? 16.0 : 24.0) : 28.0))
 
-        let safeWidth = max(100.0, pv.bounds.width - leftSafeArea - rightSafeArea - (isPhone ? 16.0 : 28.0))
+        let sideMargin: CGFloat = isPhone ? 16.0 : 28.0
+        let safeWidth = max(100.0, pv.bounds.width - leftSafeArea - rightSafeArea - sideMargin)
         let safeHeight = max(100.0, pv.bounds.height - topReserved - bottomReserved)
 
-        let colWidthOnPage = max(20.0, norm.width * cropBox.width)
-        let tierHeightOnPage = max(20.0, norm.height * cropBox.height)
+        // Uniform Page Zooming Invariant across all tiers:
+        // Anchors the zoom scale to the maximum tier dimensions across all active quadrants on the page.
+        // This guarantees that moving between tiers maintains the exact same optical font and image size
+        // with zero camera zoom jumping or disorienting scale fluctuations.
+        let allNorms = currentTierQuadrants.map(\.normalizedRect)
+        let maxColWidthOnPage = max(20.0, (allNorms.map(\.width).max() ?? norm.width) * cropBox.width)
+        let maxTierHeightOnPage = max(20.0, (allNorms.map(\.height).max() ?? norm.height) * cropBox.height)
 
-        let scaleForWidth = safeWidth / colWidthOnPage
-        let scaleForHeight = safeHeight / tierHeightOnPage
+        let uniformScaleForWidth = safeWidth / maxColWidthOnPage
+        let uniformScaleForHeight = safeHeight / maxTierHeightOnPage
 
         // Golden Rule Invariant:
         // In Landscape: Scale MUST clamp to fit height so that the entire tier (including bottom lines)
@@ -2257,9 +2263,9 @@ struct ProPDFReaderEngine: View {
         // clamped defensively to scaleForHeight so exceptionally tall tiers also stay within safe bounds.
         let rawTargetScale: CGFloat
         if isLandscape {
-            rawTargetScale = min(scaleForHeight, scaleForWidth)
+            rawTargetScale = min(uniformScaleForHeight, uniformScaleForWidth)
         } else {
-            rawTargetScale = min(scaleForWidth, scaleForHeight * 1.05)
+            rawTargetScale = min(uniformScaleForWidth, uniformScaleForHeight * 1.05)
         }
 
         let minAllowed = max(0.4, fitScale * 0.85)
