@@ -273,29 +273,68 @@ struct ReaderChrome: View {
                 }
             }
 
-            // ── Dedicated NeoFlow Adjust Button (iPad / Regular Width Only) ─────
-            // On iPhone, NeoFlow status & adjust is presented as a floating sub-header HUD pill
-            // below the top bar and in the More Actions Menu (...) to prevent top bar crowding.
-            if isPDF && EBookPreferences.shared.isPDFSmartTiersActive && !isPhone {
-                Button {
-                    NotificationCenter.default.post(name: NSNotification.Name("PDFReader_OpenSmartTiersWorkspace"), object: nil)
-                    HapticEngine.selection()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "slider.horizontal.2.square")
-                            .font(.system(size: 12, weight: .bold))
-                        Text("NeoFlow")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
+            // ── Panels / Smart Tiers Quick Toggle & Adjust (Universal for Comic, Manga, and PDF) ─────
+            if let onToggleSmartTiers = onToggleSmartTiers {
+                if isPhone {
+                    Button {
+                        onToggleSmartTiers()
+                        HapticEngine.selection()
+                    } label: {
+                        Image(systemName: isSmartTiersActive ? "rectangle.split.3x1.fill" : "rectangle.split.3x1")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(isSmartTiersActive ? Color.white : Color.inkText)
+                            .frame(width: 34, height: 34)
+                            .background(isSmartTiersActive ? Color.inkGreen : Color.primary.opacity(0.08), in: Circle())
+                            .overlay(Circle().stroke(isSmartTiersActive ? Color.inkGreen.opacity(0.6) : Color.inkBorderSubtle, lineWidth: 0.5))
                     }
-                    .foregroundStyle(Color.inkGreen)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 6)
-                    .background(Color.inkGreen.opacity(0.12), in: Capsule())
-                    .overlay(Capsule().stroke(Color.inkGreen.opacity(0.4), lineWidth: 0.8))
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        onToggleSmartTiers()
+                        HapticEngine.selection()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: isSmartTiersActive ? "rectangle.split.3x1.fill" : "rectangle.split.3x1")
+                                .font(.system(size: 12, weight: .bold))
+                            Text(isSmartTiersActive ? "Panels" : "Panels")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                        .foregroundStyle(isSmartTiersActive ? Color.white : Color.inkText)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(isSmartTiersActive ? Color.inkGreen : Color.primary.opacity(0.08), in: Capsule())
+                        .overlay(Capsule().stroke(isSmartTiersActive ? Color.inkGreen.opacity(0.6) : Color.inkBorderSubtle, lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+
+                if isSmartTiersActive {
+                    Button {
+                        if isPDF {
+                            NotificationCenter.default.post(name: NSNotification.Name("PDFReader_OpenSmartTiersWorkspace"), object: nil)
+                        } else {
+                            NotificationCenter.default.post(name: NSNotification.Name("ComicReader_OpenPanelWorkspace"), object: nil)
+                        }
+                        HapticEngine.selection()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "slider.horizontal.2.square")
+                                .font(.system(size: 12, weight: .bold))
+                            Text("Adjust")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                        .foregroundStyle(Color.inkGreen)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(Color.inkGreen.opacity(0.12), in: Capsule())
+                        .overlay(Capsule().stroke(Color.inkGreen.opacity(0.4), lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             // ── Bookmark Button ────────────────────────────────────────────────

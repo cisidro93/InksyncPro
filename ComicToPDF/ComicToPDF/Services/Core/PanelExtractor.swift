@@ -436,7 +436,8 @@ struct PanelExtractor {
         let isAdvancedBooxPreset = booxPreset == .twoByThree || booxPreset == .threeByTwo || booxPreset == .threeByThree || booxPreset == .oneOverTwo || booxPreset == .twoOverOne
 
         if config == nil && (!customOverrides.isEmpty || isAdvancedBooxPreset) {
-            let booxFlowRaw = UserDefaults.standard.string(forKey: "boox_flowOrder") ?? BooxFlowOrder.reverseNFlow.rawValue
+            let defaultBooxFlow = mangaMode ? BooxFlowOrder.reverseNFlow.rawValue : BooxFlowOrder.nFlow.rawValue
+            let booxFlowRaw = UserDefaults.standard.string(forKey: "boox_flowOrder") ?? defaultBooxFlow
             let booxSpread = UserDefaults.standard.bool(forKey: "boox_isSpreadMode")
             let booxSplit = UserDefaults.standard.double(forKey: "boox_verticalSplitRatio") != 0 ? UserDefaults.standard.double(forKey: "boox_verticalSplitRatio") : 0.50
             let booxH0 = UserDefaults.standard.double(forKey: "boox_horizontalSplit0") != 0 ? UserDefaults.standard.double(forKey: "boox_horizontalSplit0") : 0.50
@@ -448,6 +449,10 @@ struct PanelExtractor {
             if mangaMode {
                 if effectiveFlow == .nFlow { effectiveFlow = .reverseNFlow }
                 else if effectiveFlow == .zFlow { effectiveFlow = .reverseZFlow }
+            } else {
+                // Western mode: strictly enforce LTR (Left-to-Right)
+                if effectiveFlow == .reverseNFlow { effectiveFlow = .nFlow }
+                else if effectiveFlow == .reverseZFlow { effectiveFlow = .zFlow }
             }
 
             let booxConfig = BooxSectionFlowConfig(
@@ -485,7 +490,13 @@ struct PanelExtractor {
 
         let activeConfig: ComicTierGuideConfiguration = {
             if let config = config {
-                return config
+                var c = config
+                if !mangaMode && c.flowOrder == .mangaRTL {
+                    c.flowOrder = .columnFirst
+                } else if mangaMode && c.flowOrder == .columnFirst {
+                    c.flowOrder = .mangaRTL
+                }
+                return c
             }
             let presetRaw = UserDefaults.standard.string(forKey: "comic_smartTierPreset") ?? ComicTierLayoutPreset.threeTier.rawValue
             let tierCount = UserDefaults.standard.integer(forKey: "comic_smartTierCount") != 0 ? UserDefaults.standard.integer(forKey: "comic_smartTierCount") : 3
@@ -497,6 +508,14 @@ struct PanelExtractor {
             let leftTrim = UserDefaults.standard.double(forKey: "comic_smartTierLeftTrim")
             let rightTrim = UserDefaults.standard.double(forKey: "comic_smartTierRightTrim")
             let flowOrderRaw = UserDefaults.standard.string(forKey: "comic_smartTierFlowOrder") ?? (mangaMode ? ComicReadingFlowOrder.mangaRTL.rawValue : ComicReadingFlowOrder.columnFirst.rawValue)
+            let rawFlow = ComicReadingFlowOrder(rawValue: flowOrderRaw) ?? (mangaMode ? .mangaRTL : .columnFirst)
+            let sanitizedFlow: ComicReadingFlowOrder
+            if mangaMode {
+                sanitizedFlow = (rawFlow == .rowFirst) ? .rowFirst : .mangaRTL
+            } else {
+                sanitizedFlow = (rawFlow == .mangaRTL) ? .columnFirst : rawFlow
+            }
+
             return ComicTierGuideConfiguration(
                 preset: ComicTierLayoutPreset(rawValue: presetRaw) ?? .threeTier,
                 tierCount: tierCount,
@@ -507,14 +526,14 @@ struct PanelExtractor {
                 bottomMarginTrim: bottomTrim,
                 leftMarginTrim: leftTrim,
                 rightMarginTrim: rightTrim,
-                flowOrder: ComicReadingFlowOrder(rawValue: flowOrderRaw) ?? (mangaMode ? .mangaRTL : .columnFirst)
+                flowOrder: sanitizedFlow
             )
         }()
 
         let leftTrim = max(0.0, min(0.25, CGFloat(activeConfig.leftMarginTrim)))
         let rightTrim = max(0.0, min(0.25, CGFloat(activeConfig.rightMarginTrim)))
         let activeW = max(0.2, 1.0 - (leftTrim + rightTrim))
-        let effectiveRTL = mangaMode || activeConfig.flowOrder == .mangaRTL
+        let effectiveRTL = mangaMode && (activeConfig.flowOrder == .mangaRTL)
 
         if isWideDoubleSpread {
             // Wide Double-Page Spread in a single image:

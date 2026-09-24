@@ -369,7 +369,7 @@ class EBookPreferences: ObservableObject {
     @AppStorage("comic_smartTierRightTrim") var comicSmartTierRightTrim: Double = 0.0 {
         didSet { objectWillChange.send() }
     }
-    @AppStorage("comic_smartTierFlowOrder") var comicSmartTierFlowOrderRaw: String = ComicReadingFlowOrder.mangaRTL.rawValue {
+    @AppStorage("comic_smartTierFlowOrder") var comicSmartTierFlowOrderRaw: String = ComicReadingFlowOrder.columnFirst.rawValue {
         didSet { objectWillChange.send() }
     }
 
@@ -385,7 +385,7 @@ class EBookPreferences: ObservableObject {
                 bottomMarginTrim: comicSmartTierBottomMarginTrim,
                 leftMarginTrim: comicSmartTierLeftTrim,
                 rightMarginTrim: comicSmartTierRightTrim,
-                flowOrder: ComicReadingFlowOrder(rawValue: comicSmartTierFlowOrderRaw) ?? .mangaRTL
+                flowOrder: ComicReadingFlowOrder(rawValue: comicSmartTierFlowOrderRaw) ?? .columnFirst
             )
         }
         set {

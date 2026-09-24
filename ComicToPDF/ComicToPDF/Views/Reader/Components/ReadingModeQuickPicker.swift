@@ -14,14 +14,17 @@ struct ReadingModeQuickPicker: View {
 
     @State private var autoDismissTask: Task<Void, Never>? = nil
 
+    var onSelectPanels: (() -> Void)? = nil
+
     private enum Mode: CaseIterable {
-        case normal, manga, webtoon
+        case normal, manga, webtoon, panels
 
         var label: String {
             switch self {
             case .normal:  return "Normal"
             case .manga:   return "Manga"
             case .webtoon: return "Webtoon"
+            case .panels:  return "Panels"
             }
         }
 
@@ -30,6 +33,7 @@ struct ReadingModeQuickPicker: View {
             case .normal:  return "book.fill"
             case .manga:   return "book.closed.fill"
             case .webtoon: return "scroll.fill"
+            case .panels:  return "rectangle.split.3x1.fill"
             }
         }
     }
@@ -57,6 +61,10 @@ struct ReadingModeQuickPicker: View {
                         case .webtoon:
                             isMangaMode = false
                             isVerticalScroll = true
+                        case .panels:
+                            isVerticalScroll = false
+                            onSelectPanels?()
+                            NotificationCenter.default.post(name: NSNotification.Name("ComicReader_ToggleSmartTiers"), object: nil)
                         }
                     }
                     onSave()

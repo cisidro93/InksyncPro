@@ -2220,6 +2220,13 @@ final class WiFiServer: ObservableObject, Sendable {
                 .file-type-badge.cb7 { background: var(--cbz-color); }
                 .file-type-badge.cbt { background: var(--cbz-color); }
                 .file-type-badge.zip { background: var(--accent-purple); }
+                .file-type-badge.rar { background: var(--cbz-color); }
+                .file-type-badge.7z { background: var(--cbz-color); }
+                .file-type-badge.tar { background: var(--cbz-color); }
+                .file-type-badge.mobi { background: var(--epub-color); }
+                .file-type-badge.azw3 { background: var(--epub-color); }
+                .file-type-badge.fb2 { background: var(--epub-color); }
+                .file-type-badge.txt { background: var(--pdf-color); }
 
                 .file-text {
                     min-width: 0;
@@ -2505,9 +2512,9 @@ final class WiFiServer: ObservableObject, Sendable {
                 <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click();">
                     <div class="dropzone-icon">📥</div>
                     <h2>Drag & Drop Files Here</h2>
-                    <p class="subtitle">Supports CBZ, CBR, EPUB, PDF, and ZIP files. Or click to browse.</p>
+                    <p class="subtitle">Supports CBZ, CBR, CB7, CBT, ZIP, RAR, 7Z, TAR, EPUB, PDF, and eBook files. Or click to browse.</p>
                 </div>
-                <input type="file" id="fileInput" style="display:none" multiple accept=".pdf,.epub,.cbz,.cbr,.cb7,.cbt,.zip" onchange="handleFileSelect(event)" onclick="try { sessionStorage.setItem('upload_initiated', 'true'); } catch(e) {}">
+                <input type="file" id="fileInput" style="display:none" multiple accept=".pdf,.epub,.cbz,.cbr,.cb7,.cbt,.zip,.rar,.7z,.tar,.mobi,.azw3,.fb2,.txt,application/pdf,application/epub+zip,application/zip,application/x-cbz,application/x-cbr,application/x-rar-compressed,application/x-7z-compressed,application/x-tar,text/plain" onchange="handleFileSelect(event)" onclick="try { sessionStorage.setItem('upload_initiated', 'true'); } catch(e) {}">
 
                 <!-- Library Container -->
                 <div class="library-section">
@@ -3108,7 +3115,8 @@ final class WiFiServer: ObservableObject, Sendable {
                         const file = files[i];
                         const ext = file.name.split('.').pop().toLowerCase();
                         logDebug(`Checking file: ${file.name} (extension: ${ext}, size: ${file.size} bytes)`);
-                        if (!['pdf', 'epub', 'cbz', 'cbr', 'cb7', 'cbt', 'zip'].includes(ext)) {
+                        const supportedFormats = ['pdf', 'epub', 'cbz', 'cbr', 'cb7', 'cbt', 'zip', 'rar', '7z', 'tar', 'mobi', 'azw3', 'fb2', 'txt'];
+                        if (!supportedFormats.includes(ext)) {
                             logDebug(`Rejected file: ${file.name} (unsupported format)`, 'warning');
                             showNotification('"' + file.name + '" ignored (unsupported file format).', 'error');
                             continue;
