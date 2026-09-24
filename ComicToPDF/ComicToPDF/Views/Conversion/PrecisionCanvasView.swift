@@ -776,17 +776,20 @@ struct PrecisionCanvasView: View {
         guard let image = pageImage else { return }
         editorState.isProcessing = true
         editorState.log("Starting AI Scan...")
+        let isManga = pdf.metadata.isManga == true || UserDefaults.standard.bool(forKey: "isMangaMode")
         
         Task {
              let detector = EnsemblePanelDetector()
              let detected = await detector.detect(in: image)
-             let normalized = detected.map { panel -> NormalizedRect in
+             var normalized = detected.map { panel -> NormalizedRect in
                  // Vision (0,0 Bottom-Left) -> Normalized (0-1000 Top-Left)
                  let r = panel.boundingBox
                  // Flip Y: newY = 1.0 - oldY - height
                  let yTopLeft = 1.0 - r.origin.y - r.height
                  return NormalizedRect(x: r.origin.x * 1000, y: yTopLeft * 1000, width: r.width * 1000, height: r.height * 1000)
              }
+             // Sort proposed panels in native reading order (Right-to-Left for Manga, Left-to-Right for Western)
+             normalized = sortPanelsInReadingOrder(normalized, isManga: isManga)
             
             await MainActor.run {
                 editorState.pageModel.proposedPanels = normalized
@@ -795,7 +798,7 @@ struct PrecisionCanvasView: View {
                 editorState.pageModel.coordinateSystem = .normalized // ✅ Tag as Trusted
                 editorState.isProcessing = false
                 selectedTool = .scan // Change state so the user can immediately see the green proposed panels!
-                editorState.log("AI Scan: Found \(normalized.count) panels")
+                editorState.log("AI Scan: Found \(normalized.count) panels (\(isManga ? "Manga RTL" : "Western LTR"))")
                 if AppSettingsManager.shared.conversionSettings.showEditorDebug {
                     let methods = Dictionary(grouping: detected, by: { $0.method.rawValue })
                         .map { "\($0.key): \($0.value.count)" }
@@ -805,6 +808,53 @@ struct PrecisionCanvasView: View {
                     editorState.log(String(format: "[DEV] Avg confidence: %.2f%%", avgConf * 100))
                 }
             }
+        }
+    }
+    
+    /// Recursive XY-Cut reading order sort for NormalizedRect panels.
+    private func sortPanelsInReadingOrder(_ rects: [NormalizedRect], isManga: Bool) -> [NormalizedRect] {
+        guard rects.count > 1 else { return rects }
+        return recursiveXYCutSort(rects, isManga: isManga)
+    }
+
+    private func recursiveXYCutSort(_ rects: [NormalizedRect], isManga: Bool) -> [NormalizedRect] {
+        guard rects.count > 1 else { return rects }
+
+        // 1. Horizontal Split (Top vs Bottom)
+        let sortedY = rects.sorted { $0.maxY < $1.maxY }
+        let tolerance = 15.0 // 1.5% in 1000 space
+        var maxTopY = sortedY[0].maxY
+        for i in 0..<(sortedY.count - 1) {
+            maxTopY = max(maxTopY, sortedY[i].maxY)
+            let remainingMinY = sortedY[(i + 1)...].map(\.minY).min() ?? 0.0
+            if remainingMinY >= (maxTopY - tolerance) {
+                let topSet = Array(sortedY[0...i])
+                let bottomSet = Array(sortedY[(i + 1)...])
+                return recursiveXYCutSort(topSet, isManga: isManga) + recursiveXYCutSort(bottomSet, isManga: isManga)
+            }
+        }
+
+        // 2. Vertical Split (Left vs Right)
+        let sortedX = rects.sorted { $0.maxX < $1.maxX }
+        var maxLeftX = sortedX[0].maxX
+        for i in 0..<(sortedX.count - 1) {
+            maxLeftX = max(maxLeftX, sortedX[i].maxX)
+            let remainingMinX = sortedX[(i + 1)...].map(\.minX).min() ?? 0.0
+            if remainingMinX >= (maxLeftX - tolerance) {
+                let leftSet = Array(sortedX[0...i])
+                let rightSet = Array(sortedX[(i + 1)...])
+                if isManga {
+                    return recursiveXYCutSort(rightSet, isManga: isManga) + recursiveXYCutSort(leftSet, isManga: isManga)
+                } else {
+                    return recursiveXYCutSort(leftSet, isManga: isManga) + recursiveXYCutSort(rightSet, isManga: isManga)
+                }
+            }
+        }
+
+        // 3. Fallback: Proximity tier sort
+        return rects.sorted { a, b in
+            if abs(a.origin.y - b.origin.y) > 50 { return a.origin.y < b.origin.y }
+            return isManga ? (a.origin.x > b.origin.x) : (a.origin.x < b.origin.x)
         }
     }
     
