@@ -26,14 +26,20 @@ actor LibraryModelActor {
 
     private var isHealing: Bool = false
 
+    func tryBeginHealing() -> Bool {
+        guard !isHealing else { return false }
+        isHealing = true
+        return true
+    }
+
+    func endHealing() {
+        isHealing = false
+    }
+
     /// Runs all slow file-check, re-anchoring, self-healing, cascade-delete, and other cleaning logic.
     /// Returns true if any database modifications were saved.
     /// Synchronous and atomic within the actor to guarantee zero re-entrancy and zero model invalidation.
     func performSelfHealingAndCleanup() throws -> Bool {
-        guard !isHealing else { return false }
-        isHealing = true
-        defer { isHealing = false }
-
         let descriptor = FetchDescriptor<SDConvertedPDF>()
         let documents = try modelContext.fetch(descriptor)
         
@@ -483,13 +489,11 @@ actor LibraryModelActor {
 }
 
 /// The main application coordinator for library database management.
-final class LibraryRepository: @unchecked Sendable {
+final class LibraryRepository: Sendable {
     static let shared = LibraryRepository(container: InksyncProApp.sharedModelContainer)
 
     private let modelContainer: ModelContainer
     private let actor: LibraryModelActor
-    private let lock = NSLock()
-    private var isSelfHealingInProgress = false
 
     init(container: ModelContainer) {
         self.modelContainer = container
@@ -501,24 +505,12 @@ final class LibraryRepository: @unchecked Sendable {
         let pdfs = try await actor.fetchDocumentsFast()
         let cols = try await actor.fetchAllCollections()
 
-        lock.lock()
-        let shouldStart = !isSelfHealingInProgress
-        if shouldStart {
-            isSelfHealingInProgress = true
-        }
-        lock.unlock()
-
-        if shouldStart {
-            Task.detached(priority: .utility) { [weak self] in
-                defer {
-                    self?.lock.lock()
-                    self?.isSelfHealingInProgress = false
-                    self?.lock.unlock()
-                }
-                guard let self else { return }
-                _ = try? await self.actor.performSelfHealingAndCleanup()
-                await self.backfillEPUBMetadataIfNeeded()
-            }
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            guard await self.actor.tryBeginHealing() else { return }
+            _ = try? await self.actor.performSelfHealingAndCleanup()
+            await self.backfillEPUBMetadataIfNeeded()
+            await self.actor.endHealing()
         }
 
         return (pdfs, cols)
@@ -559,23 +551,16 @@ final class LibraryRepository: @unchecked Sendable {
 
     /// Runs all slow file-check, re-anchoring, self-healing, cascade-delete, and other cleaning logic in the background.
     func performSelfHealingAndCleanup() async throws -> Bool {
-        lock.lock()
-        let shouldStart = !isSelfHealingInProgress
-        if shouldStart {
-            isSelfHealingInProgress = true
+        guard await actor.tryBeginHealing() else { return false }
+        do {
+            let didHeal = try await actor.performSelfHealingAndCleanup()
+            await backfillEPUBMetadataIfNeeded()
+            await actor.endHealing()
+            return didHeal
+        } catch {
+            await actor.endHealing()
+            throw error
         }
-        lock.unlock()
-
-        guard shouldStart else { return false }
-        defer {
-            lock.lock()
-            isSelfHealingInProgress = false
-            lock.unlock()
-        }
-
-        let didHeal = try await actor.performSelfHealingAndCleanup()
-        await backfillEPUBMetadataIfNeeded()
-        return didHeal
     }
 
     /// Runs direct background batch insertion for newly imported items.
