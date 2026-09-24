@@ -21,12 +21,30 @@ class DeepScanPanelProvider: PanelProvider {
         request.maximumImageDimension = 1024
         
         let finalImage: CGImage
-        if let edgeImage = filter?.outputImage,
-           let finalCGImage = context.createCGImage(edgeImage, from: edgeImage.extent) {
-            finalImage = finalCGImage
-            // High contrast setup: CIEdges generates bright white edges on a black background
-            request.contrastAdjustment = 1.6
-            request.detectsDarkOnLight = false // Look for luminous bright edge contours on dark canvas
+        if var edgeImage = filter?.outputImage {
+            // Morphological Opening (Erosion followed by Dilation):
+            // Severs thin 1-2px speech bubble tails or ink bleeds that cross gutters,
+            // preventing two adjacent panels from merging into a single contour.
+            if let erode = CIFilter(name: "CIMorphologyMinimum", parameters: [
+                kCIInputImageKey: edgeImage,
+                kCIInputRadiusKey: 1.5
+            ]), let eroded = erode.outputImage,
+               let dilate = CIFilter(name: "CIMorphologyMaximum", parameters: [
+                kCIInputImageKey: eroded,
+                kCIInputRadiusKey: 1.5
+            ]), let opened = dilate.outputImage {
+                edgeImage = opened
+            }
+
+            if let finalCGImage = context.createCGImage(edgeImage, from: edgeImage.extent) {
+                finalImage = finalCGImage
+                // High contrast setup: CIEdges generates bright white edges on a black background
+                request.contrastAdjustment = 1.6
+                request.detectsDarkOnLight = false // Look for luminous bright edge contours on dark canvas
+            } else {
+                finalImage = cgImage
+                request.detectsDarkOnLight = true
+            }
         } else {
             // Fallback to raw image if CI fails (dark borders on light gutters)
             finalImage = cgImage

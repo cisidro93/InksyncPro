@@ -173,28 +173,84 @@ public final class ComicPanelDetectorEngine: Sendable {
         return clean
     }
 
-    // MARK: - Topological Reading Order Sort
+    // MARK: - Recursive Spatial Subdivision (Layout Tree / XY-Cut Reading Order)
 
+    /// Sorts detected panels using Recursive Spatial Subdivision (Layout Tree / XY-Cut),
+    /// which accurately orders complex comic and manga pages with full-height side panels,
+    /// L-shaped columns, and staggered multi-tier layouts.
     private func sortPanels(_ rects: [CGRect], isManga: Bool) -> [CGRect] {
-        // Group into vertical tiers based on center Y proximity
-        let tierThreshold = 0.10
+        guard rects.count > 1 else { return rects }
+        return recursiveXYCutSort(rects, isManga: isManga)
+    }
 
+    private func recursiveXYCutSort(_ rects: [CGRect], isManga: Bool) -> [CGRect] {
+        guard rects.count > 1 else { return rects }
+
+        // 1. Check for a clean Horizontal Gutter that divides the set into Top and Bottom subsets
+        if let (topSet, bottomSet) = findHorizontalSplit(rects) {
+            return recursiveXYCutSort(topSet, isManga: isManga) + recursiveXYCutSort(bottomSet, isManga: isManga)
+        }
+
+        // 2. Check for a clean Vertical Gutter that divides the set into Left and Right subsets
+        if let (leftSet, rightSet) = findVerticalSplit(rects) {
+            if isManga {
+                // Manga reads Right-to-Left
+                return recursiveXYCutSort(rightSet, isManga: isManga) + recursiveXYCutSort(leftSet, isManga: isManga)
+            } else {
+                // Western reads Left-to-Right
+                return recursiveXYCutSort(leftSet, isManga: isManga) + recursiveXYCutSort(rightSet, isManga: isManga)
+            }
+        }
+
+        // 3. Fallback: If panels are interlocking or staggered with no clean straight divider,
+        // use SIMD-tier proximity vertical sorting with horizontal tie-breaking.
+        return fallbackTierSort(rects, isManga: isManga)
+    }
+
+    private func findHorizontalSplit(_ rects: [CGRect]) -> ([CGRect], [CGRect])? {
+        let sorted = rects.sorted { $0.maxY < $1.maxY }
+        let tolerance: CGFloat = 0.015
+
+        var maxTopY: CGFloat = sorted[0].maxY
+        for i in 0..<(sorted.count - 1) {
+            maxTopY = max(maxTopY, sorted[i].maxY)
+            let remainingMinY = sorted[(i + 1)...].map(\.minY).min() ?? 0.0
+            if remainingMinY >= (maxTopY - tolerance) {
+                let topSet = Array(sorted[0...i])
+                let bottomSet = Array(sorted[(i + 1)...])
+                return (topSet, bottomSet)
+            }
+        }
+        return nil
+    }
+
+    private func findVerticalSplit(_ rects: [CGRect]) -> ([CGRect], [CGRect])? {
+        let sorted = rects.sorted { $0.maxX < $1.maxX }
+        let tolerance: CGFloat = 0.015
+
+        var maxLeftX: CGFloat = sorted[0].maxX
+        for i in 0..<(sorted.count - 1) {
+            maxLeftX = max(maxLeftX, sorted[i].maxX)
+            let remainingMinX = sorted[(i + 1)...].map(\.minX).min() ?? 0.0
+            if remainingMinX >= (maxLeftX - tolerance) {
+                let leftSet = Array(sorted[0...i])
+                let rightSet = Array(sorted[(i + 1)...])
+                return (leftSet, rightSet)
+            }
+        }
+        return nil
+    }
+
+    private func fallbackTierSort(_ rects: [CGRect], isManga: Bool) -> [CGRect] {
+        let tierThreshold = 0.10
         return rects.sorted { a, b in
             let aCenterY = a.midY
             let bCenterY = b.midY
 
             if abs(aCenterY - bCenterY) > tierThreshold {
-                // Different vertical tiers: Top always precedes bottom
                 return aCenterY < bCenterY
             } else {
-                // Same tier:
-                // Western: Left to right (a.minX < b.minX)
-                // Manga: Right to left (a.maxX > b.maxX)
-                if isManga {
-                    return a.maxX > b.maxX
-                } else {
-                    return a.minX < b.minX
-                }
+                return isManga ? (a.maxX > b.maxX) : (a.minX < b.minX)
             }
         }
     }

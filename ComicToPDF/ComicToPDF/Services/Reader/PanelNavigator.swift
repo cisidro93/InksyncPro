@@ -22,7 +22,18 @@ final class PanelNavigator {
     
     private init() {}
     
-    /// Detect or estimate panel bounding boxes for a manga page image
+    /// Asynchronously detects comic/manga panels using the native Vision + Gutter AI pipeline
+    func detectPanelsAsync(for image: UIImage, isRTL: Bool = true) async -> [MangaPanel] {
+        let detected = await ComicPanelDetectorEngine.shared.detectPanels(in: image, isManga: isRTL)
+        if !detected.isEmpty {
+            return detected.enumerated().map { index, rect in
+                MangaPanel(index: index, normalizedRect: rect)
+            }
+        }
+        return detectPanels(for: image, isRTL: isRTL)
+    }
+
+    /// Synchronous estimate panel bounding boxes for a manga page image
     func detectPanels(for image: UIImage, isRTL: Bool = true) -> [MangaPanel] {
         // High-speed heuristics fallback: 4 quadrant panel zones if metadata is absent
         let p1 = CGRect(x: isRTL ? 0.5 : 0.0, y: 0.0, width: 0.5, height: 0.5)
@@ -43,10 +54,8 @@ final class PanelNavigator {
         } ?? panels.first
     }
     
-    /// Trigger tactile page turn / panel snap haptic feedback pulse
+    /// Trigger tactile page turn / panel snap haptic feedback pulse using HapticEngine
     func triggerTactileFeedback() {
-        let generator = UIImpactFeedbackGenerator(style: .medium)
-        generator.prepare()
-        generator.impactOccurred()
+        HapticEngine.selection()
     }
 }

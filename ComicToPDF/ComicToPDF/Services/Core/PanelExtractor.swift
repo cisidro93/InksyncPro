@@ -100,27 +100,64 @@ struct PanelExtractor {
         return clusterAndSortPanels(panels, mangaMode: mangaMode)
     }
     
-    // ✅ NEW: Recursive Row Clustering Algorithm
-    // This is much more stable than simple sorting because it handles staggered grids correctly.
+    // MARK: - Recursive Spatial Subdivision (Layout Tree / XY-Cut Reading Order)
+
+    /// Sorts detected panels using Recursive Spatial Subdivision (Layout Tree / XY-Cut)
+    /// with SIMD-accelerated row clustering fallback for staggered or interlocking grids.
     private static func clusterAndSortPanels(_ panels: [Panel], mangaMode: Bool) -> [Panel] {
-        // 1. Start with everything sorted by Top edge (Highest Y first)
+        guard panels.count > 1 else { return panels }
+        return recursiveXYCutSort(panels, mangaMode: mangaMode)
+    }
+
+    private static func recursiveXYCutSort(_ panels: [Panel], mangaMode: Bool) -> [Panel] {
+        guard panels.count > 1 else { return panels }
+
+        // 1. Horizontal Split (Top vs Bottom in Vision coords: Y=1 is Top, Y=0 is Bottom)
+        let sortedY = panels.sorted { $0.boundingBox.minY > $1.boundingBox.minY }
+        let tolerance: CGFloat = 0.015
+        var minTopY = sortedY[0].boundingBox.minY
+        for i in 0..<(sortedY.count - 1) {
+            minTopY = min(minTopY, sortedY[i].boundingBox.minY)
+            let remainingMaxY = sortedY[(i + 1)...].map { $0.boundingBox.maxY }.max() ?? 0.0
+            if remainingMaxY <= (minTopY + tolerance) {
+                let topSet = Array(sortedY[0...i])
+                let bottomSet = Array(sortedY[(i + 1)...])
+                return recursiveXYCutSort(topSet, mangaMode: mangaMode) + recursiveXYCutSort(bottomSet, mangaMode: mangaMode)
+            }
+        }
+
+        // 2. Vertical Split (Left vs Right)
+        let sortedX = panels.sorted { $0.boundingBox.maxX < $1.boundingBox.maxX }
+        var maxLeftX = sortedX[0].boundingBox.maxX
+        for i in 0..<(sortedX.count - 1) {
+            maxLeftX = max(maxLeftX, sortedX[i].boundingBox.maxX)
+            let remainingMinX = sortedX[(i + 1)...].map { $0.boundingBox.minX }.min() ?? 0.0
+            if remainingMinX >= (maxLeftX - tolerance) {
+                let leftSet = Array(sortedX[0...i])
+                let rightSet = Array(sortedX[(i + 1)...])
+                if mangaMode {
+                    return recursiveXYCutSort(rightSet, mangaMode: mangaMode) + recursiveXYCutSort(leftSet, mangaMode: mangaMode)
+                } else {
+                    return recursiveXYCutSort(leftSet, mangaMode: mangaMode) + recursiveXYCutSort(rightSet, mangaMode: mangaMode)
+                }
+            }
+        }
+
+        // 3. Fallback: SIMD-accelerated vertical row clustering for complex staggered grids
+        return clusterAndSortPanelsSIMD(panels, mangaMode: mangaMode)
+    }
+
+    private static func clusterAndSortPanelsSIMD(_ panels: [Panel], mangaMode: Bool) -> [Panel] {
         var pool = panels.sorted { $0.boundingBox.maxY > $1.boundingBox.maxY }
         var sortedRows: [[Panel]] = []
         
         while !pool.isEmpty {
-            // Take the highest remaining panel as the "Anchor" for a new row
             let anchor = pool.removeFirst()
             var currentRow: [Panel] = [anchor]
-            
-            // 2. Find all other panels that overlap vertically with this anchor
-            // Logic: Do they share at least 50% vertical overlap?
             var remainingPool: [Panel] = []
-            
-            // Pre-calculate anchor vector once
             let anchorVec = anchor.vector
             
             for candidate in pool {
-                // Use SIMD accelerated overlap check
                 if isSameRow(anchorVec, candidate.vector) {
                     currentRow.append(candidate)
                 } else {
@@ -129,19 +166,15 @@ struct PanelExtractor {
             }
             pool = remainingPool
             
-            // 3. Sort this specific row horizontally
             if mangaMode {
-                // Right-to-Left: Higher X comes first
                 currentRow.sort { $0.boundingBox.minX > $1.boundingBox.minX }
             } else {
-                // Left-to-Right: Lower X comes first
                 currentRow.sort { $0.boundingBox.minX < $1.boundingBox.minX }
             }
             
             sortedRows.append(currentRow)
         }
         
-        // Flatten the rows back into a single list
         return sortedRows.flatMap { $0 }
     }
     

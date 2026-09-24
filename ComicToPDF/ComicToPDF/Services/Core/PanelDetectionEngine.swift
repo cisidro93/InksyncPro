@@ -146,9 +146,17 @@ class EnsemblePanelDetector {
                 
                 let iou = unionArea > 0 ? (intersectionArea / unionArea) : 0.0
                 let containment = minArea > 0 ? (intersectionArea / minArea) : 0.0
+                let maxArea = max(currentArea, candidateArea)
+                let areaRatio = maxArea > 0 ? (minArea / maxArea) : 1.0
                 
-                // Merge if duplicate detection (IoU > 0.40) or if fragment is substantially inside (containment > 0.65)
-                if iou > 0.40 || containment > 0.65 {
+                // Inset Panel Discrimination:
+                // If a candidate is small (< 40% of parent area) and heavily contained inside a large panel,
+                // but has strong structural confidence (e.g. vision rectangle or contour), it represents
+                // a legitimate artistic "Inset Panel" (close-up/reaction inside a splash panel).
+                // Preserve it as an independent panel instead of swallowing it into the parent bounds.
+                let isInsetPanel = containment > 0.65 && areaRatio <= 0.40 && (candidate.confidence >= 0.50 || candidate.method == .visionRectangle || candidate.method == .deepScanContour)
+                
+                if !isInsetPanel && (iou > 0.40 || containment > 0.65) {
                     currentMergedBounds = currentMergedBounds.union(candidate.boundingBox)
                     currentBaseConfidence = min(1.0, currentBaseConfidence * 1.05)
                     containsTextAccumulated = containsTextAccumulated || candidate.containsText

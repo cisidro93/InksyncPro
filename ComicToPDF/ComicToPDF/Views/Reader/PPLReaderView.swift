@@ -748,10 +748,7 @@ struct PPLReaderView: View {
     private func refreshGuidedPanels() {
         guard let pdfID = pdfID else { return }
         let model = PageModelStore.shared.getPageModel(for: pdfID, pageIndex: currentPageIndex)
-        var panels = model.panels.sorted { a, b in
-            if abs(a.origin.y - b.origin.y) > 50 { return a.origin.y < b.origin.y }
-            return isMangaMode ? (a.origin.x > b.origin.x) : (a.origin.x < b.origin.x)
-        }
+        var panels = sortPanelsInReadingOrder(model.panels, isManga: isMangaMode)
         if panels.isEmpty, let cgImg = bufferManager.currentImage {
             let uiImg = UIImage(cgImage: cgImg)
             let strides = PanelExtractor.generateSmartStrides(for: uiImg, isDualPage: false, mangaMode: isMangaMode)
@@ -764,7 +761,78 @@ struct PPLReaderView: View {
                 )
             }
         }
-        guidedPanels = panels
+        // Micro-panel viewport stabilization: expand tiny panels (< 7% page area) to a comfortable
+        // cinematic reading box (at least 28% width, 20% height) centered on the panel, preventing 15x camera whips.
+        guidedPanels = panels.map { stabilizeGuidedViewport($0) }
+    }
+
+    /// Sorts NormalizedRect panels using recursive XY-cut spatial decomposition.
+    private func sortPanelsInReadingOrder(_ rects: [NormalizedRect], isManga: Bool) -> [NormalizedRect] {
+        guard rects.count > 1 else { return rects }
+        return recursiveXYCutSort(rects, isManga: isManga)
+    }
+
+    private func recursiveXYCutSort(_ rects: [NormalizedRect], isManga: Bool) -> [NormalizedRect] {
+        guard rects.count > 1 else { return rects }
+
+        // 1. Horizontal Split (Top vs Bottom)
+        let sortedY = rects.sorted { $0.maxY < $1.maxY }
+        let tolerance = 15.0 // 1.5% in 1000 space
+        var maxTopY = sortedY[0].maxY
+        for i in 0..<(sortedY.count - 1) {
+            maxTopY = max(maxTopY, sortedY[i].maxY)
+            let remainingMinY = sortedY[(i + 1)...].map(\.minY).min() ?? 0.0
+            if remainingMinY >= (maxTopY - tolerance) {
+                let topSet = Array(sortedY[0...i])
+                let bottomSet = Array(sortedY[(i + 1)...])
+                return recursiveXYCutSort(topSet, isManga: isManga) + recursiveXYCutSort(bottomSet, isManga: isManga)
+            }
+        }
+
+        // 2. Vertical Split (Left vs Right)
+        let sortedX = rects.sorted { $0.maxX < $1.maxX }
+        var maxLeftX = sortedX[0].maxX
+        for i in 0..<(sortedX.count - 1) {
+            maxLeftX = max(maxLeftX, sortedX[i].maxX)
+            let remainingMinX = sortedX[(i + 1)...].map(\.minX).min() ?? 0.0
+            if remainingMinX >= (maxLeftX - tolerance) {
+                let leftSet = Array(sortedX[0...i])
+                let rightSet = Array(sortedX[(i + 1)...])
+                if isManga {
+                    return recursiveXYCutSort(rightSet, isManga: isManga) + recursiveXYCutSort(leftSet, isManga: isManga)
+                } else {
+                    return recursiveXYCutSort(leftSet, isManga: isManga) + recursiveXYCutSort(rightSet, isManga: isManga)
+                }
+            }
+        }
+
+        // 3. Fallback: Proximity tier sort
+        return rects.sorted { a, b in
+            if abs(a.origin.y - b.origin.y) > 50 { return a.origin.y < b.origin.y }
+            return isManga ? (a.origin.x > b.origin.x) : (a.origin.x < b.origin.x)
+        }
+    }
+
+    /// Sanitizes and stabilizes panel viewports for cinematic Guided Reading.
+    /// Micro-panels (< 7% page area) are padded to a minimum comfortable viewport size
+    /// (at least 28% width, 20% height), preventing dizzying 15x camera whips.
+    private func stabilizeGuidedViewport(_ rect: NormalizedRect) -> NormalizedRect {
+        let minW: Double = 280.0 // 28% of page width
+        let minH: Double = 200.0 // 20% of page height
+        
+        let targetW = max(rect.width, minW)
+        let targetH = max(rect.height, minH)
+        
+        var targetX = rect.x - (targetW - rect.width) / 2.0
+        var targetY = rect.y - (targetH - rect.height) / 2.0
+        
+        // Clamp to 0..1000 boundaries
+        if targetX < 0 { targetX = 0 }
+        if targetY < 0 { targetY = 0 }
+        if targetX + targetW > 1000.0 { targetX = max(0.0, 1000.0 - targetW) }
+        if targetY + targetH > 1000.0 { targetY = max(0.0, 1000.0 - targetH) }
+        
+        return NormalizedRect(x: targetX, y: targetY, width: targetW, height: targetH)
     }
 
     private func nextGuidedPanel(geo: CGSize) {
