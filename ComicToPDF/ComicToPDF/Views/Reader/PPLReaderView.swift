@@ -897,6 +897,9 @@ struct PPLReaderView: View {
                     withAnimation(.easeInOut(duration: 0.25)) { bufferManager.lockedRect = guidedPanels[lastIdx] }
                 }
             }
+        }
+    }
+
     // MARK: - Live In-Reader Panel Adjustment & Adaptive Learning
 
     private enum PanelAdjustmentHandle: Equatable {
