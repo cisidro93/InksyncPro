@@ -946,7 +946,7 @@ struct PPLReaderView: View {
         guidedPanels[guidedPanelIndex] = newRect
 
         // 4. Smoothly focus camera into the new panel
-        HapticEngine.notification(.success)
+        HapticEngine.success()
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             bufferManager.lockedRect = newRect
             isAdjustingActivePanel = false

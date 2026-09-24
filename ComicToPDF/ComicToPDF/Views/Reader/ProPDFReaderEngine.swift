@@ -2094,7 +2094,7 @@ struct ProPDFReaderEngine: View {
         }
 
         // If entering new page in Smart Tiers Mode, zoom into first (or last) tier!
-        if prefs.isPDFSmartTiersActive, let page = pdfView.currentPage {
+        if prefs.isPDFSmartTiersActive, pdfView.currentPage != nil {
             refreshSmartTierQuadrants()
             if currentTierIndex == -1 {
                 currentTierIndex = max(0, currentTierQuadrants.count - 1)

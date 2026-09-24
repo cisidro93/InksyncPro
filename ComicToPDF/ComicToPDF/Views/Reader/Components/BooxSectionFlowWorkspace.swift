@@ -1364,12 +1364,9 @@ public struct BooxSectionFlowWorkspace: View {
                             let renderedH = cropBox.height * fitScale
 
                             // Desired X position matching the actual reader:
-                            let posX: CGFloat
-                            if renderedW < safeW {
-                                posX = leftSafeArea + (viewW - leftSafeArea - rightSafeArea) / 2.0
-                            } else {
-                                posX = leftSafeArea + (isPhone ? 8.0 : 14.0) + (renderedW / 2.0)
-                            }
+                            let posX: CGFloat = (renderedW < safeW)
+                                ? (leftSafeArea + (viewW - leftSafeArea - rightSafeArea) / 2.0)
+                                : (leftSafeArea + (isPhone ? 8.0 : 14.0) + (renderedW / 2.0))
 
                             // Desired Y position matching the actual reader:
                             let totalRows = config.gridPreset.rowCount
