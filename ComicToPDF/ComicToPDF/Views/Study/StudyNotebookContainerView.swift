@@ -235,7 +235,31 @@ public struct StudyNotebookContainerView: View {
                     Label("New Cornell Note", systemImage: "doc.badge.plus")
                 }
                 
+                Button {
+                    createNoteFromClipboard()
+                } label: {
+                    Label("New Note from Clipboard", systemImage: "doc.on.clipboard")
+                }
+                
                 Section("Export Knowledge Base") {
+                    Button {
+                        if let currentNote = store.selectedNote {
+                            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                               let rootVC = windowScene.windows.first?.rootViewController {
+                                let md = (currentNote.cueColumnText.isEmpty ? "" : "### Cues\n" + currentNote.cueColumnText + "\n\n")
+                                    + currentNote.mainNotesMarkdown
+                                    + (currentNote.summaryText.isEmpty ? "" : "\n\n### Summary\n" + currentNote.summaryText)
+                                NotebookDocumentExporter.shared.presentKindleExport(
+                                    title: currentNote.title,
+                                    content: md,
+                                    from: rootVC
+                                )
+                            }
+                        }
+                    } label: {
+                        Label("Export Note to PDF / Kindle", systemImage: "paperplane")
+                    }
+
                     Button {
                         let md = exportEngine.exportToMarkdown(cards: store.cards, notes: store.notes)
                         shareExportItem = ExportSharePayload(text: md, title: "Markdown Notes")
@@ -275,6 +299,25 @@ public struct StudyNotebookContainerView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Color.inkSurface.opacity(0.85).background(.ultraThinMaterial))
+    }
+    
+    private func createNoteFromClipboard() {
+        guard let text = UIPasteboard.general.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            HapticEngine.error()
+            return
+        }
+        HapticEngine.success()
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstLine = trimmed.components(separatedBy: .newlines).first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let cleanTitle = firstLine.isEmpty ? "Clipboard Note" : String(firstLine.prefix(40))
+        
+        var newNote = StudyNote(
+            title: cleanTitle,
+            paperTemplate: store.activePaperTemplate
+        )
+        newNote.mainNotesMarkdown = trimmed
+        store.addNote(newNote)
+        activeMode = .cornellNotes
     }
     
     // MARK: - Left Sidebar View

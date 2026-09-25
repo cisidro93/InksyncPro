@@ -1,6 +1,26 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Dedicated UITextView subclass supporting native long-press paste and action validation
+final class InksyncMarkdownTextView: UITextView {
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(paste(_:)) {
+            return UIPasteboard.general.hasStrings
+        }
+        return super.canPerformAction(action, withSender: sender)
+    }
+    
+    override func paste(_ sender: Any?) {
+        if let string = UIPasteboard.general.string {
+            insertText(string)
+            NotificationCenter.default.post(name: UITextView.textDidChangeNotification, object: self)
+            delegate?.textViewDidChange?(self)
+        } else {
+            super.paste(sender)
+        }
+    }
+}
+
 // MARK: - Phase 2: Modern Markdown Engine WYSIWYG
 struct MarkdownTextEditor: UIViewRepresentable {
     @Binding var text: String
@@ -21,7 +41,7 @@ struct MarkdownTextEditor: UIViewRepresentable {
     }
     
     func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
+        let textView = InksyncMarkdownTextView()
         textView.delegate = context.coordinator
         context.coordinator.textView = textView
         textView.font = UIFont.systemFont(ofSize: 16, weight: .regular)
@@ -34,10 +54,10 @@ struct MarkdownTextEditor: UIViewRepresentable {
         // Dynamically set container inset based on active paper style
         updateTextViewPadding(textView, style: paperStyle)
 
-        // Add Tap Gesture Recognizer to intercept page link clicks without disrupting text insertion cursor focus
+        // Add Tap Gesture Recognizer to intercept page link clicks without disrupting text insertion cursor focus or native edit menu
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         tapGesture.delegate = context.coordinator
-        tapGesture.cancelsTouchesInView = true
+        tapGesture.cancelsTouchesInView = false
         textView.addGestureRecognizer(tapGesture)
 
         // MARK: Formatting Shortcut Bar — Phase 4E-2 expanded (Bear/Notability pattern)
@@ -69,6 +89,20 @@ struct MarkdownTextEditor: UIViewRepresentable {
         stack.distribution = .fill
         stack.spacing = 4
         stack.translatesAutoresizingMaskIntoConstraints = false
+
+        // 📋 1-Tap Paste Button directly on keyboard accessory bar
+        let pasteBtn = UIButton(type: .system)
+        pasteBtn.backgroundColor = UIColor.secondarySystemFill
+        pasteBtn.layer.cornerRadius = 6
+        var pasteConfig = UIButton.Configuration.plain()
+        pasteConfig.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
+        pasteConfig.baseForegroundColor = .label
+        pasteConfig.attributedTitle = AttributedString("📋 Paste", attributes: AttributeContainer([
+            .font: UIFont.systemFont(ofSize: 13, weight: .semibold)
+        ]))
+        pasteBtn.configuration = pasteConfig
+        pasteBtn.addTarget(context.coordinator, action: #selector(Coordinator.pasteButtonTapped), for: .touchUpInside)
+        stack.addArrangedSubview(pasteBtn)
 
         for item in items {
             let btn = FormatButton(title: item.title, insertBefore: item.insert, insertAfter: item.after, textView: textView)
@@ -321,6 +355,20 @@ struct MarkdownTextEditor: UIViewRepresentable {
         @objc func doneButtonTapped() {
             parent.isFocused = false
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+
+        @objc func pasteButtonTapped() {
+            guard let tv = textView, let string = UIPasteboard.general.string, !string.isEmpty else {
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                return
+            }
+            tv.insertText(string)
+            parent.text = tv.text
+            let newSelectedRange = tv.selectedRange
+            tv.attributedText = MarkdownHighlighter.highlight(tv.text, style: parent.paperStyle)
+            tv.selectedRange = newSelectedRange
+            updatePageBreaks(for: tv)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {

@@ -122,7 +122,11 @@ struct StudyNotebookView: View {
     @State private var cornellSummaryText: String = ""
     @State private var isCoveredForRecitation: Bool = false
 
-    
+    // Kindle & Export state
+    @AppStorage("kindleEmail") private var kindleEmail: String = ""
+    @State private var isShowingBookSavedToast: Bool = false
+    @State private var savedBookURL: URL? = nil
+
     // Custom drawing tools states
     @State private var activeDrawingTool: DrawingTool = .pen
     @State private var strokeColor: Color = .primary
@@ -370,11 +374,30 @@ struct StudyNotebookView: View {
                 )
             }
             
+            let pasteButton = Button {
+                pasteFromClipboard()
+            } label: {
+                Image(systemName: "doc.on.clipboard")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.orange)
+                    .padding(8)
+                    .background(Color.orange.opacity(0.12))
+                    .clipShape(Circle())
+            }
+            .help("Paste copied text or web article from clipboard")
+
             let exportMenu = Menu {
-                Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
-                Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
-                Button { exportZettelkastenZip() } label: { Label("Export Zettelkasten Zip (Obsidian)", systemImage: "archivebox") }
-                Button { shareNotes() } label: { Label("Share Note...", systemImage: "square.and.arrow.up") }
+                Section("Document & Kindle Export") {
+                    Button { exportNotes(as: .pdf) } label: { Label("Export as PDF (.pdf)", systemImage: "doc.richtext") }
+                    Button { sendToKindle() } label: { Label("Send to Kindle", systemImage: "paperplane") }
+                    Button { saveToLibraryAsBook() } label: { Label("Save as Book in Library", systemImage: "book.badge.plus") }
+                }
+                Section("Raw Formats") {
+                    Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
+                    Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
+                    Button { exportZettelkastenZip() } label: { Label("Export Zettelkasten Zip (Obsidian)", systemImage: "archivebox") }
+                    Button { shareNotes() } label: { Label("Share Note...", systemImage: "square.and.arrow.up") }
+                }
             } label: {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 15, weight: .semibold))
@@ -490,6 +513,7 @@ struct StudyNotebookView: View {
                         if availableWidth > 550 {
                             // WIDE TOOLBAR
                             inputPicker
+                            pasteButton
                             
                             if inputMode == .markdown {
                                 micButton
@@ -515,6 +539,7 @@ struct StudyNotebookView: View {
                         } else if availableWidth > 380 {
                             // MEDIUM TOOLBAR
                             inputPicker
+                            pasteButton
                             highlighterButton
                             
                             Menu {
@@ -544,6 +569,10 @@ struct StudyNotebookView: View {
                                         }
                                     }
                                     Menu("Export...") {
+                                        Button { exportNotes(as: .pdf) } label: { Label("Export as PDF (.pdf)", systemImage: "doc.richtext") }
+                                        Button { sendToKindle() } label: { Label("Send to Kindle", systemImage: "paperplane") }
+                                        Button { saveToLibraryAsBook() } label: { Label("Save as Book in Library", systemImage: "book.badge.plus") }
+                                        Divider()
                                         Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
                                         Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
                                         Button { exportZettelkastenZip() } label: { Label("Export Zettelkasten Zip", systemImage: "archivebox") }
@@ -572,6 +601,7 @@ struct StudyNotebookView: View {
                                     .clipShape(Circle())
                             }
                             
+                            pasteButton
                             highlighterButton
                             
                             Menu {
@@ -727,6 +757,49 @@ struct StudyNotebookView: View {
                             ZStack {
                                 NotebookPaperBackground(style: paperStyle, spacing: paperSpacing, colorScheme: colorScheme)
                                 MarkdownTextEditor(text: $localNotes, isFocused: $isFocused, paperStyle: paperStyle, onLinkTapped: handleLinkTapped)
+                                
+                                if localNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    VStack(spacing: 14) {
+                                        Image(systemName: "doc.on.clipboard")
+                                            .font(.system(size: 38))
+                                            .foregroundColor(.orange)
+                                        
+                                        Text("Notebook is Empty")
+                                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                                            .foregroundColor(.inkTextPrimary)
+                                        
+                                        Text("Type your thoughts, or paste a copied article or text to read and annotate later.")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.inkTextSecondary)
+                                            .multilineTextAlignment(.center)
+                                            .padding(.horizontal, 24)
+                                        
+                                        Button {
+                                            pasteFromClipboard()
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "doc.on.clipboard.fill")
+                                                Text("Paste from Clipboard")
+                                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                            }
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 18)
+                                            .padding(.vertical, 9)
+                                            .background(
+                                                LinearGradient(colors: [Color.orange, Color.purple], startPoint: .leading, endPoint: .trailing),
+                                                in: Capsule()
+                                            )
+                                            .shadow(color: Color.orange.opacity(0.3), radius: 4, x: 0, y: 2)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .padding(24)
+                                    .background(Color.inkSurfaceRaised.opacity(0.9).background(.ultraThinMaterial))
+                                    .cornerRadius(16)
+                                    .shadow(color: Color.black.opacity(0.1), radius: 12, y: 4)
+                                    .padding(.horizontal, 32)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                }
                             }
                             .onChange(of: localNotes) { _, _ in debounceSave() }
                         } else {
@@ -743,6 +816,52 @@ struct StudyNotebookView: View {
                         // MARK: Highlights Drawer Overlay
                         if showHighlightsDrawer {
                             highlightsDrawer(notebookWidth: notebookGeo.size.width)
+                        }
+                    }
+
+                    // Toast Banner when book is saved to library
+                    if isShowingBookSavedToast {
+                        HStack(spacing: 12) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.green)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Saved to Library")
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .foregroundColor(.inkTextPrimary)
+                                Text("Book added to InksyncPro for highlighting and reading.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.inkTextSecondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Button("Open") {
+                                withAnimation { isShowingBookSavedToast = false }
+                                if let savedURL = savedBookURL,
+                                   let book = conversionManager.convertedPDFs.first(where: { $0.url == savedURL }) ?? conversionManager.convertedPDFs.first(where: { $0.name == savedURL.deletingPathExtension().lastPathComponent }) {
+                                    selectedBookForReader = book
+                                    AppRouter.shared.presentFullScreen(.read(book))
+                                }
+                            }
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.green, in: Capsule())
+                        }
+                        .padding(14)
+                        .background(Color.inkSurfaceRaised.opacity(0.95).background(.ultraThinMaterial))
+                        .cornerRadius(14)
+                        .shadow(color: Color.black.opacity(0.2), radius: 10, y: 4)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 24)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                                withAnimation { isShowingBookSavedToast = false }
+                            }
                         }
                     }
 
@@ -1462,10 +1581,49 @@ struct StudyNotebookView: View {
     }
 
     enum ExportType {
-        case markdown, plainText
+        case markdown, plainText, pdf
+    }
+    
+    private func pasteFromClipboard() {
+        guard let clipboardString = UIPasteboard.general.string, !clipboardString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            HapticEngine.error()
+            return
+        }
+        
+        HapticEngine.success()
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            inputMode = .markdown
+        }
+        
+        let trimmed = clipboardString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if localNotes.isEmpty {
+            localNotes = trimmed
+        } else {
+            localNotes += "\n\n" + trimmed
+        }
+        debounceSave()
     }
     
     private func exportNotes(as type: ExportType) {
+        if type == .pdf {
+            do {
+                let pdfURL = try NotebookDocumentExporter.shared.exportPDF(title: bookTitle, content: localNotes)
+                let activityVC = UIActivityViewController(activityItems: [pdfURL], applicationActivities: nil)
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let rootVC = windowScene.windows.first?.rootViewController {
+                    if let popover = activityVC.popoverPresentationController {
+                        popover.sourceView = rootVC.view
+                        popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
+                        popover.permittedArrowDirections = []
+                    }
+                    rootVC.present(activityVC, animated: true)
+                }
+            } catch {
+                Logger.shared.log("exportNotes(.pdf) FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
+            }
+            return
+        }
+        
         let content: String
         let filename: String
         let formatLabel: String
@@ -1479,6 +1637,8 @@ struct StudyNotebookView: View {
             content = localNotes
             filename = "\(bookTitle.isEmpty ? "StudyNotes" : bookTitle.replacingOccurrences(of: " ", with: "_"))_Notes.txt"
             formatLabel = "Plain Text"
+        case .pdf:
+            return
         }
         
         Logger.shared.log("exportNotes(\(formatLabel)) called for '\(bookTitle)' — \(content.count) chars to \(filename)", category: "Notebook", type: .info)
@@ -1501,6 +1661,38 @@ struct StudyNotebookView: View {
             }
         } catch {
             Logger.shared.log("exportNotes(\(formatLabel)) FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
+        }
+    }
+    
+    private func sendToKindle() {
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = windowScene.windows.first?.rootViewController {
+            NotebookDocumentExporter.shared.presentKindleExport(
+                title: bookTitle,
+                content: localNotes,
+                from: rootVC,
+                kindleEmail: kindleEmail.isEmpty ? nil : kindleEmail
+            )
+        }
+    }
+    
+    private func saveToLibraryAsBook() {
+        Task {
+            do {
+                let savedURL = try await NotebookDocumentExporter.shared.saveToLibraryAsBook(
+                    title: bookTitle.isEmpty ? "Notebook Article" : bookTitle,
+                    content: localNotes
+                )
+                await MainActor.run {
+                    self.savedBookURL = savedURL
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        self.isShowingBookSavedToast = true
+                    }
+                    HapticEngine.success()
+                }
+            } catch {
+                Logger.shared.log("saveToLibraryAsBook FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
+            }
         }
     }
 

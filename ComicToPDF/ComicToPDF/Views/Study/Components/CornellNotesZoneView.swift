@@ -97,6 +97,32 @@ struct CornellNotesZoneView: View {
                     .background(Color.purple.opacity(0.12), in: Capsule())
                 }
                 .buttonStyle(.plain)
+                
+                // 1-Tap Paste Button
+                Button {
+                    if let string = UIPasteboard.general.string, !string.isEmpty {
+                        HapticEngine.success()
+                        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if localNotes.isEmpty {
+                            localNotes = trimmed
+                        } else {
+                            localNotes += "\n\n" + trimmed
+                        }
+                    } else {
+                        HapticEngine.warning()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.clipboard")
+                        Text("Paste")
+                    }
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)

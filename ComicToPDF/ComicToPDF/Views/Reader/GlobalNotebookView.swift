@@ -323,9 +323,19 @@ struct GlobalNotebookView: View {
                     
                     HStack(spacing: 12) {
                         if activeTab == .notebooks {
-                            Button {
-                                HapticEngine.medium()
-                                isShowingCreateNotebookSheet = true
+                            Menu {
+                                Button {
+                                    HapticEngine.medium()
+                                    isShowingCreateNotebookSheet = true
+                                } label: {
+                                    Label("New Notebook", systemImage: "plus.circle")
+                                }
+                                
+                                Button {
+                                    createNotebookFromClipboard()
+                                } label: {
+                                    Label("New from Clipboard", systemImage: "doc.on.clipboard")
+                                }
                             } label: {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 24))
@@ -406,9 +416,19 @@ struct GlobalNotebookView: View {
                     Spacer()
                     
                     if activeTab == .notebooks {
-                        Button {
-                            HapticEngine.medium()
-                            isShowingCreateNotebookSheet = true
+                        Menu {
+                            Button {
+                                HapticEngine.medium()
+                                isShowingCreateNotebookSheet = true
+                            } label: {
+                                Label("New Notebook", systemImage: "plus.circle")
+                            }
+                            
+                            Button {
+                                createNotebookFromClipboard()
+                            } label: {
+                                Label("New from Clipboard", systemImage: "doc.on.clipboard")
+                            }
                         } label: {
                             Image(systemName: "plus.circle.fill")
                                 .font(.system(size: 24))
@@ -959,7 +979,26 @@ struct GlobalNotebookView: View {
             ZStack(alignment: .topTrailing) {
                 // Front cover
                 Group {
-                    if isSkin, let skin = notebook.coverStyle {
+                    if let lBook = linkedBook, let cData = lBook.coverImageData, let uiImg = UIImage(data: cData) {
+                        ZStack {
+                            Image(uiImage: uiImg)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(height: sizeClass == .regular ? 240 : 200)
+                                .clipped()
+                            
+                            // Soft gradient vignette to guarantee title and badges contrast
+                            LinearGradient(
+                                colors: [
+                                    Color.black.opacity(0.15),
+                                    Color.clear,
+                                    Color.black.opacity(0.8)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        }
+                    } else if isSkin, let skin = notebook.coverStyle {
                         NotebookCoverSkinView(skinType: skin, title: notebook.title, colorScheme: colorScheme)
                     } else {
                         let gradient = coverGradients[notebook.coverGradientIndex % coverGradients.count]
@@ -971,26 +1010,8 @@ struct GlobalNotebookView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.4 : 0.15), radius: 8, x: 0, y: 4)
                 .overlay(
-                    ZStack(alignment: .leading) {
-                        // spine / book binding
-                        Rectangle()
-                            .fill(Color.black.opacity(0.25))
-                            .frame(width: 16)
-                        
-                        // Cover overlay ribbon for linked books
-                        if let lBook = linkedBook, let cData = lBook.coverImageData, let uiImg = UIImage(data: cData) {
-                            Image(uiImage: uiImg)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 80, height: 110)
-                                .cornerRadius(6)
-                                .shadow(radius: 4)
-                                .padding(.leading, 32)
-                                .padding(.top, 16)
-                                .frame(maxHeight: .infinity, alignment: .top)
-                        }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(colorScheme == .dark ? 0.15 : 0.25), lineWidth: 1)
                 )
                 
                 // Content on cover
@@ -1057,8 +1078,7 @@ struct GlobalNotebookView: View {
                     }
                     .padding(.leading, 8)
                 }
-                .padding(.leading, 24) // offset from binding
-                .padding(.trailing, 12)
+                .padding(.horizontal, 14)
                 .padding(.bottom, 16)
                 .padding(.top, 16)
                 
@@ -1123,6 +1143,49 @@ struct GlobalNotebookView: View {
         // 2. Instruct AppRouter to present the book reader
         selectedPDF = book
         AppRouter.shared.presentFullScreen(.read(book))
+    }
+    
+    private func createNotebookFromClipboard() {
+        guard let text = UIPasteboard.general.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            HapticEngine.error()
+            return
+        }
+        HapticEngine.success()
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstLine = trimmed.components(separatedBy: .newlines).first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let cleanTitle = firstLine.isEmpty ? "Clipboard Note" : String(firstLine.prefix(40))
+        
+        let newNotebook = SDNotebook(
+            id: UUID(),
+            title: cleanTitle,
+            coverGradientIndex: Int.random(in: 0..<coverGradients.count),
+            coverTitleColorHex: "#FFFFFF",
+            templateStyle: "plain",
+            linkedBookID: nil,
+            coverStyle: "gradient"
+        )
+        modelContext.insert(newNotebook)
+        
+        let newNote = SDAnnotation(
+            id: UUID(),
+            pdfID: newNotebook.id.uuidString,
+            pageIndex: 0,
+            text: nil,
+            note: trimmed,
+            isReadwiseImport: false,
+            readwiseBookTitle: cleanTitle,
+            readwiseAuthor: nil,
+            createdAt: Date()
+        )
+        newNote.kindRaw = "note"
+        modelContext.insert(newNote)
+        try? modelContext.save()
+        
+        self.activeNotebookSelection = ActiveNotebookSelection(
+            id: newNotebook.id,
+            title: newNotebook.title,
+            fileURL: nil
+        )
     }
     
     // MARK: - Empty State (Overall Notebooks)
@@ -1415,13 +1478,8 @@ struct CreateNotebookSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(radius: 6, y: 3)
         .overlay(
-            HStack {
-                Rectangle()
-                    .fill(Color.black.opacity(0.2))
-                    .frame(width: 12)
-                Spacer()
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.white.opacity(0.2), lineWidth: 1)
         )
         .overlay(
             Group {
@@ -1435,7 +1493,7 @@ struct CreateNotebookSheet: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
                             .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 4))
-                            .padding(.leading, 18)
+                            .padding(.horizontal, 12)
                             .padding(.bottom, 12)
                     }
                 }
@@ -2058,13 +2116,8 @@ struct EditNotebookSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(radius: 6, y: 3)
         .overlay(
-            HStack {
-                Rectangle()
-                    .fill(Color.black.opacity(0.2))
-                    .frame(width: 12)
-                Spacer()
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.white.opacity(0.2), lineWidth: 1)
         )
         .overlay(
             Group {
@@ -2078,7 +2131,7 @@ struct EditNotebookSheet: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
                             .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 4))
-                            .padding(.leading, 18)
+                            .padding(.horizontal, 12)
                             .padding(.bottom, 12)
                     }
                 }

@@ -209,12 +209,37 @@ public struct CornellNoteEditorView: View {
     private var mainNotesSection: some View {
         ZStack(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
+                HStack(spacing: 8) {
                     Text("MAIN NOTES & CLOZE (==syntax==)")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .foregroundColor(.inkTextTertiary)
                     
                     Spacer()
+                    
+                    Button {
+                        if let string = UIPasteboard.general.string, !string.isEmpty {
+                            HapticEngine.success()
+                            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if note.mainNotesMarkdown.isEmpty {
+                                note.mainNotesMarkdown = trimmed
+                            } else {
+                                note.mainNotesMarkdown += "\n\n" + trimmed
+                            }
+                        } else {
+                            HapticEngine.warning()
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "doc.on.clipboard")
+                            Text("Paste")
+                        }
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.12), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
                     
                     if let onConvert = onConvertToFlashcard, !note.mainNotesMarkdown.isEmpty {
                         Button {
