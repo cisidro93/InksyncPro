@@ -80,6 +80,21 @@ struct VolumeStudioView: View {
         _fileIDs = State(initialValue: existingOmnibus?.fileIDs ?? initialFileIDs)
     }
 
+    init(
+        initialFiles: [ConvertedPDF],
+        suggestedName: String = "",
+        parentSeriesID: String? = nil,
+        initialMode: VolumeType = .virtual
+    ) {
+        self.init(
+            existingOmnibus: nil,
+            initialFileIDs: initialFiles.map(\.id),
+            suggestedName: suggestedName,
+            parentSeriesID: parentSeriesID,
+            initialMode: initialMode
+        )
+    }
+
     // MARK: - Computed Properties
 
     private var seriesContextTitle: String {

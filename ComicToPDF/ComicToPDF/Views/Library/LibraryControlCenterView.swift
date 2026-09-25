@@ -65,9 +65,23 @@ struct LibraryControlCenterView: View {
                                     }
                                     let sortedIDs = sortedItems.map { $0.id }
                                     
+                                    var foundSeries: String? = nil
+                                    for item in sortedItems {
+                                        if let s = item.metadata.series, !s.isEmpty {
+                                            foundSeries = s
+                                            break
+                                        }
+                                    }
+                                    var foundVolume: String? = nil
+                                    for item in sortedItems {
+                                        if let v = item.metadata.volume, !v.isEmpty {
+                                            foundVolume = v
+                                            break
+                                        }
+                                    }
                                     let suggestedName: String
-                                    if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
-                                        if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
+                                    if let firstSeries = foundSeries {
+                                        if let sharedVolume = foundVolume {
                                             suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
                                         } else {
                                             suggestedName = "\(firstSeries) Volume 1"

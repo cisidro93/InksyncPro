@@ -1323,9 +1323,25 @@ struct SeriesDetailView: View {
         }
         let sortedIDs = sortedItems.map { $0.id }
         
+        var foundSeries: String? = nil
+        for item in sortedItems {
+            if let s = item.metadata.series, !s.isEmpty {
+                foundSeries = s
+                break
+            }
+        }
+        let baseSeriesTitle = foundSeries ?? series.title
+
+        var foundVolume: String? = nil
+        for item in sortedItems {
+            if let v = item.metadata.volume, !v.isEmpty {
+                foundVolume = v
+                break
+            }
+        }
+
         let suggestedName: String
-        let baseSeriesTitle = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series ?? series.title
-        if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
+        if let sharedVolume = foundVolume {
             suggestedName = "\(baseSeriesTitle) Vol. \(sharedVolume)"
         } else {
             let existingVolNums = freshIssues.compactMap { resolvedVolume(for: $0) }.compactMap { Int($0) }

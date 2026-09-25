@@ -21,8 +21,8 @@ enum LibrarySheetDestination: Identifiable {
     case ledger
     case metadataInbox
     case metadataSpreadsheet([ConvertedPDF])
-    case virtualOmnibusEditor(VirtualOmnibus?, initialFileIDs: [UUID] = [], suggestedName: String = "", parentSeriesID: String? = nil)
-    case volumeStudio(VirtualOmnibus? = nil, initialFileIDs: [UUID] = [], suggestedName: String = "", parentSeriesID: String? = nil, initialMode: VolumeStudioView.VolumeType = .virtual)
+    case virtualOmnibusEditor(existingOmnibus: VirtualOmnibus? = nil, initialFileIDs: [UUID] = [], suggestedName: String = "", parentSeriesID: String? = nil)
+    case volumeStudio(existingOmnibus: VirtualOmnibus? = nil, initialFileIDs: [UUID] = [], suggestedName: String = "", parentSeriesID: String? = nil, initialMode: VolumeStudioView.VolumeType = .virtual)
     case controlCenter
     case whatsNew
     case opdsBrowser
