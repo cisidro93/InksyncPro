@@ -8,6 +8,7 @@ public enum NotebookExportFormat: String, CaseIterable, Identifiable, Sendable {
     case epub = "EPUB"
 
     public var id: String { rawValue }
+    public var displayName: String { rawValue }
     public var extensionName: String {
         switch self {
         case .pdf: return "pdf"
@@ -241,7 +242,8 @@ public final class NotebookDocumentExporter: NSObject, MFMailComposeViewControll
         title: String,
         content: String,
         author: String? = nil,
-        format: NotebookExportFormat = .pdf
+        format: NotebookExportFormat = .pdf,
+        conversionManager: ConversionManager? = nil
     ) async throws -> URL {
         let tempURL: URL
         switch format {
@@ -270,7 +272,7 @@ public final class NotebookDocumentExporter: NSObject, MFMailComposeViewControll
             Logger.shared.log("NotebookDocumentExporter: Saved \(format.rawValue) book to Library Documents at \(destinationURL.lastPathComponent)", category: "Export", type: .success)
 
             // Trigger Library rescan
-            ConversionManager.shared.scanLibrary(addedByMode: .pro)
+            (conversionManager ?? ConversionManager.shared).scanLibrary(addedByMode: .pro)
             return destinationURL
         } catch {
             throw NotebookExportError.fileWriteFailed(error.localizedDescription)

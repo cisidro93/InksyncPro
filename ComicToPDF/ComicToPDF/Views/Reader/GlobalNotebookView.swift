@@ -1517,20 +1517,22 @@ struct GlobalNotebookView: View {
 
     private func saveNotebookToLibraryAsBook(_ notebook: SDNotebook, format: NotebookExportFormat) {
         let content = fetchNotebookContent(for: notebook)
-        do {
-            let savedURL = try NotebookDocumentExporter.shared.saveToLibraryAsBook(
-                title: notebook.title,
-                content: content,
-                format: format,
-                conversionManager: conversionManager
-            )
-            Logger.shared.log("Saved notebook '\(notebook.title)' to library at \(savedURL.path)", category: "Notebook", type: .success)
-            HapticEngine.success()
-            showToast("Saved '\(notebook.title)' to Library as \(format.displayName)!")
-        } catch {
-            Logger.shared.log("Failed to save notebook as library book: \(error.localizedDescription)", category: "Notebook", type: .error)
-            HapticEngine.error()
-            showToast("Save to library failed: \(error.localizedDescription)")
+        Task { @MainActor in
+            do {
+                let savedURL = try await NotebookDocumentExporter.shared.saveToLibraryAsBook(
+                    title: notebook.title,
+                    content: content,
+                    format: format,
+                    conversionManager: conversionManager
+                )
+                Logger.shared.log("Saved notebook '\(notebook.title)' to library at \(savedURL.path)", category: "Notebook", type: .success)
+                HapticEngine.success()
+                showToast("Saved '\(notebook.title)' to Library as \(format.displayName)!")
+            } catch {
+                Logger.shared.log("Failed to save notebook as library book: \(error.localizedDescription)", category: "Notebook", type: .error)
+                HapticEngine.error()
+                showToast("Save to library failed: \(error.localizedDescription)")
+            }
         }
     }
 
