@@ -2187,7 +2187,7 @@ struct ProPDFReaderEngine: View {
     }
 
     private func refreshSmartTierQuadrants() {
-        guard let doc = pdfDocument, let page = doc.page(at: currentPageIndex) else { return }
+        guard let doc = pdfDocument, doc.page(at: currentPageIndex) != nil else { return }
         let booxConfig = prefs.booxSectionFlowConfig
         let blocks = BooxSectionFlowEngine.shared.generateBlocks(config: booxConfig, space: .pdf)
         self.currentTierQuadrants = blocks.map { b in

@@ -25,6 +25,7 @@ extension Color {
             ? UIColor(hex: "#1a1a28") ?? UIColor.tertiarySystemGroupedBackground
             : UIColor.tertiarySystemGroupedBackground
     })
+    static let inkSurfaceElevated = inkSurfaceRaised
 
     /// Subtle separator
     static let inkBorderSubtle = Color(UIColor { t in

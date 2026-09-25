@@ -120,7 +120,7 @@ struct ManualVolumeLinkerView: View {
                                         .foregroundColor(.white)
                                         .padding(.horizontal, 14)
                                         .padding(.vertical, 10)
-                                        .background(Color.inkSurfaceElevated)
+                                        .background(Color.inkSurfaceRaised)
                                         .cornerRadius(10)
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 10)
