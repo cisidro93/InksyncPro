@@ -624,6 +624,38 @@ class EBookPreferences: ObservableObject {
         bookTypographyProfiles[bookID] != nil
     }
 
+    // MARK: - Per-Series Reading Room Profiles (P3-3)
+    @AppStorage("ebook_seriesReadingProfiles") private var seriesReadingProfilesData: Data = Data()
+    public var seriesProfiles: [String: SeriesReadingProfile] {
+        get { (try? JSONDecoder().decode([String: SeriesReadingProfile].self, from: seriesReadingProfilesData)) ?? [:] }
+        set {
+            seriesReadingProfilesData = (try? JSONEncoder().encode(newValue)) ?? Data()
+            objectWillChange.send()
+        }
+    }
+
+    public func saveProfile(_ profile: SeriesReadingProfile, forSeries seriesName: String) {
+        let key = seriesName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return }
+        var current = seriesProfiles
+        current[key] = profile
+        seriesProfiles = current
+    }
+
+    public func profile(forSeries seriesName: String) -> SeriesReadingProfile? {
+        let key = seriesName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return nil }
+        return seriesProfiles[key]
+    }
+
+    public func applySeriesProfile(forSeries seriesName: String) {
+        guard let p = profile(forSeries: seriesName) else { return }
+        if let theme = p.themeRaw { themeRaw = theme }
+        if let size = p.fontSize { fontSize = size }
+        if let family = p.fontFamily { fontFamily = family }
+        if let twoUp = p.prefersTwoUp { booxIsSpreadMode = twoUp }
+    }
+
     // MARK: - Apple Pencil & Native Annotation Settings
     @AppStorage("ebook_applePencilAutoDraw") var applePencilAutoDraw: Bool = true {
         didSet { objectWillChange.send() }
@@ -953,5 +985,37 @@ enum PanelInspectionStyle: String, CaseIterable, Identifiable, Codable, Sendable
 
     var icon: String {
         return "rectangle.split.3x1"
+    }
+}
+
+// MARK: - Per-Series Reading Room Profile Model (P3-3)
+public struct SeriesReadingProfile: Codable, Sendable, Equatable {
+    public var themeRaw: String?
+    public var fontSize: Double?
+    public var fontFamily: String?
+    public var readingModeRaw: String?
+    public var prefersTwoUp: Bool?
+    public var prefersMangaMode: Bool?
+    public var readingFilterRaw: String?
+    public var smartTiersEnabled: Bool?
+
+    public init(
+        themeRaw: String? = nil,
+        fontSize: Double? = nil,
+        fontFamily: String? = nil,
+        readingModeRaw: String? = nil,
+        prefersTwoUp: Bool? = nil,
+        prefersMangaMode: Bool? = nil,
+        readingFilterRaw: String? = nil,
+        smartTiersEnabled: Bool? = nil
+    ) {
+        self.themeRaw = themeRaw
+        self.fontSize = fontSize
+        self.fontFamily = fontFamily
+        self.readingModeRaw = readingModeRaw
+        self.prefersTwoUp = prefersTwoUp
+        self.prefersMangaMode = prefersMangaMode
+        self.readingFilterRaw = readingFilterRaw
+        self.smartTiersEnabled = smartTiersEnabled
     }
 }

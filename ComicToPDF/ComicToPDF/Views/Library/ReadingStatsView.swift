@@ -80,6 +80,9 @@ struct ReadingStatsView: View {
                     )
                     .inkSpecularBorder(cornerRadius: 16)
                     
+                    // ── Mindful Reading Continuity Calendar ───────────────
+                    mindfulReadingCalendarSection
+                    
                     // ── Library Overview ─────────────────────────────────
                     VStack(alignment: .leading, spacing: 14) {
                         InkSectionHeader("Library Overview")
@@ -465,6 +468,104 @@ struct ReadingStatsView: View {
         let colors: [Color] = [Theme.blue, Theme.orange, .purple, .green, .pink, .teal]
         return counts.sorted { $0.value > $1.value }.enumerated().map { idx, item in
             FormatItem(format: item.key, count: item.value, color: colors[idx % colors.count])
+        }
+    }
+    
+    // ── Mindful Reading Calendar ────────────────────────────────
+    private var mindfulReadingCalendarSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            InkSectionHeader("Reading Continuity")
+            
+            Text("A peaceful visual journal of time enjoyed with your books over the past 4 weeks.")
+                .font(.system(size: 12, weight: .regular, design: .rounded))
+                .foregroundColor(Theme.textSecondary)
+            
+            let pastDays = buildRecentDaysGrid()
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 6) {
+                ForEach(pastDays, id: \.date) { day in
+                    VStack(spacing: 2) {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(calendarCellColor(minutes: day.minutes))
+                            .frame(height: 28)
+                            .overlay(
+                                Text("\(day.dayNumber)")
+                                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                                    .foregroundColor(day.minutes > 0 ? .white : Theme.textSecondary.opacity(0.6))
+                            )
+                    }
+                    .accessibilityLabel("\(day.dayName): \(day.minutes) minutes read")
+                }
+            }
+            .padding(.vertical, 4)
+            
+            HStack(spacing: 12) {
+                HStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 3).fill(Color.primary.opacity(0.06)).frame(width: 12, height: 12)
+                    Text("Quiet").font(.system(size: 10)).foregroundColor(Theme.textSecondary)
+                }
+                HStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 3).fill(Color.inkBlue.opacity(0.4)).frame(width: 12, height: 12)
+                    Text("15m").font(.system(size: 10)).foregroundColor(Theme.textSecondary)
+                }
+                HStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 3).fill(Color.inkViolet.opacity(0.7)).frame(width: 12, height: 12)
+                    Text("30m").font(.system(size: 10)).foregroundColor(Theme.textSecondary)
+                }
+                HStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 3).fill(Color.inkViolet).frame(width: 12, height: 12)
+                    Text("60m+").font(.system(size: 10)).foregroundColor(Theme.textSecondary)
+                }
+                Spacer()
+            }
+            .padding(.top, 4)
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.inkSurfaceRaised)
+        )
+        .inkSpecularBorder(cornerRadius: 16)
+    }
+    
+    private struct CalendarDayItem {
+        let date: Date
+        let dayNumber: Int
+        let dayName: String
+        let minutes: Int
+    }
+    
+    private func buildRecentDaysGrid() -> [CalendarDayItem] {
+        let cal = Calendar.current
+        let today = Date()
+        var items: [CalendarDayItem] = []
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE, MMM d"
+        
+        for offset in (0..<28).reversed() {
+            if let date = cal.date(byAdding: .day, value: -offset, to: today) {
+                let dayNum = cal.component(.day, from: date)
+                let dayName = formatter.string(from: date)
+                let mins: Int
+                if offset == 0 {
+                    mins = tracker.totalMinutesReadToday()
+                } else {
+                    mins = tracker.totalMinutesRead(on: date)
+                }
+                items.append(CalendarDayItem(date: date, dayNumber: dayNum, dayName: dayName, minutes: mins))
+            }
+        }
+        return items
+    }
+    
+    private func calendarCellColor(minutes: Int) -> Color {
+        if minutes <= 0 {
+            return Color.primary.opacity(0.05)
+        } else if minutes < 20 {
+            return Color.inkBlue.opacity(0.45)
+        } else if minutes < 45 {
+            return Color.inkViolet.opacity(0.75)
+        } else {
+            return Color.inkViolet
         }
     }
 }

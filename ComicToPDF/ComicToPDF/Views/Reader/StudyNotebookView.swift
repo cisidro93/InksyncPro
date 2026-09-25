@@ -139,6 +139,7 @@ struct StudyNotebookView: View {
     @State private var isSmartShapesEnabled = true
     @State private var eraserType: PKEraserTool.EraserType = .vector
     @State private var lastActiveWritingTool: DrawingTool = .pen
+    @State private var isPerformingOCR: Bool = false
 
     // Spaced Repetition Study Deck states
     @State private var isStudyModeActive = false
@@ -2521,6 +2522,21 @@ extension StudyNotebookView {
                     .background(isSmartShapesEnabled ? Color.purple : Color.primary.opacity(0.06), in: Circle())
             }
             .buttonStyle(.plain)
+
+            // Ink-to-Text OCR Action
+            Button {
+                HapticEngine.selection()
+                recognizeInkToText()
+            } label: {
+                Image(systemName: isPerformingOCR ? "arrow.triangle.2.circlepath" : "text.viewfinder")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(isPerformingOCR ? .orange : .primary)
+                    .padding(8)
+                    .background(Color.primary.opacity(0.06), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isPerformingOCR)
+            .accessibilityLabel("Convert handwriting to text")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -2531,6 +2547,33 @@ extension StudyNotebookView {
                 Divider().background(Color.primary.opacity(0.05))
             }
         )
+    }
+
+    private func recognizeInkToText() {
+        guard !canvasView.drawing.bounds.isEmpty else { return }
+        isPerformingOCR = true
+        let drawing = canvasView.drawing
+        Task {
+            if let recognized = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing),
+               !recognized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                await MainActor.run {
+                    if !localNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        localNotes += "\n\n" + recognized
+                    } else {
+                        localNotes = recognized
+                    }
+                    isFocused = false
+                    isPerformingOCR = false
+                    HapticEngine.success()
+                    debounceSave()
+                }
+            } else {
+                await MainActor.run {
+                    isPerformingOCR = false
+                    HapticEngine.light()
+                }
+            }
+        }
     }
 }
 

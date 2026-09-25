@@ -650,10 +650,3 @@ struct RSVPCalibrationSheet: View {
         sampleTask = nil
     }
 }
-
-private extension Array {
-    subscript(safe index: Index) -> Element? {
-        indices.contains(index) ? self[index] : nil
-    }
-}
-

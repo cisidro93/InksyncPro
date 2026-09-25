@@ -68,6 +68,7 @@ struct Annotation: Codable, Identifiable {
 
     // ✅ Marginalia & Sketchnotes (Mortimer Adler & Mike Rohde)
     var marginaliaSymbolRaw: String? = nil
+    var bookmarkName: String? = nil
 
     enum AnnotationKind: String, Codable {
         case highlight
@@ -146,6 +147,7 @@ struct Annotation: Codable, Identifiable {
 
     // ✅ Marginalia & Sketchnotes (Mortimer Adler & Mike Rohde)
     var marginaliaSymbolRaw: String?
+    var bookmarkName: String?
     
     init(from dto: Annotation) {
         self.id = dto.id
@@ -180,6 +182,7 @@ struct Annotation: Codable, Identifiable {
         self.cornellSummaryText = dto.cornellSummaryText
         self.paraCategoryRaw = dto.paraCategoryRaw
         self.marginaliaSymbolRaw = dto.marginaliaSymbolRaw
+        self.bookmarkName = dto.bookmarkName
     }
     
     // ✅ Phase 31 Native Constructor for Readwise Importers
@@ -267,6 +270,8 @@ struct Annotation: Codable, Identifiable {
         dto.linkedAnnotationIDs = self.linkedAnnotationIDs ?? []
         dto.executiveSummary = self.executiveSummary
         dto.maturityRaw = self.maturityRaw ?? "seedling"
+        dto.marginaliaSymbolRaw = self.marginaliaSymbolRaw
+        dto.bookmarkName = self.bookmarkName
         return dto
     }
     
@@ -295,6 +300,8 @@ struct Annotation: Codable, Identifiable {
         self.linkedAnnotationIDs = dto.linkedAnnotationIDs ?? []
         self.executiveSummary = dto.executiveSummary
         self.maturityRaw = dto.maturityRaw ?? "seedling"
+        self.marginaliaSymbolRaw = dto.marginaliaSymbolRaw
+        self.bookmarkName = dto.bookmarkName
     }
 }
 

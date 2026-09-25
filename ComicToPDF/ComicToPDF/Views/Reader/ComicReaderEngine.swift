@@ -3495,6 +3495,7 @@ struct ComicSpreadGuidedView: View {
     @State private var pendingSingleTapWorkItem: DispatchWorkItem? = nil
     @State private var dragOffset: CGSize = .zero
     @State private var showPanelBadge: Bool = false
+    @State private var showTierOverviewPeek: Bool = false
     @State private var badgeDismissTask: Task<Void, Never>? = nil
 
     @ObservedObject private var prefs = EBookPreferences.shared
@@ -3543,6 +3544,15 @@ struct ComicSpreadGuidedView: View {
                     // ── Macro Physical Spread Overview (Feels like holding a comic) ──
                     macroSpreadView(for: geo.size)
                 }
+
+                if showTierOverviewPeek {
+                    smartTiersPeekOverlay(for: geo.size, safeArea: geo.safeAreaInsets)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.95)),
+                            removal: .opacity.combined(with: .scale(scale: 0.95))
+                        ))
+                        .zIndex(200)
+                }
             }
             .contentShape(Rectangle())
             .gesture(
@@ -3572,8 +3582,24 @@ struct ComicSpreadGuidedView: View {
                         }
                     }
             )
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.45)
+                    .onEnded { _ in
+                        guard !strides.isEmpty else { return }
+                        HapticEngine.medium()
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                            showTierOverviewPeek.toggle()
+                        }
+                    }
+            )
             .onTapGesture(count: 1) { loc in
-                handleTapWithDebounce(loc: loc, width: geo.size.width)
+                if showTierOverviewPeek {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        showTierOverviewPeek = false
+                    }
+                } else {
+                    handleTapWithDebounce(loc: loc, width: geo.size.width)
+                }
             }
         }
         .onAppear {
@@ -3740,6 +3766,194 @@ struct ComicSpreadGuidedView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Smart Tiers Peek-and-Pop Overlay
+
+    @ViewBuilder
+    private func smartTiersPeekOverlay(for size: CGSize, safeArea: EdgeInsets) -> some View {
+        ZStack {
+            // Frosted glass dark backdrop
+            Color.black.opacity(0.85)
+                .background(.ultraThinMaterial)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    HapticEngine.selection()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        showTierOverviewPeek = false
+                    }
+                }
+
+            VStack(spacing: 12) {
+                // Header HUD
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "sparkles.rectangle.stack")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.inkGreen)
+                            Text("Smart Tiers Overview")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                        }
+                        Text("Tap any tier to jump directly · Press and hold to peek anytime")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    Spacer()
+                    Button {
+                        HapticEngine.light()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showTierOverviewPeek = false
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(.white.opacity(0.75))
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, max(12, safeArea.top + 4))
+
+                Spacer()
+
+                // Center page preview with interactive bounding boxes
+                let maxPreviewW = size.width - 32
+                let maxPreviewH = size.height - safeArea.top - safeArea.bottom - 110
+
+                if spread.count == 2 {
+                    let leftImg = isMangaMode ? image1 : image0
+                    let rightImg = isMangaMode ? image0 : image1
+                    let leftPageIndex = isMangaMode ? (spread.count > 1 ? spread[1] : spread[0]) : spread[0]
+                    let rightPageIndex = isMangaMode ? spread[0] : (spread.count > 1 ? spread[1] : spread[0])
+
+                    HStack(spacing: 8) {
+                        if let l = leftImg {
+                            tierPreviewCard(
+                                image: l,
+                                pageIndex: leftPageIndex,
+                                maxWidth: (maxPreviewW - 8) / 2,
+                                maxHeight: maxPreviewH
+                            )
+                        }
+                        if let r = rightImg {
+                            tierPreviewCard(
+                                image: r,
+                                pageIndex: rightPageIndex,
+                                maxWidth: (maxPreviewW - 8) / 2,
+                                maxHeight: maxPreviewH
+                            )
+                        }
+                    }
+                } else {
+                    if let img0 = image0 {
+                        tierPreviewCard(
+                            image: img0,
+                            pageIndex: spread[0],
+                            maxWidth: maxPreviewW,
+                            maxHeight: maxPreviewH
+                        )
+                    }
+                }
+
+                Spacer()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tierPreviewCard(
+        image: UIImage,
+        pageIndex: Int,
+        maxWidth: CGFloat,
+        maxHeight: CGFloat
+    ) -> some View {
+        let imgSize = image.size
+        let fitSize: CGSize = {
+            guard imgSize.width > 0, imgSize.height > 0 else {
+                return CGSize(width: maxWidth, height: maxHeight)
+            }
+            let aspect = imgSize.width / imgSize.height
+            let maxAspect = maxWidth / maxHeight
+            if aspect > maxAspect {
+                return CGSize(width: maxWidth, height: maxWidth / aspect)
+            } else {
+                return CGSize(width: maxHeight * aspect, height: maxHeight)
+            }
+        }()
+
+        ZStack(alignment: .topLeading) {
+            Image(uiImage: image)
+                .resizable()
+                .applyFilterPreset(activeFilterPreset)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: fitSize.width, height: fitSize.height)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                )
+
+            // Overlaid tier bounding boxes for this page
+            let pageStrides = strides.filter { $0.pageIndex == pageIndex }
+            ForEach(pageStrides) { stride in
+                let b = stride.panel.boundingBox
+                let normX = max(0, min(1, b.minX))
+                let normY = max(0, min(1, 1.0 - b.maxY))
+                let normW = max(0.02, min(1.0 - normX, b.width))
+                let normH = max(0.02, min(1.0 - normY, b.height))
+
+                let boxX = normX * fitSize.width
+                let boxY = normY * fitSize.height
+                let boxW = normW * fitSize.width
+                let boxH = normH * fitSize.height
+
+                let isCurrent = (currentStrideIndex >= 0 && currentStrideIndex < strides.count && strides[currentStrideIndex].id == stride.id)
+
+                ZStack(alignment: .topLeading) {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isCurrent ? Color.inkGreen.opacity(0.25) : Color.white.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(
+                                    isCurrent ? Color.inkGreen : Color.white.opacity(0.65),
+                                    lineWidth: isCurrent ? 2.5 : 1.2
+                                )
+                        )
+
+                    // Tier badge
+                    HStack(spacing: 3) {
+                        if isCurrent {
+                            Circle()
+                                .fill(Color.inkGreen)
+                                .frame(width: 5, height: 5)
+                        }
+                        Text("\(stride.subIndex + 1)")
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundColor(isCurrent ? .inkGreen : .white)
+                    }
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color.black.opacity(0.75))
+                    .clipShape(Capsule())
+                    .padding(4)
+                }
+                .frame(width: boxW, height: boxH)
+                .offset(x: boxX, y: boxY)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    HapticEngine.selection()
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        if let targetIdx = strides.firstIndex(where: { $0.id == stride.id }) {
+                            currentStrideIndex = targetIdx
+                        }
+                        showTierOverviewPeek = false
+                    }
+                }
+            }
+        }
+        .frame(width: fitSize.width, height: fitSize.height)
+        .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
     }
 
     // MARK: - Gesture Handling

@@ -418,6 +418,21 @@ class ReaderProgressTracker: ObservableObject {
         return Int(totalSeconds / 60.0)
     }
 
+    func totalMinutesRead(on date: Date) -> Int {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else { return 0 }
+        var totalSeconds: Double = 0
+        for prog in progressMap.values {
+            if let events = prog.sessionEvents {
+                for event in events where event.date >= startOfDay && event.date < endOfDay {
+                    totalSeconds += event.secondsSpent
+                }
+            }
+        }
+        return Int(totalSeconds / 60.0)
+    }
+
     func totalMinutesReadThisWeek() -> Int {
         let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
         var totalSeconds: Double = 0

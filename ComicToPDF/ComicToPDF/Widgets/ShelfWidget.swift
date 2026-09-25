@@ -152,3 +152,258 @@ struct ShelfWidget: Widget {
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
+
+// MARK: - Continue Reading Widget (P3-1)
+
+struct ContinueReadingEntry: TimelineEntry {
+    let date: Date
+    let title: String?
+    let author: String?
+    let progress: Double
+    let pagesLeft: Int
+    let minutesLeft: Int
+    let coverData: Data?
+    let bookID: String?
+}
+
+struct ContinueReadingProvider: TimelineProvider {
+    func placeholder(in context: Context) -> ContinueReadingEntry {
+        ContinueReadingEntry(
+            date: Date(),
+            title: "The Odyssey",
+            author: "Homer",
+            progress: 0.65,
+            pagesLeft: 84,
+            minutesLeft: 42,
+            coverData: nil,
+            bookID: nil
+        )
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (ContinueReadingEntry) -> Void) {
+        completion(currentEntry())
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<ContinueReadingEntry>) -> Void) {
+        let entry = currentEntry()
+        let timeline = Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(15 * 60)))
+        completion(timeline)
+    }
+
+    private func currentEntry() -> ContinueReadingEntry {
+        let defaults = UserDefaults(suiteName: "group.com.antigravity.inksync")
+        let title = defaults?.string(forKey: "currentBookTitle")
+        let author = defaults?.string(forKey: "currentBookAuthor")
+        let progress = defaults?.double(forKey: "currentBookProgress") ?? 0.0
+        let pages = defaults?.integer(forKey: "currentBookPagesLeft") ?? 0
+        let minutes = defaults?.integer(forKey: "currentBookMinutesLeft") ?? 0
+        let cover = defaults?.data(forKey: "currentBookCoverData")
+        let bookID = defaults?.string(forKey: "currentBookID")
+
+        return ContinueReadingEntry(
+            date: Date(),
+            title: title,
+            author: author,
+            progress: progress,
+            pagesLeft: pages,
+            minutesLeft: minutes,
+            coverData: cover,
+            bookID: bookID
+        )
+    }
+}
+
+struct ContinueReadingEntryView: View {
+    @Environment(\.widgetFamily) var family
+    var entry: ContinueReadingEntry
+
+    private var deepLinkURL: URL? {
+        if let id = entry.bookID, !id.isEmpty {
+            return URL(string: "inksync://book/\(id)")
+        }
+        return URL(string: "inksync://library")
+    }
+
+    var body: some View {
+        Group {
+            switch family {
+            case .systemMedium:
+                mediumView
+            default:
+                smallView
+            }
+        }
+        .widgetURL(deepLinkURL)
+        .containerBackground(for: .widget) {
+            Color.black.opacity(0.92)
+        }
+    }
+
+    @ViewBuilder
+    private var smallView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                if let data = entry.coverData, let uiImg = UIImage(data: data) {
+                    Image(uiImage: uiImg)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 44, height: 60)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.15), lineWidth: 0.8))
+                        .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(LinearGradient(colors: [Color.purple.opacity(0.6), Color.blue.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 44, height: 60)
+                        Image(systemName: "book.fill")
+                            .foregroundColor(.white.opacity(0.8))
+                            .font(.system(size: 20))
+                    }
+                }
+
+                Spacer()
+
+                // Circular Progress Ring
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.12), lineWidth: 4)
+                    Circle()
+                        .trim(from: 0, to: CGFloat(min(1.0, max(0.0, entry.progress))))
+                        .stroke(Color.purple, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Text("\(Int(entry.progress * 100))%")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                }
+                .frame(width: 36, height: 36)
+            }
+
+            Spacer()
+
+            if let title = entry.title, !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .lineLimit(2)
+            } else {
+                Text("Tap to read")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+            }
+
+            if entry.pagesLeft > 0 {
+                Text("\(entry.pagesLeft) pages left")
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(12)
+    }
+
+    @ViewBuilder
+    private var mediumView: some View {
+        HStack(spacing: 14) {
+            if let data = entry.coverData, let uiImg = UIImage(data: data) {
+                Image(uiImage: uiImg)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 68, height: 100)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 0.8))
+                    .shadow(color: .black.opacity(0.4), radius: 6, y: 3)
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(LinearGradient(colors: [Color.purple.opacity(0.6), Color.blue.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 68, height: 100)
+                    Image(systemName: "book.fill")
+                        .foregroundColor(.white.opacity(0.8))
+                        .font(.system(size: 28))
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Text("CONTINUE READING")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundColor(.purple)
+                    Spacer()
+                    Text("\(Int(entry.progress * 100))%")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+
+                if let title = entry.title, !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                } else {
+                    Text("No active book")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+
+                if let author = entry.author, !author.isEmpty {
+                    Text(author)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                // Progress Bar
+                GeometryReader { barGeo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.white.opacity(0.12))
+                            .frame(height: 5)
+                        Capsule()
+                            .fill(LinearGradient(colors: [Color.purple, Color.blue], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: barGeo.size.width * CGFloat(min(1.0, max(0.0, entry.progress))), height: 5)
+                    }
+                }
+                .frame(height: 5)
+
+                HStack(spacing: 12) {
+                    if entry.pagesLeft > 0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "book.pages")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            Text("\(entry.pagesLeft) pages left")
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if entry.minutesLeft > 0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            Text("~\(entry.minutesLeft)m left")
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(12)
+    }
+}
+
+struct ContinueReadingWidget: Widget {
+    let kind: String = "ContinueReadingWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: ContinueReadingProvider()) { entry in
+            ContinueReadingEntryView(entry: entry)
+        }
+        .configurationDisplayName("Continue Reading")
+        .description("Quickly resume your current book or comic with a peaceful continuity overview.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
