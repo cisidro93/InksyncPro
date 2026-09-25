@@ -488,7 +488,7 @@ struct SeriesDetailView: View {
             isSelectionMode ?
             DragGesture(minimumDistance: 2, coordinateSpace: .named("SeriesDetailViewport"))
                 .onChanged { drag in
-                    handleDragUpdate(to: drag.location, viewportHeight: viewportHeight, scrollProxy: scrollProxy)
+                    handleDragChanged(drag, viewportHeight: viewportHeight, scrollProxy: scrollProxy, colCount: 1)
                 }
                 .onEnded { _ in
                     handleDragEnded()
@@ -932,8 +932,22 @@ struct SeriesDetailView: View {
         }
     }
 
+    private func gridColCount(for viewportWidth: CGFloat) -> Int {
+        if viewportWidth >= 1200 { return 7 }
+        if viewportWidth >= 950  { return 6 }
+        if viewportWidth >= 720  { return 5 }
+        if viewportWidth >= 500  { return 4 }
+        if viewportWidth >= 420  { return 3 }
+        return 2
+    }
+
     private func gridView(scrollProxy: ScrollViewProxy, viewportHeight: CGFloat, viewportWidth: CGFloat) -> some View {
-        ScrollView {
+        let colCount = gridColCount(for: viewportWidth)
+        let hPad: CGFloat = viewportWidth >= 1000 ? 32 : (viewportWidth >= 700 ? 20 : (viewportWidth >= 420 ? 12 : 14))
+        let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 12
+        let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
+
+        return ScrollView {
             LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                 headerView
                     .padding(.horizontal)
@@ -1007,18 +1021,6 @@ struct SeriesDetailView: View {
                 
                 volumeFilterBar
                     .padding(.bottom, 8)
-
-                let hPad: CGFloat = viewportWidth >= 1000 ? 32 : (viewportWidth >= 700 ? 20 : (viewportWidth >= 420 ? 12 : 14))
-                let colSpacing: CGFloat = hSizeClass == .regular ? 20 : 12
-                let colCount: Int = {
-                    if viewportWidth >= 1200 { return 7 }
-                    if viewportWidth >= 950  { return 6 }
-                    if viewportWidth >= 720  { return 5 }
-                    if viewportWidth >= 500  { return 4 }
-                    if viewportWidth >= 420  { return 3 }
-                    return 2
-                }()
-                let columns = Array(repeating: GridItem(.flexible(), spacing: colSpacing), count: colCount)
 
                 if showVolumeGrouping && hasVolumeData {
                     ForEach(volumeGroups, id: \.key) { group in
@@ -2178,17 +2180,17 @@ struct SeriesDetailView: View {
         return nil
     }
     
-    private func handleDragChanged(_ drag: DragGesture.Value, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy, colCount: Int) {
+    private func handleDragChanged(_ drag: DragGesture.Value, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy, colCount: Int = 1) {
         if dragSelectionMode == .undetermined {
             let dx = drag.translation.width
             let dy = drag.translation.height
             let distance = hypot(dx, dy)
             
-            // 1. Did touch begin on or near the selection circle (top-right of cell)?
+            // 1. Did touch begin on or near the selection circle (top-right of cell in grid, or trailing in list)?
             let isNearCheckmark: Bool = {
                 if let pdf = findPDFUnderTouch(at: drag.startLocation),
                    let frame = cellFrames[pdf.id] {
-                    let checkmarkArea = CGRect(x: frame.maxX - 52, y: frame.minY, width: 52, height: 52)
+                    let checkmarkArea = CGRect(x: frame.maxX - 60, y: frame.minY, width: 60, height: max(52, frame.height))
                     return checkmarkArea.contains(drag.startLocation)
                 }
                 return false
@@ -2211,7 +2213,7 @@ struct SeriesDetailView: View {
         handleDragUpdate(to: drag.location, viewportHeight: viewportHeight, scrollProxy: scrollProxy, colCount: colCount)
     }
 
-    private func handleDragUpdate(to location: CGPoint, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy, colCount: Int) {
+    private func handleDragUpdate(to location: CGPoint, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy, colCount: Int = 1) {
         lastDragLocation = location
         
         // Coordinates in cellFrames are in viewport space, so compare directly

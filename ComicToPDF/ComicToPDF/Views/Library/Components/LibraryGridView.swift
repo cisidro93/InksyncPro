@@ -230,7 +230,7 @@ struct LibraryGridView: View {
                             isBatchMode ?
                             DragGesture(minimumDistance: 2, coordinateSpace: .named("libraryViewport"))
                                 .onChanged { drag in
-                                    handleDragChanged(drag, viewportHeight: viewportGeo.size.height, scrollProxy: proxy, activeCols: activeCols)
+                                    handleDragChanged(drag, viewportHeight: viewportGeo.size.height, scrollProxy: proxy, activeCols: colCount(for: viewportGeo.size.width))
                                 }
                                 .onEnded { _ in
                                     handleDragEnded()
