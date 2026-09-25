@@ -167,6 +167,8 @@ struct EBookSettingsPanel: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("\(tab.rawValue) settings tab")
+                .accessibilityAddTraits(activeTab == tab ? [.isSelected, .isButton] : .isButton)
             }
         }
         .background(Color.inkSurface)

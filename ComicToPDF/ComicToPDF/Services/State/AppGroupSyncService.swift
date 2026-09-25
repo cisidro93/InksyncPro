@@ -66,12 +66,10 @@ public final class AppGroupSyncService {
             defaults.set(book.id.uuidString, forKey: "currentBookID")
             
             // Extract and store low-res cover thumbnail for widget display
-            if let thumbnail = book.thumbnail {
-                if let jpegData = thumbnail.jpegData(compressionQuality: 0.6) {
-                    defaults.set(jpegData, forKey: "currentBookCoverData")
-                }
-            } else if let cachedURL = ThumbnailManager.shared.getCachedThumbnailURL(for: book.id),
-                      let diskData = try? Data(contentsOf: cachedURL) {
+            if let data = book.coverImageData {
+                defaults.set(data, forKey: "currentBookCoverData")
+            } else if let coverURL = PhysicalFileSystemRouter.shared.getCoverURL(for: book),
+                      let diskData = try? Data(contentsOf: coverURL) {
                 defaults.set(diskData, forKey: "currentBookCoverData")
             }
         } else if let firstBook = allBooks.first {

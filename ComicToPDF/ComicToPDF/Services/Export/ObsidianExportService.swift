@@ -15,13 +15,13 @@ import PencilKit
 import UIKit
 
 @MainActor
-public final class ObsidianExportService {
-    public static let shared = ObsidianExportService()
+final class ObsidianExportService {
+    static let shared = ObsidianExportService()
     
     private init() {}
     
     /// Compiles all annotations and study cards into a complete Obsidian Vault ZIP archive
-    public func exportVault(annotations: [SDAnnotation], pdfs: [SDConvertedPDF]) async throws -> URL {
+    func exportVault(annotations: [SDAnnotation], pdfs: [SDConvertedPDF]) async throws -> URL {
         // Pre-render any attached Apple Pencil drawings to transparent PNGs
         var drawingsMap: [UUID: Data] = [:]
         for ann in annotations {

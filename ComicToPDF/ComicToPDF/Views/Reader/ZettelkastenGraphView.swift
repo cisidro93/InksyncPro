@@ -346,6 +346,13 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
     func startSimulation() {
         stopSimulation()
         tickCount = 0
+        if UIAccessibility.isReduceMotionEnabled {
+            // Settle layout deterministically without continuous screen oscillations
+            for _ in 0..<50 {
+                physicsTick()
+            }
+            return
+        }
         let proxy = ZettelkastenDisplayLinkProxy(target: self)
         let dl = CADisplayLink(target: proxy, selector: #selector(ZettelkastenDisplayLinkProxy.tick))
         if #available(iOS 15.0, *) {

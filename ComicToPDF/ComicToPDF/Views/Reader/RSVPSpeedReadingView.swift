@@ -22,6 +22,8 @@ public struct RSVPSpeedReadingView: View {
     // Target WPM (Words Per Minute)
     @State private var currentWPM: Double = 350.0
     @State private var chunkSize: Int = 1 // 1, 2, or 3 words at once
+    @State private var showCalibration: Bool = false
+    @ScaledMetric(relativeTo: .largeTitle) private var focalFontSize: CGFloat = 38
 
     public init(rawText: String, bookTitle: String, initialWordIndex: Int = 0, onDismiss: @escaping (Int) -> Void) {
         self.rawText = rawText
@@ -68,6 +70,12 @@ public struct RSVPSpeedReadingView: View {
             prefs.rsvpChunkSize = chunkSize
             onDismiss(currentWordIndex)
         }
+        .sheet(isPresented: $showCalibration) {
+            RSVPCalibrationSheet { calibratedWPM in
+                currentWPM = calibratedWPM
+                prefs.rsvpSpeedWPM = calibratedWPM
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
             if isPlaying {
                 togglePlayPause()
@@ -88,8 +96,30 @@ public struct RSVPSpeedReadingView: View {
                     .foregroundStyle(.white.opacity(0.85))
                     .lineLimit(1)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("RSVP Speed Reader, \(bookTitle)")
 
             Spacer()
+
+            // Calibrate Button
+            Button {
+                HapticEngine.selection()
+                if isPlaying { togglePlayPause() }
+                showCalibration = true
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "gauge.with.needle")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("Calibrate")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(Color.orange)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.orange.opacity(0.15)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Calibrate reading speed")
 
             // Chunk Size Picker
             HStack(spacing: 4) {
@@ -109,6 +139,8 @@ public struct RSVPSpeedReadingView: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Read \(count) \(count == 1 ? "word" : "words") per flash")
+                    .accessibilityAddTraits(chunkSize == count ? [.isSelected, .isButton] : .isButton)
                 }
             }
             .padding(4)
@@ -124,6 +156,7 @@ public struct RSVPSpeedReadingView: View {
                     .foregroundStyle(.white.opacity(0.7))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Close RSVP speed reader")
             .padding(.leading, 8)
         }
         .padding(.top, 12)
@@ -156,6 +189,9 @@ public struct RSVPSpeedReadingView: View {
             .frame(height: 70)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(words.indices.contains(currentWordIndex) ? getChunkWords().joined(separator: " ") : "End of chapter")
+            .accessibilityHint("Double tap to toggle playback")
             .onTapGesture {
                 togglePlayPause()
             }
@@ -192,23 +228,27 @@ public struct RSVPSpeedReadingView: View {
             HStack(spacing: 0) {
                 Spacer()
                 Text(prefix)
-                    .font(.system(size: 38, weight: .medium, design: .monospaced))
+                    .font(.system(size: focalFontSize, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.88))
 
                 Text(focal)
-                    .font(.system(size: 40, weight: .bold, design: .monospaced))
+                    .font(.system(size: focalFontSize + 2, weight: .bold, design: .monospaced))
                     .foregroundStyle(Color.orange)
                     .shadow(color: Color.orange.opacity(0.7), radius: 6)
 
                 Text(suffix)
-                    .font(.system(size: 38, weight: .medium, design: .monospaced))
+                    .font(.system(size: focalFontSize, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.88))
                 Spacer()
             }
+            .minimumScaleFactor(0.6)
+            .lineLimit(1)
         } else {
             Text(word)
-                .font(.system(size: 38, weight: .bold, design: .monospaced))
+                .font(.system(size: focalFontSize, weight: .bold, design: .monospaced))
                 .foregroundStyle(.white)
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
         }
     }
 
@@ -218,8 +258,10 @@ public struct RSVPSpeedReadingView: View {
         HStack(spacing: 12) {
             ForEach(chunk.indices, id: \.self) { idx in
                 Text(chunk[idx])
-                    .font(.system(size: 28, weight: .semibold, design: .rounded))
+                    .font(.system(size: max(16, focalFontSize * 0.7), weight: .semibold, design: .rounded))
                     .foregroundStyle(idx == 0 ? Color.orange : Color.white.opacity(0.9))
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
             }
         }
     }
@@ -251,6 +293,8 @@ public struct RSVPSpeedReadingView: View {
                 in: 0...Double(max(1, words.count - 1))
             )
             .tint(Color.orange)
+            .accessibilityLabel("Reading progress")
+            .accessibilityValue("Word \(min(words.count, currentWordIndex + 1)) of \(words.count)")
         }
         .padding(.bottom, 16)
     }
@@ -273,6 +317,8 @@ public struct RSVPSpeedReadingView: View {
                     }
                 }
                 .tint(Color.orange)
+                .accessibilityLabel("Reading speed")
+                .accessibilityValue("\(Int(currentWPM)) words per minute")
 
                 Text("\(Int(currentWPM)) WPM")
                     .font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit())
@@ -294,6 +340,7 @@ public struct RSVPSpeedReadingView: View {
                         .background(Circle().fill(Color.white.opacity(0.08)))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Rewind 10 words")
 
                 // Play / Pause
                 Button {
@@ -307,6 +354,7 @@ public struct RSVPSpeedReadingView: View {
                         .shadow(color: Color.orange.opacity(0.5), radius: 12)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(isPlaying ? "Pause reading" : "Resume reading")
 
                 // Forward 10 Words
                 Button {
@@ -320,6 +368,7 @@ public struct RSVPSpeedReadingView: View {
                         .background(Circle().fill(Color.white.opacity(0.08)))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Advance 10 words")
             }
         }
         .padding(.bottom, 24)
@@ -429,3 +478,182 @@ public struct RSVPSpeedReadingView: View {
         return Int(ceil(Double(remaining) / currentWPM))
     }
 }
+
+// MARK: - RSVP Cadence Calibration Sheet
+
+struct RSVPCalibrationSheet: View {
+    let onApply: (Double) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var sampleWPM: Double = 300.0
+    @State private var sampleWordIndex: Int = 0
+    @State private var isPlayingSample: Bool = false
+    @State private var sampleTask: Task<Void, Never>? = nil
+
+    private let sampleWords: [String] = [
+        "Reading", "is", "a", "quiet", "conversation.",
+        "All", "books", "talk,", "but", "a", "good", "book", "listens", "as", "well.",
+        "Find", "the", "gentle", "cadence", "that", "feels", "clear,",
+        "effortless,", "and", "mindful", "for", "your", "eyes."
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.opacity(0.95).ignoresSafeArea()
+
+                VStack(spacing: 24) {
+                    VStack(spacing: 8) {
+                        Text("Calibrate Reading Cadence")
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+
+                        Text("Adjust the velocity until the words flow naturally without strain.")
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 16)
+                    }
+                    .padding(.top, 12)
+
+                    // Focal preview card
+                    VStack {
+                        Spacer()
+                        let word = sampleWords[safe: sampleWordIndex] ?? "Reading"
+                        Text(word)
+                            .font(.system(size: 34, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .minimumScaleFactor(0.7)
+                            .lineLimit(1)
+                        Spacer()
+                    }
+                    .frame(height: 120)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            )
+                    )
+                    .padding(.horizontal, 24)
+
+                    // Slider & WPM readout
+                    VStack(spacing: 12) {
+                        HStack {
+                            Text("Pace")
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.6))
+                            Spacer()
+                            Text("\(Int(sampleWPM)) WPM")
+                                .font(.system(size: 15, weight: .bold, design: .rounded).monospacedDigit())
+                                .foregroundStyle(Color.orange)
+                        }
+                        .padding(.horizontal, 28)
+
+                        Slider(value: $sampleWPM, in: 150...700, step: 25) { editing in
+                            if !editing {
+                                HapticEngine.selection()
+                                if isPlayingSample {
+                                    startSamplePlayback()
+                                }
+                            }
+                        }
+                        .tint(Color.orange)
+                        .padding(.horizontal, 24)
+                        .accessibilityLabel("Cadence slider")
+                        .accessibilityValue("\(Int(sampleWPM)) words per minute")
+                    }
+
+                    // Test preview toggle
+                    Button {
+                        toggleSamplePlayback()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: isPlayingSample ? "stop.fill" : "play.fill")
+                            Text(isPlayingSample ? "Pause Sample" : "Test Cadence")
+                        }
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(Color.white.opacity(0.12)))
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+
+                    // Apply Button
+                    Button {
+                        HapticEngine.selection()
+                        stopSamplePlayback()
+                        onApply(sampleWPM)
+                        dismiss()
+                    } label: {
+                        Text("Apply Cadence")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.orange))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 16)
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        stopSamplePlayback()
+                        dismiss()
+                    }
+                    .foregroundStyle(.white.opacity(0.7))
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .onDisappear {
+            stopSamplePlayback()
+        }
+    }
+
+    private func toggleSamplePlayback() {
+        HapticEngine.selection()
+        isPlayingSample.toggle()
+        if isPlayingSample {
+            startSamplePlayback()
+        } else {
+            stopSamplePlayback()
+        }
+    }
+
+    private func startSamplePlayback() {
+        stopSamplePlayback()
+        guard isPlayingSample else { return }
+
+        sampleTask = Task { @MainActor in
+            while isPlayingSample && !Task.isCancelled {
+                let delay = 60.0 / max(100.0, sampleWPM)
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard !Task.isCancelled, isPlayingSample else { break }
+
+                sampleWordIndex = (sampleWordIndex + 1) % sampleWords.count
+            }
+        }
+    }
+
+    private func stopSamplePlayback() {
+        sampleTask?.cancel()
+        sampleTask = nil
+    }
+}
+
+private extension Array {
+    subscript(safe index: Index) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}
+

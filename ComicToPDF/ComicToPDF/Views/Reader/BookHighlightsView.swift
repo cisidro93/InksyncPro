@@ -109,7 +109,7 @@ struct BookHighlightsView: View {
         case .notes:
             list = list.filter { !($0.noteText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         case .bookmarks:
-            list = list.filter { $0.adlerianSymbol != nil || ($0.selectedText == nil && $0.noteText == nil) }
+            list = list.filter { $0.kindRaw == "bookmark" || $0.marginaliaSymbolRaw != nil || ($0.selectedText == nil && $0.noteText == nil) }
         }
 
         switch sortOption {

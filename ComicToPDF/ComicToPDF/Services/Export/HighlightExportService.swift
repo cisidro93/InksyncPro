@@ -9,13 +9,13 @@ import Foundation
 import UIKit
 
 @MainActor
-public final class HighlightExportService {
-    public static let shared = HighlightExportService()
+final class HighlightExportService {
+    static let shared = HighlightExportService()
     
     private init() {}
     
     /// Generates Markdown formatted highlights document
-    public func exportToMarkdown(bookTitle: String, author: String?, annotations: [SDAnnotation]) -> String {
+    func exportToMarkdown(bookTitle: String, author: String?, annotations: [SDAnnotation]) -> String {
         var md = "# Highlights from \(bookTitle)\n"
         if let author = author, !author.isEmpty {
             md += "*by \(author)*\n\n"
@@ -52,7 +52,7 @@ public final class HighlightExportService {
                 md += "\n**Note:** \(note)\n"
             }
             
-            if let symbol = ann.adlerianSymbol, !symbol.isEmpty {
+            if let symbol = ann.marginaliaSymbolRaw, !symbol.isEmpty {
                 md += "\n**Marginalia:** \(symbol)\n"
             }
             
@@ -63,7 +63,7 @@ public final class HighlightExportService {
     }
     
     /// Generates Readwise-compatible CSV formatted highlights
-    public func exportToReadwiseCSV(bookTitle: String, author: String?, annotations: [SDAnnotation]) -> String {
+    func exportToReadwiseCSV(bookTitle: String, author: String?, annotations: [SDAnnotation]) -> String {
         // Readwise Standard Columns: Highlight,Book Title,Book Author,Location,Date,Note
         var csv = "Highlight,Book Title,Book Author,Location,Date,Note\n"
         

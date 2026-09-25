@@ -105,7 +105,7 @@ public actor JITComicCacheEngine {
             memoryAccessOrder.removeAll()
             mipmapCache.removeAll()
             mipmapAccessOrder.removeAll()
-            Logger.shared.log("JITComicCacheEngine: Thermal state .critical — throttled prefetch to 0 and purged caches", category: "Performance", type: .fault)
+            Logger.shared.log("JITComicCacheEngine: Thermal state .critical — throttled prefetch to 0 and purged caches", category: "Performance", type: .error)
         @unknown default:
             thermalPrefetchMultiplier = 1.0
         }

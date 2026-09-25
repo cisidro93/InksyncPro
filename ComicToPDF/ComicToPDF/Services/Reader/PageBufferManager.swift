@@ -152,7 +152,7 @@ class PageBufferManager: ObservableObject {
         case .critical:
             imageCache.removeAllObjects()
             imageCache.countLimit = 1
-            Logger.shared.log("PageBufferManager: Thermal state .critical — purged cache and clamped limit to 1", category: "Performance", type: .fault)
+            Logger.shared.log("PageBufferManager: Thermal state .critical — purged cache and clamped limit to 1", category: "Performance", type: .error)
         @unknown default:
             break
         }

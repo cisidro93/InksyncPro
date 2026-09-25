@@ -222,6 +222,7 @@ struct ReaderChrome: View {
                     .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Back to Library")
 
             // ── Title ──────────────────────────────────────────────────────────
             Text(title)
@@ -231,6 +232,7 @@ struct ReaderChrome: View {
                 .truncationMode(.middle)
                 .frame(maxWidth: isPhone ? 150 : 360, alignment: .leading)
                 .shadow(color: colorScheme == .dark ? .black.opacity(0.6) : .clear, radius: 3)
+                .accessibilityAddTraits(.isHeader)
 
             Spacer(minLength: 4)
 
@@ -347,6 +349,7 @@ struct ReaderChrome: View {
                     .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(onBookmarkActive ? "Remove bookmark" : "Add bookmark")
 
             // ── Settings (aA) Button ───────────────────────────────────────────
             Button(action: onSettingsToggle) {
@@ -358,6 +361,7 @@ struct ReaderChrome: View {
                     .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Reader typography and display settings")
 
             // ── More Actions Menu (...) ────────────────────────────────────────
             Menu {
@@ -496,6 +500,7 @@ struct ReaderChrome: View {
                     .background(.ultraThinMaterial, in: Circle())
                     .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
+            .accessibilityLabel("More reader options and tools")
         }
         .padding(.horizontal, 14)
         .padding(.top, 50)
@@ -547,6 +552,8 @@ struct ReaderChrome: View {
                         }
                     )
                     .tint(Color(hex: "#B39DDB"))
+                    .accessibilityLabel("Page scrubber")
+                    .accessibilityValue("Page \(max(1, Int(round(currentProgress * Double(max(totalPages - 1, 1))))) + 1) of \(totalPages)")
                     .overlay(
                         GeometryReader { sliderGeo in
                             if isScrubbing {
@@ -631,6 +638,7 @@ struct ReaderChrome: View {
                         .foregroundStyle(currentProgress <= 0.001 ? Color.inkSecondary.opacity(0.25) : Color.inkText)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Previous page")
                 .disabled(currentProgress <= 0.001)
 
                 Button {
@@ -652,6 +660,8 @@ struct ReaderChrome: View {
                     .frame(minWidth: 100)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Page progress: \(pageText)")
+                .accessibilityHint("Double tap to toggle progress display mode, long press to jump to page")
                 .simultaneousGesture(
                     LongPressGesture(minimumDuration: 0.5)
                         .onEnded { _ in
@@ -670,6 +680,7 @@ struct ReaderChrome: View {
                         .foregroundStyle(currentProgress >= 0.999 ? Color.inkSecondary.opacity(0.25) : Color.inkText)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Next page")
                 .disabled(currentProgress >= 0.999)
             }
             .padding(.top, 14)
