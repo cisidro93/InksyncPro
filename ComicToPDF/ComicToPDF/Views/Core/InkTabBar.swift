@@ -387,21 +387,15 @@ struct InkTabBar: View {
             }
             .disabled(count == 0)
             
-            // Assign Volume
-            actionButton(title: "Assign Vol", systemImage: "folder.badge.plus", color: count == 0 ? .gray : .orange) {
-                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_AssignVolumeAction"), object: nil)
+            // Volumes (Unified Studio: Assign Volume Tag or Create Virtual Omnibus)
+            actionButton(title: "Volumes", systemImage: "books.vertical.fill", color: count == 0 ? .gray : .purple) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_VolumeStudioAction"), object: nil)
             }
             .disabled(count == 0)
             
             // Move to Series
             actionButton(title: "Move to Series", systemImage: "rectangle.stack.badge.plus", color: count == 0 ? .gray : .orange) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MoveToSeriesAction"), object: nil)
-            }
-            .disabled(count == 0)
-            
-            // Create Volume (Unified: Virtual or Standalone)
-            actionButton(title: "Create Vol", systemImage: "books.vertical.fill", color: count == 0 ? .gray : .purple) {
-                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_CreateVolumeAction"), object: nil)
             }
             .disabled(count == 0)
         }

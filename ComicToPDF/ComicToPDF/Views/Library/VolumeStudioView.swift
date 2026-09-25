@@ -860,6 +860,17 @@ struct VolumeStudioView: View {
     private func saveVolumeAssignment(volumeName: String) {
         let trimmed = volumeName.trimmingCharacters(in: .whitespacesAndNewlines)
         let tag: String? = trimmed.isEmpty ? nil : parseVolumeTag(from: trimmed)
+        
+        let currentSelectedIDs = Set(selectedFiles.map(\.id))
+        
+        // 1. If any issues were removed from this volume while editing in Volume Studio, clear their volume tag
+        for id in fileIDs where !currentSelectedIDs.contains(id) {
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == id }) {
+                conversionManager.convertedPDFs[idx].metadata.volume = nil
+            }
+        }
+        
+        // 2. Set volume tag on currently selected files
         for file in selectedFiles {
             if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == file.id }) {
                 conversionManager.convertedPDFs[idx].metadata.volume = tag
@@ -1022,16 +1033,26 @@ struct VolumeStudioView: View {
             }
         }
 
-        // Check if volumes 1 and 2 exist and have equal counts
-        guard let count1 = volumeCounts[1],
-              let count2 = volumeCounts[2],
-              count1 == count2, count1 > 0 else {
-            return
+        // Determine next volume number and pattern chunk size
+        let patternSize: Int
+        let nextVolume: Int
+        
+        if let count1 = volumeCounts[1], count1 > 0 {
+            if let count2 = volumeCounts[2], count2 > 0 {
+                let maxVolume = volumeCounts.keys.max() ?? 2
+                nextVolume = maxVolume + 1
+                patternSize = count2
+            } else {
+                nextVolume = 2
+                patternSize = count1
+            }
+        } else if let maxVol = volumeCounts.keys.max(), let maxCount = volumeCounts[maxVol], maxCount > 0 {
+            nextVolume = maxVol + 1
+            patternSize = maxCount
+        } else {
+            nextVolume = 1
+            patternSize = min(6, pool.count)
         }
-
-        let patternSize = count1
-        let maxVolume = volumeCounts.keys.max() ?? 2
-        let nextVolume = maxVolume + 1
 
         // If next volume is already populated, skip
         if let existingCount = volumeCounts[nextVolume], existingCount > 0 {

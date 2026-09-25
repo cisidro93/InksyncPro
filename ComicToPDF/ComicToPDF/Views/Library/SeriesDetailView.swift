@@ -34,6 +34,13 @@ struct SeriesDetailView: View {
     @State private var showingBatchSeriesAssignment: Bool = false
     @State private var showingBatchDeleteConfirmation: Bool = false
     
+    // Volume Management & Automation State
+    @State private var showingAutoChunkSheet: Bool = false
+    @State private var autoChunkSize: Int = 6
+    @State private var pendingVolumePromptPDF: ConvertedPDF? = nil
+    @State private var pendingVolumePromptText: String = ""
+    @State private var showingVolumePromptAlert: Bool = false
+    
     // Drag-to-select Gestures & Coordinate Tracking
     enum DragSelectionMode {
         case undetermined
@@ -484,17 +491,7 @@ struct SeriesDetailView: View {
         }
         .listStyle(InsetGroupedListStyle())
         .coordinateSpace(name: "SeriesDetailViewport")
-        .simultaneousGesture(
-            isSelectionMode ?
-            DragGesture(minimumDistance: 2, coordinateSpace: .named("SeriesDetailViewport"))
-                .onChanged { drag in
-                    handleDragChanged(drag, viewportHeight: viewportHeight, scrollProxy: scrollProxy, colCount: 1)
-                }
-                .onEnded { _ in
-                    handleDragEnded()
-                }
-            : nil
-        )
+        .padding(.bottom, 80)
         .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
             if isSelectionMode {
                 self.scrollOffset = value
@@ -638,6 +635,18 @@ struct SeriesDetailView: View {
                         .padding(.vertical, 3)
                         .background(Theme.text.opacity(0.08))
                         .clipShape(Capsule())
+                    
+                    if group.key != "Ungrouped" {
+                        SwiftUI.Menu {
+                            volumeContextMenuItems(group: group, isCollapsed: isCollapsed)
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 16))
+                                .foregroundColor(Theme.textSecondary)
+                                .padding(4)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 
                 // Reading Progress Bar
@@ -663,46 +672,8 @@ struct SeriesDetailView: View {
         .buttonStyle(.plain)
         .listRowBackground(Theme.surface.opacity(0.5))
         .id("vol_\(group.key)")  // anchor for QuickVolumeJump scroll
-        // Feature 3: Volume Omnibus Quick-Build (long-press)
         .contextMenu {
-            Button {
-                if fastBundleOmnibus {
-                    // User opted-in to the background autobuilder
-                    conversionManager.enqueueOmnibus(
-                        name: "\(series.title) Vol. \(formattedVolumeKey(group.key))",
-                        sourceFiles: group.issues
-                    )
-                } else {
-                    // User prefers the manual control sheet
-                    manualOmnibusBuildsCount += 1
-                    let selectedIDs = Set(group.issues.map { $0.id })
-                    
-                    // Trigger the prompt instead of instantly showing if they hit the 3-build threshold
-                    if manualOmnibusBuildsCount == 3 {
-                        pendingConfigSelection = selectedIDs
-                        mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
-                        showingOmnibusPrompt = true
-                    } else {
-                        selection = selectedIDs
-                        mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
-                        showingMergeConfig = true
-                    }
-                }
-            } label: {
-                Label("Build Kindle Omnibus for Vol. \(formattedVolumeKey(group.key))", systemImage: "books.vertical.fill")
-            }
-            
-            Button {
-                withAnimation {
-                    if isCollapsed {
-                        collapsedVolumes.remove(group.key)
-                    } else {
-                        collapsedVolumes.insert(group.key)
-                    }
-                }
-            } label: {
-                Label(isCollapsed ? "Expand" : "Collapse", systemImage: isCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
-            }
+            volumeContextMenuItems(group: group, isCollapsed: isCollapsed)
         }
         
         // Volume Contents (shown when expanded)
@@ -911,6 +882,20 @@ struct SeriesDetailView: View {
             Divider()
             
             Button {
+                autoAssignNextVolume()
+            } label: {
+                Label("Auto-Assign Next Volume", systemImage: "sparkles")
+            }
+            
+            Button {
+                showingAutoChunkSheet = true
+            } label: {
+                Label("Auto-Group Entire Series...", systemImage: "square.grid.3x3.fill")
+            }
+            
+            Divider()
+            
+            Button {
                 presentVolumeStudio(initialSelection: Set(visualIssues.map(\.id)), initialMode: .assign)
             } label: {
                 Label("Volume Studio & Grouping", systemImage: "books.vertical.fill")
@@ -1044,6 +1029,7 @@ struct SeriesDetailView: View {
                             }
                         }
                     }
+                    .padding(.bottom, 120)
                 } else {
                     LazyVGrid(columns: columns, spacing: hSizeClass == .regular ? 28 : 14) {
                         ForEach(filteredIssues) { pdf in
@@ -1113,6 +1099,18 @@ struct SeriesDetailView: View {
                         .padding(.vertical, 3)
                         .background(Theme.text.opacity(0.08))
                         .clipShape(Capsule())
+                    
+                    if group.key != "Ungrouped" {
+                        SwiftUI.Menu {
+                            volumeContextMenuItems(group: group, isCollapsed: isCollapsed)
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 16))
+                                .foregroundColor(Theme.textSecondary)
+                                .padding(4)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 
                 GeometryReader { geo in
@@ -1137,33 +1135,7 @@ struct SeriesDetailView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button {
-                if fastBundleOmnibus {
-                    conversionManager.enqueueOmnibus(
-                        name: "\(series.title) Vol. \(formattedVolumeKey(group.key))",
-                        sourceFiles: group.issues
-                    )
-                } else {
-                    let selectedIDs = Set(group.issues.map { $0.id })
-                    selection = selectedIDs
-                    mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
-                    showingMergeConfig = true
-                }
-            } label: {
-                Label("Build Kindle Omnibus for Vol. \(formattedVolumeKey(group.key))", systemImage: "books.vertical.fill")
-            }
-            
-            Button {
-                withAnimation {
-                    if isCollapsed {
-                        collapsedVolumes.remove(group.key)
-                    } else {
-                        collapsedVolumes.insert(group.key)
-                    }
-                }
-            } label: {
-                Label(isCollapsed ? "Expand" : "Collapse", systemImage: isCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
-            }
+            volumeContextMenuItems(group: group, isCollapsed: isCollapsed)
         }
     }
     private func gridIssueCell(_ pdf: ConvertedPDF) -> some View {
@@ -1215,9 +1187,6 @@ struct SeriesDetailView: View {
                     pdfToRead = nextBook
                 }
             }
-            .safeAreaInset(edge: .bottom) {
-                bottomActionBar
-            }
             .overlay {
                 quickVolumeJumpOverlay
             }
@@ -1247,6 +1216,9 @@ struct SeriesDetailView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MetadataAction"))) { _ in
                 showBatchMetadataEditor = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_VolumeStudioAction"))) { _ in
+                presentVolumeStudio(initialSelection: selection, initialMode: .assign)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_AssignVolumeAction"))) { _ in
                 presentVolumeStudio(initialSelection: selection, initialMode: .assign)
@@ -1294,27 +1266,7 @@ struct SeriesDetailView: View {
             .task(id: series.id) { await loadHeaderCover() }
     }
 
-    @ViewBuilder
-    private var bottomActionBar: some View {
-        if isSelectionMode && !selection.isEmpty {
-            LibraryBatchEditBar(
-                selectedPDFs: freshIssues.filter { selection.contains($0.id) },
-                onClearSelection: {
-                    withAnimation {
-                        selection.removeAll()
-                        isSelectionMode = false
-                    }
-                },
-                onActionCompleted: {
-                    withAnimation {
-                        selection.removeAll()
-                        isSelectionMode = false
-                    }
-                }
-            )
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-        }
-    }
+
 
     @ViewBuilder
     private var quickVolumeJumpOverlay: some View {
@@ -1325,7 +1277,7 @@ struct SeriesDetailView: View {
         }
     }
 
-    private func presentVolumeStudio(initialSelection: Set<UUID>, initialMode: VolumeStudioView.VolumeType = .virtual) {
+    private func presentVolumeStudio(initialSelection: Set<UUID>, initialMode: VolumeStudioView.VolumeType = .virtual, overrideSuggestedName: String? = nil) {
         let items = freshIssues.filter { initialSelection.contains($0.id) }
         let sortedItems = items.sorted {
             let n1 = Double($0.metadata.issueNumber ?? "")
@@ -1346,21 +1298,25 @@ struct SeriesDetailView: View {
         }
         let baseSeriesTitle = foundSeries ?? series.title
 
-        var foundVolume: String? = nil
-        for item in sortedItems {
-            if let v = item.metadata.volume, !v.isEmpty {
-                foundVolume = v
-                break
-            }
-        }
-
         let suggestedName: String
-        if let sharedVolume = foundVolume {
-            suggestedName = "\(baseSeriesTitle) Vol. \(sharedVolume)"
+        if let override = overrideSuggestedName {
+            suggestedName = override
         } else {
-            let existingVolNums = freshIssues.compactMap { resolvedVolume(for: $0) }.compactMap { Int($0) }
-            let nextNum = (existingVolNums.max() ?? 0) + 1
-            suggestedName = "\(baseSeriesTitle) Volume \(nextNum)"
+            var foundVolume: String? = nil
+            for item in sortedItems {
+                if let v = item.metadata.volume, !v.isEmpty {
+                    foundVolume = v
+                    break
+                }
+            }
+
+            if let sharedVolume = foundVolume {
+                suggestedName = "\(baseSeriesTitle) Vol. \(sharedVolume)"
+            } else {
+                let existingVolNums = freshIssues.compactMap { resolvedVolume(for: $0) }.compactMap { Int($0) }
+                let nextNum = (existingVolNums.max() ?? 0) + 1
+                suggestedName = "\(baseSeriesTitle) Volume \(nextNum)"
+            }
         }
         
         AppRouter.shared.presentSheet(.volumeStudio(
@@ -1407,6 +1363,9 @@ struct SeriesDetailView: View {
                 }
                 .environmentObject(conversionManager)
             }
+            .sheet(isPresented: $showingAutoChunkSheet) {
+                autoChunkSheet
+            }
             .sheet(isPresented: $showBatchVolumeAssignment) {
                 BatchVolumeAssignmentSheet(selectedIDs: selection)
                     .environmentObject(conversionManager)
@@ -1434,6 +1393,22 @@ struct SeriesDetailView: View {
 
     private func applyAlerts<Content: View>(_ content: Content) -> some View {
         content
+            .alert("Assign to Volume", isPresented: $showingVolumePromptAlert) {
+                TextField("Volume number (e.g. 1, 2, Special)", text: $pendingVolumePromptText)
+                    .autocorrectionDisabled()
+                Button("Assign") {
+                    let clean = pendingVolumePromptText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let pdf = pendingVolumePromptPDF, !clean.isEmpty {
+                        setIssueVolume(pdf, to: clean)
+                    }
+                    pendingVolumePromptPDF = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingVolumePromptPDF = nil
+                }
+            } message: {
+                Text("Enter the volume number or name for \"\(pendingVolumePromptPDF?.name ?? "this file")\".")
+            }
             .alert("Rename File", isPresented: Binding(
                 get: { pdfToRename != nil },
                 set: { if !$0 { pdfToRename = nil } }
@@ -1967,6 +1942,43 @@ struct SeriesDetailView: View {
                 pdfToAssignSeries = pdf
             } label: { Label("Add to Series...", systemImage: "books.vertical") }
             
+            // Direct Volume Assignment Submenu
+            SwiftUI.Menu {
+                if let currentVol = pdf.metadata.volume, !currentVol.isEmpty {
+                    Button(role: .destructive) {
+                        setIssueVolume(pdf, to: nil)
+                    } label: {
+                        Label("Remove from Volume \(currentVol)", systemImage: "xmark.circle")
+                    }
+                    Divider()
+                }
+                
+                ForEach(availableVolumes.filter { $0 != "Ungrouped" }, id: \.self) { vol in
+                    Button {
+                        setIssueVolume(pdf, to: vol)
+                    } label: {
+                        HStack {
+                            Text("Volume \(vol)")
+                            if pdf.metadata.volume == vol {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+                
+                Divider()
+                
+                Button {
+                    pendingVolumePromptPDF = pdf
+                    pendingVolumePromptText = ""
+                    showingVolumePromptAlert = true
+                } label: {
+                    Label("Assign to New Volume...", systemImage: "plus")
+                }
+            } label: {
+                Label(pdf.metadata.volume != nil ? "Volume: \(pdf.metadata.volume!)" : "Assign Volume", systemImage: "folder.badge.plus")
+            }
+            
             if (pdf.metadata.series?.isEmpty == false) || pdf.collectionId != nil {
                 Button {
                     conversionManager.setExplicitSeriesCover(for: pdf)
@@ -2186,25 +2198,23 @@ struct SeriesDetailView: View {
             let dy = drag.translation.height
             let distance = hypot(dx, dy)
             
-            // 1. Did touch begin on or near the selection circle (top-right of cell in grid, or trailing in list)?
+            // 1. Did touch begin on or near the selection circle (top-right 28x28 corner of cell)?
             let isNearCheckmark: Bool = {
                 if let pdf = findPDFUnderTouch(at: drag.startLocation),
                    let frame = cellFrames[pdf.id] {
-                    let checkmarkArea = CGRect(x: frame.maxX - 60, y: frame.minY, width: 60, height: max(52, frame.height))
+                    let checkmarkArea = CGRect(x: frame.maxX - 28, y: frame.minY, width: 28, height: 28)
                     return checkmarkArea.contains(drag.startLocation)
                 }
                 return false
             }()
             
-            if isNearCheckmark && distance >= 2 {
+            if isNearCheckmark && distance >= 4 {
                 dragSelectionMode = .swipeSelecting
-            } else if abs(dx) >= 12 && abs(dx) > abs(dy) * 0.75 {
-                // Horizontal sweep across columns -> swipe select
-                dragSelectionMode = .swipeSelecting
-            } else if abs(dy) >= 14 && abs(dy) > abs(dx) * 1.3 {
-                // Vertical flick/scroll on card body -> let ScrollView handle scrolling smoothly!
+            } else if abs(dy) > abs(dx) * 0.7 {
+                // Vertical scrolling -> let ScrollView handle scrolling natively without interference!
                 dragSelectionMode = .scrolling
-            } else if distance > 28 {
+            } else if abs(dx) >= 16 && abs(dx) > abs(dy) * 1.5 {
+                // Deliberate horizontal sweep across grid columns -> swipe select
                 dragSelectionMode = .swipeSelecting
             }
         }
@@ -2428,6 +2438,295 @@ struct SeriesDetailView: View {
             .padding(.top, 4)
 
         }
+    }
+    
+    // MARK: - Volume Automation & Management Actions
+    
+    private func editVolumeIssues(volumeKey: String) {
+        let issuesInVolume = localIssues.filter { resolvedVolume(for: $0) == volumeKey }
+        presentVolumeStudio(
+            initialSelection: Set(issuesInVolume.map(\.id)),
+            initialMode: .assign,
+            overrideSuggestedName: volumeKey
+        )
+    }
+    
+    private func addSelectionToVolume(volumeKey: String) {
+        guard !selection.isEmpty else { return }
+        for id in selection {
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == id }) {
+                conversionManager.convertedPDFs[idx].metadata.volume = volumeKey
+            }
+        }
+        conversionManager.saveLibrary()
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+        withAnimation {
+            selection.removeAll()
+            isSelectionMode = false
+        }
+        HapticEngine.success()
+    }
+    
+    private func unlinkVolume(_ name: String) {
+        HapticEngine.medium()
+        for idx in conversionManager.convertedPDFs.indices {
+            let pdf = conversionManager.convertedPDFs[idx]
+            if freshIssues.contains(where: { $0.id == pdf.id }) && pdf.metadata.volume == name {
+                conversionManager.convertedPDFs[idx].metadata.volume = nil
+            }
+        }
+        conversionManager.saveLibrary()
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+        HapticEngine.success()
+    }
+    
+    private func setIssueVolume(_ pdf: ConvertedPDF, to volumeKey: String?) {
+        if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+            conversionManager.convertedPDFs[idx].metadata.volume = volumeKey
+            conversionManager.saveLibrary()
+            NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+            HapticEngine.success()
+        }
+    }
+    
+    private func autoAssignNextVolume() {
+        HapticEngine.medium()
+        let pool = localIssues.sorted {
+            let n1 = Double($0.metadata.issueNumber ?? "")
+            let n2 = Double($1.metadata.issueNumber ?? "")
+            if let v1 = n1, let v2 = n2 { return v1 < v2 }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+        
+        var volumeCounts: [Int: Int] = [:]
+        for pdf in pool {
+            if let volStr = resolvedVolume(for: pdf), let volNum = Int(volStr) {
+                volumeCounts[volNum, default: 0] += 1
+            }
+        }
+        
+        let nextVolNum: Int = (volumeCounts.keys.max() ?? 0) + 1
+        
+        let chunkSize: Int
+        if let lastVol = volumeCounts.keys.max(), let count = volumeCounts[lastVol], count > 0 {
+            chunkSize = count
+        } else {
+            chunkSize = 6
+        }
+        
+        let unassigned = pool.filter { resolvedVolume(for: $0) == nil }
+        guard !unassigned.isEmpty else { return }
+        
+        let targetIssues = Array(unassigned.prefix(chunkSize))
+        for pdf in targetIssues {
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx].metadata.volume = "\(nextVolNum)"
+            }
+        }
+        conversionManager.saveLibrary()
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+        HapticEngine.success()
+    }
+    
+    private func autoChunkSeries(chunkSize: Int) {
+        guard chunkSize > 0 else { return }
+        HapticEngine.medium()
+        let pool = localIssues.sorted {
+            let n1 = Double($0.metadata.issueNumber ?? "")
+            let n2 = Double($1.metadata.issueNumber ?? "")
+            if let v1 = n1, let v2 = n2 { return v1 < v2 }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+        
+        let chunks = stride(from: 0, to: pool.count, by: chunkSize).map {
+            Array(pool[$0..<min($0 + chunkSize, pool.count)])
+        }
+        
+        for (volIndex, chunk) in chunks.enumerated() {
+            let volNum = "\(volIndex + 1)"
+            for pdf in chunk {
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.volume = volNum
+                }
+            }
+        }
+        conversionManager.saveLibrary()
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+        HapticEngine.success()
+    }
+    
+    @ViewBuilder
+    private func volumeContextMenuItems(group: (key: String, issues: [ConvertedPDF]), isCollapsed: Bool) -> some View {
+        if group.key != "Ungrouped" {
+            Button {
+                editVolumeIssues(volumeKey: group.key)
+            } label: {
+                Label("Edit Volume Issues", systemImage: "slider.horizontal.3")
+            }
+            
+            Button {
+                autoAssignNextVolume()
+            } label: {
+                Label("Auto-Assign Next Volume", systemImage: "sparkles")
+            }
+            
+            if isSelectionMode && !selection.isEmpty {
+                Button {
+                    addSelectionToVolume(volumeKey: group.key)
+                } label: {
+                    Label("Add Selected (\(selection.count)) to Vol. \(group.key)", systemImage: "plus.circle")
+                }
+            }
+        }
+        
+        Button {
+            if fastBundleOmnibus {
+                conversionManager.enqueueOmnibus(
+                    name: "\(series.title) Vol. \(formattedVolumeKey(group.key))",
+                    sourceFiles: group.issues
+                )
+            } else {
+                manualOmnibusBuildsCount += 1
+                let selectedIDs = Set(group.issues.map { $0.id })
+                if manualOmnibusBuildsCount == 3 {
+                    pendingConfigSelection = selectedIDs
+                    mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
+                    showingOmnibusPrompt = true
+                } else {
+                    selection = selectedIDs
+                    mergeConfigSuggestedName = "\(series.title) Vol. \(formattedVolumeKey(group.key))"
+                    showingMergeConfig = true
+                }
+            }
+        } label: {
+            Label("Build Kindle Omnibus for Vol. \(formattedVolumeKey(group.key))", systemImage: "books.vertical.fill")
+        }
+        
+        Button {
+            withAnimation {
+                if isCollapsed {
+                    collapsedVolumes.remove(group.key)
+                } else {
+                    collapsedVolumes.insert(group.key)
+                }
+            }
+        } label: {
+            Label(isCollapsed ? "Expand" : "Collapse", systemImage: isCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
+        }
+        
+        if group.key != "Ungrouped" {
+            Divider()
+            
+            Button(role: .destructive) {
+                unlinkVolume(group.key)
+            } label: {
+                Label("Unlink Volume", systemImage: "link.badge.plus")
+            }
+        }
+    }
+    
+    private var autoChunkSheet: some View {
+        NavigationStack {
+            ZStack {
+                Theme.bg.ignoresSafeArea()
+                
+                VStack(spacing: 24) {
+                    VStack(spacing: 8) {
+                        Image(systemName: "square.grid.3x3.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(Theme.orange)
+                            .padding(.top, 16)
+                        
+                        Text("Auto-Group Series into Volumes")
+                            .font(.title3.bold())
+                            .foregroundColor(Theme.text)
+                        
+                        Text("Automatically divide all \(localIssues.count) issues of \(series.title) into sequential volumes based on your preferred volume size.")
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("ISSUES PER VOLUME")
+                            .font(.caption.bold())
+                            .foregroundColor(Theme.textSecondary)
+                            .padding(.horizontal)
+                        
+                        HStack(spacing: 10) {
+                            ForEach([4, 5, 6, 8, 10, 12], id: \.self) { size in
+                                Button {
+                                    HapticEngine.selection()
+                                    autoChunkSize = size
+                                } label: {
+                                    Text("\(size)")
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .background(
+                                            autoChunkSize == size
+                                                ? AnyShapeStyle(Theme.orange.gradient)
+                                                : AnyShapeStyle(Theme.surface)
+                                        )
+                                        .foregroundColor(autoChunkSize == size ? .white : Theme.text)
+                                        .cornerRadius(10)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .stroke(autoChunkSize == size ? Color.white.opacity(0.3) : Color.white.opacity(0.08), lineWidth: 1)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal)
+                        
+                        let totalVols = max(1, Int(ceil(Double(localIssues.count) / Double(autoChunkSize))))
+                        HStack(spacing: 6) {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(Theme.orange)
+                            Text("Will create \(totalVols) volume\(totalVols == 1 ? "" : "s") (Vol 1 to Vol \(totalVols)).")
+                                .font(.caption)
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+                    }
+                    .padding(.vertical, 16)
+                    .background(Theme.surface.opacity(0.5))
+                    .cornerRadius(16)
+                    .padding(.horizontal)
+                    
+                    Spacer()
+                    
+                    Button {
+                        showingAutoChunkSheet = false
+                        autoChunkSeries(chunkSize: autoChunkSize)
+                    } label: {
+                        Text("Apply Volume Grouping")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Theme.orange.gradient)
+                            .cornerRadius(14)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    .padding(.bottom, 16)
+                }
+            }
+            .navigationTitle("Auto-Group Volumes")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showingAutoChunkSheet = false
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }
 

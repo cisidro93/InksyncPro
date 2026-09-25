@@ -17,6 +17,8 @@ struct ManualVolumeLinkerView: View {
     
     @State private var showSuccessBanner = false
     @State private var bannerMessage = ""
+    @State private var showingAutoChunkSheet = false
+    @State private var autoChunkSize = 6
     
     var freshIssues: [ConvertedPDF] {
         conversionManager.convertedPDFs.filter { pdf in
@@ -82,36 +84,68 @@ struct ManualVolumeLinkerView: View {
                             .foregroundColor(Theme.textSecondary)
                             .lineLimit(3)
                         
-                        HStack(spacing: 12) {
-                            Button {
-                                autoLinkFromFilenames()
-                            } label: {
-                                Label("Auto-Link from Filenames", systemImage: "sparkles")
-                                    .font(.subheadline.bold())
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 10)
-                                    .background(Theme.purple.gradient)
-                                    .cornerRadius(10)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                Button {
+                                    autoAssignNextVolume()
+                                } label: {
+                                    Label("Auto-Assign Next Vol", systemImage: "sparkles")
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 10)
+                                        .background(Theme.orange.gradient)
+                                        .cornerRadius(10)
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Button {
+                                    showingAutoChunkSheet = true
+                                } label: {
+                                    Label("Auto-Group All", systemImage: "square.grid.3x3.fill")
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 10)
+                                        .background(Theme.purple.gradient)
+                                        .cornerRadius(10)
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Button {
+                                    autoLinkFromFilenames()
+                                } label: {
+                                    Label("Auto-Link Filenames", systemImage: "text.magnifyingglass")
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 10)
+                                        .background(Color.inkSurfaceElevated)
+                                        .cornerRadius(10)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Button {
+                                    volumeName = ""
+                                    rangeText = ""
+                                    selectedIssueIDs = []
+                                    editingVolumeName = nil
+                                    showingAddVolume = true
+                                } label: {
+                                    Label("Link New Volume", systemImage: "plus.circle")
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 10)
+                                        .background(Theme.blue.gradient)
+                                        .cornerRadius(10)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
-                            
-                            Button {
-                                volumeName = ""
-                                rangeText = ""
-                                selectedIssueIDs = []
-                                editingVolumeName = nil
-                                showingAddVolume = true
-                            } label: {
-                                Label("Link New Volume", systemImage: "plus.circle")
-                                    .font(.subheadline.bold())
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 10)
-                                    .background(Theme.blue.gradient)
-                                    .cornerRadius(10)
-                            }
-                            .buttonStyle(.plain)
                         }
                         .padding(.top, 4)
                     }
@@ -243,6 +277,9 @@ struct ManualVolumeLinkerView: View {
             .sheet(isPresented: $showingAddVolume) {
                 volumeEditorSheet
                     .forceProMotion()
+            }
+            .sheet(isPresented: $showingAutoChunkSheet) {
+                manualAutoChunkSheet
             }
         }
     }
@@ -492,5 +529,179 @@ struct ManualVolumeLinkerView: View {
                 showSuccessBanner = false
             }
         }
+    }
+    
+    private func autoAssignNextVolume() {
+        let pool = freshIssues.sorted {
+            let n1 = Double($0.metadata.issueNumber ?? "")
+            let n2 = Double($1.metadata.issueNumber ?? "")
+            if let v1 = n1, let v2 = n2 { return v1 < v2 }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+        
+        var volumeCounts: [Int: Int] = [:]
+        for pdf in pool {
+            if let volStr = pdf.metadata.volume, let volNum = Int(volStr) {
+                volumeCounts[volNum, default: 0] += 1
+            }
+        }
+        
+        let nextVolNum: Int = (volumeCounts.keys.max() ?? 0) + 1
+        
+        let chunkSize: Int
+        if let lastVol = volumeCounts.keys.max(), let count = volumeCounts[lastVol], count > 0 {
+            chunkSize = count
+        } else {
+            chunkSize = 6
+        }
+        
+        let unassigned = pool.filter { pdf in
+            let vol = pdf.metadata.volume ?? ""
+            return vol.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        guard !unassigned.isEmpty else {
+            triggerBanner(message: "All issues already assigned to volumes.")
+            return
+        }
+        
+        let targetIssues = Array(unassigned.prefix(chunkSize))
+        for pdf in targetIssues {
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                conversionManager.convertedPDFs[idx].metadata.volume = "\(nextVolNum)"
+            }
+        }
+        conversionManager.saveLibrary()
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+        triggerBanner(message: "Auto-assigned \(targetIssues.count) issues to Volume \(nextVolNum)!")
+    }
+    
+    private func autoChunkSeries(chunkSize: Int) {
+        guard chunkSize > 0 else { return }
+        let pool = freshIssues.sorted {
+            let n1 = Double($0.metadata.issueNumber ?? "")
+            let n2 = Double($1.metadata.issueNumber ?? "")
+            if let v1 = n1, let v2 = n2 { return v1 < v2 }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+        
+        let chunks = stride(from: 0, to: pool.count, by: chunkSize).map {
+            Array(pool[$0..<min($0 + chunkSize, pool.count)])
+        }
+        
+        for (volIndex, chunk) in chunks.enumerated() {
+            let volNum = "\(volIndex + 1)"
+            for pdf in chunk {
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.volume = volNum
+                }
+            }
+        }
+        conversionManager.saveLibrary()
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+        triggerBanner(message: "Auto-grouped \(pool.count) issues into \(chunks.count) volumes!")
+    }
+    
+    private var manualAutoChunkSheet: some View {
+        NavigationStack {
+            ZStack {
+                Theme.bg.ignoresSafeArea()
+                
+                VStack(spacing: 24) {
+                    VStack(spacing: 8) {
+                        Image(systemName: "square.grid.3x3.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(Theme.orange)
+                            .padding(.top, 16)
+                        
+                        Text("Auto-Group Series into Volumes")
+                            .font(.title3.bold())
+                            .foregroundColor(Theme.text)
+                        
+                        Text("Automatically divide all \(freshIssues.count) issues of \(seriesTitle) into sequential volumes based on your preferred volume size.")
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("ISSUES PER VOLUME")
+                            .font(.caption.bold())
+                            .foregroundColor(Theme.textSecondary)
+                            .padding(.horizontal)
+                        
+                        HStack(spacing: 10) {
+                            ForEach([4, 5, 6, 8, 10, 12], id: \.self) { size in
+                                Button {
+                                    HapticEngine.selection()
+                                    autoChunkSize = size
+                                } label: {
+                                    Text("\(size)")
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .background(
+                                            autoChunkSize == size
+                                                ? AnyShapeStyle(Theme.orange.gradient)
+                                                : AnyShapeStyle(Theme.surface)
+                                        )
+                                        .foregroundColor(autoChunkSize == size ? .white : Theme.text)
+                                        .cornerRadius(10)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .stroke(autoChunkSize == size ? Color.white.opacity(0.3) : Color.white.opacity(0.08), lineWidth: 1)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal)
+                        
+                        let totalVols = max(1, Int(ceil(Double(freshIssues.count) / Double(autoChunkSize))))
+                        HStack(spacing: 6) {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(Theme.orange)
+                            Text("Will create \(totalVols) volume\(totalVols == 1 ? "" : "s") (Vol 1 to Vol \(totalVols)).")
+                                .font(.caption)
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+                    }
+                    .padding(.vertical, 16)
+                    .background(Theme.surface.opacity(0.5))
+                    .cornerRadius(16)
+                    .padding(.horizontal)
+                    
+                    Spacer()
+                    
+                    Button {
+                        showingAutoChunkSheet = false
+                        autoChunkSeries(chunkSize: autoChunkSize)
+                    } label: {
+                        Text("Apply Volume Grouping")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Theme.orange.gradient)
+                            .cornerRadius(14)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    .padding(.bottom, 16)
+                }
+            }
+            .navigationTitle("Auto-Group Volumes")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showingAutoChunkSheet = false
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }
