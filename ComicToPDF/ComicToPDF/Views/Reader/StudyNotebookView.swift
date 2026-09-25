@@ -8,7 +8,7 @@ struct StudyNotebookView: View {
     let bookTitle: String    // human-readable title shown in the Zettelkasten Hub
     var fileURL: URL? = nil  // Optional source file URL for page preview generation
     var showBackButton: Bool = false
-    
+
     @Environment(\.dismiss) private var dismiss
 
     init(bookID: String, bookTitle: String, fileURL: URL? = nil, showBackButton: Bool = false) {
@@ -76,28 +76,28 @@ struct StudyNotebookView: View {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         debounceSave()
     }
-    
+
     @Environment(\.colorScheme) var colorScheme
     @State private var isFocused: Bool = false
-    
+
     @State private var localNotes: String = ""
     @State private var saveTask: Task<Void, Never>? = nil
     @State private var ocrTask: Task<Void, Never>? = nil
-    
+
     // ✅ Phase 2: PencilKit Integration
     enum InputMode: String {
         case markdown = "Text"
         case handwriting = "Pencil"
     }
-    
+
     enum NoteTakingSystem: String, CaseIterable, Identifiable {
         case zettelkasten = "Zettelkasten"
         case cornell      = "Cornell"
         case para         = "PARA"
         case marginalia   = "Marginalia"
-        
+
         var id: String { rawValue }
-        
+
         var icon: String {
             switch self {
             case .zettelkasten: return "tree.fill"
@@ -107,7 +107,7 @@ struct StudyNotebookView: View {
             }
         }
     }
-    
+
     @AppStorage("studyNotebookSystem") private var noteSystem: NoteTakingSystem = .zettelkasten
     @AppStorage("studyNotebookInputMode") private var inputMode: InputMode = .markdown
     @State private var paperStyle: PaperStyle = .plain
@@ -116,7 +116,7 @@ struct StudyNotebookView: View {
     @State private var isShowingBookPicker = false
     @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
     @State private var canvasView = PKCanvasView()
-    
+
     // Cornell Method state
     @State private var cornellCuesText: String = ""
     @State private var cornellSummaryText: String = ""
@@ -127,6 +127,10 @@ struct StudyNotebookView: View {
     @State private var isShowingBookSavedToast: Bool = false
     @State private var savedBookURL: URL? = nil
 
+    // Multi-Page Notebook State
+    @State private var notebookPages: [SDAnnotation] = []
+    @State private var currentNotebookPageIndex: Int = 0
+
     // Custom drawing tools states
     @State private var activeDrawingTool: DrawingTool = .pen
     @State private var strokeColor: Color = .primary
@@ -135,7 +139,7 @@ struct StudyNotebookView: View {
     @State private var isSmartShapesEnabled = true
     @State private var eraserType: PKEraserTool.EraserType = .vector
     @State private var lastActiveWritingTool: DrawingTool = .pen
-    
+
     // Spaced Repetition Study Deck states
     @State private var isStudyModeActive = false
     @State private var currentCardIndex = 0
@@ -149,9 +153,9 @@ struct StudyNotebookView: View {
         case highlighter = "Highlighter"
         case eraser = "Eraser"
         case lasso = "Lasso"
-        
+
         var id: String { rawValue }
-        
+
         var icon: String {
             switch self {
             case .pen: return "pencil.tip"
@@ -162,9 +166,9 @@ struct StudyNotebookView: View {
             }
         }
     }
-    
+
     private let drawingColors: [Color] = [.primary, .red, .blue, .green, .orange]
-    
+
     private func updateCanvasTool() {
         switch activeDrawingTool {
         case .pen:
@@ -180,12 +184,12 @@ struct StudyNotebookView: View {
         }
         canvasView.isRulerActive = isRulerActive
     }
-    
+
     // ✅ Phase 3: Highlights Drawer
     @State private var showHighlightsDrawer = false
     @State private var bookHighlights: [SDAnnotation] = []
     @State private var expandedHighlightIDs = Set<UUID>()
-    
+
     // Pro Search & Filter State
     @State private var highlightSearchQuery = ""
     @State private var highlightSortNewest = true
@@ -196,10 +200,10 @@ struct StudyNotebookView: View {
     @State private var highlightPendingDelete: SDAnnotation? = nil
     @State private var showDeleteHighlightAlert: Bool = false
     @State private var showWritingAssistant = false
-    
+
     // ✅ Speech-to-Text Subsystem
     @StateObject private var speechManager = SpeechRecognitionManager.shared
-    
+
     // ✅ Phase 4: Page Link Previews
     @State private var resolvedPDF: SDConvertedPDF? = nil
     @State private var previewPageIndex: Int? = nil
@@ -210,7 +214,7 @@ struct StudyNotebookView: View {
     var body: some View {
         GeometryReader { notebookGeo in
             let availableWidth = notebookGeo.size.width
-            
+
             let inputPicker = HStack(spacing: 0) {
                 Button {
                     HapticEngine.light()
@@ -273,7 +277,7 @@ struct StudyNotebookView: View {
             .padding(2)
             .background(Color.primary.opacity(0.06), in: Capsule())
             .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.8))
-            
+
             let micButton = Button {
                 toggleSpeechDictation()
             } label: {
@@ -285,7 +289,7 @@ struct StudyNotebookView: View {
                     .clipShape(Circle())
             }
             .keyboardShortcut("d", modifiers: [.command])
-            
+
             let readAloudButton = Button {
                 toggleNotebookNarration()
             } label: {
@@ -300,7 +304,7 @@ struct StudyNotebookView: View {
                     )
                     .clipShape(Circle())
             }
-            
+
             let paperStyleMenu = Menu {
                 Section("Paper Style") {
                     Picker("Style", selection: $paperStyle) {
@@ -326,7 +330,7 @@ struct StudyNotebookView: View {
                     .background(Color.primary.opacity(0.08))
                     .clipShape(Circle())
             }
-            
+
             let summaryButton = Button {
                 generateAISummary()
             } label: {
@@ -337,7 +341,7 @@ struct StudyNotebookView: View {
                     .background(Color.purple.opacity(0.1))
                     .clipShape(Circle())
             }
-            
+
             let writingAssistantButton = Button {
                 showWritingAssistant = true
             } label: {
@@ -348,7 +352,7 @@ struct StudyNotebookView: View {
                     .background(Color.blue.opacity(0.1))
                     .clipShape(Circle())
             }
-            
+
             let studyButton = Button {
                 HapticEngine.light()
                 studyCards = bookHighlights
@@ -373,7 +377,7 @@ struct StudyNotebookView: View {
                     in: Capsule()
                 )
             }
-            
+
             let pasteButton = Button {
                 pasteFromClipboard()
             } label: {
@@ -389,8 +393,11 @@ struct StudyNotebookView: View {
             let exportMenu = Menu {
                 Section("Document & Kindle Export") {
                     Button { exportNotes(as: .pdf) } label: { Label("Export as PDF (.pdf)", systemImage: "doc.richtext") }
-                    Button { sendToKindle() } label: { Label("Send to Kindle", systemImage: "paperplane") }
-                    Button { saveToLibraryAsBook() } label: { Label("Save as Book in Library", systemImage: "book.badge.plus") }
+                    Button { exportEPUB() } label: { Label("Export as EPUB (.epub)", systemImage: "book.pages") }
+                    Button { sendToKindle(as: .pdf) } label: { Label("Send to Kindle (PDF)", systemImage: "paperplane") }
+                    Button { sendToKindle(as: .epub) } label: { Label("Send to Kindle (EPUB)", systemImage: "paperplane.fill") }
+                    Button { saveToLibraryAsBook(format: .pdf) } label: { Label("Save as PDF Book in Library", systemImage: "book.badge.plus") }
+                    Button { saveToLibraryAsBook(format: .epub) } label: { Label("Save as EPUB Book in Library", systemImage: "books.vertical") }
                 }
                 Section("Raw Formats") {
                     Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
@@ -406,7 +413,7 @@ struct StudyNotebookView: View {
                     .background(Color.primary.opacity(0.08))
                     .clipShape(Circle())
             }
-            
+
             let linkBookButton = Group {
                 if let matchedPDF = fetchBackingBook() {
                     Button {
@@ -434,7 +441,7 @@ struct StudyNotebookView: View {
                     }
                 }
             }
-            
+
             let highlighterButton = Button {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                     showHighlightsDrawer.toggle()
@@ -447,7 +454,7 @@ struct StudyNotebookView: View {
                     .background(showHighlightsDrawer ? Theme.blue.opacity(0.1) : Color.primary.opacity(0.08))
                     .clipShape(Circle())
             }
-            
+
             let statsMenu = Menu {
                 Section("Note Stats") {
                     Button(action: {}) { Label("\(localNotes.count) Characters", systemImage: "text.alignleft") }.disabled(true)
@@ -479,7 +486,7 @@ struct StudyNotebookView: View {
             ZStack(alignment: .bottom) {
                 // MARK: Premium Background Base
                 Color.inkBackground.ignoresSafeArea()
-                
+
                 VStack(spacing: 0) {
                     // MARK: Glassmorphic Header
                     HStack(spacing: availableWidth > 400 ? 12 : 8) {
@@ -499,41 +506,127 @@ struct StudyNotebookView: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        
+
                         Image(systemName: "notebook.toptab.fill")
                             .foregroundStyle(LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
                             .font(.system(size: 18, weight: .bold))
-                        
+
                         Text(availableWidth > 450 ? "Study Notebook" : "Notes")
                             .font(.system(size: 16, weight: .bold, design: .rounded))
                             .foregroundColor(.primary)
-                        
+
+                        // Notebook Multi-Page Navigation Pill
+                        HStack(spacing: 3) {
+                            Button {
+                                goToPreviousPage()
+                            } label: {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(currentNotebookPageIndex > 0 ? .primary : .secondary.opacity(0.3))
+                                    .padding(5)
+                            }
+                            .disabled(currentNotebookPageIndex <= 0)
+
+                            Menu {
+                                Section("Notebook Pages") {
+                                    ForEach(0..<max(1, notebookPages.count), id: \.self) { pIdx in
+                                        Button {
+                                            switchToPage(index: pIdx)
+                                        } label: {
+                                            HStack {
+                                                Text("Page \(pIdx + 1)")
+                                                if pIdx == currentNotebookPageIndex {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if notebookPages.count > 1 {
+                                    Divider()
+                                    Button(role: .destructive) {
+                                        deleteCurrentPage()
+                                    } label: {
+                                        Label("Delete Page \(currentNotebookPageIndex + 1)", systemImage: "trash")
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Text("p. \(currentNotebookPageIndex + 1)/\(max(1, notebookPages.count))")
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                        .foregroundColor(.primary)
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color.primary.opacity(0.06), in: Capsule())
+                            }
+
+                            Button {
+                                goToNextPage()
+                            } label: {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(currentNotebookPageIndex < notebookPages.count - 1 ? .primary : .secondary.opacity(0.3))
+                                    .padding(5)
+                            }
+                            .disabled(currentNotebookPageIndex >= notebookPages.count - 1)
+
+                            Rectangle()
+                                .fill(Color.primary.opacity(0.12))
+                                .frame(width: 1, height: 14)
+
+                            Button {
+                                addNewPage()
+                            } label: {
+                                HStack(spacing: 2) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    if availableWidth > 580 {
+                                        Text("Add Page")
+                                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                                            .foregroundColor(.orange)
+                                    }
+                                }
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Add new page to notebook")
+                        }
+                        .padding(2)
+                        .background(Color.primary.opacity(0.05), in: Capsule())
+                        .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.8))
+
                         Spacer()
-                        
+
                         if availableWidth > 550 {
                             // WIDE TOOLBAR
                             inputPicker
                             pasteButton
-                            
+
                             if inputMode == .markdown {
                                 micButton
                             }
                             readAloudButton
-                            
+
                             paperStyleMenu
                             summaryButton
                             writingAssistantButton
-                            
+
                             if !bookHighlights.isEmpty {
                                 studyButton
                             }
-                            
+
                             exportMenu
-                            
+
                             if showBackButton {
                                 linkBookButton
                             }
-                            
+
                             highlighterButton
                             statsMenu
                         } else if availableWidth > 380 {
@@ -541,7 +634,7 @@ struct StudyNotebookView: View {
                             inputPicker
                             pasteButton
                             highlighterButton
-                            
+
                             Menu {
                                 Section("Tools") {
                                     if !bookHighlights.isEmpty {
@@ -559,7 +652,7 @@ struct StudyNotebookView: View {
                                         Button { toggleSpeechDictation() } label: { Label(speechManager.isRecording ? "Stop Dictation" : "Start Dictation", systemImage: "mic") }
                                     }
                                 }
-                                
+
                                 Section("Settings & Export") {
                                     Menu("Paper Style...") {
                                         Picker("Style", selection: $paperStyle) {
@@ -570,8 +663,11 @@ struct StudyNotebookView: View {
                                     }
                                     Menu("Export...") {
                                         Button { exportNotes(as: .pdf) } label: { Label("Export as PDF (.pdf)", systemImage: "doc.richtext") }
-                                        Button { sendToKindle() } label: { Label("Send to Kindle", systemImage: "paperplane") }
-                                        Button { saveToLibraryAsBook() } label: { Label("Save as Book in Library", systemImage: "book.badge.plus") }
+                                        Button { exportEPUB() } label: { Label("Export as EPUB (.epub)", systemImage: "book.pages") }
+                                        Button { sendToKindle(as: .pdf) } label: { Label("Send to Kindle (PDF)", systemImage: "paperplane") }
+                                        Button { sendToKindle(as: .epub) } label: { Label("Send to Kindle (EPUB)", systemImage: "paperplane.fill") }
+                                        Button { saveToLibraryAsBook(format: .pdf) } label: { Label("Save as PDF Book in Library", systemImage: "book.badge.plus") }
+                                        Button { saveToLibraryAsBook(format: .epub) } label: { Label("Save as EPUB Book in Library", systemImage: "books.vertical") }
                                         Divider()
                                         Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
                                         Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
@@ -600,10 +696,10 @@ struct StudyNotebookView: View {
                                     .background(Color.orange.opacity(0.12))
                                     .clipShape(Circle())
                             }
-                            
+
                             pasteButton
                             highlighterButton
-                            
+
                             Menu {
                                 Section("Tools") {
                                     Button { generateAISummary() } label: { Label("Generate AI Summary", systemImage: "sparkles") }
@@ -655,7 +751,7 @@ struct StudyNotebookView: View {
                                     .clipShape(Circle())
                             }
                         }
-                        
+
                         // Quick Flip side button
                         Button {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
@@ -669,7 +765,7 @@ struct StudyNotebookView: View {
                                 .background(Color.primary.opacity(0.08))
                                 .clipShape(Circle())
                         }
-                        
+
                         Button {
                             NotificationCenter.default.post(name: .hideStudyNotebook, object: nil)
                         } label: {
@@ -688,7 +784,7 @@ struct StudyNotebookView: View {
                             .background(.ultraThinMaterial)
                     )
                     .overlay(Rectangle().frame(height: 1).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
-                    
+
                     // ── Multi-Modal System Selector Bar (Zettelkasten / Cornell / PARA / Marginalia) ──
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
@@ -724,13 +820,13 @@ struct StudyNotebookView: View {
                     .padding(.vertical, 6)
                     .background(Color.primary.opacity(0.02))
                     .overlay(Rectangle().frame(height: 0.5).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
-                    
+
                     smartPageIndexBar
-                    
+
                     if inputMode == .handwriting {
                         canvasToolbar
                     }
-                    
+
                     // MARK: Notebook Canvas
                     ZStack(alignment: .trailing) {
                         if noteSystem == .cornell {
@@ -757,23 +853,23 @@ struct StudyNotebookView: View {
                             ZStack {
                                 NotebookPaperBackground(style: paperStyle, spacing: paperSpacing, colorScheme: colorScheme)
                                 MarkdownTextEditor(text: $localNotes, isFocused: $isFocused, paperStyle: paperStyle, onLinkTapped: handleLinkTapped)
-                                
+
                                 if localNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                     VStack(spacing: 14) {
                                         Image(systemName: "doc.on.clipboard")
                                             .font(.system(size: 38))
                                             .foregroundColor(.orange)
-                                        
+
                                         Text("Notebook is Empty")
                                             .font(.system(size: 16, weight: .bold, design: .rounded))
                                             .foregroundColor(.inkTextPrimary)
-                                        
+
                                         Text("Type your thoughts, or paste a copied article or text to read and annotate later.")
                                             .font(.system(size: 12))
                                             .foregroundColor(.inkTextSecondary)
                                             .multilineTextAlignment(.center)
                                             .padding(.horizontal, 24)
-                                        
+
                                         Button {
                                             pasteFromClipboard()
                                         } label: {
@@ -812,7 +908,7 @@ struct StudyNotebookView: View {
                                 updateCanvasTool()
                             }
                         }
-                        
+
                         // MARK: Highlights Drawer Overlay
                         if showHighlightsDrawer {
                             highlightsDrawer(notebookWidth: notebookGeo.size.width)
@@ -825,7 +921,7 @@ struct StudyNotebookView: View {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 20))
                                 .foregroundColor(.green)
-                            
+
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Saved to Library")
                                     .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -834,9 +930,9 @@ struct StudyNotebookView: View {
                                     .font(.system(size: 11))
                                     .foregroundColor(.inkTextSecondary)
                             }
-                            
+
                             Spacer()
-                            
+
                             Button("Open") {
                                 withAnimation { isShowingBookSavedToast = false }
                                 if let savedURL = savedBookURL,
@@ -866,7 +962,7 @@ struct StudyNotebookView: View {
                     }
 
                 }
-                
+
                 if speechManager.isRecording {
                     SpeechDictationBar { text in
                         NotificationCenter.default.post(name: .insertDictatedText, object: nil, userInfo: ["text": text])
@@ -874,7 +970,7 @@ struct StudyNotebookView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 20)
                 }
-                
+
                 if speechEngine.isActive {
                     NotebookSpeechHUDView(engine: speechEngine) {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -885,12 +981,12 @@ struct StudyNotebookView: View {
                     .padding(.bottom, 20)
                     .zIndex(40)
                 }
-                
+
                 // MARK: Interactive Page Preview Modal Overlay
                 if showPreviewModal {
                     pagePreviewModalOverlay
                 }
-                
+
                 if isStudyModeActive {
                     StudyFlashcardDeckOverlay(
                         isStudyModeActive: $isStudyModeActive,
@@ -999,7 +1095,7 @@ struct StudyNotebookView: View {
                 let note = localNotes
                 let drawing = canvasView.drawing
                 let drawingData = drawing.dataRepresentation()
-                
+
                 activeNoteAnnotation?.noteText = note
                 activeNoteAnnotation?.cornellCueText = cornellCuesText
                 activeNoteAnnotation?.cornellSummaryText = cornellSummaryText
@@ -1014,7 +1110,7 @@ struct StudyNotebookView: View {
                 } catch {
                     Logger.shared.log("Flush save FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
                 }
-                
+
                 if !drawing.bounds.isEmpty {
                     Task.detached(priority: .background) {
                         if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
@@ -1033,9 +1129,9 @@ struct StudyNotebookView: View {
             }
         }
     }
-    
+
     // MARK: - Core Execution
-    
+
     /// Binds the StudyNotebook to the Global Zettelkasten Hub's SwiftData Engine natively.
     private func initializeSDAnnotation() {
         var resolvedBookUUID = UUID()
@@ -1057,42 +1153,24 @@ struct StudyNotebookView: View {
                 ))
             }
         }
-        
+
         let targetPDFID = resolvedBookUUID
         let fetchDescriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.kindRaw == "note" })
-        
-        if let allNotes = try? modelContext.fetch(fetchDescriptor),
-           let existing = allNotes.first(where: { $0.pdfID == targetPDFID }) {
-            self.activeNoteAnnotation = existing
-            let loadedText = existing.noteText ?? ""
-            self.localNotes = loadedText
-            self.cornellCuesText = existing.cornellCueText ?? ""
-            self.cornellSummaryText = existing.cornellSummaryText ?? ""
-            let wordCount = loadedText.split { $0.isWhitespace }.count
-            Logger.shared.log("Loaded existing note for '\(bookTitle)' (\(wordCount) words, Cornell cues: \(self.cornellCuesText.count) chars, summary: \(self.cornellSummaryText.count) chars)", category: "Notebook", type: .success)
-            
-            if existing.pageIndex >= 0 {
-                self.referencedPageIndices.insert(existing.pageIndex)
+
+        let allNotes = (try? modelContext.fetch(fetchDescriptor)) ?? []
+        let matchingNotes = allNotes.filter { $0.pdfID == targetPDFID }.sorted { $0.pageIndex < $1.pageIndex }
+
+        if !matchingNotes.isEmpty {
+            for (idx, note) in matchingNotes.enumerated() {
+                note.pageIndex = idx
             }
-            
-            let linkRegexPattern = #"\((?:page:|inksync://page/)(\d+)\)"#
-            if let regex = try? NSRegularExpression(pattern: linkRegexPattern) {
-                let nsText = loadedText as NSString
-                let matches = regex.matches(in: loadedText, range: NSRange(location: 0, length: nsText.length))
-                for match in matches {
-                    if match.numberOfRanges > 1, let pIdx = Int(nsText.substring(with: match.range(at: 1))) {
-                        self.referencedPageIndices.insert(pIdx)
-                    }
-                }
-            }
-            
-            if let dData = existing.drawingData, let drawing = try? PKDrawing(data: dData) {
-                self.canvasView.drawing = drawing
-                Logger.shared.log("Restored PencilKit drawing for '\(bookTitle)'", category: "Notebook", type: .info)
-            }
+            self.notebookPages = matchingNotes
+            self.currentNotebookPageIndex = 0
+            self.loadPageData(matchingNotes[0])
+            Logger.shared.log("Loaded \(matchingNotes.count) notebook page(s) for '\(bookTitle)'", category: "Notebook", type: .success)
         } else {
-            Logger.shared.log("No existing note found for '\(bookTitle)' — creating new SDAnnotation", category: "Notebook", type: .info)
-            let newNote = SDAnnotation(
+            Logger.shared.log("No existing notes found for '\(bookTitle)' — creating initial page 0", category: "Notebook", type: .info)
+            let initialPage = SDAnnotation(
                 id: UUID(),
                 pdfID: targetPDFID.uuidString,
                 pageIndex: 0,
@@ -1103,23 +1181,22 @@ struct StudyNotebookView: View {
                 readwiseAuthor: nil,
                 createdAt: Date()
             )
-            newNote.kindRaw = "note"
-            modelContext.insert(newNote)
+            initialPage.kindRaw = "note"
+            modelContext.insert(initialPage)
             try? modelContext.save()
-            self.activeNoteAnnotation = newNote
-            self.localNotes = ""
-            self.cornellCuesText = ""
-            self.cornellSummaryText = ""
-            Logger.shared.log("New note created, inserted and saved for '\(bookTitle)'", category: "Notebook", type: .success)
+            self.notebookPages = [initialPage]
+            self.currentNotebookPageIndex = 0
+            self.loadPageData(initialPage)
+            Logger.shared.log("Initial page 0 created and saved for '\(bookTitle)'", category: "Notebook", type: .success)
         }
-        
+
         // Fetch paper style from SDNotebook if it exists
         if let nb = getOrCreateNotebook() {
             self.paperStyle = PaperStyle(rawValue: nb.templateStyle) ?? .plain
             self.paperSpacing = CGFloat(nb.templateSize ?? 24.0)
             Logger.shared.log("Loaded template style '\(nb.templateStyle)' and spacing \(self.paperSpacing) for notebook '\(bookTitle)'", category: "Notebook", type: .success)
         }
-        
+
         // Fetch existing highlights for this book
         let hDescriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { ($0.kindRaw == "highlight" || $0.kindRaw == "underline" || $0.kindRaw == "strikeOut") && $0.pdfID == targetPDFID })
         if let h = try? modelContext.fetch(hDescriptor) {
@@ -1128,7 +1205,7 @@ struct StudyNotebookView: View {
         } else {
             Logger.shared.log("Highlights fetch failed for '\(bookTitle)'", category: "Notebook", type: .warning)
         }
-        
+
         // Auto-sync fallback from AnnotationStore
         let storeAnns = AnnotationStore.shared.annotations(for: targetPDFID)
             .filter { $0.kind == .highlight || $0.kind == .underline || $0.kind == .strikeOut }
@@ -1150,7 +1227,7 @@ struct StudyNotebookView: View {
                 }
             }
         }
-        
+
         // Fetch and resolve the SDConvertedPDF for page preview generation
         if let allBooks = try? modelContext.fetch(FetchDescriptor<SDConvertedPDF>()),
            let book = allBooks.first(where: { $0.id == targetPDFID }) {
@@ -1175,7 +1252,105 @@ struct StudyNotebookView: View {
             self.bookHighlights = h.sorted { $0.createdAt > $1.createdAt }
         }
     }
-    
+
+    private func loadPageData(_ page: SDAnnotation) {
+        self.activeNoteAnnotation = page
+        let loadedText = page.noteText ?? ""
+        self.localNotes = loadedText
+        self.cornellCuesText = page.cornellCueText ?? ""
+        self.cornellSummaryText = page.cornellSummaryText ?? ""
+
+        if let dData = page.drawingData, let drawing = try? PKDrawing(data: dData) {
+            self.canvasView.drawing = drawing
+        } else {
+            self.canvasView.drawing = PKDrawing()
+        }
+
+        if page.pageIndex >= 0 {
+            self.referencedPageIndices.insert(page.pageIndex)
+        }
+
+        let linkRegexPattern = #"\((?:page:|inksync://page/)(\d+)\)"#
+        if let regex = try? NSRegularExpression(pattern: linkRegexPattern) {
+            let nsText = loadedText as NSString
+            let matches = regex.matches(in: loadedText, range: NSRange(location: 0, length: nsText.length))
+            for match in matches {
+                if match.numberOfRanges > 1, let pIdx = Int(nsText.substring(with: match.range(at: 1))) {
+                    self.referencedPageIndices.insert(pIdx)
+                }
+            }
+        }
+    }
+
+    private func addNewPage() {
+        HapticEngine.medium()
+        flushSave()
+
+        var targetPDFID = UUID()
+        if let uuid = UUID(uuidString: bookID) {
+            targetPDFID = uuid
+            let nbDesc = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == uuid })
+            if let nb = try? modelContext.fetch(nbDesc).first, let linked = nb.linkedBookID {
+                targetPDFID = linked
+            }
+        }
+
+        let newIndex = notebookPages.count
+        let newPage = SDAnnotation(
+            id: UUID(),
+            pdfID: targetPDFID.uuidString,
+            pageIndex: newIndex,
+            text: nil,
+            note: "",
+            isReadwiseImport: false,
+            readwiseBookTitle: bookTitle.isEmpty ? nil : bookTitle,
+            readwiseAuthor: nil,
+            createdAt: Date()
+        )
+        newPage.kindRaw = "note"
+        modelContext.insert(newPage)
+        try? modelContext.save()
+
+        notebookPages.append(newPage)
+        currentNotebookPageIndex = newIndex
+        loadPageData(newPage)
+
+        Logger.shared.log("Added new page (Page \(newIndex + 1)) to notebook '\(bookTitle)'", category: "Notebook", type: .success)
+    }
+
+    private func switchToPage(index: Int) {
+        guard index >= 0 && index < notebookPages.count && index != currentNotebookPageIndex else { return }
+        HapticEngine.selection()
+        flushSave()
+        currentNotebookPageIndex = index
+        loadPageData(notebookPages[index])
+    }
+
+    private func goToPreviousPage() {
+        guard currentNotebookPageIndex > 0 else { return }
+        switchToPage(index: currentNotebookPageIndex - 1)
+    }
+
+    private func goToNextPage() {
+        guard currentNotebookPageIndex < notebookPages.count - 1 else { return }
+        switchToPage(index: currentNotebookPageIndex + 1)
+    }
+
+    private func deleteCurrentPage() {
+        guard notebookPages.count > 1 else { return }
+        HapticEngine.warning()
+        let pageToDelete = notebookPages[currentNotebookPageIndex]
+        modelContext.delete(pageToDelete)
+        notebookPages.remove(at: currentNotebookPageIndex)
+        for (i, p) in notebookPages.enumerated() {
+            p.pageIndex = i
+        }
+        try? modelContext.save()
+        currentNotebookPageIndex = min(currentNotebookPageIndex, notebookPages.count - 1)
+        loadPageData(notebookPages[currentNotebookPageIndex])
+        Logger.shared.log("Deleted page in notebook '\(bookTitle)' (remaining: \(notebookPages.count) pages)", category: "Notebook", type: .info)
+    }
+
     private func flushSave() {
         saveTask?.cancel()
         saveTask = nil
@@ -1188,8 +1363,8 @@ struct StudyNotebookView: View {
         let drawing = self.canvasView.drawing
         let drawingData = drawing.dataRepresentation()
 
+        self.activeNoteAnnotation?.pageIndex = currentNotebookPageIndex
         if let activePage = self.activeReaderPageIndex {
-            self.activeNoteAnnotation?.pageIndex = activePage
             self.referencedPageIndices.insert(activePage)
         }
         self.activeNoteAnnotation?.noteText = note
@@ -1217,10 +1392,10 @@ struct StudyNotebookView: View {
                 let summary = self.cornellSummaryText
                 let drawing = self.canvasView.drawing
                 let drawingData = drawing.dataRepresentation()
-                
+
                 await MainActor.run {
+                    self.activeNoteAnnotation?.pageIndex = self.currentNotebookPageIndex
                     if let activePage = self.activeReaderPageIndex {
-                        self.activeNoteAnnotation?.pageIndex = activePage
                         self.referencedPageIndices.insert(activePage)
                     }
                     self.activeNoteAnnotation?.noteText = note
@@ -1233,13 +1408,13 @@ struct StudyNotebookView: View {
                     }
                     try? self.modelContext.save()
                 }
-                
+
                 // Decouple and high-duration debounce expensive Vision OCR tasks to save battery
                 ocrTask?.cancel()
                 ocrTask = Task {
                     try? await Task.sleep(nanoseconds: 5_000_000_000) // 5.0 seconds of absolute pause before running OCR
                     guard !Task.isCancelled else { return }
-                    
+
                     if !drawing.bounds.isEmpty {
                         Task.detached(priority: .background) {
                             if let ocrText = await HandwritingOCRManager.shared.recognizeHandwriting(in: drawing) {
@@ -1318,11 +1493,11 @@ struct StudyNotebookView: View {
         let pid = highlight.pdfID
         let highlightID = highlight.id
         let selectedText = highlight.selectedText ?? ""
-        
+
         AnnotationStore.shared.delete(id: highlightID, pdfID: pid)
         modelContext.delete(highlight)
         try? modelContext.save()
-        
+
         // Post broadcast so live readers (PDF and EPUB) immediately unhighlight in their canvas/DOM
         NotificationCenter.default.post(
             name: .annotationsDidChange,
@@ -1333,7 +1508,7 @@ struct StudyNotebookView: View {
                 "text": selectedText
             ]
         )
-        
+
         refreshHighlights()
         HapticEngine.selection()
     }
@@ -1345,26 +1520,26 @@ struct StudyNotebookView: View {
             localNotes += "\n\n### 💡 Smart Summary\nNo highlights available to summarize. Add some highlights in the reader first!"
             return
         }
-        
+
         let pageLinks = Array(Set(bookHighlights.map { $0.pageIndex + 1 }))
             .sorted()
             .map { "[[Page \($0)]]" }
             .joined(separator: ", ")
-            
+
         let prompt = """
-        
+
         ### 💡 Smart Highlights Summary
         *Generated on \(Date().formatted(date: .abbreviated, time: .shortened))*
-        
+
         **Key Takeaways:**
         - This document discusses several core themes. Based on your \(bookHighlights.count) highlights, the primary focal points relate to:
         \(bookHighlights.prefix(3).map { "  * " + ($0.selectedText?.prefix(80).appending("...") ?? "") }.joined(separator: "\n"))
-        
+
         **Action Items & Key Insights:**
         - Review highlighted sections on page(s) \(pageLinks).
         - Synthesize these key passages into your core Zettelkasten card collection.
         """
-        
+
         withAnimation {
             localNotes += prompt
             debounceSave()
@@ -1383,35 +1558,35 @@ struct StudyNotebookView: View {
                 resolvedPageIndex = idx
             }
         }
-        
+
         guard let pageIndex = resolvedPageIndex else { return }
-        
+
         Logger.shared.log("Page link tapped: jumping open reader & preview to page index \(pageIndex)", category: "Notebook", type: .info)
-        
+
         jumpToPage(pageIndex)
-        
+
         self.previewPageIndex = pageIndex
         self.previewImage = nil
         self.isExtractingPreviewImage = true
         withAnimation(.easeOut(duration: 0.2)) {
             self.showPreviewModal = true
         }
-        
+
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        
+
         var targetURL = fileURL ?? resolvedPDF?.url
         if let resolvedPDF = resolvedPDF,
            case .linked(let bm) = resolvedPDF.sourceMode,
            let resolved = try? BookmarkResolver.shared.resolve(bm) {
             targetURL = resolved
         }
-        
+
         if let bookURL = targetURL {
             Task {
                 let img = await Task.detached(priority: .userInitiated) { () -> UIImage? in
                     return PhysicalFileSystemRouter.extractPageImage(from: bookURL, pageIndex: pageIndex)
                 }.value
-                
+
                 await MainActor.run {
                     self.previewImage = img
                     self.isExtractingPreviewImage = false
@@ -1438,7 +1613,7 @@ struct StudyNotebookView: View {
                         previewImage = nil
                     }
                 }
-            
+
             VStack(spacing: 0) {
                 HStack {
                     if let pageIndex = previewPageIndex {
@@ -1450,9 +1625,9 @@ struct StudyNotebookView: View {
                             .font(.system(size: 16, weight: .bold, design: .rounded))
                             .foregroundColor(Theme.text)
                     }
-                    
+
                     Spacer()
-                    
+
                     Button {
                         withAnimation(.easeOut(duration: 0.2)) {
                             showPreviewModal = false
@@ -1470,9 +1645,9 @@ struct StudyNotebookView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
                 .background(Color.primary.opacity(0.04))
-                
+
                 Divider()
-                
+
                 ZStack {
                     if isExtractingPreviewImage {
                         VStack(spacing: 12) {
@@ -1505,9 +1680,9 @@ struct StudyNotebookView: View {
                 }
                 .frame(height: 380)
                 .background(Color.black.opacity(0.03))
-                
+
                 Divider()
-                
+
                 if let pageIndex = previewPageIndex {
                     Button {
                         withAnimation(.easeOut(duration: 0.2)) {
@@ -1583,18 +1758,18 @@ struct StudyNotebookView: View {
     enum ExportType {
         case markdown, plainText, pdf
     }
-    
+
     private func pasteFromClipboard() {
         guard let clipboardString = UIPasteboard.general.string, !clipboardString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             HapticEngine.error()
             return
         }
-        
+
         HapticEngine.success()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             inputMode = .markdown
         }
-        
+
         let trimmed = clipboardString.trimmingCharacters(in: .whitespacesAndNewlines)
         if localNotes.isEmpty {
             localNotes = trimmed
@@ -1603,85 +1778,100 @@ struct StudyNotebookView: View {
         }
         debounceSave()
     }
-    
+
+    private func compileAllPagesText() -> String {
+        flushSave()
+        if notebookPages.count <= 1 {
+            return localNotes
+        }
+        var pageBlocks: [String] = []
+        for (idx, page) in notebookPages.enumerated() {
+            let noteContent = (idx == currentNotebookPageIndex) ? localNotes : (page.noteText ?? "")
+            var block = "# Page \(idx + 1)\n\n"
+            if !noteContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                block += noteContent
+            } else {
+                block += "*(Blank page)*"
+            }
+            if let cues = page.cornellCueText, !cues.isEmpty {
+                block += "\n\n### Cornell Cues\n" + cues
+            }
+            if let summary = page.cornellSummaryText, !summary.isEmpty {
+                block += "\n\n### Summary\n" + summary
+            }
+            pageBlocks.append(block)
+        }
+        return pageBlocks.joined(separator: "\n\n---\n\n")
+    }
+
     private func exportNotes(as type: ExportType) {
+        let content = compileAllPagesText()
         if type == .pdf {
             do {
-                let pdfURL = try NotebookDocumentExporter.shared.exportPDF(title: bookTitle, content: localNotes)
-                let activityVC = UIActivityViewController(activityItems: [pdfURL], applicationActivities: nil)
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let rootVC = windowScene.windows.first?.rootViewController {
-                    if let popover = activityVC.popoverPresentationController {
-                        popover.sourceView = rootVC.view
-                        popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
-                        popover.permittedArrowDirections = []
-                    }
-                    rootVC.present(activityVC, animated: true)
-                }
+                let pdfURL = try NotebookDocumentExporter.shared.exportPDF(title: bookTitle, content: content)
+                NotebookDocumentExporter.shared.presentShareSheet(for: pdfURL)
             } catch {
                 Logger.shared.log("exportNotes(.pdf) FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
             }
             return
         }
-        
-        let content: String
+
         let filename: String
         let formatLabel: String
-        
+
         switch type {
         case .markdown:
-            content = localNotes
             filename = "\(bookTitle.isEmpty ? "StudyNotes" : bookTitle.replacingOccurrences(of: " ", with: "_"))_Notes.md"
             formatLabel = "Markdown"
         case .plainText:
-            content = localNotes
             filename = "\(bookTitle.isEmpty ? "StudyNotes" : bookTitle.replacingOccurrences(of: " ", with: "_"))_Notes.txt"
             formatLabel = "Plain Text"
         case .pdf:
             return
         }
-        
+
         Logger.shared.log("exportNotes(\(formatLabel)) called for '\(bookTitle)' — \(content.count) chars to \(filename)", category: "Notebook", type: .info)
-        
+
         let tempDir = FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent(filename)
-        
+
         do {
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
             Logger.shared.log("Note export file written: \(filename)", category: "Notebook", type: .success)
-            let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-               let rootVC = windowScene.windows.first?.rootViewController {
-                if let popover = activityVC.popoverPresentationController {
-                    popover.sourceView = rootVC.view
-                    popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
-                    popover.permittedArrowDirections = []
-                }
-                rootVC.present(activityVC, animated: true)
-            }
+            NotebookDocumentExporter.shared.presentShareSheet(for: fileURL)
         } catch {
             Logger.shared.log("exportNotes(\(formatLabel)) FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
         }
     }
-    
-    private func sendToKindle() {
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
-            NotebookDocumentExporter.shared.presentKindleExport(
-                title: bookTitle,
-                content: localNotes,
-                from: rootVC,
-                kindleEmail: kindleEmail.isEmpty ? nil : kindleEmail
-            )
+
+    private func exportEPUB() {
+        let content = compileAllPagesText()
+        do {
+            let epubURL = try NotebookDocumentExporter.shared.exportEPUB(title: bookTitle, content: content)
+            NotebookDocumentExporter.shared.presentShareSheet(for: epubURL)
+        } catch {
+            Logger.shared.log("exportEPUB FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
         }
     }
-    
-    private func saveToLibraryAsBook() {
+
+    private func sendToKindle(as format: NotebookExportFormat = .pdf) {
+        let content = compileAllPagesText()
+        NotebookDocumentExporter.shared.presentKindleExport(
+            title: bookTitle,
+            content: content,
+            kindleEmail: kindleEmail.isEmpty ? nil : kindleEmail,
+            format: format
+        )
+    }
+
+    private func saveToLibraryAsBook(format: NotebookExportFormat = .pdf) {
+        let content = compileAllPagesText()
         Task {
             do {
                 let savedURL = try await NotebookDocumentExporter.shared.saveToLibraryAsBook(
                     title: bookTitle.isEmpty ? "Notebook Article" : bookTitle,
-                    content: localNotes
+                    content: content,
+                    format: format
                 )
                 await MainActor.run {
                     self.savedBookURL = savedURL
@@ -1691,7 +1881,7 @@ struct StudyNotebookView: View {
                     HapticEngine.success()
                 }
             } catch {
-                Logger.shared.log("saveToLibraryAsBook FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
+                Logger.shared.log("saveToLibraryAsBook(\(format.rawValue)) FAILED for '\(bookTitle)': \(error.localizedDescription)", category: "Notebook", type: .error)
             }
         }
     }
@@ -1701,12 +1891,12 @@ struct StudyNotebookView: View {
             do {
                 let allPDFs = try? modelContext.fetch(FetchDescriptor<SDConvertedPDF>())
                 let allAnns = try? modelContext.fetch(FetchDescriptor<SDAnnotation>())
-                
+
                 let pdfDTOs = (allPDFs ?? []).map { $0.toDTO() }
                 let annDTOs = (allAnns ?? []).map { $0.toDTO() }
-                
+
                 let zipURL = try await ZettelkastenExporter.shared.exportToMarkdownZip(annotations: annDTOs, pdfs: pdfDTOs)
-                
+
                 await MainActor.run {
                     let activityVC = UIActivityViewController(activityItems: [zipURL], applicationActivities: nil)
                     if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -1724,7 +1914,7 @@ struct StudyNotebookView: View {
             }
         }
     }
-    
+
     private func shareNotes() {
         Logger.shared.log("shareNotes called for '\(bookTitle)' — \(localNotes.count) chars", category: "Notebook", type: .info)
         let activityVC = UIActivityViewController(activityItems: [localNotes], applicationActivities: nil)
@@ -1751,9 +1941,9 @@ struct StudyNotebookView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                     .background(Theme.surface)
-                
+
                 Divider()
-                
+
                 // Search & Sort bar
                 VStack(spacing: 8) {
                     HStack {
@@ -1774,7 +1964,7 @@ struct StudyNotebookView: View {
                     .padding(6)
                     .background(Color.primary.opacity(0.06))
                     .cornerRadius(6)
-                    
+
                     // Color filters row
                     let availableColors = ["#FFD60A", "#30D158", "#0A84FF", "#FF375F", "#FF9F0A", "#BF5AF2"]
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -1790,7 +1980,7 @@ struct StudyNotebookView: View {
                                     .background(selectedColorFilter == nil ? Theme.blue : Color.primary.opacity(0.06), in: Capsule())
                             }
                             .buttonStyle(.plain)
-                            
+
                             ForEach(availableColors, id: \.self) { hex in
                                 Button {
                                     withAnimation {
@@ -1834,7 +2024,7 @@ struct StudyNotebookView: View {
                                         .background(selectedTagFilter == nil ? Theme.blue : Color.primary.opacity(0.06), in: Capsule())
                                 }
                                 .buttonStyle(.plain)
-                                
+
                                 ForEach(tagsList, id: \.self) { tag in
                                     Button {
                                         withAnimation {
@@ -1859,7 +2049,7 @@ struct StudyNotebookView: View {
                             .padding(.vertical, 2)
                         }
                     }
-                    
+
                     HStack {
                         Button {
                             highlightSortNewest = true
@@ -1881,9 +2071,9 @@ struct StudyNotebookView: View {
                 }
                 .padding(10)
                 .background(Theme.surface.opacity(0.5))
-                
+
                 Divider()
-                
+
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         let matches = filteredHighlights
@@ -1913,7 +2103,7 @@ struct StudyNotebookView: View {
                                             .background(Theme.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
                                         }
                                         .buttonStyle(.plain)
-                                        
+
                                         if let chap = highlight.chapterTitle, !chap.isEmpty {
                                             Text(chap)
                                                 .font(.system(size: 9, weight: .medium))
@@ -1921,16 +2111,16 @@ struct StudyNotebookView: View {
                                                 .lineLimit(1)
                                                 .truncationMode(.tail)
                                         }
-                                        
+
                                         Spacer()
-                                        
+
                                         let accentColor = Color(hex: highlight.colorHex ?? "#FFD60A")
                                         Circle()
                                             .fill(accentColor)
                                             .frame(width: 8, height: 8)
                                             .shadow(color: accentColor.opacity(0.6), radius: 2)
                                     }
-                                    
+
                                     // Quote highlighted text
                                     if let text = highlight.selectedText, !text.isEmpty {
                                         let accentColor = Color(hex: highlight.colorHex ?? "#FFD60A")
@@ -1962,7 +2152,7 @@ struct StudyNotebookView: View {
                                             }
                                     }
 
-                                    
+
                                     // User note/thought
                                     if let note = highlight.noteText, !note.isEmpty {
                                         Text(note)
@@ -1974,7 +2164,7 @@ struct StudyNotebookView: View {
                                             .background(Color.primary.opacity(0.02))
                                             .cornerRadius(4)
                                     }
-                                    
+
                                     // Tags list (horizontally scrollable chips with fixed size to prevent vertical squishing)
                                     if let tags = highlight.tags, !tags.isEmpty {
                                         ScrollView(.horizontal, showsIndicators: false) {
@@ -1992,7 +2182,7 @@ struct StudyNotebookView: View {
                                             .padding(.vertical, 2)
                                         }
                                     }
-                                    
+
                                     // Action buttons
                                     HStack(spacing: 8) {
                                         Button {
@@ -2006,7 +2196,7 @@ struct StudyNotebookView: View {
                                             .foregroundColor(Theme.blue)
                                         }
                                         .buttonStyle(.borderless)
-                                        
+
                                         if let text = highlight.selectedText, !text.isEmpty {
                                             Button {
                                                 UIPasteboard.general.string = text
@@ -2029,9 +2219,9 @@ struct StudyNotebookView: View {
                                             }
                                             .buttonStyle(.borderless)
                                         }
-                                        
+
                                         Spacer()
-                                        
+
                                         Button {
                                             activeHighlightToEdit = highlight
                                         } label: {
@@ -2043,7 +2233,7 @@ struct StudyNotebookView: View {
                                             .foregroundColor(.secondary)
                                         }
                                         .buttonStyle(.borderless)
-                                        
+
                                         Button {
                                             highlightPendingDelete = highlight
                                             showDeleteHighlightAlert = true
@@ -2081,7 +2271,7 @@ struct StudyNotebookView: View {
         }
         .transition(.move(edge: .trailing))
     }
-    
+
     private func fetchBackingBook() -> ConvertedPDF? {
         if let uuid = UUID(uuidString: bookID) {
             // 1. Direct match with a book
@@ -2089,7 +2279,7 @@ struct StudyNotebookView: View {
             if let sdBook = try? modelContext.fetch(descriptor).first {
                 return sdBook.toDTO()
             }
-            
+
             // 2. If it's a notebook ID, check if it's linked to a book
             let nbDescriptor = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == uuid })
             if let nb = try? modelContext.fetch(nbDescriptor).first,
@@ -2120,7 +2310,7 @@ extension StudyNotebookView {
         let activeSet: Set<Int> = activePage != nil ? [activePage!] : []
         let allPages = Array(referencedPageIndices.union(activeSet)).sorted()
 
-        
+
         if !allPages.isEmpty || activePage != nil {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -2145,7 +2335,7 @@ extension StudyNotebookView {
                         }
                         .buttonStyle(.plain)
                     }
-                    
+
                     ForEach(allPages, id: \.self) { pageIdx in
                         if pageIdx != activePage {
                             Button {
@@ -2165,7 +2355,7 @@ extension StudyNotebookView {
                             .buttonStyle(.plain)
                         }
                     }
-                    
+
                     if inputMode == .markdown && activePage != nil {
                         Button {
                             stampCurrentPageLink()
@@ -2208,7 +2398,7 @@ extension StudyNotebookView {
                     .background(Color.primary.opacity(0.06), in: Circle())
             }
             .disabled(canvasView.undoManager?.canUndo == false)
-            
+
             Button {
                 HapticEngine.light()
                 canvasView.undoManager?.redo()
@@ -2220,11 +2410,11 @@ extension StudyNotebookView {
                     .background(Color.primary.opacity(0.06), in: Circle())
             }
             .disabled(canvasView.undoManager?.canRedo == false)
-            
+
             Divider()
                 .frame(height: 20)
                 .background(Color.primary.opacity(0.1))
-            
+
             // Tools Segment
             ForEach(DrawingTool.allCases) { tool in
                 Button {
@@ -2240,11 +2430,11 @@ extension StudyNotebookView {
                 }
                 .buttonStyle(.plain)
             }
-            
+
             Divider()
                 .frame(height: 20)
                 .background(Color.primary.opacity(0.1))
-            
+
             // Colors (only relevant for writing tools)
             if activeDrawingTool == .pen || activeDrawingTool == .pencil || activeDrawingTool == .highlighter {
                 HStack(spacing: 8) {
@@ -2266,7 +2456,7 @@ extension StudyNotebookView {
                     }
                 }
             }
-            
+
             // Thickness Picker
             if activeDrawingTool == .pen || activeDrawingTool == .pencil || activeDrawingTool == .highlighter {
                 Menu {
@@ -2285,7 +2475,7 @@ extension StudyNotebookView {
                 }
                 .onChange(of: strokeWidth) { _, _ in updateCanvasTool() }
             }
-            
+
             // Eraser Mode Picker
             if activeDrawingTool == .eraser {
                 Menu {
@@ -2302,9 +2492,9 @@ extension StudyNotebookView {
                 }
                 .onChange(of: eraserType) { _, _ in updateCanvasTool() }
             }
-            
+
             Spacer()
-            
+
             // Ruler Button
             Button {
                 HapticEngine.light()
@@ -2318,7 +2508,7 @@ extension StudyNotebookView {
                     .background(isRulerActive ? Color.orange : Color.primary.opacity(0.06), in: Circle())
             }
             .buttonStyle(.plain)
-            
+
             // Smart Shapes Toggle
             Button {
                 HapticEngine.light()
@@ -2349,7 +2539,7 @@ extension StudyNotebookView {
     private func gradeCard(correct: Bool) {
         guard currentCardIndex < studyCards.count else { return }
         let card = studyCards[currentCardIndex]
-        
+
         if correct {
             card.reviewCount += 1
             card.easeFactor = min(5.0, card.easeFactor + 0.1)
@@ -2365,9 +2555,9 @@ extension StudyNotebookView {
             card.modifiedAt = Date()
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
         }
-        
+
         try? modelContext.save()
-        
+
         withAnimation(.spring()) {
             isAnswerRevealed = false
             currentCardIndex += 1
@@ -2376,12 +2566,12 @@ extension StudyNotebookView {
 
     private func getOrCreateNotebook() -> SDNotebook? {
         guard let actualUUID = UUID(uuidString: bookID) else { return nil }
-        
+
         let nbFetch = FetchDescriptor<SDNotebook>(predicate: #Predicate { $0.id == actualUUID || $0.linkedBookID == actualUUID })
         if let existing = try? modelContext.fetch(nbFetch).first {
             return existing
         }
-        
+
         // Auto-create notebook record for this book so we can persist its properties (like templateStyle and templateSize)
         let newNb = SDNotebook(
             id: UUID(),

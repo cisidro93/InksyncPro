@@ -6,9 +6,9 @@ enum AnnotationTypeFilter: String, CaseIterable, Identifiable {
     case all = "All"
     case highlights = "Highlights"
     case notes = "Notes"
-    
+
     var id: String { rawValue }
-    
+
     var icon: String {
         switch self {
         case .all: return "square.grid.2x2"
@@ -21,7 +21,7 @@ enum AnnotationTypeFilter: String, CaseIterable, Identifiable {
 // MARK: - Silk Ribbon Bookmark Component (Direction B Signature)
 struct RibbonBookmarkShape: Shape {
     var notchDepth: CGFloat = 5
-    
+
     func path(in rect: CGRect) -> Path {
         var path = Path()
         path.move(to: CGPoint(x: rect.minX, y: rect.minY))
@@ -38,7 +38,7 @@ struct SilkRibbonBookmarkView: View {
     let color: Color
     var width: CGFloat = 13
     var height: CGFloat = 30
-    
+
     var body: some View {
         ZStack {
             // Ribbon satin weave gradient fill
@@ -54,7 +54,7 @@ struct SilkRibbonBookmarkView: View {
                         endPoint: .trailing
                     )
                 )
-            
+
             // Satin woven sheen stroke
             RibbonBookmarkShape(notchDepth: 5)
                 .stroke(
@@ -79,7 +79,7 @@ enum CoverStyleCategory: String, CaseIterable, Identifiable {
     case classic = "Classic"
     case creative = "Creative"
     case gradient = "Gradients"
-    
+
     var id: String { rawValue }
 }
 
@@ -89,14 +89,14 @@ struct NotebookSkinDefinition: Identifiable, Hashable {
     let category: Category
     let ribbonColor: Color
     let isSerif: Bool
-    
+
     enum Category: String, CaseIterable, Identifiable {
         case classic = "Classic Journals"
         case creative = "Creative & Stylish"
-        
+
         var id: String { rawValue }
     }
-    
+
     static let allSkins: [NotebookSkinDefinition] = [
         // Classic Archival Journals
         NotebookSkinDefinition(
@@ -141,7 +141,7 @@ struct NotebookSkinDefinition: Identifiable, Hashable {
             ribbonColor: Color(hex: "#27AE60"),
             isSerif: false
         ),
-        
+
         // Creative & Stylish (Option A style)
         NotebookSkinDefinition(
             id: "aura",
@@ -179,12 +179,12 @@ struct NotebookSkinDefinition: Identifiable, Hashable {
             isSerif: false
         )
     ]
-    
+
     static func skin(for id: String?) -> NotebookSkinDefinition? {
         guard let id = id else { return nil }
         return allSkins.first(where: { $0.id == id })
     }
-    
+
     static let coverGradients: [LinearGradient] = [
         LinearGradient(colors: [Color(hex: "#1a2a6c"), Color(hex: "#b21f1f")], startPoint: .topLeading, endPoint: .bottomTrailing),
         LinearGradient(colors: [Color(hex: "#0f2027"), Color(hex: "#203a43")], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -195,7 +195,7 @@ struct NotebookSkinDefinition: Identifiable, Hashable {
         LinearGradient(colors: [Color(hex: "#833ab4"), Color(hex: "#fd1d1d")], startPoint: .topLeading, endPoint: .bottomTrailing),
         LinearGradient(colors: [Color(hex: "#134e5e"), Color(hex: "#71b280")], startPoint: .topLeading, endPoint: .bottomTrailing)
     ]
-    
+
     static let coverRibbonColors: [Color] = [
         Color(hex: "#b21f1f"),
         Color(hex: "#203a43"),
@@ -213,15 +213,15 @@ struct GlobalNotebookView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var sizeClass
-    
+
     // Query all annotations
     @Query private var allAnnotations: [SDAnnotation]
-    
+
     // Query all custom notebooks
     @Query(sort: \SDNotebook.createdAt, order: .reverse) private var notebooks: [SDNotebook]
-    
+
     @Binding var selectedPDF: ConvertedPDF?
-    
+
     // Filter State
     @State private var searchQuery = ""
     @State private var selectedColorHex: String? = nil
@@ -229,16 +229,17 @@ struct GlobalNotebookView: View {
     @State private var typeFilter: AnnotationTypeFilter = .all
     @State private var isShowingShareSheet = false
     @State private var shareText = ""
-    
+    @State private var toastMessage: String? = nil
+
     // Redesigned Notebooks Hub State
     enum Tab: String, CaseIterable, Identifiable {
         case notebooks  = "Notebooks"
         case highlights = "Highlights"
         case studyDeck  = "Active Study"
         case vocabulary = "Vocabulary"
-        
+
         var id: String { rawValue }
-        
+
         var icon: String {
             switch self {
             case .notebooks:  return "note.text"
@@ -248,7 +249,7 @@ struct GlobalNotebookView: View {
             }
         }
     }
-    
+
     private var tabTitle: String {
         switch activeTab {
         case .notebooks:  return "Notebooks Hub"
@@ -257,7 +258,7 @@ struct GlobalNotebookView: View {
         case .vocabulary: return "Vocabulary Hub"
         }
     }
-    
+
     private var tabSubtitle: String {
         switch activeTab {
         case .notebooks:  return "Your unified creative sketchbooks & study guides"
@@ -266,19 +267,19 @@ struct GlobalNotebookView: View {
         case .vocabulary: return "Word bank and vocabulary learned from reading"
         }
     }
-    
+
     struct ActiveNotebookSelection: Identifiable {
         let id: UUID
         let title: String
         let fileURL: URL?
     }
-    
+
     enum NotebookSortOrder {
         case modified
         case title
         case created
     }
-    
+
     @State private var activeTab: Tab = .notebooks
     @State private var activeNotebookSelection: ActiveNotebookSelection? = nil
     @State private var isShowingCreateNotebookSheet = false
@@ -286,10 +287,10 @@ struct GlobalNotebookView: View {
     @State private var sortOrder: NotebookSortOrder = .modified
     @State private var editingNotebook: SDNotebook? = nil
     @State private var notebookToDelete: SDNotebook? = nil
-    
+
     private var coverGradients: [LinearGradient] { NotebookSkinDefinition.coverGradients }
     private var coverRibbonColors: [Color] { NotebookSkinDefinition.coverRibbonColors }
-    
+
     // Color Palette matching the highlight quick colors
     private let highlightColors = [
         ("#ffd700", "Yellow"),
@@ -299,7 +300,7 @@ struct GlobalNotebookView: View {
         ("#bf5af2", "Purple"),
         ("#ff9f0a", "Orange")
     ]
-    
+
     // Filtered annotations sorted by creation date (newest first)
     private var filteredAnnotations: [SDAnnotation] {
         let sorted = allAnnotations.sorted { $0.createdAt > $1.createdAt }
@@ -308,17 +309,17 @@ struct GlobalNotebookView: View {
             if typeFilter == .highlights && ann.kindRaw != "highlight" { return false }
             if typeFilter == .notes && ann.kindRaw != "note" { return false }
             if ann.kindRaw != "highlight" && ann.kindRaw != "note" { return false } // only highlights & notes
-            
+
             // Filter by color
             if let colorHex = selectedColorHex {
                 if ann.colorHex?.lowercased() != colorHex.lowercased() { return false }
             }
-            
+
             // Filter by book
             if let bookID = selectedBookID {
                 if ann.pdfID != bookID { return false }
             }
-            
+
             // Filter by search query
             if !searchQuery.isEmpty {
                 let matchesText = ann.selectedText?.localizedCaseInsensitiveContains(searchQuery) ?? false
@@ -328,16 +329,16 @@ struct GlobalNotebookView: View {
                 let matchesTag = allTags.contains { $0.localizedCaseInsensitiveContains(searchQuery) || $0.localizedCaseInsensitiveContains(searchQuery.replacingOccurrences(of: "#", with: "")) }
                 if !matchesText && !matchesNote && !matchesChapter && !matchesTag { return false }
             }
-            
+
             return true
         }
     }
-    
+
     // Grouped annotations by Book ID
     private var groupedAnnotations: [UUID: [SDAnnotation]] {
         Dictionary(grouping: filteredAnnotations, by: { $0.pdfID })
     }
-    
+
     // Group keys sorted alphabetically by Book name
     private var sortedGroupedKeys: [UUID] {
         groupedAnnotations.keys.sorted { key1, key2 in
@@ -350,24 +351,24 @@ struct GlobalNotebookView: View {
             return b1.localizedCompare(b2) == .orderedAscending
         }
     }
-    
+
     // Books that have annotations
     private var booksWithAnnotations: [ConvertedPDF] {
         let annotatedBookIDs = Set(allAnnotations.filter { $0.kindRaw == "highlight" || $0.kindRaw == "note" }.map { $0.pdfID })
         return conversionManager.convertedPDFs.filter { annotatedBookIDs.contains($0.id) }
     }
-    
+
     var filteredNotebooks: [SDNotebook] {
         let filtered = notebooks.filter { notebook in
             if notebookSearchQuery.isEmpty {
                 return true
             }
-            
+
             // 1. Title match
             if notebook.title.localizedCaseInsensitiveContains(notebookSearchQuery) {
                 return true
             }
-            
+
             // 2. Note text & Handwriting OCR match
             let notebookAnnotations = allAnnotations.filter { $0.pdfID == notebook.id }
             for ann in notebookAnnotations {
@@ -378,10 +379,10 @@ struct GlobalNotebookView: View {
                     return true
                 }
             }
-            
+
             return false
         }
-        
+
         return filtered.sorted { a, b in
             switch sortOrder {
             case .modified:
@@ -393,16 +394,16 @@ struct GlobalNotebookView: View {
             }
         }
     }
-    
+
     var body: some View {
         ZStack {
             // Premium background
             Color.inkBackground.ignoresSafeArea()
-            
+
             VStack(spacing: 0) {
                 // Glassmorphic Header
                 headerView
-                
+
                 // Content Switcher
                 if activeTab == .notebooks {
                     if notebooks.isEmpty {
@@ -410,7 +411,7 @@ struct GlobalNotebookView: View {
                     } else {
                         VStack(spacing: 0) {
                             notebookFilterPanel
-                            
+
                             if filteredNotebooks.isEmpty {
                                 emptySearchNotebooksState
                             } else {
@@ -478,8 +479,23 @@ struct GlobalNotebookView: View {
                 Text("Are you sure you want to permanently delete '\(notebook.title)'? This will lose all typed notes and pencil sketches in this notebook.")
             }
         }
+        .overlay(alignment: .bottom) {
+            if let msg = toastMessage {
+                Text(msg)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .background(Color.black.opacity(0.72), in: Capsule())
+                    .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+                    .padding(.bottom, 60)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: toastMessage)
+            }
+        }
     }
-    
+
     // MARK: - Header
     private var headerView: some View {
         VStack(spacing: 12) {
@@ -500,9 +516,9 @@ struct GlobalNotebookView: View {
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.inkTextSecondary)
                     }
-                    
+
                     Spacer()
-                    
+
                     HStack(spacing: 12) {
                         if activeTab == .notebooks {
                             Menu {
@@ -512,7 +528,7 @@ struct GlobalNotebookView: View {
                                 } label: {
                                     Label("New Notebook", systemImage: "plus.circle")
                                 }
-                                
+
                                 Button {
                                     createNotebookFromClipboard()
                                 } label: {
@@ -531,7 +547,7 @@ struct GlobalNotebookView: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        
+
                         Button {
                             exportZettelkasten()
                         } label: {
@@ -544,7 +560,7 @@ struct GlobalNotebookView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
                         ForEach(Tab.allCases) { tab in
@@ -594,9 +610,9 @@ struct GlobalNotebookView: View {
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.inkTextSecondary)
                     }
-                    
+
                     Spacer()
-                    
+
                     if activeTab == .notebooks {
                         Menu {
                             Button {
@@ -605,7 +621,7 @@ struct GlobalNotebookView: View {
                             } label: {
                                 Label("New Notebook", systemImage: "plus.circle")
                             }
-                            
+
                             Button {
                                 createNotebookFromClipboard()
                             } label: {
@@ -625,7 +641,7 @@ struct GlobalNotebookView: View {
                         .buttonStyle(.plain)
                         .padding(.trailing, 8)
                     }
-                    
+
                     // Custom premium segmented tab switcher
                     HStack(spacing: 4) {
                         ForEach(Tab.allCases) { tab in
@@ -658,7 +674,7 @@ struct GlobalNotebookView: View {
                     .padding(4)
                     .background(Color.inkSurfaceRaised.opacity(0.5), in: Capsule())
                     .padding(.trailing, 10)
-                    
+
                     // Export Zettelkasten Zip
                     Button {
                         exportZettelkasten()
@@ -687,7 +703,7 @@ struct GlobalNotebookView: View {
             }
         )
     }
-    
+
     // MARK: - Filter Panel
     private var filterPanel: some View {
         VStack(spacing: 12) {
@@ -696,12 +712,12 @@ struct GlobalNotebookView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.inkTextTertiary)
                     .font(.system(size: 15))
-                
+
                 TextField("Search across all highlights & notes...", text: $searchQuery)
                     .font(.system(size: 14))
                     .foregroundColor(.inkTextPrimary)
                     .submitLabel(.search)
-                
+
                 if !searchQuery.isEmpty {
                     Button {
                         searchQuery = ""
@@ -716,7 +732,7 @@ struct GlobalNotebookView: View {
             .padding(.vertical, 9)
             .background(Color.inkSurfaceRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .padding(.horizontal, 16)
-            
+
             // Filter Chips
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -748,11 +764,11 @@ struct GlobalNotebookView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    
+
                     Divider()
                         .frame(height: 16)
                         .background(Color.inkBorderVisible)
-                    
+
                     // Colors
                     Button {
                         HapticEngine.light()
@@ -767,7 +783,7 @@ struct GlobalNotebookView: View {
                             .cornerRadius(6)
                     }
                     .buttonStyle(.plain)
-                    
+
                     ForEach(highlightColors, id: \.0) { hex, name in
                         Button {
                             HapticEngine.light()
@@ -791,7 +807,7 @@ struct GlobalNotebookView: View {
                 }
                 .padding(.horizontal, 16)
             }
-            
+
             // Books Horizontal shelf
             if booksWithAnnotations.count > 1 {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -809,7 +825,7 @@ struct GlobalNotebookView: View {
                                 .cornerRadius(12)
                         }
                         .buttonStyle(.plain)
-                        
+
                         ForEach(booksWithAnnotations) { book in
                             Button {
                                 HapticEngine.light()
@@ -841,7 +857,7 @@ struct GlobalNotebookView: View {
             }
         )
     }
-    
+
     // MARK: - Section Header for Book
     private func sectionHeader(title: String, author: String?, coverData: Data?, count: Int) -> some View {
         HStack(spacing: 12) {
@@ -863,13 +879,13 @@ struct GlobalNotebookView: View {
                             .foregroundColor(.white)
                     )
             }
-            
+
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.inkTextPrimary)
                     .lineLimit(1)
-                
+
                 if let author = author, !author.isEmpty {
                     Text(author)
                         .font(.system(size: 11, weight: .regular))
@@ -877,9 +893,9 @@ struct GlobalNotebookView: View {
                         .lineLimit(1)
                 }
             }
-            
+
             Spacer()
-            
+
             Text("\(count) items")
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .foregroundColor(.inkTextSecondary)
@@ -894,7 +910,7 @@ struct GlobalNotebookView: View {
                 .background(.regularMaterial)
         )
     }
-    
+
     // MARK: - Highlight Card
     @ViewBuilder
     private func highlightCard(for annotation: SDAnnotation, book: ConvertedPDF?) -> some View {
@@ -905,7 +921,7 @@ struct GlobalNotebookView: View {
                     Image(systemName: "quote.opening")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(Color(hex: annotation.colorHex ?? "#ffd700").opacity(0.8))
-                    
+
                     Text(selectedText)
                         .font(.system(size: 13, weight: .medium, design: .serif))
                         .foregroundColor(.inkTextPrimary)
@@ -913,7 +929,7 @@ struct GlobalNotebookView: View {
                         .multilineTextAlignment(.leading)
                 }
             }
-            
+
             // Custom notes text if exists
             if let noteText = annotation.noteText, !noteText.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -933,7 +949,7 @@ struct GlobalNotebookView: View {
                         .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
             }
-            
+
             // Footer (Metadata, page, actions)
             HStack {
                 // Location / Page / Chapter Info
@@ -944,9 +960,9 @@ struct GlobalNotebookView: View {
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                 }
                 .foregroundColor(.inkTextSecondary)
-                
+
                 Spacer()
-                
+
                 // Action Buttons
                 HStack(spacing: 12) {
                     // Copy
@@ -959,7 +975,7 @@ struct GlobalNotebookView: View {
                             .foregroundColor(.inkTextSecondary)
                     }
                     .buttonStyle(.plain)
-                    
+
                     // Share
                     Button {
                         var share = ""
@@ -974,7 +990,7 @@ struct GlobalNotebookView: View {
                             .foregroundColor(.inkTextSecondary)
                     }
                     .buttonStyle(.plain)
-                    
+
                     // Delete
                     Button {
                         HapticEngine.warning()
@@ -1016,11 +1032,11 @@ struct GlobalNotebookView: View {
             }
         }
     }
-    
+
     // MARK: - Navigation Logic
     private func openAnnotationInReader(_ annotation: SDAnnotation, book: ConvertedPDF) {
         HapticEngine.medium()
-        
+
         // 1. Update progress tracker so the reader loads precisely on this page
         let currentProgress = ReaderProgressTracker.shared.progress(for: book.id)
         ReaderProgressTracker.shared.update(ReadingProgress(
@@ -1034,20 +1050,20 @@ struct GlobalNotebookView: View {
             readingSessionDates: currentProgress?.readingSessionDates ?? [Date()],
             estimatedMinutesRemaining: nil
         ))
-        
+
         // Write scroll fraction to zero to force page alignment
         UserDefaults.standard.set(0.0, forKey: "epub_fraction_\(book.id.uuidString)")
-        
+
         // 2. Instruct AppRouter to present the book reader
         selectedPDF = book
         AppRouter.shared.presentFullScreen(.read(book))
     }
-    
+
     // MARK: - Empty State (Overall Library)
     private var emptyLibraryState: some View {
         VStack(spacing: 18) {
             Spacer()
-            
+
             Image(systemName: "highlighter")
                 .font(.system(size: 64))
                 .foregroundStyle(
@@ -1059,41 +1075,41 @@ struct GlobalNotebookView: View {
                 )
                 .padding(24)
                 .background(Color.orange.opacity(0.1), in: Circle())
-            
+
             Text("Your Highlights Hub is Empty")
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundColor(.inkTextPrimary)
-            
+
             Text("Highlight passages, select colors, and add notes while reading your books. They will automatically sync and organize inside this Zettelkasten center.")
                 .font(.system(size: 13))
                 .foregroundColor(.inkTextSecondary)
                 .multilineTextAlignment(.center)
                 .lineSpacing(4)
                 .padding(.horizontal, 36)
-            
+
             Spacer()
         }
     }
-    
+
     // MARK: - Empty State (Filters / Search)
     private var emptySearchResultState: some View {
         VStack(spacing: 14) {
             Spacer()
-            
+
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 40))
                 .foregroundColor(.inkTextSecondary)
-            
+
             Text("No Matching Highlights")
                 .font(.system(size: 15, weight: .bold, design: .rounded))
                 .foregroundColor(.inkTextPrimary)
-            
+
             Text("Try refining your search text, type filters, or color selections.")
                 .font(.system(size: 12))
                 .foregroundColor(.inkTextSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 48)
-            
+
             Button {
                 withAnimation {
                     searchQuery = ""
@@ -1110,28 +1126,28 @@ struct GlobalNotebookView: View {
                     .background(Color.orange.opacity(0.12), in: Capsule())
             }
             .buttonStyle(.plain)
-            
+
             Spacer()
         }
     }
-    
+
     // MARK: - Export Zettelkasten Action
     private func exportZettelkasten() {
         HapticEngine.medium()
-        
+
         let fetchDescriptor = FetchDescriptor<SDAnnotation>()
         guard let allAnns = try? modelContext.fetch(fetchDescriptor) else { return }
-        
+
         let allPDFs = conversionManager.convertedPDFs
-        
+
         // Map SDAnnotations to Annotation DTOs
         let annDTOs = allAnns.map { $0.toDTO() }
         let pdfDTOs = allPDFs
-        
+
         Task {
             do {
                 let zipURL = try await ZettelkastenExporter.shared.exportToMarkdownZip(annotations: annDTOs, pdfs: pdfDTOs)
-                
+
                 await MainActor.run {
                     shareText = zipURL.path
                     isShowingShareSheet = true
@@ -1141,20 +1157,20 @@ struct GlobalNotebookView: View {
             }
         }
     }
-    
+
     // MARK: - Notebooks Views
     @ViewBuilder
     private func notebookCard(for notebook: SDNotebook) -> some View {
         let isLinked = notebook.linkedBookID != nil
         let linkedBook = isLinked ? conversionManager.convertedPDFs.first(where: { $0.id == notebook.linkedBookID }) : nil
-        
+
         let bookIDForAnnotations = linkedBook?.id ?? notebook.id
         let bookAnnotations = allAnnotations.filter { $0.pdfID == bookIDForAnnotations }
         let highlightsCount = bookAnnotations.filter { $0.kindRaw == "highlight" }.count
         let noteAnns = bookAnnotations.filter { $0.kindRaw == "note" }
         let wordsCount = noteAnns.compactMap { $0.noteText }.joined(separator: " ").split(whereSeparator: \.isWhitespace).count
         let readMinutes = max(1, Int(ceil(Double(wordsCount) / 180.0)))
-        
+
         let skinDef = NotebookSkinDefinition.skin(for: notebook.coverStyle)
         let ribbonColor: Color = {
             if let skin = skinDef { return skin.ribbonColor }
@@ -1162,7 +1178,7 @@ struct GlobalNotebookView: View {
             return coverRibbonColors[notebook.coverGradientIndex % coverRibbonColors.count]
         }()
         let cardHeight: CGFloat = sizeClass == .regular ? 245 : 205
-        
+
         VStack(spacing: 0) {
             ZStack(alignment: .topTrailing) {
                 // Book Main Card
@@ -1176,7 +1192,7 @@ struct GlobalNotebookView: View {
                                     .aspectRatio(contentMode: .fill)
                                     .frame(height: cardHeight)
                                     .clipped()
-                                
+
                                 LinearGradient(
                                     colors: [
                                         Color.black.opacity(0.12),
@@ -1196,7 +1212,7 @@ struct GlobalNotebookView: View {
                         }
                     }
                     .frame(height: cardHeight)
-                    
+
                     // Direction B: Structured Frosted-Glass Bottom Metadata Card
                     bottomMetadataCard(
                         notebook: notebook,
@@ -1227,12 +1243,12 @@ struct GlobalNotebookView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 )
                 .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.45 : 0.18), radius: 8, x: 0, y: 5)
-                
+
                 // Direction B Signature: Silk Ribbon Bookmark Tab (Peeking from top edge)
                 SilkRibbonBookmarkView(color: ribbonColor)
                     .padding(.trailing, 22)
                     .offset(y: -4)
-                
+
                 // Floating Linked Book Action
                 if let lBook = linkedBook {
                     Button {
@@ -1263,7 +1279,47 @@ struct GlobalNotebookView: View {
                 } label: {
                     Label("Edit Details", systemImage: "pencil")
                 }
-                
+
+                Section("Export & Kindle") {
+                    Button {
+                        exportNotebook(notebook, format: .pdf)
+                    } label: {
+                        Label("Export as PDF (.pdf)", systemImage: "doc.richtext")
+                    }
+
+                    Button {
+                        exportNotebook(notebook, format: .epub)
+                    } label: {
+                        Label("Export as EPUB (.epub)", systemImage: "book.pages")
+                    }
+
+                    Button {
+                        sendNotebookToKindle(notebook, format: .pdf)
+                    } label: {
+                        Label("Send to Kindle (PDF)", systemImage: "paperplane")
+                    }
+
+                    Button {
+                        sendNotebookToKindle(notebook, format: .epub)
+                    } label: {
+                        Label("Send to Kindle (EPUB)", systemImage: "paperplane.fill")
+                    }
+
+                    Button {
+                        saveNotebookToLibraryAsBook(notebook, format: .pdf)
+                    } label: {
+                        Label("Save as PDF Book in Library", systemImage: "book.badge.plus")
+                    }
+
+                    Button {
+                        saveNotebookToLibraryAsBook(notebook, format: .epub)
+                    } label: {
+                        Label("Save as EPUB Book in Library", systemImage: "books.vertical")
+                    }
+                }
+
+                Divider()
+
                 Button(role: .destructive) {
                     HapticEngine.warning()
                     notebookToDelete = notebook
@@ -1273,7 +1329,7 @@ struct GlobalNotebookView: View {
             }
         }
     }
-    
+
     private func bottomMetadataCard(
         notebook: SDNotebook,
         isLinked: Bool,
@@ -1288,7 +1344,7 @@ struct GlobalNotebookView: View {
                 .font(.system(size: 13, weight: .bold, design: skinDef?.isSerif == true ? .serif : .rounded))
                 .foregroundColor(.white)
                 .lineLimit(1)
-            
+
             // Metadata Line
             HStack(spacing: 5) {
                 if highlightsCount > 0 {
@@ -1299,7 +1355,7 @@ struct GlobalNotebookView: View {
                             .font(.system(size: 9, weight: .semibold, design: .rounded))
                     }
                     .foregroundColor(.white.opacity(0.85))
-                    
+
                     Text("•")
                         .font(.system(size: 8))
                         .foregroundColor(.white.opacity(0.4))
@@ -1311,12 +1367,12 @@ struct GlobalNotebookView: View {
                             .font(.system(size: 9, weight: .semibold, design: .rounded))
                     }
                     .foregroundColor(.white.opacity(0.85))
-                    
+
                     Text("•")
                         .font(.system(size: 8))
                         .foregroundColor(.white.opacity(0.4))
                 }
-                
+
                 HStack(spacing: 2) {
                     Image(systemName: "clock")
                         .font(.system(size: 8))
@@ -1324,9 +1380,9 @@ struct GlobalNotebookView: View {
                         .font(.system(size: 9, weight: .medium, design: .rounded))
                 }
                 .foregroundColor(.white.opacity(0.85))
-                
+
                 Spacer(minLength: 0)
-                
+
                 // Badge (Linked or Template)
                 HStack(spacing: 3) {
                     if isLinked {
@@ -1362,10 +1418,10 @@ struct GlobalNotebookView: View {
             alignment: .top
         )
     }
-    
+
     private func openBookInReader(_ book: ConvertedPDF) {
         HapticEngine.medium()
-        
+
         // 1. Update progress tracker so the reader loads precisely on its saved page
         let currentProgress = ReaderProgressTracker.shared.progress(for: book.id)
         ReaderProgressTracker.shared.update(ReadingProgress(
@@ -1379,12 +1435,117 @@ struct GlobalNotebookView: View {
             readingSessionDates: currentProgress?.readingSessionDates ?? [Date()],
             estimatedMinutesRemaining: nil
         ))
-        
+
         // 2. Instruct AppRouter to present the book reader
         selectedPDF = book
         AppRouter.shared.presentFullScreen(.read(book))
     }
-    
+
+    private func fetchNotebookContent(for notebook: SDNotebook) -> String {
+        var targetIDs: Set<UUID> = [notebook.id]
+        if let linked = notebook.linkedBookID {
+            targetIDs.insert(linked)
+        }
+
+        let matchingNotes = allAnnotations
+            .filter { $0.kindRaw == "note" && targetIDs.contains($0.pdfID) }
+            .sorted { $0.pageIndex < $1.pageIndex }
+
+        if matchingNotes.isEmpty {
+            return "# \(notebook.title)\n\n*(No written notes in this notebook yet)*"
+        }
+
+        if matchingNotes.count == 1 {
+            let note = matchingNotes[0]
+            var content = "# \(notebook.title)\n\n"
+            content += note.noteText ?? ""
+            if let cues = note.cornellCueText, !cues.isEmpty {
+                content += "\n\n### Cornell Cues\n" + cues
+            }
+            if let summary = note.cornellSummaryText, !summary.isEmpty {
+                content += "\n\n### Summary\n" + summary
+            }
+            return content
+        }
+
+        var pageBlocks: [String] = ["# \(notebook.title)\n"]
+        for (idx, page) in matchingNotes.enumerated() {
+            var block = "## Page \(idx + 1)\n\n"
+            let noteContent = page.noteText ?? ""
+            if !noteContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                block += noteContent
+            } else {
+                block += "*(Blank page)*"
+            }
+            if let cues = page.cornellCueText, !cues.isEmpty {
+                block += "\n\n### Cornell Cues\n" + cues
+            }
+            if let summary = page.cornellSummaryText, !summary.isEmpty {
+                block += "\n\n### Summary\n" + summary
+            }
+            pageBlocks.append(block)
+        }
+        return pageBlocks.joined(separator: "\n\n---\n\n")
+    }
+
+    private func exportNotebook(_ notebook: SDNotebook, format: NotebookExportFormat) {
+        let content = fetchNotebookContent(for: notebook)
+        do {
+            let fileURL: URL
+            switch format {
+            case .pdf:
+                fileURL = try NotebookDocumentExporter.shared.exportPDF(title: notebook.title, content: content)
+            case .epub:
+                fileURL = try NotebookDocumentExporter.shared.exportEPUB(title: notebook.title, content: content)
+            }
+            NotebookDocumentExporter.shared.presentShareSheet(for: fileURL)
+            showToast("Exported \(notebook.title) as \(format.displayName)")
+        } catch {
+            Logger.shared.log("exportNotebook failed for '\(notebook.title)': \(error.localizedDescription)", category: "Notebook", type: .error)
+            showToast("Export failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func sendNotebookToKindle(_ notebook: SDNotebook, format: NotebookExportFormat) {
+        let content = fetchNotebookContent(for: notebook)
+        NotebookDocumentExporter.shared.presentKindleExport(
+            title: notebook.title,
+            content: content,
+            format: format
+        )
+    }
+
+    private func saveNotebookToLibraryAsBook(_ notebook: SDNotebook, format: NotebookExportFormat) {
+        let content = fetchNotebookContent(for: notebook)
+        do {
+            let savedURL = try NotebookDocumentExporter.shared.saveToLibraryAsBook(
+                title: notebook.title,
+                content: content,
+                format: format,
+                conversionManager: conversionManager
+            )
+            Logger.shared.log("Saved notebook '\(notebook.title)' to library at \(savedURL.path)", category: "Notebook", type: .success)
+            HapticEngine.success()
+            showToast("Saved '\(notebook.title)' to Library as \(format.displayName)!")
+        } catch {
+            Logger.shared.log("Failed to save notebook as library book: \(error.localizedDescription)", category: "Notebook", type: .error)
+            HapticEngine.error()
+            showToast("Save to library failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func showToast(_ msg: String) {
+        withAnimation { toastMessage = msg }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            withAnimation {
+                if toastMessage == msg {
+                    toastMessage = nil
+                }
+            }
+        }
+    }
+
     private func createNotebookFromClipboard() {
         guard let text = UIPasteboard.general.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             HapticEngine.error()
@@ -1394,7 +1555,7 @@ struct GlobalNotebookView: View {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let firstLine = trimmed.components(separatedBy: .newlines).first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let cleanTitle = firstLine.isEmpty ? "Clipboard Note" : String(firstLine.prefix(40))
-        
+
         let newNotebook = SDNotebook(
             id: UUID(),
             title: cleanTitle,
@@ -1405,7 +1566,7 @@ struct GlobalNotebookView: View {
             coverStyle: "gradient"
         )
         modelContext.insert(newNotebook)
-        
+
         let newNote = SDAnnotation(
             id: UUID(),
             pdfID: newNotebook.id.uuidString,
@@ -1420,19 +1581,19 @@ struct GlobalNotebookView: View {
         newNote.kindRaw = "note"
         modelContext.insert(newNote)
         try? modelContext.save()
-        
+
         self.activeNotebookSelection = ActiveNotebookSelection(
             id: newNotebook.id,
             title: newNotebook.title,
             fileURL: nil
         )
     }
-    
+
     // MARK: - Empty State (Overall Notebooks)
     private var emptyNotebooksState: some View {
         VStack(spacing: 18) {
             Spacer()
-            
+
             Image(systemName: "note.text")
                 .font(.system(size: 64))
                 .foregroundStyle(
@@ -1444,18 +1605,18 @@ struct GlobalNotebookView: View {
                 )
                 .padding(24)
                 .background(Color.orange.opacity(0.1), in: Circle())
-            
+
             Text("No Notebooks Yet")
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundColor(.inkTextPrimary)
-            
+
             Text("Tap the '+' button in the top right to create your first customizable notebook. You can link notebooks directly to files in your library or keep them independent.")
                 .font(.system(size: 13))
                 .foregroundColor(.inkTextSecondary)
                 .multilineTextAlignment(.center)
                 .lineSpacing(4)
                 .padding(.horizontal, 36)
-            
+
             Button {
                 HapticEngine.medium()
                 isShowingCreateNotebookSheet = true
@@ -1471,7 +1632,7 @@ struct GlobalNotebookView: View {
                 .background(Color.orange, in: Capsule())
             }
             .buttonStyle(.plain)
-            
+
             Spacer()
         }
     }
@@ -1483,7 +1644,7 @@ struct CreateNotebookSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.colorScheme) private var colorScheme
-    
+
     @State private var title = ""
     private var notebookTitle: String {
         title.isEmpty ? "My Notebook" : title
@@ -1494,10 +1655,10 @@ struct CreateNotebookSheet: View {
     @State private var selectedTemplate: PaperStyle = .plain
     @State private var selectedLinkedBook: ConvertedPDF? = nil
     @State private var searchQuery = ""
-    
+
     private var coverGradients: [LinearGradient] { NotebookSkinDefinition.coverGradients }
     private var coverRibbonColors: [Color] { NotebookSkinDefinition.coverRibbonColors }
-    
+
     var filteredBooks: [ConvertedPDF] {
         if searchQuery.isEmpty {
             return conversionManager.convertedPDFs
@@ -1505,7 +1666,7 @@ struct CreateNotebookSheet: View {
             return conversionManager.convertedPDFs.filter { $0.name.localizedCaseInsensitiveContains(searchQuery) }
         }
     }
-    
+
     var body: some View {
         NavigationStack {
             Form {
@@ -1514,11 +1675,11 @@ struct CreateNotebookSheet: View {
                         .font(.system(size: 15, design: .rounded))
                         .padding(.vertical, 4)
                 }
-                
+
                 Section(header: Text("Cover Design").font(.system(size: 11, weight: .semibold, design: .rounded))) {
                     VStack(spacing: 12) {
                         coverPreviewView()
-                        
+
                         // Selector across Classic, Creative, and Gradients
                         Picker("Style", selection: $coverStyleCategory) {
                             ForEach(CoverStyleCategory.allCases) { cat in
@@ -1527,7 +1688,7 @@ struct CreateNotebookSheet: View {
                         }
                         .pickerStyle(.segmented)
                         .padding(.bottom, 4)
-                        
+
                         switch coverStyleCategory {
                         case .classic:
                             skinSelectorView(for: .classic)
@@ -1538,7 +1699,7 @@ struct CreateNotebookSheet: View {
                         }
                     }
                 }
-                
+
                 Section(header: Text("Page Template").font(.system(size: 11, weight: .semibold, design: .rounded))) {
                     VStack(alignment: .leading, spacing: 8) {
                         Picker("Template", selection: $selectedTemplate) {
@@ -1548,7 +1709,7 @@ struct CreateNotebookSheet: View {
                             }
                         }
                         .pickerStyle(.menu)
-                        
+
                         // Live Paper Visual Preview
                         ZStack {
                             RoundedRectangle(cornerRadius: 8)
@@ -1558,7 +1719,7 @@ struct CreateNotebookSheet: View {
                                     RoundedRectangle(cornerRadius: 8)
                                         .stroke(Color.black.opacity(0.1), lineWidth: 1)
                                 )
-                            
+
                             NotebookPaperBackground(style: selectedTemplate, spacing: 24.0, colorScheme: colorScheme)
                                 .padding(8)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -1567,7 +1728,7 @@ struct CreateNotebookSheet: View {
                         .padding(.top, 4)
                     }
                 }
-                
+
                 Section(header: Text("Link to Library File (Optional)").font(.system(size: 11, weight: .semibold, design: .rounded))) {
                     if let selected = selectedLinkedBook {
                         HStack {
@@ -1583,7 +1744,7 @@ struct CreateNotebookSheet: View {
                                     .frame(width: 30, height: 40)
                                     .overlay(Image(systemName: "book").font(.system(size: 10)))
                             }
-                            
+
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(selected.name)
                                     .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -1592,9 +1753,9 @@ struct CreateNotebookSheet: View {
                                     .font(.system(size: 10, design: .rounded))
                                     .foregroundColor(.orange)
                             }
-                            
+
                             Spacer()
-                            
+
                             Button("Unlink") {
                                 selectedLinkedBook = nil
                             }
@@ -1611,7 +1772,7 @@ struct CreateNotebookSheet: View {
                             }
                             .padding(6)
                             .background(Color.inkSurfaceRaised.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
-                            
+
                             if filteredBooks.isEmpty {
                                 Text("No matching books found")
                                     .font(.system(size: 11, design: .rounded))
@@ -1636,7 +1797,7 @@ struct CreateNotebookSheet: View {
                                                         .overlay(Image(systemName: "book").font(.system(size: 14)).foregroundColor(.orange))
                                                         .shadow(radius: 1.5)
                                                 }
-                                                
+
                                                 Text(book.name)
                                                     .font(.system(size: 8, weight: .medium, design: .rounded))
                                                     .foregroundColor(.inkTextPrimary)
@@ -1668,7 +1829,7 @@ struct CreateNotebookSheet: View {
                     }
                     .font(.system(size: 15, design: .rounded))
                 }
-                
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Create") {
                         HapticEngine.success()
@@ -1702,7 +1863,7 @@ struct CreateNotebookSheet: View {
             if let _ = selectedLinkedBook { return Color.orange }
             return coverRibbonColors[selectedGradientIndex % coverRibbonColors.count]
         }()
-        
+
         ZStack(alignment: .topTrailing) {
             ZStack(alignment: .bottom) {
                 Group {
@@ -1720,14 +1881,14 @@ struct CreateNotebookSheet: View {
                     }
                 }
                 .frame(height: 190)
-                
+
                 // Direction B Frosted-Glass Bottom Metadata Card Preview
                 VStack(alignment: .leading, spacing: 4) {
                     Text(notebookTitle)
                         .font(.system(size: 12, weight: .bold, design: skinDef?.isSerif == true ? .serif : .rounded))
                         .foregroundColor(.white)
                         .lineLimit(1)
-                    
+
                     HStack(spacing: 4) {
                         HStack(spacing: 2) {
                             Image(systemName: "doc.text")
@@ -1736,9 +1897,9 @@ struct CreateNotebookSheet: View {
                                 .font(.system(size: 8, weight: .semibold, design: .rounded))
                         }
                         .foregroundColor(.white.opacity(0.85))
-                        
+
                         Spacer()
-                        
+
                         Text(selectedLinkedBook != nil ? "Linked" : selectedTemplate.rawValue.capitalized)
                             .font(.system(size: 7, weight: .bold, design: .rounded))
                             .padding(.horizontal, 5)
@@ -1782,7 +1943,7 @@ struct CreateNotebookSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             )
             .shadow(color: Color.black.opacity(0.3), radius: 6, y: 3)
-            
+
             // Direction B Silk Ribbon Bookmark Tab
             SilkRibbonBookmarkView(color: ribbonColor, width: 12, height: 26)
                 .padding(.trailing, 16)
@@ -1834,12 +1995,12 @@ struct CreateNotebookSheet: View {
                                         )
                                 )
                                 .shadow(radius: 2)
-                            
+
                             SilkRibbonBookmarkView(color: skin.ribbonColor, width: 7, height: 16)
                                 .padding(.trailing, 6)
                                 .offset(y: -2)
                         }
-                        
+
                         Text(skin.name)
                             .font(.system(size: 9, weight: .bold, design: .rounded))
                             .foregroundColor(selectedSkin == skin.id ? .orange : .inkTextSecondary)
@@ -1918,7 +2079,7 @@ struct CompositionTexture: View {
         GeometryReader { geo in
             ZStack {
                 Color(hex: "#161616")
-                
+
                 Path { path in
                     var rng = SeededRandom(seed: 99)
                     for _ in 0..<180 {
@@ -1944,7 +2105,7 @@ struct AuraMeshTexture: View {
                     .frame(width: geo.size.width * 0.9, height: geo.size.width * 0.9)
                     .blur(radius: 20)
                     .offset(x: -geo.size.width * 0.2, y: -geo.size.height * 0.2)
-                
+
                 Circle()
                     .fill(Color(hex: "#8E2DE2").opacity(0.5))
                     .frame(width: geo.size.width * 0.8, height: geo.size.width * 0.8)
@@ -2025,12 +2186,12 @@ struct AbstractWavesTexture: View {
                     path.closeSubpath()
                 }
                 .fill(Color(hex: "#FF6B4A").opacity(0.8))
-                
+
                 Circle()
                     .fill(Color(hex: "#F4B41A"))
                     .frame(width: geo.size.width * 0.45, height: geo.size.width * 0.45)
                     .offset(x: geo.size.width * 0.25, y: geo.size.height * 0.15)
-                
+
                 Path { path in
                     path.move(to: CGPoint(x: 0, y: geo.size.height * 0.75))
                     path.addCurve(
@@ -2052,7 +2213,7 @@ struct NotebookCoverSkinView: View {
     let skinType: String
     let title: String
     let colorScheme: ColorScheme
-    
+
     var body: some View {
         ZStack {
             switch skinType {
@@ -2064,31 +2225,31 @@ struct NotebookCoverSkinView: View {
                         startRadius: 10,
                         endRadius: 220
                     )
-                    
+
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(Color.white.opacity(0.08), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                         .padding(6)
-                    
+
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(Color(hex: "#D4AF37").opacity(0.6), lineWidth: 1.2)
                         .padding(10)
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(Color(hex: "#D4AF37").opacity(0.35), lineWidth: 0.6)
                         .padding(13)
-                    
+
                     VStack(spacing: 4) {
                         Text("ARCHIVAL JOURNAL")
                             .font(.system(size: 7, weight: .bold, design: .serif))
                             .tracking(1.5)
                             .foregroundColor(Color(hex: "#D4AF37").opacity(0.85))
-                        
+
                         Text(title)
                             .font(.system(size: 10, weight: .bold, design: .serif))
                             .foregroundColor(Color(hex: "#F5E6CC"))
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
                             .padding(.horizontal, 6)
-                        
+
                         Text("✦")
                             .font(.system(size: 7))
                             .foregroundColor(Color(hex: "#D4AF37").opacity(0.7))
@@ -2100,7 +2261,7 @@ struct NotebookCoverSkinView: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(hex: "#D4AF37").opacity(0.5), lineWidth: 1.0))
                     .shadow(color: .black.opacity(0.5), radius: 3)
                 }
-                
+
             case "leather":
                 ZStack {
                     RadialGradient(
@@ -2109,14 +2270,14 @@ struct NotebookCoverSkinView: View {
                         startRadius: 10,
                         endRadius: 200
                     )
-                    
+
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(Color(hex: "#CFB53B").opacity(0.55), lineWidth: 1.2)
                         .padding(8)
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(Color(hex: "#CFB53B").opacity(0.35), lineWidth: 0.6)
                         .padding(11)
-                    
+
                     VStack(spacing: 2) {
                         Text(title.uppercased())
                             .font(.system(size: 8, weight: .bold, design: .serif))
@@ -2132,7 +2293,7 @@ struct NotebookCoverSkinView: View {
                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color(hex: "#CFB53B").opacity(0.6), lineWidth: 1.0))
                     .shadow(radius: 3)
                 }
-                
+
             case "midori":
                 ZStack {
                     RadialGradient(
@@ -2141,12 +2302,12 @@ struct NotebookCoverSkinView: View {
                         startRadius: 10,
                         endRadius: 200
                     )
-                    
+
                     Rectangle()
                         .fill(Color(hex: "#0E1410"))
                         .frame(width: 3.5)
                         .shadow(color: Color.black.opacity(0.4), radius: 1, x: 1, y: 0)
-                    
+
                     RoundedRectangle(cornerRadius: 2)
                         .fill(
                             LinearGradient(
@@ -2157,13 +2318,13 @@ struct NotebookCoverSkinView: View {
                         )
                         .frame(width: 6, height: 10)
                         .shadow(color: .black.opacity(0.3), radius: 1)
-                    
+
                     VStack(spacing: 3) {
                         Text("VOYAGE")
                             .font(.system(size: 6.5, weight: .bold, design: .monospaced))
                             .tracking(2.0)
                             .foregroundColor(Color(hex: "#C5A059"))
-                        
+
                         Text(title)
                             .font(.system(size: 9, weight: .semibold, design: .serif))
                             .foregroundColor(Color(hex: "#E8D8B8"))
@@ -2178,12 +2339,12 @@ struct NotebookCoverSkinView: View {
                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color(hex: "#C5A059").opacity(0.6), lineWidth: 1))
                     .shadow(radius: 3)
                 }
-                
+
             case "linen":
                 ZStack {
                     Color(hex: "#2c3e50")
                     LinenTexture()
-                    
+
                     VStack(spacing: 2) {
                         Text(title)
                             .font(.system(size: 9, weight: .semibold, design: .default))
@@ -2199,12 +2360,12 @@ struct NotebookCoverSkinView: View {
                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.25), lineWidth: 1.0))
                     .shadow(radius: 2)
                 }
-                
+
             case "kraft":
                 ZStack {
                     Color(hex: "#C69C6D")
                     KraftTexture()
-                    
+
                     VStack(spacing: 2) {
                         Text(title)
                             .font(.system(size: 9, weight: .bold, design: .rounded))
@@ -2220,17 +2381,17 @@ struct NotebookCoverSkinView: View {
                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color(hex: "#C69C6D").opacity(0.8), lineWidth: 1.0))
                     .shadow(radius: 2)
                 }
-                
+
             case "composition":
                 ZStack {
                     CompositionTexture()
-                    
+
                     VStack(spacing: 3) {
                         Text("COMPOSITION")
                             .font(.system(size: 8, weight: .black, design: .monospaced))
                             .foregroundColor(.black)
                             .padding(.top, 4)
-                        
+
                         Text(title)
                             .font(.system(size: 11, weight: .bold, design: .rounded))
                             .foregroundColor(.black)
@@ -2238,7 +2399,7 @@ struct NotebookCoverSkinView: View {
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
-                        
+
                         VStack(spacing: 5) {
                             Divider().background(Color.black.opacity(0.2))
                             Divider().background(Color.black.opacity(0.2))
@@ -2252,7 +2413,7 @@ struct NotebookCoverSkinView: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.black, lineWidth: 1.5))
                     .shadow(radius: 2)
                 }
-                
+
             case "aura":
                 ZStack {
                     LinearGradient(
@@ -2265,9 +2426,9 @@ struct NotebookCoverSkinView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
-                    
+
                     AuraMeshTexture()
-                    
+
                     VStack(spacing: 3) {
                         Text(title)
                             .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -2283,12 +2444,12 @@ struct NotebookCoverSkinView: View {
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.35), lineWidth: 1))
                     .shadow(color: Color.black.opacity(0.2), radius: 4)
                 }
-                
+
             case "neon":
                 ZStack {
                     Color(hex: "#0A0D18")
                     NeonGridTexture()
-                    
+
                     VStack(spacing: 3) {
                         Text(title.uppercased())
                             .font(.system(size: 9, weight: .black, design: .monospaced))
@@ -2304,7 +2465,7 @@ struct NotebookCoverSkinView: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(hex: "#00F2FE").opacity(0.7), lineWidth: 1.2))
                     .shadow(color: Color(hex: "#00F2FE").opacity(0.4), radius: 6)
                 }
-                
+
             case "cosmic":
                 ZStack {
                     LinearGradient(
@@ -2312,14 +2473,14 @@ struct NotebookCoverSkinView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
-                    
+
                     CosmicStarsTexture()
-                    
+
                     VStack(spacing: 3) {
                         Text("✦ COSMOS ✦")
                             .font(.system(size: 6.5, weight: .bold, design: .rounded))
                             .foregroundColor(Color(hex: "#C084FC"))
-                        
+
                         Text(title)
                             .font(.system(size: 9, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
@@ -2334,7 +2495,7 @@ struct NotebookCoverSkinView: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(hex: "#A855F7").opacity(0.5), lineWidth: 1))
                     .shadow(color: Color(hex: "#9333EA").opacity(0.3), radius: 4)
                 }
-                
+
             case "sage":
                 ZStack {
                     LinearGradient(
@@ -2342,9 +2503,9 @@ struct NotebookCoverSkinView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
-                    
+
                     SageBotanicalTexture()
-                    
+
                     VStack(spacing: 2) {
                         Text(title)
                             .font(.system(size: 9, weight: .semibold, design: .rounded))
@@ -2360,12 +2521,12 @@ struct NotebookCoverSkinView: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(hex: "#CCD5AE"), lineWidth: 1))
                     .shadow(color: Color.black.opacity(0.12), radius: 3)
                 }
-                
+
             case "abstract":
                 ZStack {
                     Color(hex: "#FFFDF7")
                     AbstractWavesTexture()
-                    
+
                     VStack(spacing: 2) {
                         Text(title)
                             .font(.system(size: 9, weight: .black, design: .rounded))
@@ -2381,7 +2542,7 @@ struct NotebookCoverSkinView: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(hex: "#1F2937").opacity(0.2), lineWidth: 1))
                     .shadow(color: Color.black.opacity(0.1), radius: 3)
                 }
-                
+
             default:
                 Color.gray
             }
@@ -2398,11 +2559,11 @@ extension GlobalNotebookView {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.inkTextSecondary)
-                
+
                 TextField("Search notebooks...", text: $notebookSearchQuery)
                     .font(.system(size: 13, design: .rounded))
                     .foregroundColor(.inkTextPrimary)
-                
+
                 if !notebookSearchQuery.isEmpty {
                     Button {
                         HapticEngine.light()
@@ -2419,7 +2580,7 @@ extension GlobalNotebookView {
             .padding(.vertical, 8)
             .background(Color.inkSurfaceRaised.opacity(0.5))
             .cornerRadius(10)
-            
+
             // Sort Menu Button
             Menu {
                 Button {
@@ -2466,7 +2627,7 @@ extension GlobalNotebookView {
         .padding(.horizontal, 24)
         .padding(.vertical, 10)
     }
-    
+
     private var sortOrderLabel: String {
         switch sortOrder {
         case .modified: return "Modified"
@@ -2474,7 +2635,7 @@ extension GlobalNotebookView {
         case .created: return "Created"
         }
     }
-    
+
     private var emptySearchNotebooksState: some View {
         VStack(spacing: 16) {
             Spacer()
@@ -2499,7 +2660,7 @@ struct EditNotebookSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.colorScheme) private var colorScheme
-    
+
     @State private var title = ""
     private var notebookTitle: String {
         title.isEmpty ? "My Notebook" : title
@@ -2510,10 +2671,10 @@ struct EditNotebookSheet: View {
     @State private var selectedTemplate: PaperStyle = .plain
     @State private var selectedLinkedBook: ConvertedPDF? = nil
     @State private var searchQuery = ""
-    
+
     private var coverGradients: [LinearGradient] { NotebookSkinDefinition.coverGradients }
     private var coverRibbonColors: [Color] { NotebookSkinDefinition.coverRibbonColors }
-    
+
     var filteredBooks: [ConvertedPDF] {
         if searchQuery.isEmpty {
             return conversionManager.convertedPDFs
@@ -2521,7 +2682,7 @@ struct EditNotebookSheet: View {
             return conversionManager.convertedPDFs.filter { $0.name.localizedCaseInsensitiveContains(searchQuery) }
         }
     }
-    
+
     var body: some View {
         NavigationStack {
             Form {
@@ -2530,11 +2691,11 @@ struct EditNotebookSheet: View {
                         .font(.system(size: 15, design: .rounded))
                         .padding(.vertical, 4)
                 }
-                
+
                 Section(header: Text("Cover Design").font(.system(size: 11, weight: .semibold, design: .rounded))) {
                     VStack(spacing: 12) {
                         coverPreviewView()
-                        
+
                         Picker("Style", selection: $coverStyleCategory) {
                             ForEach(CoverStyleCategory.allCases) { cat in
                                 Text(cat.rawValue).tag(cat)
@@ -2542,7 +2703,7 @@ struct EditNotebookSheet: View {
                         }
                         .pickerStyle(.segmented)
                         .padding(.bottom, 4)
-                        
+
                         switch coverStyleCategory {
                         case .classic:
                             skinSelectorView(for: .classic)
@@ -2553,7 +2714,7 @@ struct EditNotebookSheet: View {
                         }
                     }
                 }
-                
+
                 Section(header: Text("Page Template").font(.system(size: 11, weight: .semibold, design: .rounded))) {
                     VStack(alignment: .leading, spacing: 8) {
                         Picker("Template", selection: $selectedTemplate) {
@@ -2563,7 +2724,7 @@ struct EditNotebookSheet: View {
                             }
                         }
                         .pickerStyle(.menu)
-                        
+
                         ZStack {
                             RoundedRectangle(cornerRadius: 8)
                                 .fill(colorScheme == .dark ? Color(hex: "#1A1A1A") : Color.white)
@@ -2572,7 +2733,7 @@ struct EditNotebookSheet: View {
                                     RoundedRectangle(cornerRadius: 8)
                                         .stroke(Color.black.opacity(0.1), lineWidth: 1)
                                     )
-                            
+
                             NotebookPaperBackground(style: selectedTemplate, spacing: 24.0, colorScheme: colorScheme)
                                 .padding(8)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -2581,7 +2742,7 @@ struct EditNotebookSheet: View {
                         .padding(.top, 4)
                     }
                 }
-                
+
                 Section(header: Text("Link to Library File (Optional)").font(.system(size: 11, weight: .semibold, design: .rounded))) {
                     if let selected = selectedLinkedBook {
                         HStack {
@@ -2597,7 +2758,7 @@ struct EditNotebookSheet: View {
                                     .frame(width: 30, height: 40)
                                     .overlay(Image(systemName: "book").font(.system(size: 10)))
                             }
-                            
+
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(selected.name)
                                     .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -2606,9 +2767,9 @@ struct EditNotebookSheet: View {
                                     .font(.system(size: 10, design: .rounded))
                                     .foregroundColor(.orange)
                             }
-                            
+
                             Spacer()
-                            
+
                             Button("Unlink") {
                                 selectedLinkedBook = nil
                             }
@@ -2625,7 +2786,7 @@ struct EditNotebookSheet: View {
                             }
                             .padding(6)
                             .background(Color.inkSurfaceRaised.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
-                            
+
                             if filteredBooks.isEmpty {
                                 Text("No matching books found")
                                     .font(.system(size: 11, design: .rounded))
@@ -2650,7 +2811,7 @@ struct EditNotebookSheet: View {
                                                         .overlay(Image(systemName: "book").font(.system(size: 14)).foregroundColor(.orange))
                                                         .shadow(radius: 1.5)
                                                 }
-                                                
+
                                                 Text(book.name)
                                                     .font(.system(size: 8, weight: .medium, design: .rounded))
                                                     .foregroundColor(.inkTextPrimary)
@@ -2682,7 +2843,7 @@ struct EditNotebookSheet: View {
                     }
                     .font(.system(size: 15, design: .rounded))
                 }
-                
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
                         HapticEngine.success()
@@ -2729,7 +2890,7 @@ struct EditNotebookSheet: View {
             if let _ = selectedLinkedBook { return Color.orange }
             return coverRibbonColors[selectedGradientIndex % coverRibbonColors.count]
         }()
-        
+
         ZStack(alignment: .topTrailing) {
             ZStack(alignment: .bottom) {
                 Group {
@@ -2747,14 +2908,14 @@ struct EditNotebookSheet: View {
                     }
                 }
                 .frame(height: 190)
-                
+
                 // Direction B Frosted-Glass Bottom Metadata Card Preview
                 VStack(alignment: .leading, spacing: 4) {
                     Text(notebookTitle)
                         .font(.system(size: 12, weight: .bold, design: skinDef?.isSerif == true ? .serif : .rounded))
                         .foregroundColor(.white)
                         .lineLimit(1)
-                    
+
                     HStack(spacing: 4) {
                         HStack(spacing: 2) {
                             Image(systemName: "doc.text")
@@ -2763,9 +2924,9 @@ struct EditNotebookSheet: View {
                                 .font(.system(size: 8, weight: .semibold, design: .rounded))
                         }
                         .foregroundColor(.white.opacity(0.85))
-                        
+
                         Spacer()
-                        
+
                         Text(selectedLinkedBook != nil ? "Linked" : selectedTemplate.rawValue.capitalized)
                             .font(.system(size: 7, weight: .bold, design: .rounded))
                             .padding(.horizontal, 5)
@@ -2809,7 +2970,7 @@ struct EditNotebookSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             )
             .shadow(color: Color.black.opacity(0.3), radius: 6, y: 3)
-            
+
             // Direction B Silk Ribbon Bookmark Tab
             SilkRibbonBookmarkView(color: ribbonColor, width: 12, height: 26)
                 .padding(.trailing, 16)
@@ -2861,12 +3022,12 @@ struct EditNotebookSheet: View {
                                         )
                                 )
                                 .shadow(radius: 2)
-                            
+
                             SilkRibbonBookmarkView(color: skin.ribbonColor, width: 7, height: 16)
                                 .padding(.trailing, 6)
                                 .offset(y: -2)
                         }
-                        
+
                         Text(skin.name)
                             .font(.system(size: 9, weight: .bold, design: .rounded))
                             .foregroundColor(selectedSkin == skin.id ? .orange : .inkTextSecondary)
@@ -2890,19 +3051,19 @@ struct EditNotebookSheet: View {
 struct VocabularyNotebookHubView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \SDVocabularyWord.dateAdded, order: .reverse) private var vocabularyWords: [SDVocabularyWord]
-    
+
     @State private var searchQuery = ""
     @State private var selectedFilter: VocabularyFilter = .all
-    
+
     enum VocabularyFilter: String, CaseIterable, Identifiable {
         case all = "All Words"
         case favorites = "Favorites"
         case learning = "Learning (<5 ★)"
         case mastered = "Mastered (5 ★)"
-        
+
         var id: String { rawValue }
     }
-    
+
     private var filteredWords: [SDVocabularyWord] {
         vocabularyWords.filter { item in
             if !searchQuery.isEmpty {
@@ -2923,7 +3084,7 @@ struct VocabularyNotebookHubView: View {
             }
         }
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Filter Bar
@@ -2944,7 +3105,7 @@ struct VocabularyNotebookHubView: View {
                 .padding(.vertical, 8)
                 .background(Color.inkSurfaceRaised)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
-                
+
                 Picker("Filter", selection: $selectedFilter) {
                     ForEach(VocabularyFilter.allCases) { filter in
                         Text(filter.rawValue).tag(filter)
@@ -2955,7 +3116,7 @@ struct VocabularyNotebookHubView: View {
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 12)
-            
+
             if filteredWords.isEmpty {
                 VStack(spacing: 16) {
                     Image(systemName: "character.book.closed.fill")
@@ -2991,16 +3152,16 @@ struct VocabularyNotebookHubView: View {
 struct VocabularyWordCard: View {
     @Environment(\.modelContext) private var modelContext
     let word: SDVocabularyWord
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(word.word)
                     .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
-                
+
                 Spacer()
-                
+
                 Button(action: {
                     HapticEngine.light()
                     word.isFavorite.toggle()
@@ -3009,7 +3170,7 @@ struct VocabularyWordCard: View {
                     Image(systemName: word.isFavorite ? "heart.fill" : "heart")
                         .foregroundColor(word.isFavorite ? .pink : .secondary)
                 }
-                
+
                 Button(action: {
                     HapticEngine.light()
                     DictionaryLookupService.shared.presentSystemDictionary(for: word.word)
@@ -3026,7 +3187,7 @@ struct VocabularyWordCard: View {
                     .clipShape(Capsule())
                 }
             }
-            
+
             HStack(spacing: 6) {
                 Image(systemName: "book.closed")
                     .font(.system(size: 11))
@@ -3034,7 +3195,7 @@ struct VocabularyWordCard: View {
                     .font(.system(size: 11, weight: .medium, design: .rounded))
             }
             .foregroundColor(.secondary)
-            
+
             if !word.contextSentence.isEmpty {
                 Text("\"\(word.contextSentence)\"")
                     .font(.system(size: 13, weight: .regular, design: .serif))
@@ -3042,12 +3203,12 @@ struct VocabularyWordCard: View {
                     .foregroundColor(.secondary)
                     .padding(.vertical, 2)
             }
-            
+
             HStack {
                 Text("Mastery:")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
-                
+
                 HStack(spacing: 4) {
                     ForEach(1...5, id: \.self) { star in
                         Image(systemName: star <= word.masteryLevel ? "star.fill" : "star")
@@ -3060,9 +3221,9 @@ struct VocabularyWordCard: View {
                             }
                     }
                 }
-                
+
                 Spacer()
-                
+
                 Text(word.dateAdded.formatted(date: .abbreviated, time: .omitted))
                     .font(.system(size: 11, design: .rounded))
                     .foregroundColor(.secondary.opacity(0.7))

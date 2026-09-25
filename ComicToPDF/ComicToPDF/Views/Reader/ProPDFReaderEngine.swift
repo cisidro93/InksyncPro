@@ -37,6 +37,7 @@ struct ProPDFReaderEngine: View {
     @State private var activeTappedAnnotation: PDFAnnotation? = nil
     @State private var activeTappedAnnotationBounds: CGRect? = nil
     @StateObject private var speechEngine = PDFSpeechNarrationEngine.shared
+    @State private var isAutoAdvancingForNarration: Bool = false
 
     // Environment & Preferences
     @ObservedObject private var prefs = EBookPreferences.shared
@@ -536,7 +537,7 @@ struct ProPDFReaderEngine: View {
     private func applyCropObservers<Content: View>(to content: Content) -> some View {
         content
             .onChange(of: currentPageIndex) { _, newIndex in
-                if speechEngine.isActive && speechEngine.activePageIndex != newIndex {
+                if speechEngine.isActive && speechEngine.activePageIndex != newIndex && !isAutoAdvancingForNarration {
                     stopPDFNarration()
                 }
                 saveReadingProgress()
@@ -1205,35 +1206,30 @@ struct ProPDFReaderEngine: View {
     @ViewBuilder private var pdfNarrationSpatialOverlay: some View {
         if speechEngine.isActive,
            let pdfView = pdfViewReference,
-           let page = pdfView.currentPage,
+           let doc = pdfView.document,
            let activeSentence = speechEngine.activeSentence,
-           activeSentence.boundsInPage != .zero {
+           activeSentence.boundsInPage != .zero,
+           let speakingPage = doc.page(at: speechEngine.activePageIndex),
+           pdfView.currentPage == speakingPage {
             let lineRectsInPage = activeSentence.lineRectsInPage.isEmpty ? [activeSentence.boundsInPage] : activeSentence.lineRectsInPage
             ForEach(0..<lineRectsInPage.count, id: \.self) { idx in
                 let pageRect = lineRectsInPage[idx]
-                let viewRect = pdfView.convert(pageRect, from: page)
+                let viewRect = pdfView.convert(pageRect, from: speakingPage)
                 if viewRect.width > 0 && viewRect.height > 0 {
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.purple, Color.cyan],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
-                            lineWidth: 2.5
+                    RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                        .fill(Color.yellow.opacity(0.38))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                                .strokeBorder(Color.orange.opacity(0.65), lineWidth: 1.2)
                         )
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(Color.purple.opacity(0.18))
-                        )
-                        .shadow(color: Color.purple.opacity(0.6), radius: 6)
-                        .frame(width: max(16, viewRect.width + 6), height: max(12, viewRect.height + 4))
+                        .shadow(color: Color.yellow.opacity(0.45), radius: 4, x: 0, y: 1)
+                        .frame(width: max(12, viewRect.width + 4), height: max(10, viewRect.height + 2))
                         .position(x: viewRect.midX, y: viewRect.midY)
                         .allowsHitTesting(false)
                         .transition(.opacity)
                 }
             }
-            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: activeSentence.id)
+            .animation(.spring(response: 0.25, dampingFraction: 0.82), value: activeSentence.id)
             .zIndex(15)
         }
     }
@@ -2398,23 +2394,51 @@ struct ProPDFReaderEngine: View {
             return
         }
         guard let text = page.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            showToastMessage("No readable text on this page")
+            // If current page is an illustration or cover with no readable text, auto-advance to next page
+            if currentPageIndex + 1 < totalPages {
+                isAutoAdvancingForNarration = true
+                advancePage(forward: true)
+                pageAdvanceTask?.cancel()
+                pageAdvanceTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    guard !Task.isCancelled else { return }
+                    isAutoAdvancingForNarration = false
+                    startPDFNarration()
+                }
+            } else {
+                showToastMessage("Finished reading document")
+                stopPDFNarration()
+            }
             return
         }
+        let actualPageIndex = pdfDocument?.index(for: page) ?? currentPageIndex
         speechEngine.startReading(
             page: page,
-            pageIndex: currentPageIndex,
+            pageIndex: actualPageIndex,
             title: pdf.name,
             startIndex: 0,
-            onSentenceChanged: { _ in },
+            onSentenceChanged: { [weak pdfView] sentence in
+                // Auto-scroll to ensure the active sentence remains visible within the reader viewport
+                guard let pv = pdfView, let p = pv.currentPage, sentence.boundsInPage != .zero else { return }
+                let viewRect = pv.convert(sentence.boundsInPage, from: p)
+                if !pv.bounds.insetBy(dx: 24, dy: 64).contains(viewRect) {
+                    pv.go(to: sentence.boundsInPage, on: p)
+                }
+            },
             onPageAdvanceRequested: {
                 if currentPageIndex + 1 < totalPages {
+                    isAutoAdvancingForNarration = true
                     advancePage(forward: true)
+                    pageAdvanceTask?.cancel()
                     pageAdvanceTask = Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 350_000_000)
                         guard !Task.isCancelled else { return }
+                        isAutoAdvancingForNarration = false
                         startPDFNarration()
                     }
+                } else {
+                    showToastMessage("Finished reading document")
+                    stopPDFNarration()
                 }
             }
         )
@@ -2422,6 +2446,7 @@ struct ProPDFReaderEngine: View {
     }
 
     private func stopPDFNarration() {
+        isAutoAdvancingForNarration = false
         pageAdvanceTask?.cancel()
         pageAdvanceTask = nil
         speechEngine.stop()
@@ -2951,14 +2976,14 @@ struct ProPDFReaderEngine: View {
         let existing = store.annotations(for: pdf.id).first(where: { $0.id == id })
         let text = existing?.selectedText
         let targetPage = pageIndex ?? existing?.pageIndex ?? currentPageIndex
-        
+
         // 1. Direct removal if live annotation reference is provided
         if let liveAnn = annotation, let page = doc.page(at: targetPage) {
             page.removeAnnotation(liveAnn)
             page.displaysAnnotations = false
             page.displaysAnnotations = true
         }
-        
+
         // 2. Remove native annotation from PDFPage via SyncBridge
         _ = PDFAnnotationSyncBridge.shared.removeAnnotation(
             id: id,
@@ -2970,15 +2995,15 @@ struct ProPDFReaderEngine: View {
             targetAnnotation: annotation,
             bounds: bounds
         )
-        
+
         // 3. Remove from AnnotationStore and SwiftData
         store.delete(id: id, pdfID: pdf.id)
-        
+
         // 4. Force page redraw
         if let pv = pdfViewReference {
             forcePageRedraw(pv, pageIndex: targetPage)
         }
-        
+
         showToastMessage("Highlight Removed")
         HapticEngine.selection()
     }
@@ -2988,7 +3013,7 @@ struct ProPDFReaderEngine: View {
         guard let doc = pdfViewReference?.document ?? pdfDocument else { return }
         let store = AnnotationStore.shared
         guard var existing = store.annotations(for: pdf.id).first(where: { $0.id == id }) else { return }
-        
+
         let targetPage = existing.pageIndex
         existing.colorHex = color.rawValue
         existing.modifiedAt = Date()
@@ -3000,7 +3025,7 @@ struct ProPDFReaderEngine: View {
             }
         }
         store.update(existing)
-        
+
         // Update in SwiftData
         let ctx = modelContext
         let descriptor = FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.id == id })
@@ -3012,7 +3037,7 @@ struct ProPDFReaderEngine: View {
             }
             try? ctx.save()
         }
-        
+
         // Update in PDFKit page
         if let page = doc.page(at: targetPage) {
             let idStr = id.uuidString
@@ -3028,7 +3053,7 @@ struct ProPDFReaderEngine: View {
                 forcePageRedraw(pv, pageIndex: targetPage)
             }
         }
-        
+
         PDFAnnotationSyncBridge.shared.scheduleDebouncedDiskSync(for: pdf.id, in: doc, at: resolvedURL)
         showToastMessage("Highlight Updated")
         HapticEngine.selection()
@@ -3038,17 +3063,17 @@ struct ProPDFReaderEngine: View {
     private func clearCurrentPageMarkup() {
         guard let doc = pdfViewReference?.document ?? pdfDocument else { return }
         let coordinator = pdfViewReference?.delegate as? ProPDFViewRepresentable.Coordinator
-        
+
         // 1. Identify all visible pages (handles both Single-Page and Dual-Page modes)
         let visiblePages = pdfViewReference?.visiblePages ?? [doc.page(at: currentPageIndex)].compactMap { $0 }
         let targetPageIndices: [Int] = visiblePages.compactMap { doc.index(for: $0) }.filter { $0 >= 0 }
         let effectiveIndices = targetPageIndices.isEmpty ? [currentPageIndex] : targetPageIndices
-        
+
         // 2. Clear canvas drawings for each visible page
         for pageIdx in effectiveIndices {
             coordinator?.canvasProvider.clearDrawing(for: pageIdx)
         }
-        
+
         // 3. Strip native PDF annotations from each visible page
         for page in visiblePages {
             let annotationsToRemove = page.annotations
@@ -3056,7 +3081,7 @@ struct ProPDFReaderEngine: View {
                 page.removeAnnotation(annotation)
             }
         }
-        
+
         // 4. Remove all annotations for these pages from SwiftData
         let targetID: UUID = pdf.id
         for pageIdx in effectiveIndices {
@@ -3072,23 +3097,23 @@ struct ProPDFReaderEngine: View {
             }
         }
         try? modelContext.save()
-        
+
         // 5. Remove matching annotations from AnnotationStore
         let allStoreAnnotations = AnnotationStore.shared.annotations(for: targetID)
         for ann in allStoreAnnotations where effectiveIndices.contains(ann.pageIndex) {
             AnnotationStore.shared.delete(id: ann.id, pdfID: targetID)
         }
-        
+
         // 6. Force page redraw for all visible pages
         if let pv = pdfViewReference {
             for pageIdx in effectiveIndices {
                 forcePageRedraw(pv, pageIndex: pageIdx)
             }
         }
-        
+
         // 7. Schedule disk sync
         PDFAnnotationSyncBridge.shared.scheduleDebouncedDiskSync(for: pdf.id, in: doc, at: resolvedURL)
-        
+
         showToastMessage("Page Markup Cleared")
         HapticEngine.medium()
     }
@@ -3100,16 +3125,16 @@ struct ProPDFReaderEngine: View {
         guard let page = doc.page(at: targetPage) else { return }
         let store = AnnotationStore.shared
         let pageAnnotations = store.annotations(for: pdf.id).filter { $0.pageIndex == targetPage }
-        
+
         let pageCrop = page.bounds(for: .cropBox)
         let selectionBounds = pdfViewReference?.currentSelection?.bounds(for: page)
-        
+
         var removedCount = 0
         for ann in pageAnnotations {
             guard let selText = ann.selectedText, !selText.isEmpty else { continue }
             let isExactText = selText == text
             let isSubstr = text.contains(selText) || selText.contains(text)
-            
+
             var isSpatialMatch = false
             if let sb = selectionBounds, sb != .zero, let b = ann.bounds, pageCrop.width > 0, pageCrop.height > 0 {
                 let rect = CGRect(
@@ -3120,13 +3145,13 @@ struct ProPDFReaderEngine: View {
                 )
                 isSpatialMatch = rect.intersects(sb.insetBy(dx: -8, dy: -8))
             }
-            
+
             if (isExactText || isSubstr) && (selectionBounds == nil || isSpatialMatch) {
                 removeAnnotation(id: ann.id, pageIndex: targetPage)
                 removedCount += 1
             }
         }
-        
+
         if removedCount == 0 {
             let matching = page.annotations.filter { ann in
                 let t = ann.type ?? ""
@@ -3153,13 +3178,13 @@ struct ProPDFReaderEngine: View {
                 forcePageRedraw(pv, pageIndex: targetPage)
             }
         }
-        
+
         if removedCount > 0 {
             PDFAnnotationSyncBridge.shared.scheduleDebouncedDiskSync(for: pdf.id, in: doc, at: resolvedURL)
             showToastMessage("Highlight Removed")
             HapticEngine.selection()
         }
-        
+
         pdfViewReference?.setCurrentSelection(nil, animate: false)
         activeSelectionSnapshot = nil
     }
@@ -4029,7 +4054,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             for ann in page.annotations {
                 let typeName = ann.type ?? ""
                 guard typeName.contains("Highlight") || typeName.contains("Underline") || typeName.contains("StrikeOut") else { continue }
-                
+
                 // Precise hit-test padding around the annotation bounds
                 let hitArea = ann.bounds.insetBy(dx: -4, dy: -2)
                 if hitArea.contains(point) {
@@ -4039,15 +4064,15 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     return HighlightMatch(annotation: ann, id: annID, text: text, bounds: ann.bounds, selection: sel)
                 }
             }
-            
+
             // Check 2: AnnotationStore normalized coordinates (fallback if PDFKit annotation bounds differ)
             let storeAnnotations = AnnotationStore.shared.annotations(for: parent.pdf.id)
             let pageCrop = page.bounds(for: .cropBox)
             guard pageCrop.width > 0, pageCrop.height > 0 else { return nil }
-            
+
             let doc = pdfView.document
             let pageIdx = doc.flatMap { $0.index(for: page) } ?? parent.currentPageIndex
-            
+
             for ann in storeAnnotations where ann.pageIndex == pageIdx {
                 guard ann.kind == .highlight || ann.kind == .underline || ann.kind == .strikeOut else { continue }
                 if let b = ann.bounds {
@@ -4063,7 +4088,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     }
                 }
             }
-            
+
             return nil
         }
 

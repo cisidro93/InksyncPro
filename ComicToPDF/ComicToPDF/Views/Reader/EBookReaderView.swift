@@ -12,7 +12,7 @@ struct EBookReaderView: View {
     var onExit: (() -> Void)? = nil
     /// All books in the library — used to find the next volume in a series.
     var allBooks: [ConvertedPDF] = []
-    
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var conversionManager: ConversionManager
@@ -21,16 +21,16 @@ struct EBookReaderView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @ObservedObject private var narrationEngine = EPUBNarrationEngine.shared
     @State private var showingSettingsPanel = false
-    
+
     // Utilities
     @ObservedObject private var orientationLock = OrientationLockManager.shared
     @ObservedObject private var sleepTimer = SleepTimerManager.shared
     @State private var deviceOrientation = UIDevice.current.orientation
-    
+
     // Tools
     @State private var showShareSheet = false
     @State private var showSleepTimerPicker = false
-    
+
     // Preferences — shared across all books
     @StateObject private var velocityEngine = ReaderVelocityEngine()
     @State private var pageEntryTime = Date()
@@ -40,7 +40,7 @@ struct EBookReaderView: View {
         let targetID = pdf?.id ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent })?.id
         velocityEngine.recordPageTurn(remainingPages: remaining, pdfID: targetID)
     }
-    
+
     private var bookIdentifier: String {
         if let id = pdf?.id {
             return id.uuidString
@@ -53,7 +53,7 @@ struct EBookReaderView: View {
     private var progressKey: String { "ebook_progress_\(bookIdentifier)" }
     private var pageKey: String { "ebook_page_\(bookIdentifier)" }
 
-    
+
     // State
     @State private var metadata: EBookMetadata?
     @State private var currentIndex: Int = 0
@@ -99,7 +99,7 @@ struct EBookReaderView: View {
 
     /// Direction of last chapter navigation — used to drive the push transition.
     @State private var isGoingForward: Bool = true
-    
+
     @State private var activeHighlightToEdit: SDAnnotation? = nil
     @State private var annotationForFullEdit: SDAnnotation? = nil
     @State private var selectedTextForHUD: String? = nil
@@ -169,7 +169,7 @@ struct EBookReaderView: View {
         let label = spine[currentIndex].label.trimmingCharacters(in: .whitespacesAndNewlines)
         return label.isEmpty ? nil : label
     }
-    
+
     private var totalChapters: Int { metadata?.spineItems.count ?? 1 }
     private var visibleChapters: [(index: Int, label: String)] {
         guard let spine = metadata?.spineItems else { return [] }
@@ -179,12 +179,12 @@ struct EBookReaderView: View {
         guard totalChapters > 1 else { return 0 }
         return Double(currentIndex) / Double(totalChapters - 1)
     }
-    
+
     var body: some View {
         ZStack(alignment: .top) {
             // Background bleeds into status bar
             prefs.activeTheme.background(colorScheme: colorScheme).ignoresSafeArea()
-            
+
             // ── Main Reader Canvas (100% Invariant Fixed Viewport) ─────
             Group {
                 if isLoading {
@@ -216,7 +216,7 @@ struct EBookReaderView: View {
             }
             .frame(height: 2)
             .allowsHitTesting(false)
-            
+
             // ── HUD Overlays (tap-to-show UI) ─────────────────────────────
             if showChapterList { chapterDrawer }
         }
@@ -246,13 +246,13 @@ struct EBookReaderView: View {
             footnotePopover(for: item)
         }
         .task { await loadBook() }
-        .onDisappear { 
+        .onDisappear {
             hudIdleTask?.cancel()
             shouldAutoResumeNarrationOnChapterLoad = false
             clearSentenceHighlightInWebKit()
             narrationEngine.stop()
             cleanup()
-            saveProgress() 
+            saveProgress()
         }
         // FIX 4: Save scroll fraction whenever the chapter page changes
         .onChange(of: chapterPage) { _, _ in
@@ -464,15 +464,15 @@ struct EBookReaderView: View {
                     .background(.ultraThinMaterial, in: Circle())
                     .overlay(Circle().stroke(Color.inkBorderSubtle, lineWidth: 0.5))
             }
-            
+
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.inkText)
                 .lineLimit(1)
                 .shadow(color: colorScheme == .dark ? .black.opacity(0.6) : .clear, radius: 3)
-            
+
             Spacer()
-            
+
             // Narration playing badge
             if narrationEngine.isPlaying {
                 Button { toggleNarration() } label: {
@@ -539,7 +539,7 @@ struct EBookReaderView: View {
             }
             .help("Typography, Font, Themes & Layout")
             .accessibilityLabel("Typography and Reader Settings")
-            
+
             Menu {
                 Section("Appearance") {
                     Button { showingSettingsPanel.toggle() } label: {
@@ -628,7 +628,7 @@ struct EBookReaderView: View {
             .ignoresSafeArea(edges: .top)
         )
     }
-    
+
     // MARK: - Bottom Bar (Glass HUD)
     @ViewBuilder private func bottomBar(bottomInset: CGFloat = 0) -> some View {
         VStack(spacing: 0) {
@@ -665,7 +665,7 @@ struct EBookReaderView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 14)
                 .padding(.bottom, 4)
-                
+
                 Rectangle()
                     .fill(Color.inkBorderSubtle)
                     .frame(height: 0.5)
@@ -680,7 +680,7 @@ struct EBookReaderView: View {
                         .foregroundStyle(currentIndex == 0 ? Color.inkSecondary.opacity(0.25) : Color.inkText)
                 }
                 .disabled(currentIndex == 0)
-                
+
                 VStack(spacing: 2) {
                     Text("Page \(sanitizedChapterPage) of \(max(1, chapterTotalPages))")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -703,7 +703,7 @@ struct EBookReaderView: View {
                     }
                 }
                 .frame(minWidth: 100)
-                
+
                 Button { nextChapter() } label: {
                     Image(systemName: "chevron.right.circle.fill")
                         .font(.system(size: 32))
@@ -726,7 +726,7 @@ struct EBookReaderView: View {
             .ignoresSafeArea(edges: .bottom)
         )
     }
-    
+
     // MARK: - Chapter Drawer
     @ViewBuilder private var chapterDrawer: some View {
         ZStack {
@@ -815,7 +815,7 @@ struct EBookReaderView: View {
             removal:   .move(edge: .trailing).combined(with: .opacity)
         ))
     }
-    
+
     // MARK: - Loading & Error States
     private var readerLoadingView: some View {
         VStack(spacing: 20) {
@@ -849,7 +849,7 @@ struct EBookReaderView: View {
                 .tint(Color(hex: "#7B5EA7"))
         }
     }
-    
+
     @ViewBuilder
     private func readerErrorView(_ msg: String) -> some View {
         if let report = loadDiagnosticReport {
@@ -876,7 +876,7 @@ struct EBookReaderView: View {
             }
         }
     }
-    
+
     // MARK: - Navigation
     private func nextChapter() {
         if !shouldAutoResumeNarrationOnChapterLoad && narrationEngine.isActive {
@@ -1157,7 +1157,7 @@ struct EBookReaderView: View {
             }
         }
     }
-    
+
     nonisolated private static func unzipBook(from source: URL, to destination: URL) throws {
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         try FileManager.default.unzipItem(at: source, to: destination)
@@ -1166,11 +1166,11 @@ struct EBookReaderView: View {
     // MARK: - Load & Cleanup
     private func loadBook() async {
         Logger.shared.log("EBookReader: opening \(fileURL.lastPathComponent)", category: "EBook")
-        
+
         // Restore saved progress
         var saved = UserDefaults.standard.integer(forKey: progressKey)
         let savedPage = UserDefaults.standard.integer(forKey: pageKey)
-        
+
         // iCloud Sync Fallback: if local UserDefaults is 0, check ReaderProgressTracker (which syncs via NSUbiquitousKeyValueStore)
         let resolvedPDF = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent })
         if saved == 0, let p = resolvedPDF,
@@ -1178,11 +1178,11 @@ struct EBookReaderView: View {
            let ch = trackerProg.currentChapterIndex, ch > 0 {
             saved = ch
         }
-        
+
         // Linked Library: resolve security-scoped URL.
         var targetURL: URL = fileURL
         var accessedURL: URL? = nil
-        
+
         if let pdf = pdf {
             if case .cloud = pdf.sourceMode {
                 self.errorMessage = nil
@@ -1207,7 +1207,7 @@ struct EBookReaderView: View {
 
         // Parse metadata (streaming OPF, no full unzip)
         let parsed = await EBookParser.shared.parse(epub: sourceURL)
-        
+
         // Unzip for content serving (WKWebView needs local file access)
         // Deterministic cache key: bookIdentifier + mtime → same book reopens instantly across launches
         let mtime = (try? sourceURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
@@ -1230,10 +1230,10 @@ struct EBookReaderView: View {
             self.isLoading = false
             return
         }
-        
+
         // Extraction done, stop security scope
         accessedURL?.stopAccessingSecurityScopedResource()
-        
+
         self.unzipDir = dest
         if let parsed = parsed, !parsed.spineItems.isEmpty {
             self.metadata = parsed
@@ -1265,7 +1265,7 @@ struct EBookReaderView: View {
         trackEBookProgress()
         startHUDIdleTimer(delay: 3_000_000_000)
     }
-    
+
         private func saveProgress() {
         guard chapterPage < 99900 else { return }
         UserDefaults.standard.set(currentIndex, forKey: progressKey)
@@ -1295,7 +1295,7 @@ struct EBookReaderView: View {
             }
         }
     }
-    
+
     private func cleanup() {
         // Retain the unzip cache for fast reopen — only evict if older than 24 hours.
         guard let dir = unzipDir else { return }
@@ -1305,7 +1305,7 @@ struct EBookReaderView: View {
             try? FileManager.default.removeItem(at: dir)
         }
     }
-    
+
     private func trackEBookProgress() {
         // Find the PDF in the ConversionManager
         // Fix #1: prefer the already-resolved pdf reference before falling back to filename scan
@@ -1339,7 +1339,7 @@ struct EBookReaderView: View {
             Logger.shared.log("toggleBookmark: could not find pdf in conversionManager", category: "EBookReaderView", type: .warning)
             return
         }
-        
+
         var updated = conversionManager.convertedPDFs[idx]
         if isBookmarked {
             updated.metadata.bookmarkedPages.removeAll(where: { $0 == currentIndex })
@@ -1368,10 +1368,10 @@ struct EBookReaderView: View {
             toastMessage = "Bookmark Added"
             showToast = true
         }
-        
+
         conversionManager.convertedPDFs[idx] = updated
         conversionManager.saveProgressOnly()
-        
+
         HapticEngine.medium()
     }
 
@@ -1486,7 +1486,7 @@ struct EBookReaderView: View {
                     }
                     .ignoresSafeArea(edges: .vertical)
                 }
-                
+
                 if narrationEngine.isActive {
                     VStack(spacing: 0) {
                         Spacer()
@@ -1497,7 +1497,7 @@ struct EBookReaderView: View {
                     .ignoresSafeArea(edges: .bottom)
                     .zIndex(30)
                 }
-                
+
                 if !showHUD {
                     VStack(spacing: 0) {
                         Spacer()
@@ -1515,7 +1515,7 @@ struct EBookReaderView: View {
                     }
                     .ignoresSafeArea(edges: .bottom)
                 }
-                
+
                 if isPencilMode {
                     VStack {
                         HStack {
@@ -1599,7 +1599,7 @@ struct EBookReaderView: View {
                 textSelectionHUDOverlay(bottomInset: bottomInset)
                 ReadingJumpToastOverlay()
                 toastAlertOverlay(bottomInset: bottomInset)
-                
+
                 if prefs.showReadingRuler {
                     ReadingRulerOverlay()
                 }
@@ -1650,7 +1650,7 @@ struct EBookReaderView: View {
         let matchedPDF = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent })
         let activeBookID = matchedPDF?.id.uuidString ?? fileURL.lastPathComponent
         let activeBookTitle = matchedPDF?.name ?? title
-        
+
         BookHighlightsView(
             bookID: activeBookID,
             bookTitle: activeBookTitle,
@@ -1840,14 +1840,14 @@ struct EBookReaderView: View {
         guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
         let rawLabel = metadata?.spineItems[safe: currentIndex]?.label ?? ""
         let spineLabel = !rawLabel.isEmpty ? rawLabel : nil
-        
+
         isApplyingHighlightDirectly = true
         defer {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                 self.isApplyingHighlightDirectly = false
             }
         }
-        
+
         let annKind: Annotation.AnnotationKind
         let toastTitle: String
         if note != nil {
@@ -1899,7 +1899,7 @@ struct EBookReaderView: View {
         guard let p = pdf ?? conversionManager.convertedPDFs.first(where: { $0.url.lastPathComponent == fileURL.lastPathComponent }) else { return }
         let storeAnns = AnnotationStore.shared.annotations(for: p.id)
         let chapterAnns = storeAnns.filter { $0.pageIndex == currentIndex }
-        
+
         let matches: [Annotation]
         if let active = activeHighlightToEdit {
             matches = chapterAnns.filter { $0.id == active.id }
@@ -1917,7 +1917,7 @@ struct EBookReaderView: View {
                 }
             }
         }
-        
+
         let activeWV = resolveActiveWebView() ?? webViewReference
         let safeText = text
             .replacingOccurrences(of: "\\", with: "\\\\")
@@ -1934,7 +1934,7 @@ struct EBookReaderView: View {
             activeWV?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight(`\(safeText)`); }")
         }
         activeWV?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight(`\(safeText)`); window.getSelection()?.removeAllRanges(); }")
-        
+
         try? modelContext.save()
         activeHighlightToEdit = nil
         selectedTextForHUD = nil
@@ -2031,19 +2031,69 @@ struct EBookReaderView: View {
     private func highlightSentenceInWebKit(_ sentence: String) {
         guard let wv = resolveActiveWebView() ?? webViewReference else { return }
         let clean = sentence.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "`", with: "\\`")
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
 
-        // Automatically select and scroll to the active sentence in the multi-column WebKit layout
-        let js = "window.find(\"\(clean.prefix(80))\", false, false, true, false, true, false);"
+        // Wrap active spoken sentence in a luminous in-document highlight mark
+        let js = """
+        (function() {
+            var oldMarks = document.querySelectorAll('mark.inksync-tts-highlight');
+            for (var i = 0; i < oldMarks.length; i++) {
+                var p = oldMarks[i].parentNode;
+                while (oldMarks[i].firstChild) p.insertBefore(oldMarks[i].firstChild, oldMarks[i]);
+                p.removeChild(oldMarks[i]);
+                p.normalize();
+            }
+            window.getSelection()?.removeAllRanges();
+            var target = `\(clean.prefix(80))`;
+            var found = window.find(target, false, false, true, false, true, false);
+            if (found) {
+                var sel = window.getSelection();
+                if (sel && sel.rangeCount > 0) {
+                    var range = sel.getRangeAt(0);
+                    var mark = document.createElement('mark');
+                    mark.className = 'inksync-tts-highlight';
+                    mark.style.backgroundColor = 'rgba(255, 214, 10, 0.38)';
+                    mark.style.borderRadius = '3.5px';
+                    mark.style.boxShadow = '0 0 8px rgba(255, 179, 0, 0.45)';
+                    mark.style.color = 'inherit';
+                    try {
+                        range.surroundContents(mark);
+                        mark.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+                    } catch(e) {
+                        try {
+                            var contents = range.extractContents();
+                            mark.appendChild(contents);
+                            range.insertNode(mark);
+                            mark.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+                        } catch(err) {}
+                    }
+                    sel.removeAllRanges();
+                }
+            }
+        })();
+        """
         wv.evaluateJavaScript(js, completionHandler: nil)
     }
 
     private func clearSentenceHighlightInWebKit() {
         guard let wv = resolveActiveWebView() ?? webViewReference else { return }
-        wv.evaluateJavaScript("window.getSelection()?.removeAllRanges();", completionHandler: nil)
+        let js = """
+        (function() {
+            var oldMarks = document.querySelectorAll('mark.inksync-tts-highlight');
+            for (var i = 0; i < oldMarks.length; i++) {
+                var p = oldMarks[i].parentNode;
+                while (oldMarks[i].firstChild) p.insertBefore(oldMarks[i].firstChild, oldMarks[i]);
+                p.removeChild(oldMarks[i]);
+                p.normalize();
+            }
+            window.getSelection()?.removeAllRanges();
+        })();
+        """
+        wv.evaluateJavaScript(js, completionHandler: nil)
     }
 
     // MARK: - Narration Floating HUD
@@ -2107,7 +2157,7 @@ struct EBookWebReader: View {
                     })();
                     """
                     webView.evaluateJavaScript(js, completionHandler: nil)
-                    
+
                     // Fallback scroll positioning
                     let navJS = """
                     (function() {
@@ -2186,7 +2236,7 @@ struct EBookWebReader: View {
                         webView.evaluateJavaScript(js)
                     }
                 }
-                
+
                 // Restore the within-chapter fractional scroll position.
                 let fraction = self.initialScrollFraction
                 if fraction > 0.01 {
@@ -2216,11 +2266,11 @@ struct EBookWebReader: View {
             scrollViewDidEndDragging: { scrollView, decelerate in
                 let isPaged = self.prefs.paginationMode == EBookPaginationMode.paged.rawValue
                 guard isPaged else { return }
-                
+
                 let offset = scrollView.contentOffset.x
                 let maxOffset = scrollView.contentSize.width - scrollView.bounds.width
                 let threshold: CGFloat = 50.0
-                
+
                 if offset > maxOffset + threshold {
                     self.onNext()
                 } else if offset < -threshold {
@@ -2279,11 +2329,11 @@ struct EBookWebReader: View {
             }
         }
         guard FileManager.default.fileExists(atPath: contentURL.path) else { return }
-        
+
         self.baseUrl = contentURL.deletingLastPathComponent()
-        
+
         let cssToInject = buildReaderCSS(prefs: prefs, colorScheme: colorScheme, initialPage: initialPage, size: UIScreen.main.bounds.size)
-        
+
         var rawHTML: String = ""
         var enc: String.Encoding = .utf8
         if let html = try? String(contentsOf: contentURL, usedEncoding: &enc) {
@@ -2293,7 +2343,7 @@ struct EBookWebReader: View {
                    ?? String(data: data, encoding: .ascii)
                    ?? ""
         }
-        
+
         // Preserve native markup if standard HTML, otherwise clean with SwiftReadability
         var html: String
         if rawHTML.contains("pdf-page-marker") || spineItem.href.hasSuffix("reflow.html") {
@@ -2307,10 +2357,10 @@ struct EBookWebReader: View {
                 html = rawHTML
             }
         }
-        
+
         // Wrap with viewport
         html = EBookWebReader.wrapHTMLBodyWithViewport(html)
-        
+
         // Inject CSS
         if let range = html.range(of: "</head>", options: .caseInsensitive) {
             styledHTML = html.replacingCharacters(in: range, with: cssToInject + "</head>")
@@ -2318,7 +2368,7 @@ struct EBookWebReader: View {
             styledHTML = cssToInject + html
         }
     }
-    
+
     private func updateLiveCSS() {
         guard let wv = webViewRef else { return }
         let css = buildReaderCSS(prefs: prefs, colorScheme: colorScheme, initialPage: currentPage, size: wv.bounds.size)
@@ -2351,7 +2401,7 @@ struct EBookWebReader: View {
                 result.insert(contentsOf: "<div id=\"inksync-viewport\">", at: bodyIndex)
             }
         }
-        
+
         if let closeBodyRange = result.range(of: "</body>", options: .caseInsensitive) {
             result.insert(contentsOf: "</div>", at: closeBodyRange.lowerBound)
         }
@@ -2380,17 +2430,17 @@ struct EBookWebReader: View {
 
         let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
         let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
-        
+
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let isPhone = UIDevice.current.userInterfaceIdiom == .phone
         let isLandscape = renderWidth > renderHeight
         let defaultColumns = isLandscape ? (prefs.autoLandscapeDualPage ? 2 : (isPad ? 2 : 1)) : 1
         let cols = (isPhone && !isLandscape) ? 1 : (prefs.columnCount == 0 ? defaultColumns : prefs.columnCount)
-        
+
         let m = isPaged ? (isPhone ? max(12.0, min(margin, 16.0)) : max(16.0, margin)) : (isPhone ? max(12.0, min(margin, 16.0)) : margin)
         let gap = 2 * m
         let colWidth = max(100.0, (renderWidth / CGFloat(cols)) - gap)
-        
+
         let pagedCSS = isPaged ? """
             column-width: \(colWidth)px !important;
             column-gap: \(gap)px !important;
@@ -2727,7 +2777,7 @@ struct EBookWebReader: View {
         let cssContent = computeCSS(prefs: prefs, size: size)
         let isPaged = prefs.paginationMode == EBookPaginationMode.paged.rawValue
         let isDarkTheme = prefs.activeTheme.isDark
-        
+
         return """
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -2788,7 +2838,7 @@ struct EBookWebReader: View {
             var sv = document.scrollingElement || document.documentElement;
             var pageStep = window.innerWidth;
             var isHoriz = \(isPaged);
-            
+
             if (isHoriz) {
                 var scrollW = Math.max(sv.scrollWidth, document.body.scrollWidth);
                 var total = Math.floor((scrollW + 5) / pageStep);
@@ -2808,7 +2858,7 @@ struct EBookWebReader: View {
                 var pageHeight = window.innerHeight;
                 _totalPages = Math.max(1, Math.round(sv.scrollHeight / pageHeight));
             }
-            
+
             if (!_firstRun) {
                 window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
             }
@@ -2835,7 +2885,7 @@ struct EBookWebReader: View {
                 }
             }
             _currentPage = page;
-            
+
             if (!_firstRun) {
                 window.webkit.messageHandlers.metrics.postMessage({ current: _currentPage, total: _totalPages });
             }
@@ -3129,15 +3179,15 @@ struct EBookWebReader: View {
             if (scrollActive) return;
             scrollActive = true;
             lastTime = performance.now();
-            
+
             function scrollStep(timestamp) {
                 if (!scrollActive) return;
                 var delta = timestamp - lastTime;
                 lastTime = timestamp;
-                
+
                 var step = (scrollSpeed * (delta / 16.67));
                 window.scrollBy(0, step);
-                
+
                 requestAnimationFrame(scrollStep);
             }
             requestAnimationFrame(scrollStep);

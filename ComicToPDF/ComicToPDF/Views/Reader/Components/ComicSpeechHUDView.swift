@@ -16,6 +16,7 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
     @State private var showVoiceSheet: Bool = false
     @StateObject private var previewSynth = VoicePreviewSynthesizer()
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("showNarrationSubtitles") private var showSubtitles: Bool = false
 
     private let speedOptions: [Float] = [0.75, 1.0, 1.25, 1.5, 2.0]
 
@@ -171,6 +172,15 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
                     } label: {
                         Label("All Languages & Voices...", systemImage: "globe")
                     }
+                    
+                    Divider()
+                    
+                    Button {
+                        HapticEngine.selection()
+                        showSubtitles.toggle()
+                    } label: {
+                        Label(showSubtitles ? "Hide Subtitle Overlay" : "Show Subtitle Overlay", systemImage: showSubtitles ? "captions.bubble.fill" : "captions.bubble")
+                    }
                 } label: {
                     Image(systemName: "person.wave.2.fill")
                         .font(.system(size: 13, weight: .medium))
@@ -213,8 +223,8 @@ struct ReaderSpeechHUDView<Engine: ReaderSpeechEngineProtocol>: View {
             )
             .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.12), radius: 14, y: 6)
 
-            // Current Dialogue Subtitle Snippet
-            if !engine.activeTextSnippet.isEmpty {
+            // Current Dialogue Subtitle Snippet (Optional overlay; disabled by default in favor of on-document highlighting)
+            if showSubtitles && !engine.activeTextSnippet.isEmpty {
                 Text(engine.activeTextSnippet)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.inkText)

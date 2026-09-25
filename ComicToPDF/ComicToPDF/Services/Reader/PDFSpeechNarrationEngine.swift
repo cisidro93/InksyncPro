@@ -122,7 +122,7 @@ final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechSynthe
                     let pageBounds = selection.bounds(for: page)
                     let lineSelections = selection.selectionsByLine()
                     let lineRects = lineSelections.map { $0.bounds(for: page) }
-                    
+
                     let block = PDFSentenceBlock(
                         text: sentenceString,
                         range: nsRange,
@@ -240,11 +240,25 @@ final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechSynthe
             currentBlockIndex = currentIndex + 1
             speakCurrentBlock()
         } else {
-            // End of page reached: request page advance
+            // End of page reached: request page advance without tearing down the audio session
             let onPageAdvance = onPageAdvanceRequested
-            stop()
+            prepareForPageAdvance()
             onPageAdvance?()
         }
+    }
+
+    /// Prepares engine for smooth page-turn continuity without tearing down the active audio session
+    func prepareForPageAdvance() {
+        if synthesizer.isSpeaking {
+            synthesizer.stopSpeaking(at: .immediate)
+        }
+        isPlaying = false
+        isPaused = false
+        currentBlockIndex = nil
+        activeSentence = nil
+        activeSentenceBoundsInPage = nil
+        activeSentenceLineRectsInPage.removeAll()
+        currentWordRange = NSRange(location: 0, length: 0)
     }
 
     /// Skips back to previous sentence block.
