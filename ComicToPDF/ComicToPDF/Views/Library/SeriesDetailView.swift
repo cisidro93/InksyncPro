@@ -314,7 +314,7 @@ struct SeriesDetailView: View {
             VirtualOmnibusShelf(
                 omnibuses: list,
                 onEdit: { omnibus in
-                    AppRouter.shared.presentSheet(.virtualOmnibusEditor(omnibus, parentSeriesID: series.id))
+                    AppRouter.shared.presentSheet(.volumeStudio(existingOmnibus: omnibus, initialFileIDs: omnibus.fileIDs, suggestedName: omnibus.name, parentSeriesID: series.id, initialMode: .virtual))
                 },
                 onRead: { omnibus in
                     let resolved = omnibus.fileIDs.compactMap { id in
@@ -412,6 +412,47 @@ struct SeriesDetailView: View {
             localIssues = sortedIssues
             updateVolumeGroups()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .virtualOmnibusesDidChange)) { _ in
+            withAnimation(.easeInOut(duration: 0.25)) {
+                localIssues = sortedIssues
+                updateVolumeGroups()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .libraryUpdated)) { _ in
+            withAnimation(.easeInOut(duration: 0.25)) {
+                localIssues = sortedIssues
+                updateVolumeGroups()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .libraryNeedsRescan)) { _ in
+            withAnimation(.easeInOut(duration: 0.25)) {
+                localIssues = sortedIssues
+                updateVolumeGroups()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openMergedBook)) { _ in
+            withAnimation(.easeInOut(duration: 0.25)) {
+                localIssues = sortedIssues
+                updateVolumeGroups()
+            }
+        }
+        .onReceive(LibraryService.shared.$virtualOmnibuses) { _ in
+            withAnimation(.easeInOut(duration: 0.25)) {
+                updateVolumeGroups()
+            }
+        }
+        .onReceive(LibraryService.shared.$items) { _ in
+            withAnimation(.easeInOut(duration: 0.25)) {
+                localIssues = sortedIssues
+                updateVolumeGroups()
+            }
+        }
+        .onReceive(conversionManager.objectWillChange.debounce(for: .milliseconds(150), scheduler: RunLoop.main)) { _ in
+            withAnimation(.easeInOut(duration: 0.25)) {
+                localIssues = sortedIssues
+                updateVolumeGroups()
+            }
+        }
     }
     
     private func listView(scrollProxy: ScrollViewProxy, viewportHeight: CGFloat) -> some View {
@@ -436,21 +477,12 @@ struct SeriesDetailView: View {
             }
         }
         .listStyle(InsetGroupedListStyle())
-        .coordinateSpace(name: "SeriesDetailScrollView")
         .coordinateSpace(name: "SeriesDetailViewport")
-        .gesture(
+        .simultaneousGesture(
             isSelectionMode ?
-            LongPressGesture(minimumDuration: 0.08)
-                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("SeriesDetailViewport")))
-                .onChanged { value in
-                    switch value {
-                    case .first:
-                        break
-                    case .second(_, let dragValue):
-                        if let drag = dragValue {
-                            handleDragUpdate(to: drag.location, viewportHeight: viewportHeight, scrollProxy: scrollProxy)
-                        }
-                    }
+            DragGesture(minimumDistance: 2, coordinateSpace: .named("SeriesDetailViewport"))
+                .onChanged { drag in
+                    handleDragUpdate(to: drag.location, viewportHeight: viewportHeight, scrollProxy: scrollProxy)
                 }
                 .onEnded { _ in
                     handleDragEnded()
@@ -682,21 +714,26 @@ struct SeriesDetailView: View {
             if !volumes.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
+                        let isAllSelected = selectedVolumeFilter == nil
                         Button {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
                                 selectedVolumeFilter = nil
                             }
                         } label: {
                             Text("All Volumes")
-                                .font(.system(size: 13, weight: selectedVolumeFilter == nil ? .semibold : .medium))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(selectedVolumeFilter == nil ? Theme.orange : Theme.surface.opacity(0.6))
-                                .foregroundColor(selectedVolumeFilter == nil ? .white : Theme.text)
+                                .font(.system(size: 13, weight: isAllSelected ? .bold : .semibold, design: .rounded))
+                                .padding(.horizontal, 13)
+                                .padding(.vertical, 7)
+                                .background(
+                                    isAllSelected
+                                        ? AnyView(Capsule().fill(Theme.orange.gradient).shadow(color: Theme.orange.opacity(0.35), radius: 4, y: 2))
+                                        : AnyView(Capsule().fill(Color(uiColor: .secondarySystemFill)))
+                                )
+                                .foregroundColor(isAllSelected ? .white : Color(uiColor: .label))
                                 .clipShape(Capsule())
                                 .overlay(
                                     Capsule()
-                                        .stroke(Color.white.opacity(selectedVolumeFilter == nil ? 0.2 : 0.08), lineWidth: 0.5)
+                                        .strokeBorder(isAllSelected ? Color.white.opacity(0.3) : Color.primary.opacity(0.08), lineWidth: 0.8)
                                 )
                         }
                         
@@ -708,15 +745,19 @@ struct SeriesDetailView: View {
                                 }
                             } label: {
                                 Text(vol == "Ungrouped" ? "Ungrouped" : "Vol. \(vol)")
-                                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(isSelected ? Theme.orange : Theme.surface.opacity(0.6))
-                                    .foregroundColor(isSelected ? .white : Theme.text)
+                                    .font(.system(size: 13, weight: isSelected ? .bold : .semibold, design: .rounded))
+                                    .padding(.horizontal, 13)
+                                    .padding(.vertical, 7)
+                                    .background(
+                                        isSelected
+                                            ? AnyView(Capsule().fill(Theme.orange.gradient).shadow(color: Theme.orange.opacity(0.35), radius: 4, y: 2))
+                                            : AnyView(Capsule().fill(Color(uiColor: .secondarySystemFill)))
+                                    )
+                                    .foregroundColor(isSelected ? .white : Color(uiColor: .label))
                                     .clipShape(Capsule())
                                     .overlay(
                                         Capsule()
-                                            .stroke(Color.white.opacity(isSelected ? 0.2 : 0.08), lineWidth: 0.5)
+                                            .strokeBorder(isSelected ? Color.white.opacity(0.3) : Color.primary.opacity(0.08), lineWidth: 0.8)
                                     )
                             }
                         }
@@ -1000,19 +1041,11 @@ struct SeriesDetailView: View {
                 }
             }
             .coordinateSpace(name: "SeriesDetailScrollView")
-            .gesture(
+            .simultaneousGesture(
                 isSelectionMode ?
-                LongPressGesture(minimumDuration: 0.08)
-                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("SeriesDetailViewport")))
-                    .onChanged { value in
-                        switch value {
-                        case .first:
-                            break
-                        case .second(_, let dragValue):
-                            if let drag = dragValue {
-                                handleDragUpdate(to: drag.location, viewportHeight: viewportHeight, scrollProxy: scrollProxy)
-                            }
-                        }
+                DragGesture(minimumDistance: 2, coordinateSpace: .named("SeriesDetailViewport"))
+                    .onChanged { drag in
+                        handleDragUpdate(to: drag.location, viewportHeight: viewportHeight, scrollProxy: scrollProxy)
                     }
                     .onEnded { _ in
                         handleDragEnded()
@@ -1137,7 +1170,7 @@ struct SeriesDetailView: View {
                         Color.clear
                             .preference(
                                 key: CellFramePreferenceKey.self,
-                                value: [pdf.id: geo.frame(in: .named("SeriesDetailScrollView"))]
+                                value: [pdf.id: geo.frame(in: .named("SeriesDetailViewport"))]
                             )
                     }
                 )
@@ -1207,36 +1240,14 @@ struct SeriesDetailView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MoveToSeriesAction"))) { _ in
                 showingBatchSeriesAssignment = true
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_CreateVolumeAction"))) { _ in
+                presentVolumeStudio(initialSelection: selection, initialMode: .virtual)
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_CreateVirtualVolumeAction"))) { _ in
-                let items = freshIssues.filter { selection.contains($0.id) }
-                let sortedItems = items.sorted {
-                    let n1 = Double($0.metadata.issueNumber ?? "")
-                    let n2 = Double($1.metadata.issueNumber ?? "")
-                    if let v1 = n1, let v2 = n2 { return v1 < v2 }
-                    if n1 != nil && n2 == nil { return true }
-                    if n1 == nil && n2 != nil { return false }
-                    return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-                }
-                let sortedIDs = sortedItems.map { $0.id }
-                
-                let suggestedName: String
-                if let firstSeries = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series {
-                    if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
-                        suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
-                    } else {
-                        suggestedName = "\(firstSeries) Virtual Volume"
-                    }
-                } else {
-                    suggestedName = "New Virtual Volume"
-                }
-                
-                AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName, parentSeriesID: series.id))
-                isSelectionMode = false
-                selection.removeAll()
+                presentVolumeStudio(initialSelection: selection, initialMode: .virtual)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MergeAction"))) { _ in
-                mergeConfigSuggestedName = "\(series.title) Omnibus"
-                showingMergeConfig = true
+                presentVolumeStudio(initialSelection: selection, initialMode: .physicalMerge)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_DeleteAction"))) { _ in
                 if isSelectionMode && !selection.isEmpty {
@@ -1300,14 +1311,52 @@ struct SeriesDetailView: View {
         }
     }
 
+    private func presentVolumeStudio(initialSelection: Set<UUID>, initialMode: VolumeStudioView.VolumeType = .virtual) {
+        let items = freshIssues.filter { initialSelection.contains($0.id) }
+        let sortedItems = items.sorted {
+            let n1 = Double($0.metadata.issueNumber ?? "")
+            let n2 = Double($1.metadata.issueNumber ?? "")
+            if let v1 = n1, let v2 = n2 { return v1 < v2 }
+            if n1 != nil && n2 == nil { return true }
+            if n1 == nil && n2 != nil { return false }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+        let sortedIDs = sortedItems.map { $0.id }
+        
+        let suggestedName: String
+        let baseSeriesTitle = sortedItems.first(where: { $0.metadata.series?.isEmpty == false })?.metadata.series ?? series.title
+        if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
+            suggestedName = "\(baseSeriesTitle) Vol. \(sharedVolume)"
+        } else {
+            let existingVolNums = freshIssues.compactMap { resolvedVolume(for: $0) }.compactMap { Int($0) }
+            let nextNum = (existingVolNums.max() ?? 0) + 1
+            suggestedName = "\(baseSeriesTitle) Volume \(nextNum)"
+        }
+        
+        AppRouter.shared.presentSheet(.volumeStudio(
+            existingOmnibus: nil,
+            initialFileIDs: sortedIDs,
+            suggestedName: suggestedName,
+            parentSeriesID: series.id,
+            initialMode: initialMode
+        ))
+        isSelectionMode = false
+        selection.removeAll()
+    }
+
     private func applySheets<Content: View>(_ content: Content) -> some View {
         content
             .sheet(isPresented: $showingMergeConfig) {
                 LazyView {
-                    SeriesMergeConfigurationView(seriesFiles: freshIssues, initialSelection: selection, suggestedName: mergeConfigSuggestedName)
-                        .id(mergeSessionID)
-                        .environmentObject(conversionManager)
-                        .environmentObject(settingsManager)
+                    VolumeStudioView(
+                        existingOmnibus: nil,
+                        initialFileIDs: Array(selection),
+                        suggestedName: mergeConfigSuggestedName ?? "\(series.title) Volume",
+                        parentSeriesID: series.id,
+                        initialMode: .physicalMerge
+                    )
+                    .environmentObject(conversionManager)
+                    .environmentObject(settingsManager)
                 }
             }
             .sheet(isPresented: $showBatchMetadataEditor) {
@@ -1500,7 +1549,7 @@ struct SeriesDetailView: View {
                         Color.clear
                             .preference(
                                 key: CellFramePreferenceKey.self,
-                                value: [pdf.id: geo.frame(in: .named("SeriesDetailScrollView"))]
+                                value: [pdf.id: geo.frame(in: .named("SeriesDetailViewport"))]
                             )
                     }
                 )
@@ -2090,8 +2139,12 @@ struct SeriesDetailView: View {
     private func findPDFUnderTouch(at location: CGPoint) -> ConvertedPDF? {
         let currentIssues = visualIssues
         for pdf in currentIssues {
-            if let frame = cellFrames[pdf.id], frame.contains(location) {
-                return pdf
+            if let frame = cellFrames[pdf.id] {
+                // Generous touch tolerance so rapid continuous sweeps never miss an issue
+                if location.y >= frame.minY - 4 && location.y <= frame.maxY + 4 &&
+                    location.x >= frame.minX - 12 && location.x <= frame.maxX + 12 {
+                    return pdf
+                }
             }
         }
         return nil
@@ -2152,7 +2205,10 @@ struct SeriesDetailView: View {
                 }
             }
         }
-        selection = newSelection
+        if selection != newSelection {
+            HapticEngine.selection()
+            selection = newSelection
+        }
     }
     
     private func performAutoScroll(viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {

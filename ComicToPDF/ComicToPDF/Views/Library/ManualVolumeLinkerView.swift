@@ -286,7 +286,22 @@ struct ManualVolumeLinkerView: View {
                     
                     // Checklist of files
                     List {
-                        Section(header: Text("Select Issues to Link")) {
+                        Section(header: HStack {
+                            Text("Select Issues to Link (\(selectedIssueIDs.count)/\(freshIssues.count))")
+                            Spacer()
+                            if !freshIssues.isEmpty {
+                                Button(selectedIssueIDs.count == freshIssues.count ? "Deselect All" : "Select All") {
+                                    HapticEngine.selection()
+                                    if selectedIssueIDs.count == freshIssues.count {
+                                        selectedIssueIDs.removeAll()
+                                    } else {
+                                        selectedIssueIDs = Set(freshIssues.map(\.id))
+                                    }
+                                }
+                                .font(.caption.bold())
+                                .foregroundColor(Theme.blue)
+                            }
+                        }) {
                             ForEach(freshIssues) { pdf in
                                 Button {
                                     if selectedIssueIDs.contains(pdf.id) {
@@ -421,6 +436,7 @@ struct ManualVolumeLinkerView: View {
         }
         
         conversionManager.saveLibrary()
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
         showingAddVolume = false
         triggerBanner(message: "Volume \(targetVolumeName) linked successfully!")
     }
@@ -441,6 +457,7 @@ struct ManualVolumeLinkerView: View {
             }
         }
         conversionManager.saveLibrary()
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
         triggerBanner(message: "Volume \(name) unlinked.")
     }
     
@@ -458,6 +475,7 @@ struct ManualVolumeLinkerView: View {
         }
         if count > 0 {
             conversionManager.saveLibrary()
+            NotificationCenter.default.post(name: .libraryUpdated, object: nil)
             triggerBanner(message: "Auto-linked \(count) issues from filenames!")
         } else {
             triggerBanner(message: "No volume patterns found in filenames.")

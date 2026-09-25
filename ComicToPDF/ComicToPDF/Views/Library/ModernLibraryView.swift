@@ -375,11 +375,7 @@ struct ModernLibraryView: View {
                     isBatchMode = false
                     multiSelection.removeAll()
                 }
-                Button("Convert & Merge") {
-                    batchMergeItems = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    showingBatchMergeReorder = true
-                }
-                Button("Create Virtual Volume") {
+                Button("Create Volume") {
                     let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                     let sortedItems = items.sorted {
                         let n1 = Double($0.metadata.issueNumber ?? "")
@@ -395,12 +391,18 @@ struct ModernLibraryView: View {
                         if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
                             suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
                         } else {
-                            suggestedName = "\(firstSeries) Virtual Volume"
+                            suggestedName = "\(firstSeries) Volume 1"
                         }
                     } else {
-                        suggestedName = "New Virtual Volume"
+                        suggestedName = "New Volume"
                     }
-                    AppRouter.shared.presentSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName))
+                    AppRouter.shared.presentSheet(.volumeStudio(
+                        existingOmnibus: nil,
+                        initialFileIDs: sortedIDs,
+                        suggestedName: suggestedName,
+                        parentSeriesID: nil,
+                        initialMode: .virtual
+                    ))
                     isBatchMode = false
                     multiSelection.removeAll()
                 }
@@ -539,6 +541,12 @@ struct ModernLibraryView: View {
                 syncAndRebuildLibraryCache()
             }
             .onReceive(NotificationCenter.default.publisher(for: .libraryNeedsRescan)) { _ in
+                syncAndRebuildLibraryCache()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .virtualOmnibusesDidChange)) { _ in
+                syncAndRebuildLibraryCache()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .libraryUpdated)) { _ in
                 syncAndRebuildLibraryCache()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShareImportReceived"))) { _ in
@@ -778,8 +786,13 @@ struct ModernLibraryView: View {
                     }
             }
         case .virtualOmnibusEditor(let omnibus, let initialFileIDs, let suggestedName, let parentSeriesID):
-            VirtualOmnibusEditorView(omnibus: omnibus, initialFileIDs: initialFileIDs, suggestedName: suggestedName, parentSeriesID: parentSeriesID)
+            VolumeStudioView(existingOmnibus: omnibus, initialFileIDs: initialFileIDs, suggestedName: suggestedName, parentSeriesID: parentSeriesID, initialMode: .virtual)
                 .environmentObject(conversionManager)
+                .environmentObject(settingsManager)
+        case .volumeStudio(let omnibus, let initialFileIDs, let suggestedName, let parentSeriesID, let initialMode):
+            VolumeStudioView(existingOmnibus: omnibus, initialFileIDs: initialFileIDs, suggestedName: suggestedName, parentSeriesID: parentSeriesID, initialMode: initialMode)
+                .environmentObject(conversionManager)
+                .environmentObject(settingsManager)
             
         case .controlCenter:
             LibraryControlCenterView(

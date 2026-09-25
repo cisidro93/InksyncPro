@@ -19,6 +19,8 @@ extension Notification.Name {
     static let openMergedBook         = Notification.Name("OpenMergedBook")
     /// Fired when a thumbnail is successfully generated for a converted PDF.
     static let thumbnailGenerated     = Notification.Name("ThumbnailGenerated")
+    /// Fired when virtual omnibuses / volumes are created, updated, or deleted.
+    static let virtualOmnibusesDidChange = Notification.Name("VirtualOmnibusesDidChange")
     // NOTE: .cloudCoverReady is declared in BookmarkResolver.swift alongside the
     // other cloud-cover notification infrastructure. Do not redeclare it here.
 

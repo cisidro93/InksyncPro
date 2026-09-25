@@ -22,6 +22,7 @@ enum LibrarySheetDestination: Identifiable {
     case metadataInbox
     case metadataSpreadsheet([ConvertedPDF])
     case virtualOmnibusEditor(VirtualOmnibus?, initialFileIDs: [UUID] = [], suggestedName: String = "", parentSeriesID: String? = nil)
+    case volumeStudio(VirtualOmnibus? = nil, initialFileIDs: [UUID] = [], suggestedName: String = "", parentSeriesID: String? = nil, initialMode: VolumeStudioView.VolumeType = .virtual)
     case controlCenter
     case whatsNew
     case opdsBrowser
@@ -50,6 +51,7 @@ enum LibrarySheetDestination: Identifiable {
         case .metadataInbox: return "metadataInbox"
         case .metadataSpreadsheet: return "metadataSpreadsheet"
         case .virtualOmnibusEditor(let o, let ids, let name, let parentId): return "virtualOmnibusEditor_\(o?.id.uuidString ?? "new")_\(ids.count)_\(name)_\(parentId ?? "none")"
+        case .volumeStudio(let o, let ids, let name, let parentId, let mode): return "volumeStudio_\(o?.id.uuidString ?? "new")_\(ids.count)_\(name)_\(parentId ?? "none")_\(mode.rawValue)"
         case .controlCenter: return "controlCenter"
         case .whatsNew: return "whatsNew"
         }

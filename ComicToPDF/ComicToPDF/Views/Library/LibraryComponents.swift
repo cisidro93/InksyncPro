@@ -657,6 +657,7 @@ struct BatchVolumeAssignmentSheet: View {
                             }
                         }
                         conversionManager.saveLibrary()
+                        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
                         dismiss()
                     } label: {
                         Text(volumeText.isEmpty ? "Clear Volume Grouping" : "Assign Volume \(volumeText)")
@@ -676,6 +677,7 @@ struct BatchVolumeAssignmentSheet: View {
                                 }
                             }
                             conversionManager.saveLibrary()
+                            NotificationCenter.default.post(name: .libraryUpdated, object: nil)
                             dismiss()
                         } label: {
                             Text("Clear Volume Grouping")

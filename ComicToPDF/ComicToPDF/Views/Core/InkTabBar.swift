@@ -75,13 +75,20 @@ struct InkTabBar: View {
 
     private var pillBackground: some View {
         ZStack {
-            Capsule().fill(.ultraThinMaterial)
+            // Adaptive solid-tint base to prevent underlying artwork/text from reducing legibility
+            Capsule()
+                .fill(
+                    colorScheme == .dark
+                        ? Color(hex: "#161618").opacity(0.88)
+                        : Color.white.opacity(0.92)
+                )
+            Capsule().fill(.thinMaterial)
             Capsule()
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(colorScheme == .dark ? 0.06 : 0.5),
-                            Color.white.opacity(0.0)
+                            Color.white.opacity(colorScheme == .dark ? 0.08 : 0.4),
+                            Color.clear
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -93,14 +100,9 @@ struct InkTabBar: View {
     private var pillBorder: some View {
         Capsule()
             .strokeBorder(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(colorScheme == .dark ? 0.18 : 0.7),
-                        Color.white.opacity(colorScheme == .dark ? 0.04 : 0.2)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ),
+                colorScheme == .dark
+                    ? Color.white.opacity(0.18)
+                    : Color.black.opacity(0.10),
                 lineWidth: 0.8
             )
     }
@@ -130,14 +132,24 @@ struct InkTabBar: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 14))
+                                    .font(.system(size: 13, weight: .bold))
                                 Text("Cancel")
                                     .font(.system(size: 12, weight: .bold, design: .rounded))
                             }
-                            .foregroundColor(.red)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.red.opacity(0.15), in: Capsule())
+                            .foregroundColor(colorScheme == .dark ? Color(hex: "#FF453A") : Color(hex: "#D70015"))
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 7)
+                            .background(
+                                Capsule()
+                                    .fill((colorScheme == .dark ? Color(hex: "#FF453A") : Color(hex: "#D70015")).opacity(colorScheme == .dark ? 0.20 : 0.12))
+                            )
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(
+                                        (colorScheme == .dark ? Color(hex: "#FF453A") : Color(hex: "#D70015")).opacity(colorScheme == .dark ? 0.45 : 0.30),
+                                        lineWidth: 0.8
+                                    )
+                            )
                         }
                         .buttonStyle(.plain)
                         
@@ -145,7 +157,13 @@ struct InkTabBar: View {
                         
                         Text("\(selectionCount(for: mode)) Selected")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundColor(colorScheme == .dark ? .white : .black)
+                            .foregroundColor(colorScheme == .dark ? .white : Color(hex: "#1C1C1E"))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                Capsule()
+                                    .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06))
+                            )
                         
                         Spacer()
                         
@@ -157,7 +175,7 @@ struct InkTabBar: View {
                         }
                     }
                     .padding(.horizontal, 12)
-                    .frame(height: isLandscapePhone ? 32 : 46)
+                    .frame(height: isLandscapePhone ? 34 : 48)
                     .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95)), removal: .opacity))
                 }
             }
@@ -220,19 +238,13 @@ struct InkTabBar: View {
 
                     Image(systemName: isActive ? tab.activeIcon : tab.icon)
                         .font(.system(
-                            size: isActive ? (isLandscapePhone ? 13 : 16) : (isLandscapePhone ? 12 : 15),
-                            weight: isActive ? .semibold : .regular
+                            size: isActive ? (isLandscapePhone ? 13.5 : 16.5) : (isLandscapePhone ? 12.5 : 15.5),
+                            weight: isActive ? .bold : .semibold
                         ))
                         .foregroundStyle(
                             isActive
-                                ? AnyShapeStyle(
-                                    LinearGradient(
-                                        colors: [Color.orange, Color.orange.opacity(0.75)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                  )
-                                : AnyShapeStyle(Color.primary.opacity(0.50))
+                                ? AnyShapeStyle(Color.orange)
+                                : AnyShapeStyle(colorScheme == .dark ? Color.white.opacity(0.72) : Color(hex: "#2C2C2E").opacity(0.85))
                         )
                         .scaleEffect(isActive ? 1.05 : 1.0)
                 }
@@ -240,15 +252,19 @@ struct InkTabBar: View {
 
                 // Tab text label
                 Text(tab.label)
-                    .font(.system(size: isLandscapePhone ? 8 : 10, weight: isActive ? .semibold : .medium, design: .rounded))
-                    .foregroundColor(isActive ? Color.orange : Color.primary.opacity(0.55))
+                    .font(.system(size: isLandscapePhone ? 9.5 : 11, weight: isActive ? .bold : .semibold, design: .rounded))
+                    .foregroundColor(
+                        isActive
+                            ? Color.orange
+                            : (colorScheme == .dark ? Color.white.opacity(0.80) : Color(hex: "#1C1C1E").opacity(0.80))
+                    )
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
 
                 // Active dot — smaller in landscape
                 Circle()
                     .fill(Color.orange)
-                    .frame(width: isLandscapePhone ? 2.5 : 3, height: isLandscapePhone ? 2.5 : 3)
+                    .frame(width: isLandscapePhone ? 2.5 : 3.5, height: isLandscapePhone ? 2.5 : 3.5)
                     .opacity(isActive ? 1 : 0)
                     .scaleEffect(isActive ? 1 : 0.1)
                     .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isActive)
@@ -383,36 +399,63 @@ struct InkTabBar: View {
             }
             .disabled(count == 0)
             
-            // Create Virtual Volume
-            actionButton(title: "Virtual Vol", systemImage: "books.vertical.fill", color: count == 0 ? .gray : .purple) {
-                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_CreateVirtualVolumeAction"), object: nil)
+            // Create Volume (Unified: Virtual or Standalone)
+            actionButton(title: "Create Vol", systemImage: "books.vertical.fill", color: count == 0 ? .gray : .purple) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_CreateVolumeAction"), object: nil)
             }
             .disabled(count == 0)
-            
-            // Convert & Merge
-            actionButton(title: "Merge", systemImage: "arrow.triangle.merge", color: count < 2 ? .gray : .purple) {
-                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MergeAction"), object: nil)
-            }
-            .disabled(count < 2)
         }
     }
     
     @ViewBuilder
     private func actionButton(title: String, systemImage: String, color: Color, action: @escaping () -> Void) -> some View {
+        let isDisabled = (color == .gray)
+        let resolvedColor: Color = {
+            if isDisabled {
+                return Color(uiColor: .tertiaryLabel)
+            }
+            if colorScheme == .light {
+                if color == .orange { return Color(hex: "#C96400") }
+                if color == .blue { return Color(hex: "#0071E3") }
+                if color == .red { return Color(hex: "#D70015") }
+                if color == .purple { return Color(hex: "#8944AB") }
+                if color == .green { return Color(hex: "#1E824C") }
+            }
+            return color
+        }()
+
         Button(action: {
+            guard !isDisabled else { return }
             HapticEngine.light()
             action()
         }) {
             HStack(spacing: 5) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12.5, weight: .bold))
                 Text(title)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
             }
-            .foregroundColor(color)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(color.opacity(0.12), in: Capsule())
+            .foregroundColor(resolvedColor)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .background(
+                Group {
+                    if isDisabled {
+                        Capsule().fill(Color.primary.opacity(0.04))
+                    } else {
+                        Capsule().fill(resolvedColor.opacity(colorScheme == .dark ? 0.22 : 0.14))
+                    }
+                }
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        isDisabled
+                            ? Color.primary.opacity(0.08)
+                            : resolvedColor.opacity(colorScheme == .dark ? 0.45 : 0.35),
+                        lineWidth: 0.8
+                    )
+            )
         }
         .buttonStyle(.plain)
     }

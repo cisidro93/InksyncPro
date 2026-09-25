@@ -238,6 +238,7 @@ class ConversionManager: ObservableObject {
             LibraryPersistenceManager.shared.save(manager: self)
             // Keep Spotlight index in sync with the library
             SpotlightIndexer.shared.indexLibrary(pdfs: self.convertedPDFs)
+            NotificationCenter.default.post(name: .libraryUpdated, object: nil)
         }
     }
 

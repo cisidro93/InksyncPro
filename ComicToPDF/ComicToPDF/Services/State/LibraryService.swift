@@ -126,6 +126,7 @@ final class LibraryService: ObservableObject {
     func saveVirtualOmnibuses() {
         let omnibuses = self.virtualOmnibuses
         Logger.shared.log("🔍 [Flight Recorder] 📦 [Virtual Volume] Saving \(omnibuses.count) virtual volumes to database", category: "Debug")
+        NotificationCenter.default.post(name: .virtualOmnibusesDidChange, object: nil)
         Task.detached(priority: .background) {
             await LibraryDatabaseService.shared.saveVirtualOmnibuses(omnibuses)
         }

@@ -312,10 +312,14 @@ extension ConversionManager {
         #endif
     }
     func findDuplicates() async -> [DuplicateGroup] {
-        #if DEBUG
-        assertionFailure("findDuplicates() is not yet implemented. Remove from any UI until complete.")
-        #endif
-        return []
+        var sizeMap: [Int64: [ConvertedPDF]] = [:]
+        for pdf in convertedPDFs {
+            sizeMap[pdf.fileSize, default: []].append(pdf)
+        }
+        return sizeMap
+            .filter { $0.value.count > 1 }
+            .map { DuplicateGroup(files: $0.value, totalSize: $0.key) }
+            .sorted { $0.files.count > $1.files.count }
     }
     func calculateStorageInfo() -> StorageInfo {
         let used = convertedPDFs.reduce(0) { $0 + $1.fileSize }

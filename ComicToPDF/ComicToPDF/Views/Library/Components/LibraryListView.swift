@@ -102,7 +102,7 @@ struct LibraryListView: View {
                                                 Color.clear
                                                     .preference(
                                                         key: LibraryCellFramePreferenceKey.self,
-                                                        value: [item.id: geo.frame(in: .named("libraryListScroll"))]
+                                                        value: [item.id: geo.frame(in: .named("libraryListViewport"))]
                                                     )
                                             }
                                         }
@@ -113,23 +113,14 @@ struct LibraryListView: View {
                         .listStyle(.plain)
                         .scrollContentBackground(.hidden)
                         .background(Color.clear)
-                        .coordinateSpace(name: "libraryListScroll")
                         .refreshable {
                             conversionManager.scanLibrary()
                         }
-                        .gesture(
+                        .simultaneousGesture(
                             isBatchMode ?
-                            LongPressGesture(minimumDuration: 0.08)
-                                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("libraryListViewport")))
-                                .onChanged { value in
-                                    switch value {
-                                    case .first:
-                                        break
-                                    case .second(_, let dragValue):
-                                        if let drag = dragValue {
-                                            handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: proxy)
-                                        }
-                                    }
+                            DragGesture(minimumDistance: 2, coordinateSpace: .named("libraryListViewport"))
+                                .onChanged { drag in
+                                    handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: proxy)
                                 }
                                 .onEnded { _ in
                                     handleDragEnded()
@@ -808,8 +799,11 @@ struct LibraryListView: View {
     
     private func findItemUnderTouch(at location: CGPoint) -> LibraryListItem? {
         for item in items {
-            if let frame = cellFrames[item.id], frame.contains(location) {
-                return item
+            if let frame = cellFrames[item.id] {
+                // Generous vertical span tolerance for natural swipe-to-select down list rows
+                if location.y >= frame.minY - 3 && location.y <= frame.maxY + 3 {
+                    return item
+                }
             }
         }
         return nil
@@ -895,7 +889,10 @@ struct LibraryListView: View {
                 }
             }
         }
-        multiSelection = newSelection
+        if multiSelection != newSelection {
+            HapticEngine.selection()
+            multiSelection = newSelection
+        }
     }
     
     private func performAutoScroll(viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {

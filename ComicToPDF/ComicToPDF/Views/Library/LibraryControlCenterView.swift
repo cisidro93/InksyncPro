@@ -47,10 +47,10 @@ struct LibraryControlCenterView: View {
                                 }
                             )
                             
-                            // Create Virtual Volume
+                            // Create Volume
                             cardButton(
                                 title: "Create Volume",
-                                subtitle: "Combine issue lists",
+                                subtitle: "Virtual or merged archive",
                                 icon: "books.vertical.fill",
                                 gradient: Gradient(colors: [Color.inkViolet, Color(hex: "#7928ca")]),
                                 action: {
@@ -70,13 +70,13 @@ struct LibraryControlCenterView: View {
                                         if let sharedVolume = sortedItems.first(where: { $0.metadata.volume?.isEmpty == false })?.metadata.volume {
                                             suggestedName = "\(firstSeries) Vol. \(sharedVolume)"
                                         } else {
-                                            suggestedName = "\(firstSeries) Virtual Volume"
+                                            suggestedName = "\(firstSeries) Volume 1"
                                         }
                                     } else {
                                         suggestedName = ""
                                     }
                                     
-                                    transitionToSheet(.virtualOmnibusEditor(nil, initialFileIDs: sortedIDs, suggestedName: suggestedName))
+                                    transitionToSheet(.volumeStudio(existingOmnibus: nil, initialFileIDs: sortedIDs, suggestedName: suggestedName, parentSeriesID: nil, initialMode: .virtual))
                                 }
                             )
                             

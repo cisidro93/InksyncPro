@@ -145,7 +145,7 @@ struct LibraryGridView: View {
                 Color.clear
                     .preference(
                         key: LibraryCellFramePreferenceKey.self,
-                        value: [itemID: geo.frame(in: .named("libraryScroll"))]
+                        value: [itemID: geo.frame(in: .named("libraryViewport"))]
                     )
             }
         }
@@ -220,19 +220,11 @@ struct LibraryGridView: View {
                         .refreshable {
                             conversionManager.scanLibrary()
                         }
-                        .gesture(
+                        .simultaneousGesture(
                             isBatchMode ?
-                            LongPressGesture(minimumDuration: 0.08)
-                                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("libraryViewport")))
-                                .onChanged { value in
-                                    switch value {
-                                    case .first:
-                                        break
-                                    case .second(_, let dragValue):
-                                        if let drag = dragValue {
-                                            handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: proxy)
-                                        }
-                                    }
+                            DragGesture(minimumDistance: 2, coordinateSpace: .named("libraryViewport"))
+                                .onChanged { drag in
+                                    handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: proxy)
                                 }
                                 .onEnded { _ in
                                     handleDragEnded()
@@ -1036,8 +1028,11 @@ private struct SeriesDragPreviewCard: View {
 extension LibraryGridView {
     private func findItemUnderTouch(at location: CGPoint) -> LibraryListItem? {
         for item in items {
-            if let frame = cellFrames[item.id], frame.contains(location) {
-                return item
+            if let frame = cellFrames[item.id] {
+                // Generous touch tolerance for rapid continuous swipes across grid cards
+                if frame.insetBy(dx: -10, dy: -10).contains(location) {
+                    return item
+                }
             }
         }
         return nil
@@ -1123,7 +1118,10 @@ extension LibraryGridView {
                 }
             }
         }
-        multiSelection = newSelection
+        if multiSelection != newSelection {
+            HapticEngine.selection()
+            multiSelection = newSelection
+        }
     }
     
     private func performAutoScroll(viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
