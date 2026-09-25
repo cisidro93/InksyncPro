@@ -467,11 +467,9 @@ struct SeriesDetailView: View {
                 
                 seriesVirtualOmnibusesSection
                 
-                if hasVolumeData {
-                    volumeFilterBar
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                }
+                volumeFilterBar
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
                 
                 if showVolumeGrouping && hasVolumeData {
                     volumeGroupingSection
@@ -628,6 +626,47 @@ struct SeriesDetailView: View {
                         .clipShape(Capsule())
                     
                     if group.key != "Ungrouped" {
+                        if isSelectionMode && !selection.isEmpty {
+                            Button {
+                                addSelectionToVolume(volumeKey: group.key)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 11, weight: .bold))
+                                    Text("Assign (\(selection.count))")
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                }
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(Theme.orange.gradient)
+                                .foregroundColor(.white)
+                                .clipShape(Capsule())
+                                .shadow(color: Theme.orange.opacity(0.35), radius: 3, y: 1)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button {
+                                editVolumeIssues(volumeKey: group.key)
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "folder.badge.plus")
+                                        .font(.system(size: 10, weight: .semibold))
+                                    Text("Assign")
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3.5)
+                                .background(Theme.orange.opacity(0.12))
+                                .foregroundColor(Theme.orange)
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(Theme.orange.opacity(0.3), lineWidth: 0.8)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+
                         SwiftUI.Menu {
                             volumeContextMenuItems(group: group, isCollapsed: isCollapsed)
                         } label: {
@@ -635,6 +674,31 @@ struct SeriesDetailView: View {
                                 .font(.system(size: 16))
                                 .foregroundColor(Theme.textSecondary)
                                 .padding(4)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Button {
+                            if isSelectionMode && !selection.isEmpty {
+                                presentVolumeStudio(initialSelection: selection, initialMode: .assign)
+                            } else {
+                                showManualVolumeLinker = true
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "folder.badge.plus")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text("Assign")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3.5)
+                            .background(Theme.orange.opacity(0.12))
+                            .foregroundColor(Theme.orange)
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(Theme.orange.opacity(0.3), lineWidth: 0.8)
+                            )
                         }
                         .buttonStyle(.plain)
                     }
@@ -676,64 +740,121 @@ struct SeriesDetailView: View {
     }
 
     @ViewBuilder
+    private var assignVolumePill: some View {
+        Button {
+            HapticEngine.selection()
+            if isSelectionMode && !selection.isEmpty {
+                presentVolumeStudio(initialSelection: selection, initialMode: .assign)
+            } else {
+                showManualVolumeLinker = true
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 11.5, weight: .bold))
+                Text(isSelectionMode && !selection.isEmpty ? "Assign Selected (\(selection.count))" : "Assign Volume")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(
+                LinearGradient(
+                    colors: [Theme.orange, Color(hex: "#FF5E3A")],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .foregroundColor(.white)
+            .clipShape(Capsule())
+            .shadow(color: Theme.orange.opacity(0.38), radius: 4, y: 2)
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.8)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
     private var volumeFilterBar: some View {
-        if hasVolumeData {
-            let volumes = availableVolumes
-            if !volumes.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        let isAllSelected = selectedVolumeFilter == nil
+        let volumes = availableVolumes
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                assignVolumePill
+
+                if hasVolumeData && !volumes.isEmpty {
+                    let isAllSelected = selectedVolumeFilter == nil
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                            selectedVolumeFilter = nil
+                        }
+                    } label: {
+                        Text("All Volumes")
+                            .font(.system(size: 13, weight: isAllSelected ? .bold : .semibold, design: .rounded))
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 7)
+                            .background(
+                                isAllSelected
+                                    ? AnyView(Capsule().fill(Theme.orange.gradient).shadow(color: Theme.orange.opacity(0.35), radius: 4, y: 2))
+                                    : AnyView(Capsule().fill(Color(uiColor: .secondarySystemFill)))
+                            )
+                            .foregroundColor(isAllSelected ? .white : Color(uiColor: .label))
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(isAllSelected ? Color.white.opacity(0.3) : Color.primary.opacity(0.08), lineWidth: 0.8)
+                            )
+                    }
+
+                    ForEach(volumes, id: \.self) { vol in
+                        let isSelected = selectedVolumeFilter == vol
                         Button {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                                selectedVolumeFilter = nil
+                                selectedVolumeFilter = vol
                             }
                         } label: {
-                            Text("All Volumes")
-                                .font(.system(size: 13, weight: isAllSelected ? .bold : .semibold, design: .rounded))
+                            Text(vol == "Ungrouped" ? "Ungrouped" : "Vol. \(vol)")
+                                .font(.system(size: 13, weight: isSelected ? .bold : .semibold, design: .rounded))
                                 .padding(.horizontal, 13)
                                 .padding(.vertical, 7)
                                 .background(
-                                    isAllSelected
+                                    isSelected
                                         ? AnyView(Capsule().fill(Theme.orange.gradient).shadow(color: Theme.orange.opacity(0.35), radius: 4, y: 2))
                                         : AnyView(Capsule().fill(Color(uiColor: .secondarySystemFill)))
                                 )
-                                .foregroundColor(isAllSelected ? .white : Color(uiColor: .label))
+                                .foregroundColor(isSelected ? .white : Color(uiColor: .label))
                                 .clipShape(Capsule())
                                 .overlay(
                                     Capsule()
-                                        .strokeBorder(isAllSelected ? Color.white.opacity(0.3) : Color.primary.opacity(0.08), lineWidth: 0.8)
+                                        .strokeBorder(isSelected ? Color.white.opacity(0.3) : Color.primary.opacity(0.08), lineWidth: 0.8)
                                 )
                         }
-                        
-                        ForEach(volumes, id: \.self) { vol in
-                            let isSelected = selectedVolumeFilter == vol
-                            Button {
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                                    selectedVolumeFilter = vol
-                                }
-                            } label: {
-                                Text(vol == "Ungrouped" ? "Ungrouped" : "Vol. \(vol)")
-                                    .font(.system(size: 13, weight: isSelected ? .bold : .semibold, design: .rounded))
-                                    .padding(.horizontal, 13)
-                                    .padding(.vertical, 7)
-                                    .background(
-                                        isSelected
-                                            ? AnyView(Capsule().fill(Theme.orange.gradient).shadow(color: Theme.orange.opacity(0.35), radius: 4, y: 2))
-                                            : AnyView(Capsule().fill(Color(uiColor: .secondarySystemFill)))
-                                    )
-                                    .foregroundColor(isSelected ? .white : Color(uiColor: .label))
-                                    .clipShape(Capsule())
-                                    .overlay(
-                                        Capsule()
-                                            .strokeBorder(isSelected ? Color.white.opacity(0.3) : Color.primary.opacity(0.08), lineWidth: 0.8)
-                                    )
-                            }
-                        }
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
+                } else if !localIssues.isEmpty {
+                    Button {
+                        autoAssignNextVolume()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 11, weight: .bold))
+                            Text("Auto-Assign")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Color(uiColor: .secondarySystemFill))
+                        .foregroundColor(Color(uiColor: .label))
+                        .clipShape(Capsule())
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.8)
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
         }
     }
 
@@ -895,7 +1016,7 @@ struct SeriesDetailView: View {
             Button {
                 showManualVolumeLinker = true
             } label: {
-                Label("Link Volumes Manually", systemImage: "link.circle")
+                Label("Assign & Link Volumes Manually", systemImage: "folder.badge.plus")
             }
             
             Button {
@@ -1092,6 +1213,47 @@ struct SeriesDetailView: View {
                         .clipShape(Capsule())
                     
                     if group.key != "Ungrouped" {
+                        if isSelectionMode && !selection.isEmpty {
+                            Button {
+                                addSelectionToVolume(volumeKey: group.key)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 11, weight: .bold))
+                                    Text("Assign (\(selection.count))")
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                }
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(Theme.orange.gradient)
+                                .foregroundColor(.white)
+                                .clipShape(Capsule())
+                                .shadow(color: Theme.orange.opacity(0.35), radius: 3, y: 1)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button {
+                                editVolumeIssues(volumeKey: group.key)
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "folder.badge.plus")
+                                        .font(.system(size: 10, weight: .semibold))
+                                    Text("Assign")
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3.5)
+                                .background(Theme.orange.opacity(0.12))
+                                .foregroundColor(Theme.orange)
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(Theme.orange.opacity(0.3), lineWidth: 0.8)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+
                         SwiftUI.Menu {
                             volumeContextMenuItems(group: group, isCollapsed: isCollapsed)
                         } label: {
@@ -1099,6 +1261,31 @@ struct SeriesDetailView: View {
                                 .font(.system(size: 16))
                                 .foregroundColor(Theme.textSecondary)
                                 .padding(4)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Button {
+                            if isSelectionMode && !selection.isEmpty {
+                                presentVolumeStudio(initialSelection: selection, initialMode: .assign)
+                            } else {
+                                showManualVolumeLinker = true
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "folder.badge.plus")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text("Assign")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3.5)
+                            .background(Theme.orange.opacity(0.12))
+                            .foregroundColor(Theme.orange)
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(Theme.orange.opacity(0.3), lineWidth: 0.8)
+                            )
                         }
                         .buttonStyle(.plain)
                     }
