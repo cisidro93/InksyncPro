@@ -499,20 +499,8 @@ struct ManualVolumeLinkerView: View {
     }
     
     private func autoLinkFromFilenames() {
-        var count = 0
-        for idx in conversionManager.convertedPDFs.indices {
-            let pdf = conversionManager.convertedPDFs[idx]
-            if freshIssues.contains(where: { $0.id == pdf.id }) {
-                let parsed = DeterministicFilenameParser.parse(filename: pdf.name)
-                if let vol = parsed.volume, !vol.isEmpty {
-                    conversionManager.convertedPDFs[idx].metadata.volume = vol
-                    count += 1
-                }
-            }
-        }
+        let count = conversionManager.autoDetectVolumesFromFilenames(for: freshIssues)
         if count > 0 {
-            conversionManager.saveLibrary()
-            NotificationCenter.default.post(name: .libraryUpdated, object: nil)
             triggerBanner(message: "Auto-linked \(count) issues from filenames!")
         } else {
             triggerBanner(message: "No volume patterns found in filenames.")
@@ -532,73 +520,18 @@ struct ManualVolumeLinkerView: View {
     }
     
     private func autoAssignNextVolume() {
-        let pool = freshIssues.sorted {
-            let n1 = Double($0.metadata.issueNumber ?? "")
-            let n2 = Double($1.metadata.issueNumber ?? "")
-            if let v1 = n1, let v2 = n2 { return v1 < v2 }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-        }
-        
-        var volumeCounts: [Int: Int] = [:]
-        for pdf in pool {
-            if let volStr = pdf.metadata.volume, let volNum = Int(volStr) {
-                volumeCounts[volNum, default: 0] += 1
-            }
-        }
-        
-        let nextVolNum: Int = (volumeCounts.keys.max() ?? 0) + 1
-        
-        let chunkSize: Int
-        if let lastVol = volumeCounts.keys.max(), let count = volumeCounts[lastVol], count > 0 {
-            chunkSize = count
+        if let result = conversionManager.autoAssignNextVolume(for: freshIssues) {
+            triggerBanner(message: "Auto-assigned \(result.assignedCount) issues to Volume \(result.volumeNumber)!")
         } else {
-            chunkSize = 6
-        }
-        
-        let unassigned = pool.filter { pdf in
-            let vol = pdf.metadata.volume ?? ""
-            return vol.trimmingCharacters(in: .whitespaces).isEmpty
-        }
-        guard !unassigned.isEmpty else {
             triggerBanner(message: "All issues already assigned to volumes.")
-            return
         }
-        
-        let targetIssues = Array(unassigned.prefix(chunkSize))
-        for pdf in targetIssues {
-            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                conversionManager.convertedPDFs[idx].metadata.volume = "\(nextVolNum)"
-            }
-        }
-        conversionManager.saveLibrary()
-        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
-        triggerBanner(message: "Auto-assigned \(targetIssues.count) issues to Volume \(nextVolNum)!")
     }
     
     private func autoChunkSeries(chunkSize: Int) {
-        guard chunkSize > 0 else { return }
-        let pool = freshIssues.sorted {
-            let n1 = Double($0.metadata.issueNumber ?? "")
-            let n2 = Double($1.metadata.issueNumber ?? "")
-            if let v1 = n1, let v2 = n2 { return v1 < v2 }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        let count = conversionManager.autoChunkSeries(issues: freshIssues, chunkSize: chunkSize)
+        if count > 0 {
+            triggerBanner(message: "Auto-grouped \(freshIssues.count) issues into \(count) volumes!")
         }
-        
-        let chunks = stride(from: 0, to: pool.count, by: chunkSize).map {
-            Array(pool[$0..<min($0 + chunkSize, pool.count)])
-        }
-        
-        for (volIndex, chunk) in chunks.enumerated() {
-            let volNum = "\(volIndex + 1)"
-            for pdf in chunk {
-                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                    conversionManager.convertedPDFs[idx].metadata.volume = volNum
-                }
-            }
-        }
-        conversionManager.saveLibrary()
-        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
-        triggerBanner(message: "Auto-grouped \(pool.count) issues into \(chunks.count) volumes!")
     }
     
     private var manualAutoChunkSheet: some View {

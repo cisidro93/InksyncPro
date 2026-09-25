@@ -192,6 +192,31 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         return String(format: "%.1f MB", mb)
     }
     
+    // MARK: - Volume & Issue Resolution
+    
+    /// Returns the assigned volume from metadata, falling back to deterministic filename parsing.
+    var resolvedVolume: String? {
+        if let vol = metadata.volume, !vol.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return vol
+        }
+        return DeterministicFilenameParser.parse(filename: name).volume
+    }
+    
+    /// Returns the numeric issue number, checking metadata first, then deterministic tokens, then heuristics.
+    var resolvedIssueNumber: Double? {
+        if let str = metadata.issueNumber, let d = Double(str) {
+            return d
+        }
+        let parsed = DeterministicFilenameParser.parse(filename: name)
+        if let iStr = parsed.issueNumber, let d = Double(iStr) {
+            return d
+        }
+        if let extracted = MetadataHeuristics.extractIssueNumber(from: name), let d = Double(extracted) {
+            return d
+        }
+        return nil
+    }
+    
     init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType? = nil, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro, contentHash: String? = nil) {
         self.id = id
         self.name = name

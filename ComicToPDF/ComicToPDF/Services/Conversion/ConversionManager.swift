@@ -389,4 +389,102 @@ class ConversionManager: ObservableObject {
     }
     
     func removeFromLibrary(_ pdf: ConvertedPDF) { deletePDF(pdf) }
+    
+    // MARK: - Volume Automation & Grouping Operations
+    
+    /// Automatically detects volume tokens from filenames and updates metadata on matching PDFs.
+    @discardableResult
+    func autoDetectVolumesFromFilenames(for issues: [ConvertedPDF]) -> Int {
+        var updatedCount = 0
+        let targetIDs = Set(issues.map(\.id))
+        for idx in convertedPDFs.indices {
+            let pdf = convertedPDFs[idx]
+            guard targetIDs.contains(pdf.id) else { continue }
+            let parsed = DeterministicFilenameParser.parse(filename: pdf.name)
+            if let vol = parsed.volume, !vol.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                convertedPDFs[idx].metadata.volume = vol
+                updatedCount += 1
+            }
+        }
+        if updatedCount > 0 {
+            saveLibrary()
+            NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+        }
+        return updatedCount
+    }
+    
+    /// Auto-assigns the next volume number in sequence for unassigned issues in the pool.
+    @discardableResult
+    func autoAssignNextVolume(for issues: [ConvertedPDF]) -> (assignedCount: Int, volumeNumber: Int)? {
+        let pool = issues.sorted {
+            let n1 = $0.resolvedIssueNumber
+            let n2 = $1.resolvedIssueNumber
+            if let v1 = n1, let v2 = n2 { return v1 < v2 }
+            if n1 != nil && n2 == nil { return true }
+            if n1 == nil && n2 != nil { return false }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+        
+        var volumeCounts: [Int: Int] = [:]
+        for pdf in pool {
+            if let volStr = pdf.resolvedVolume, let volNum = Int(volStr) {
+                volumeCounts[volNum, default: 0] += 1
+            }
+        }
+        
+        let nextVolNum: Int = (volumeCounts.keys.max() ?? 0) + 1
+        
+        let chunkSize: Int
+        if let lastVol = volumeCounts.keys.max(), let count = volumeCounts[lastVol], count > 0 {
+            chunkSize = count
+        } else {
+            chunkSize = 6
+        }
+        
+        let unassigned = pool.filter { pdf in
+            let vol = pdf.metadata.volume ?? ""
+            return vol.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard !unassigned.isEmpty else { return nil }
+        
+        let targetIssues = Array(unassigned.prefix(chunkSize))
+        for pdf in targetIssues {
+            if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                convertedPDFs[idx].metadata.volume = "\(nextVolNum)"
+            }
+        }
+        saveLibrary()
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+        return (assignedCount: targetIssues.count, volumeNumber: nextVolNum)
+    }
+    
+    /// Auto-chunks the entire series issue pool into volumes of a given chunk size.
+    @discardableResult
+    func autoChunkSeries(issues: [ConvertedPDF], chunkSize: Int) -> Int {
+        guard chunkSize > 0, !issues.isEmpty else { return 0 }
+        let pool = issues.sorted {
+            let n1 = $0.resolvedIssueNumber
+            let n2 = $1.resolvedIssueNumber
+            if let v1 = n1, let v2 = n2 { return v1 < v2 }
+            if n1 != nil && n2 == nil { return true }
+            if n1 == nil && n2 != nil { return false }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+        
+        let chunks = stride(from: 0, to: pool.count, by: chunkSize).map {
+            Array(pool[$0..<min($0 + chunkSize, pool.count)])
+        }
+        
+        for (volIndex, chunk) in chunks.enumerated() {
+            let volNum = "\(volIndex + 1)"
+            for pdf in chunk {
+                if let idx = convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
+                    convertedPDFs[idx].metadata.volume = volNum
+                }
+            }
+        }
+        saveLibrary()
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+        return chunks.count
+    }
 }

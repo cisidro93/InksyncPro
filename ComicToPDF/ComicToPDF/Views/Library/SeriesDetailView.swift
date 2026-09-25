@@ -177,7 +177,6 @@ struct SeriesDetailView: View {
     // Volume Grouping State
     @State private var showVolumeGrouping: Bool = true
     @State private var collapsedVolumes: Set<String> = []
-    @State private var showBatchVolumeAssignment = false
     @State private var showManualVolumeLinker = false
     @State private var showSeriesDetails = false
     @State private var jumpToVolume: String? = nil
@@ -201,14 +200,6 @@ struct SeriesDetailView: View {
     var availableVolumes: [String] {
         cachedVolumeGroups.map { $0.key }
     }
-    
-    private func resolvedVolume(for pdf: ConvertedPDF) -> String? {
-        if let vol = pdf.metadata.volume, !vol.isEmpty {
-            return vol
-        }
-        let parsed = DeterministicFilenameParser.parse(filename: pdf.name)
-        return parsed.volume
-    }
 
     var filteredIssues: [ConvertedPDF] {
         let baseIssues: [ConvertedPDF]
@@ -221,7 +212,7 @@ struct SeriesDetailView: View {
         
         if let selectedVolume = selectedVolumeFilter {
             return baseIssues.filter { pdf in
-                let vol = resolvedVolume(for: pdf)
+                let vol = pdf.resolvedVolume
                 if selectedVolume == "Ungrouped" {
                     return vol == nil || vol!.isEmpty
                 } else {
@@ -251,7 +242,7 @@ struct SeriesDetailView: View {
             if hideMergedIssues && mergedSourceIDs.contains(pdf.id) {
                 continue
             }
-            if let vol = resolvedVolume(for: pdf) {
+            if let vol = pdf.resolvedVolume {
                 groups[vol, default: []].append(pdf)
             } else {
                 ungrouped.append(pdf)
@@ -311,7 +302,7 @@ struct SeriesDetailView: View {
     
     /// True if any issues have volume metadata worth grouping by
     var hasVolumeData: Bool {
-        localIssues.contains { resolvedVolume(for: $0) != nil }
+        localIssues.contains { $0.resolvedVolume != nil }
     }
     
     var availableSortOptions: [SeriesSortOption] {
@@ -1313,7 +1304,7 @@ struct SeriesDetailView: View {
             if let sharedVolume = foundVolume {
                 suggestedName = "\(baseSeriesTitle) Vol. \(sharedVolume)"
             } else {
-                let existingVolNums = freshIssues.compactMap { resolvedVolume(for: $0) }.compactMap { Int($0) }
+                let existingVolNums = freshIssues.compactMap { $0.resolvedVolume }.compactMap { Int($0) }
                 let nextNum = (existingVolNums.max() ?? 0) + 1
                 suggestedName = "\(baseSeriesTitle) Volume \(nextNum)"
             }
@@ -1365,10 +1356,6 @@ struct SeriesDetailView: View {
             }
             .sheet(isPresented: $showingAutoChunkSheet) {
                 autoChunkSheet
-            }
-            .sheet(isPresented: $showBatchVolumeAssignment) {
-                BatchVolumeAssignmentSheet(selectedIDs: selection)
-                    .environmentObject(conversionManager)
             }
             .sheet(isPresented: $showManualVolumeLinker) {
                 ManualVolumeLinkerView(seriesID: series.id, seriesTitle: series.title)
@@ -2443,7 +2430,7 @@ struct SeriesDetailView: View {
     // MARK: - Volume Automation & Management Actions
     
     private func editVolumeIssues(volumeKey: String) {
-        let issuesInVolume = localIssues.filter { resolvedVolume(for: $0) == volumeKey }
+        let issuesInVolume = localIssues.filter { $0.resolvedVolume == volumeKey }
         presentVolumeStudio(
             initialSelection: Set(issuesInVolume.map(\.id)),
             initialMode: .assign,
@@ -2491,68 +2478,17 @@ struct SeriesDetailView: View {
     
     private func autoAssignNextVolume() {
         HapticEngine.medium()
-        let pool = localIssues.sorted {
-            let n1 = Double($0.metadata.issueNumber ?? "")
-            let n2 = Double($1.metadata.issueNumber ?? "")
-            if let v1 = n1, let v2 = n2 { return v1 < v2 }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        if conversionManager.autoAssignNextVolume(for: localIssues) != nil {
+            HapticEngine.success()
         }
-        
-        var volumeCounts: [Int: Int] = [:]
-        for pdf in pool {
-            if let volStr = resolvedVolume(for: pdf), let volNum = Int(volStr) {
-                volumeCounts[volNum, default: 0] += 1
-            }
-        }
-        
-        let nextVolNum: Int = (volumeCounts.keys.max() ?? 0) + 1
-        
-        let chunkSize: Int
-        if let lastVol = volumeCounts.keys.max(), let count = volumeCounts[lastVol], count > 0 {
-            chunkSize = count
-        } else {
-            chunkSize = 6
-        }
-        
-        let unassigned = pool.filter { resolvedVolume(for: $0) == nil }
-        guard !unassigned.isEmpty else { return }
-        
-        let targetIssues = Array(unassigned.prefix(chunkSize))
-        for pdf in targetIssues {
-            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                conversionManager.convertedPDFs[idx].metadata.volume = "\(nextVolNum)"
-            }
-        }
-        conversionManager.saveLibrary()
-        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
-        HapticEngine.success()
     }
     
     private func autoChunkSeries(chunkSize: Int) {
         guard chunkSize > 0 else { return }
         HapticEngine.medium()
-        let pool = localIssues.sorted {
-            let n1 = Double($0.metadata.issueNumber ?? "")
-            let n2 = Double($1.metadata.issueNumber ?? "")
-            if let v1 = n1, let v2 = n2 { return v1 < v2 }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        if conversionManager.autoChunkSeries(issues: localIssues, chunkSize: chunkSize) > 0 {
+            HapticEngine.success()
         }
-        
-        let chunks = stride(from: 0, to: pool.count, by: chunkSize).map {
-            Array(pool[$0..<min($0 + chunkSize, pool.count)])
-        }
-        
-        for (volIndex, chunk) in chunks.enumerated() {
-            let volNum = "\(volIndex + 1)"
-            for pdf in chunk {
-                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-                    conversionManager.convertedPDFs[idx].metadata.volume = volNum
-                }
-            }
-        }
-        conversionManager.saveLibrary()
-        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
-        HapticEngine.success()
     }
     
     @ViewBuilder

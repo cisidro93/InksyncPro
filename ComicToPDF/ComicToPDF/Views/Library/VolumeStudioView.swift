@@ -151,14 +151,14 @@ struct VolumeStudioView: View {
     /// Next logical issue auto-suggestion based on the last issue in the volume sequence
     private var nextSuggestedIssue: ConvertedPDF? {
         guard let lastFile = selectedFiles.last else { return nil }
-        let currentNum = parseIssueNumber(from: lastFile)
+        let currentNum = lastFile.resolvedIssueNumber
         guard let num = currentNum else { return nil }
         let targetNum = num + 1.0
 
         let selectedSet = Set(fileIDs)
         return seriesPoolFiles.first { pdf in
             guard !selectedSet.contains(pdf.id) else { return false }
-            if let n = parseIssueNumber(from: pdf), abs(n - targetNum) < 0.01 {
+            if let n = pdf.resolvedIssueNumber, abs(n - targetNum) < 0.01 {
                 return true
             }
             return false
@@ -884,19 +884,8 @@ struct VolumeStudioView: View {
 
     private func autoDetectVolumesFromFilenames() {
         HapticEngine.medium()
-        var updatedCount = 0
-        for file in selectedFiles {
-            let parsed = DeterministicFilenameParser.parse(filename: file.name)
-            if let vol = parsed.volume, !vol.isEmpty {
-                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == file.id }) {
-                    conversionManager.convertedPDFs[idx].metadata.volume = vol
-                    updatedCount += 1
-                }
-            }
-        }
+        let updatedCount = conversionManager.autoDetectVolumesFromFilenames(for: selectedFiles)
         if updatedCount > 0 {
-            conversionManager.saveLibrary()
-            NotificationCenter.default.post(name: .libraryUpdated, object: nil)
             HapticEngine.success()
             dismiss()
         }
@@ -1028,7 +1017,7 @@ struct VolumeStudioView: View {
         // Compile counts per volume
         var volumeCounts: [Int: Int] = [:]
         for file in pool {
-            if let volStr = resolvedVolume(for: file), let volNum = Int(volStr) {
+            if let volStr = file.resolvedVolume, let volNum = Int(volStr) {
                 volumeCounts[volNum, default: 0] += 1
             }
         }
@@ -1061,7 +1050,7 @@ struct VolumeStudioView: View {
 
         // Find candidate issues for the next volume
         let unmergedIssues = pool.filter { file in
-            if let volStr = resolvedVolume(for: file), let volNum = Int(volStr) {
+            if let volStr = file.resolvedVolume, let volNum = Int(volStr) {
                 return volNum >= nextVolume || volNum == 0
             }
             return true
@@ -1098,11 +1087,11 @@ struct VolumeStudioView: View {
 
         let matching = seriesPoolFiles.filter { pdf in
             guard !selectedSet.contains(pdf.id) else { return false }
-            if let num = parseIssueNumber(from: pdf) {
+            if let num = pdf.resolvedIssueNumber {
                 return num >= minNum && num <= maxNum
             }
             return false
-        }.sorted { (parseIssueNumber(from: $0) ?? 0) < (parseIssueNumber(from: $1) ?? 0) }
+        }.sorted { ($0.resolvedIssueNumber ?? 0) < ($1.resolvedIssueNumber ?? 0) }
 
         withAnimation {
             for pdf in matching {
@@ -1130,27 +1119,7 @@ struct VolumeStudioView: View {
         smartSuggestions = Array(matches.prefix(5))
     }
 
-    private func parseIssueNumber(from pdf: ConvertedPDF) -> Double? {
-        if let str = pdf.metadata.issueNumber, let d = Double(str) {
-            return d
-        }
-        let parsed = DeterministicFilenameParser.parse(filename: pdf.name)
-        if let iStr = parsed.issueNumber, let d = Double(iStr) {
-            return d
-        }
-        if let extracted = MetadataHeuristics.extractIssueNumber(from: pdf.name), let d = Double(extracted) {
-            return d
-        }
-        return nil
-    }
 
-    private func resolvedVolume(for pdf: ConvertedPDF) -> String? {
-        if let vol = pdf.metadata.volume, !vol.isEmpty {
-            return vol
-        }
-        let parsed = DeterministicFilenameParser.parse(filename: pdf.name)
-        return parsed.volume
-    }
 
     private func matchesSearchQuery(name: String, query: String) -> Bool {
         let cleanQuery = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
