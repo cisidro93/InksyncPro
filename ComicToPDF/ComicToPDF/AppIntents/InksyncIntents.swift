@@ -1,3 +1,11 @@
+//
+//  InksyncIntents.swift
+//  InksyncPro
+//
+//  App Intents & Siri Shortcuts Integration
+//  Cold-Launch Proofed via AppRouter.shared.pendingIntentAction
+//
+
 import AppIntents
 import SwiftData
 import SwiftUI
@@ -5,13 +13,14 @@ import SwiftUI
 // MARK: - Resume Reading
 
 struct ResumeReadingIntent: AppIntent {
-    static let title: LocalizedStringResource = "Resume Last Read Comic"
-    static let description = IntentDescription("Immediately opens the last comic you were reading in InksyncPro.")
+    static let title: LocalizedStringResource = "Resume Last Read Title"
+    static let description = IntentDescription("Immediately opens the last book, manga, or comic you were reading in InksyncPro.")
 
     static let openAppWhenRun: Bool = true
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        AppRouter.shared.pendingIntentAction = .resumeLastRead(mode: nil)
         NotificationCenter.default.post(name: NSNotification.Name("InksyncResumeLastRead"), object: nil)
         return .result()
     }
@@ -21,12 +30,13 @@ struct ResumeReadingIntent: AppIntent {
 
 struct OpenShelfIntent: AppIntent {
     static let title: LocalizedStringResource = "Open Global Shelf"
-    static let description = IntentDescription("Opens InksyncPro and deploys the animated InkShelfComponent.")
+    static let description = IntentDescription("Opens InksyncPro and deploys the animated InkShelf.")
 
     static let openAppWhenRun: Bool = true
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        AppRouter.shared.pendingIntentAction = .openShelf
         NotificationCenter.default.post(name: NSNotification.Name("InksyncOpenShelf"), object: nil)
         return .result()
     }
@@ -35,16 +45,17 @@ struct OpenShelfIntent: AppIntent {
 // MARK: - Open Specific Book
 
 struct OpenSpecificBookIntent: AppIntent {
-    static let title: LocalizedStringResource = "Open a Specific Comic"
-    static let description = IntentDescription("Opens InksyncPro and jumps to a specific comic by title.")
+    static let title: LocalizedStringResource = "Open a Specific Title"
+    static let description = IntentDescription("Opens InksyncPro and jumps to a specific book, comic, or manga by title.")
 
     static let openAppWhenRun: Bool = true
 
-    @Parameter(title: "Comic Title", description: "Part of the title to search for in your library.", requestValueDialog: "Which comic would you like to open?")
+    @Parameter(title: "Title", description: "Part of the title to search for in your library.", requestValueDialog: "Which book or comic would you like to open?")
     var bookTitle: String
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        AppRouter.shared.pendingIntentAction = .openBook(title: bookTitle)
         NotificationCenter.default.post(
             name: NSNotification.Name("InksyncOpenBook"),
             object: nil,
@@ -64,6 +75,7 @@ struct StartGuidedModeIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        AppRouter.shared.pendingIntentAction = .resumeLastRead(mode: "panelNavigation")
         NotificationCenter.default.post(
             name: NSNotification.Name("InksyncResumeLastRead"),
             object: nil,
@@ -73,16 +85,63 @@ struct StartGuidedModeIntent: AppIntent {
     }
 }
 
+// MARK: - Start RSVP Speed Reading
+
+struct StartRSVPIntent: AppIntent {
+    static let title: LocalizedStringResource = "Speed Read with RSVP"
+    static let description = IntentDescription("Launches RSVP speed reading mode for your current book in InksyncPro.")
+
+    static let openAppWhenRun: Bool = true
+
+    @Parameter(title: "Book Title", description: "Optional title to speed read.", default: nil)
+    var bookTitle: String?
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        AppRouter.shared.pendingIntentAction = .startRSVP(title: bookTitle)
+        NotificationCenter.default.post(
+            name: NSNotification.Name("InksyncStartRSVP"),
+            object: nil,
+            userInfo: bookTitle != nil ? ["searchTitle": bookTitle!] : nil
+        )
+        return .result(dialog: "Starting RSVP speed reading in InksyncPro.")
+    }
+}
+
+// MARK: - Start Narration (TTS)
+
+struct StartNarrationIntent: AppIntent {
+    static let title: LocalizedStringResource = "Read Aloud with TTS"
+    static let description = IntentDescription("Begins audio narration of the current book in InksyncPro.")
+
+    static let openAppWhenRun: Bool = true
+
+    @Parameter(title: "Book Title", description: "Optional title to narrate.", default: nil)
+    var bookTitle: String?
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        AppRouter.shared.pendingIntentAction = .startNarration(title: bookTitle)
+        NotificationCenter.default.post(
+            name: NSNotification.Name("InksyncStartNarration"),
+            object: nil,
+            userInfo: bookTitle != nil ? ["searchTitle": bookTitle!] : nil
+        )
+        return .result(dialog: "Starting narration in InksyncPro.")
+    }
+}
+
 // MARK: - Add Bookmark
 
 struct AddBookmarkIntent: AppIntent {
     static let title: LocalizedStringResource = "Bookmark Current Page"
-    static let description = IntentDescription("Adds a bookmark to the current page in any open comic.")
+    static let description = IntentDescription("Adds a bookmark to the current page in any open title.")
 
     static let openAppWhenRun: Bool = false   // Background-capable
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        AppRouter.shared.pendingIntentAction = .addBookmark
         NotificationCenter.default.post(name: NSNotification.Name("InksyncAddBookmark"), object: nil)
         return .result(dialog: "Bookmark added.")
     }
@@ -96,8 +155,10 @@ struct InksyncShortcutsProvider: AppShortcutsProvider {
         AppShortcut(
             intent: ResumeReadingIntent(),
             phrases: [
+                "Resume reading in \(.applicationName)",
                 "Resume my comic in \(.applicationName)",
-                "Read in \(.applicationName)",
+                "Resume my book in \(.applicationName)",
+                "Continue my manga in \(.applicationName)",
                 "Continue reading \(.applicationName)"
             ],
             shortTitle: "Resume Reading",
@@ -108,7 +169,8 @@ struct InksyncShortcutsProvider: AppShortcutsProvider {
             intent: OpenShelfIntent(),
             phrases: [
                 "Open my shelf in \(.applicationName)",
-                "Show my shelf in \(.applicationName)"
+                "Show my shelf in \(.applicationName)",
+                "Open my library in \(.applicationName)"
             ],
             shortTitle: "Open Shelf",
             systemImageName: "books.vertical"
@@ -117,10 +179,12 @@ struct InksyncShortcutsProvider: AppShortcutsProvider {
         AppShortcut(
             intent: OpenSpecificBookIntent(),
             phrases: [
-                "Search comic in \(.applicationName)",
-                "Open a comic in \(.applicationName)"
+                "Open a book in \(.applicationName)",
+                "Open a comic in \(.applicationName)",
+                "Open manga in \(.applicationName)",
+                "Search comic in \(.applicationName)"
             ],
-            shortTitle: "Open Comic",
+            shortTitle: "Open Title",
             systemImageName: "book.pages"
         )
 
@@ -133,6 +197,28 @@ struct InksyncShortcutsProvider: AppShortcutsProvider {
             ],
             shortTitle: "Panel Mode",
             systemImageName: "viewfinder"
+        )
+
+        AppShortcut(
+            intent: StartRSVPIntent(),
+            phrases: [
+                "Speed read in \(.applicationName)",
+                "Start RSVP in \(.applicationName)",
+                "RSVP read in \(.applicationName)"
+            ],
+            shortTitle: "Speed Read",
+            systemImageName: "bolt.fill"
+        )
+
+        AppShortcut(
+            intent: StartNarrationIntent(),
+            phrases: [
+                "Read aloud in \(.applicationName)",
+                "Start narration in \(.applicationName)",
+                "Narrate my book in \(.applicationName)"
+            ],
+            shortTitle: "Read Aloud",
+            systemImageName: "speaker.wave.2.fill"
         )
 
         AppShortcut(

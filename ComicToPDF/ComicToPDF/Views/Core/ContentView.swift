@@ -48,6 +48,8 @@ struct ContentView: View {
     // QoL Notification Toast State
     @State private var activeToast: ToastMessage? = nil
     
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
+    @State private var showingOnboarding = false
     @State private var isAppLoading = true
     @State private var isLogoBreathing = false
     @State private var isLogoMorphComplete = false
@@ -146,6 +148,11 @@ struct ContentView: View {
                         .transition(.opacity)
                 }
             }
+            .fullScreenCover(isPresented: $showingOnboarding) {
+                OnboardingView(isPresented: $showingOnboarding, onImportRequested: {
+                    AppRouter.shared.presentSheet(.importQueue)
+                })
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if !tabBarHidden && !isAppLoading {
                     InkTabBar(
@@ -236,7 +243,12 @@ struct ContentView: View {
                     withAnimation(.easeOut(duration: 0.25)) {
                         isLogoMorphComplete = true
                     }
-                    if AppBuildInfo.isNewBuildAfterUpdate && !SharedImportCoordinator.shared.hasPendingShareImport() && AppRouter.shared.activeFullScreen == nil {
+                    if !hasCompletedOnboarding {
+                        Logger.shared.log("Startup: auto-presenting OnboardingView for first launch", category: "Lifecycle", type: .info)
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            showingOnboarding = true
+                        }
+                    } else if AppBuildInfo.isNewBuildAfterUpdate && !SharedImportCoordinator.shared.hasPendingShareImport() && AppRouter.shared.activeFullScreen == nil {
                         Logger.shared.log("Startup: auto-presenting What's New sheet for build \(AppBuildInfo.formattedBadge)", category: "Lifecycle", type: .info)
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                             showingWhatsNewSheet = true
@@ -402,8 +414,11 @@ struct ContentView: View {
     }
 
     private func handleWillEnterForeground() {
-        Logger.shared.log("App returned to foreground — coordinating shared import", category: "Import")
+        Logger.shared.log("App returned to foreground — coordinating shared import, intent drain, and widget sync", category: "Import")
         Task { @MainActor in
+            AppRouter.shared.executePendingIntentActionIfNeeded()
+            AppGroupSyncService.shared.drainPendingWidgetActions()
+            AppGroupSyncService.shared.syncToAppGroup()
             guard LibraryService.shared.hasBootstrapped else { return }
             if SharedImportCoordinator.shared.hasPendingShareImport() {
                 // Active share import in progress — coordinateImport handles scanLibrary internally after ingest

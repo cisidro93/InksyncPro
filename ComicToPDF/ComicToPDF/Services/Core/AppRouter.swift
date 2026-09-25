@@ -1,4 +1,14 @@
 import SwiftUI
+import Foundation
+
+public enum InksyncIntentAction: Sendable, Equatable {
+    case resumeLastRead(mode: String?)
+    case openShelf
+    case openBook(title: String)
+    case startRSVP(title: String?)
+    case startNarration(title: String?)
+    case addBookmark
+}
 
 @MainActor
 class AppRouter: ObservableObject {
@@ -6,6 +16,7 @@ class AppRouter: ObservableObject {
     
     @Published var activeSheet: LibrarySheetDestination?
     @Published var activeFullScreen: LibraryFullScreenDestination?
+    @Published var pendingIntentAction: InksyncIntentAction?
     
     // Temporary holder for sequential sheet presentation to avoid SwiftUI transition race conditions
     var pendingSheet: LibrarySheetDestination?
@@ -17,6 +28,45 @@ class AppRouter: ObservableObject {
     @Published var selectedTab: Int = 0
     @Published var isSeriesSelectionMode = false
     @Published var seriesSelectionCount = 0
+    
+    func executePendingIntentActionIfNeeded() {
+        guard let action = pendingIntentAction else { return }
+        pendingIntentAction = nil
+        Logger.shared.log("AppRouter: Executing pending intent action: \(action)", category: "Navigation", type: .info)
+        switch action {
+        case .resumeLastRead(let mode):
+            NotificationCenter.default.post(
+                name: NSNotification.Name("InksyncResumeLastRead"),
+                object: nil,
+                userInfo: mode != nil ? ["readingMode": mode!] : nil
+            )
+        case .openShelf:
+            selectedTab = 0
+            NotificationCenter.default.post(name: NSNotification.Name("InksyncOpenShelf"), object: nil)
+        case .openBook(let title):
+            NotificationCenter.default.post(
+                name: NSNotification.Name("InksyncOpenBook"),
+                object: nil,
+                userInfo: ["searchTitle": title]
+            )
+        case .startRSVP(let title):
+            selectedTab = 0
+            NotificationCenter.default.post(
+                name: NSNotification.Name("InksyncStartRSVP"),
+                object: nil,
+                userInfo: title != nil ? ["searchTitle": title!] : nil
+            )
+        case .startNarration(let title):
+            selectedTab = 0
+            NotificationCenter.default.post(
+                name: NSNotification.Name("InksyncStartNarration"),
+                object: nil,
+                userInfo: title != nil ? ["searchTitle": title!] : nil
+            )
+        case .addBookmark:
+            NotificationCenter.default.post(name: NSNotification.Name("InksyncAddBookmark"), object: nil)
+        }
+    }
     
     func presentSheet(_ sheet: LibrarySheetDestination) {
         Logger.shared.log("AppRouter: presentSheet(\(sheet))", category: "Navigation", type: .info)

@@ -1455,6 +1455,17 @@ struct EBookReaderView: View {
                             }
                             let wv = resolveActiveWebView() ?? webViewReference
                             wv?.evaluateJavaScript("window.getSelection()?.removeAllRanges();")
+                        },
+                        onSaveVocabulary: { word in
+                            DictionaryLookupService.shared.lookupAndSave(
+                                term: word,
+                                contextSentence: selectedText,
+                                bookTitle: pdf?.name ?? "General Reading",
+                                bookID: pdf?.id.uuidString,
+                                modelContext: modelContext
+                            )
+                            showToastMessage("Saved '\(word)' to Vocabulary")
+                            HapticEngine.success()
                         }
                     )
                     .padding(.bottom, showHUD ? (bottomInset + 80) : max(bottomInset + 20, 30))

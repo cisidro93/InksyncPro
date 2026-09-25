@@ -139,7 +139,7 @@ enum LibraryPillKey: String, CaseIterable, Identifiable {
         case .convertMerge:  return "arrow.triangle.2.circlepath.doc"
         case .autoMatch:     return "wand.and.stars.inverse"
         case .reviewMissing: return "exclamationmark.triangle.fill"
-        case .stats:         return "flame.fill"
+        case .stats:         return "chart.bar.xaxis"
         case .vault:         return "lock.fill"
         case .metadataSpreadsheet: return "tablecells"
         }

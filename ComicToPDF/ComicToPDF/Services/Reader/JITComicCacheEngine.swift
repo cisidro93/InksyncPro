@@ -64,6 +64,7 @@ public actor JITComicCacheEngine {
     private var currentTier: DeviceMemoryTier = .current
     private var isUnderMemoryPressure: Bool = false
     private var memoryPressureResetTask: Task<Void, Never>? = nil
+    private var thermalPrefetchMultiplier: Double = 1.0
     
     public init() {
         // Listen for OS Memory Pressure Warnings via Swift async notifications sequence
@@ -72,13 +73,51 @@ public actor JITComicCacheEngine {
                 await self?.handleMemoryWarning()
             }
         }
+        
+        // Listen for OS Thermal State Warnings to protect battery & device thermals
+        Task { [weak self] in
+            for await _ in NotificationCenter.default.notifications(named: ProcessInfo.thermalStateDidChangeNotification) {
+                await self?.handleThermalStateChange()
+            }
+        }
+    }
+    
+    // MARK: - Thermal & Memory Protection
+    
+    private func handleThermalStateChange() {
+        let thermalState = ProcessInfo.processInfo.thermalState
+        switch thermalState {
+        case .nominal, .fair:
+            thermalPrefetchMultiplier = 1.0
+        case .serious:
+            thermalPrefetchMultiplier = 0.5
+            if mipmapCache.count > 4 {
+                let excess = mipmapAccessOrder.prefix(max(0, mipmapAccessOrder.count - 4))
+                for key in excess { mipmapCache.removeValue(forKey: key) }
+                mipmapAccessOrder = Array(mipmapAccessOrder.suffix(4))
+            }
+            Logger.shared.log("JITComicCacheEngine: Thermal state .serious — throttled prefetch to 50%", category: "Performance", type: .warning)
+        case .critical:
+            thermalPrefetchMultiplier = 0.0
+            for (_, task) in activePreloadTasks { task.cancel() }
+            activePreloadTasks.removeAll()
+            memoryCache.removeAll()
+            memoryAccessOrder.removeAll()
+            mipmapCache.removeAll()
+            mipmapAccessOrder.removeAll()
+            Logger.shared.log("JITComicCacheEngine: Thermal state .critical — throttled prefetch to 0 and purged caches", category: "Performance", type: .fault)
+        @unknown default:
+            thermalPrefetchMultiplier = 1.0
+        }
     }
     
     // MARK: - Prefetch API
     
     /// Prefetches adjacent pages around the active page using memory tier budgets.
     public func prefetchAdjacentPages(archiveURL: URL, currentOffset: Int, totalPages: Int) {
-        let radius = isUnderMemoryPressure ? 1 : currentTier.prefetchRadius
+        let baseRadius = isUnderMemoryPressure ? 1 : currentTier.prefetchRadius
+        let radius = max(0, Int(Double(baseRadius) * thermalPrefetchMultiplier))
+        guard radius > 0 else { return }
         var indicesToFetch: [Int] = []
         
         for offset in 1...radius {

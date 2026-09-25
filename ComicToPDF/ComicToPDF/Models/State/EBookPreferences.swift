@@ -71,6 +71,14 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_isBoldTextEnabled") var isBoldTextEnabled: Bool = false {
         didSet { objectWillChange.send() }
     }
+    
+    // MARK: - Reading Goals & Habits (P0 / P2 / P3)
+    @AppStorage("ebook_dailyReadingGoalMinutes") var dailyReadingGoalMinutes: Int = 30 {
+        didSet { objectWillChange.send() }
+    }
+    @AppStorage("ebook_annualReadingGoal") var annualReadingGoal: Int = 24 {
+        didSet { objectWillChange.send() }
+    }
 
     // Per-book typography lock: [bookID: JSON-encoded BookTypographyProfile]
     @AppStorage("ebook_bookTypography") private var bookTypographyData: Data = Data()

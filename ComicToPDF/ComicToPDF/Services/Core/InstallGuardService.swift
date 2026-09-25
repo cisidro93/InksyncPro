@@ -33,9 +33,7 @@ final class InstallGuardService: @unchecked Sendable {
             KeychainHelper.standard.save(data, service: keychainService, account: keychainAccount)
         }
         
-        // Auto-complete onboarding flags for clean runs
-        userDefaults.set(true, forKey: "hasCompletedOnboarding")
-        userDefaults.set(true, forKey: "hasSeenOnboarding")
+        // Track fresh install completion
         userDefaults.set(true, forKey: "isNotFreshInstall_v3")
     }
 

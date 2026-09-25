@@ -75,7 +75,8 @@ struct InksyncProApp: App {
             SDManuscriptProject.self,
             SDManuscriptDocument.self,
             SDOPDSServer.self,
-            SDNotebook.self
+            SDNotebook.self,
+            SDVocabularyWord.self
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .none)
         

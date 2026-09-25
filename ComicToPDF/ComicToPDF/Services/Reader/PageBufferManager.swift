@@ -118,9 +118,44 @@ class PageBufferManager: ObservableObject {
             imageCache.countLimit = ReaderCacheLimits.comicBufferProDevice
         }
         Logger.shared.log("PageBufferManager: cache limit configured to \(imageCache.countLimit)", category: "Engine")
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleThermalStateChange),
+            name: ProcessInfo.thermalStateDidChangeNotification,
+            object: nil
+        )
     }
+    
     deinit {
         Logger.shared.log("PageBufferManager: deinit", category: "Engine")
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    @objc private func handleThermalStateChange() {
+        let thermalState = ProcessInfo.processInfo.thermalState
+        switch thermalState {
+        case .nominal, .fair:
+            let perfClass = ProcessInfo.processInfo.performanceClass
+            switch perfClass {
+            case .low:
+                imageCache.countLimit = ReaderCacheLimits.comicBufferLowDevice
+            case .medium:
+                imageCache.countLimit = ReaderCacheLimits.comicBufferStandardDevice
+            case .high:
+                imageCache.countLimit = ReaderCacheLimits.comicBufferProDevice
+            }
+            Logger.shared.log("PageBufferManager: Thermal state normal/fair — restored cache limit to \(imageCache.countLimit)", category: "Performance", type: .info)
+        case .serious:
+            imageCache.countLimit = 3
+            Logger.shared.log("PageBufferManager: Thermal state .serious — throttled cache limit to 3", category: "Performance", type: .warning)
+        case .critical:
+            imageCache.removeAllObjects()
+            imageCache.countLimit = 1
+            Logger.shared.log("PageBufferManager: Thermal state .critical — purged cache and clamped limit to 1", category: "Performance", type: .fault)
+        @unknown default:
+            break
+        }
     }
 
     // MARK: - Published State (Single Page Mode)

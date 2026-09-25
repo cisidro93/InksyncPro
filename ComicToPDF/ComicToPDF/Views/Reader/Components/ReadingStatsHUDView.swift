@@ -31,12 +31,13 @@ struct ReadingStatsHUDView: View {
                     
                     // Main Grid: Streak, Velocity, Time Left
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                        // Streak Box
+                        // Mindful Reading Time Box
+                        let minutes = tracker.totalMinutesReadToday()
                         MetricBox(
-                            title: "Daily Streak",
-                            value: "\(tracker.readingStreak()) Days",
-                            subText: tracker.readingStreak() > 0 ? "Keep it burning!" : "Start reading today!",
-                            icon: "flame.fill",
+                            title: "Time Read Today",
+                            value: minutes > 0 ? "\(minutes)m" : "0m",
+                            subText: minutes > 0 ? "Mindful reading enjoyed" : "Read at your own pace",
+                            icon: "clock.fill",
                             iconColor: .orange
                         )
                         

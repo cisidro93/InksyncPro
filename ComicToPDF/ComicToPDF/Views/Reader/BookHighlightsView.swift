@@ -8,6 +8,32 @@ import SwiftData
 // chapter/page jump badges, attached note callouts, instant search,
 // color filtering, and Markdown/Plain-Text export.
 // ============================================================
+enum AnnotationCategoryFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case highlights = "Highlights"
+    case notes = "Notes"
+    case bookmarks = "Bookmarks"
+    
+    var id: String { rawValue }
+    
+    var icon: String {
+        switch self {
+        case .all: return "square.grid.2x2"
+        case .highlights: return "highlighter"
+        case .notes: return "note.text"
+        case .bookmarks: return "bookmark.fill"
+        }
+    }
+}
+
+enum AnnotationSortOption: String, CaseIterable, Identifiable {
+    case bookOrder = "Page"
+    case recent = "Date"
+    case color = "Color"
+    
+    var id: String { rawValue }
+}
+
 struct BookHighlightsView: View {
     let bookID: String
     let bookTitle: String
@@ -21,7 +47,8 @@ struct BookHighlightsView: View {
     @State private var searchQuery: String = ""
     @State private var selectedColorFilter: String? = nil
     @State private var selectedTagFilter: String? = nil
-    @State private var sortByBookOrder: Bool = true
+    @State private var categoryFilter: AnnotationCategoryFilter = .all
+    @State private var sortOption: AnnotationSortOption = .bookOrder
     @State private var activeHighlightToEdit: SDAnnotation? = nil
     @State private var highlightToDelete: SDAnnotation? = nil
     @State private var showDeleteConfirmation: Bool = false
@@ -74,15 +101,34 @@ struct BookHighlightsView: View {
             }
         }
 
-        if sortByBookOrder {
+        switch categoryFilter {
+        case .all:
+            break
+        case .highlights:
+            list = list.filter { ($0.selectedText != nil && !$0.selectedText!.isEmpty) }
+        case .notes:
+            list = list.filter { !($0.noteText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        case .bookmarks:
+            list = list.filter { $0.adlerianSymbol != nil || ($0.selectedText == nil && $0.noteText == nil) }
+        }
+
+        switch sortOption {
+        case .bookOrder:
             return list.sorted {
                 if $0.pageIndex != $1.pageIndex {
                     return $0.pageIndex < $1.pageIndex
                 }
                 return $0.createdAt < $1.createdAt
             }
-        } else {
+        case .recent:
             return list.sorted { $0.createdAt > $1.createdAt }
+        case .color:
+            return list.sorted {
+                let c1 = $0.colorHex ?? ""
+                let c2 = $1.colorHex ?? ""
+                if c1 != c2 { return c1 < c2 }
+                return $0.pageIndex < $1.pageIndex
+            }
         }
     }
 
@@ -126,8 +172,24 @@ struct BookHighlightsView: View {
                             Label("Copy as Markdown", systemImage: "doc.on.doc")
                         }
 
+                        Button {
+                            let csv = HighlightExportService.shared.exportToReadwiseCSV(
+                                bookTitle: bookTitle,
+                                author: nil,
+                                annotations: bookHighlights
+                            )
+                            UIPasteboard.general.string = csv
+                            HapticEngine.selection()
+                        } label: {
+                            Label("Copy Readwise CSV", systemImage: "tablecells")
+                        }
+
                         ShareLink(item: generateExportText()) {
-                            Label("Share All Highlights", systemImage: "square.and.arrow.up")
+                            Label("Share as Markdown", systemImage: "square.and.arrow.up")
+                        }
+
+                        ShareLink(item: HighlightExportService.shared.exportToReadwiseCSV(bookTitle: bookTitle, author: nil, annotations: bookHighlights)) {
+                            Label("Share Readwise CSV", systemImage: "arrow.up.doc")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -165,40 +227,42 @@ struct BookHighlightsView: View {
     // MARK: - Header Stats & Filters Bar
     private var headerStatsAndFiltersBar: some View {
         VStack(spacing: 10) {
-            // Stats Row: Total count, notes count, sort selector
-            HStack(spacing: 12) {
+            // Category & Sort Controls
+            HStack(spacing: 8) {
+                // Category Filter Pills
                 HStack(spacing: 6) {
-                    Image(systemName: "highlighter")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.orange)
-                    Text("\(bookHighlights.count) Highlights")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.primary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Color.orange.opacity(0.12), in: Capsule())
-
-                if totalNotesCount > 0 {
-                    HStack(spacing: 6) {
-                        Image(systemName: "text.bubble.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.blue)
-                        Text("\(totalNotesCount) Notes")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
+                    ForEach(AnnotationCategoryFilter.allCases) { cat in
+                        Button {
+                            HapticEngine.selection()
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                categoryFilter = cat
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: cat.icon)
+                                    .font(.system(size: 10, weight: categoryFilter == cat ? .bold : .medium))
+                                Text(cat.rawValue)
+                                    .font(.system(size: 11, weight: categoryFilter == cat ? .bold : .medium, design: .rounded))
+                            }
+                            .foregroundColor(categoryFilter == cat ? .white : .primary)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(categoryFilter == cat ? Color.orange : Color.primary.opacity(0.08), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-
+                
                 Spacer()
-
+                
                 // Sort Segmented Picker
-                Picker("Sort", selection: $sortByBookOrder) {
-                    Text("Book Order").tag(true)
-                    Text("Recent").tag(false)
+                Picker("Sort", selection: $sortOption) {
+                    ForEach(AnnotationSortOption.allCases) { opt in
+                        Text(opt.rawValue).tag(opt)
+                    }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 170)
+                .frame(width: 150)
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)

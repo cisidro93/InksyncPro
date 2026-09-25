@@ -14,13 +14,14 @@ struct ReadingStatsView: View {
                     InkSheetDragPill()
                         .padding(.top, 4)
                     
-                    // ── Streak & Daily Goal ──────────────────────────────
+                    // ── Mindful Reading & Totals ──────────────────────────────
                     HStack(spacing: 16) {
+                        let minutes = tracker.totalMinutesReadToday()
                         StatCard(
-                            icon: "flame.fill",
+                            icon: "clock.fill",
                             iconColor: .inkOrange,
-                            title: "\(tracker.readingStreak())",
-                            subtitle: "Day Streak"
+                            title: minutes > 0 ? "\(minutes)m" : "0m",
+                            subtitle: "Read Today"
                         )
                         
                         StatCard(

@@ -548,6 +548,9 @@ struct GlobalZettelkastenHubView: View {
                         }) {
                             Label("Import Readwise", systemImage: "arrow.down.doc")
                         }
+                        Button(action: triggerObsidianExport) {
+                            Label("Export to Obsidian Vault", systemImage: "brain.head.profile")
+                        }
                         Button(action: triggerExport) {
                             Label("Export Mind Palace", systemImage: "square.and.arrow.up")
                         }
@@ -818,6 +821,30 @@ struct GlobalZettelkastenHubView: View {
     
     // MARK: - Actions
     
+    private func triggerObsidianExport() {
+        isExporting = true
+        Task {
+            do {
+                let zipURL = try await ObsidianExportService.shared.exportVault(
+                    annotations: cachedActiveAnnotations,
+                    pdfs: allPDFs
+                )
+                let data = try Data(contentsOf: zipURL)
+                
+                await MainActor.run {
+                    self.exportDocument = ZettelArchiveDocument(zipData: data)
+                    self.isExporting = false
+                    self.showingExporterDialog = true
+                }
+            } catch {
+                await MainActor.run {
+                    self.isExporting = false
+                    self.importMessage = "Obsidian Export failed: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     private func triggerExport() {
         isExporting = true
         Task {

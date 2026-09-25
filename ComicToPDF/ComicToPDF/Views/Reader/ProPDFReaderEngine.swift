@@ -1422,6 +1422,17 @@ struct ProPDFReaderEngine: View {
                             activeSelectionSnapshot = nil
                         }
                         pdfViewReference?.setCurrentSelection(nil, animate: false)
+                    },
+                    onSaveVocabulary: { word in
+                        DictionaryLookupService.shared.lookupAndSave(
+                            term: word,
+                            contextSentence: selectedText,
+                            bookTitle: pdf.name,
+                            bookID: pdf.id.uuidString,
+                            modelContext: modelContext
+                        )
+                        showToastMessage("Saved '\(word)' to Vocabulary")
+                        HapticEngine.success()
                     }
                 )
                 .padding(.bottom, chromeVisible ? 80 : 30)

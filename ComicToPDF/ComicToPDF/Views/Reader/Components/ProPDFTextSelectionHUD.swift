@@ -100,6 +100,7 @@ struct ProPDFTextSelectionHUD: View {
     var onAdjustStart: ((Int) -> Void)? = nil
     var onAdjustEnd: ((Int) -> Void)? = nil
     var onDismiss: (() -> Void)? = nil
+    var onSaveVocabulary: ((String) -> Void)? = nil
 
     init(
         selectedText: String,
@@ -114,7 +115,8 @@ struct ProPDFTextSelectionHUD: View {
         onAddMarginaliaSymbol: ((String) -> Void)? = nil,
         onAdjustStart: ((Int) -> Void)? = nil,
         onAdjustEnd: ((Int) -> Void)? = nil,
-        onDismiss: (() -> Void)? = nil
+        onDismiss: (() -> Void)? = nil,
+        onSaveVocabulary: ((String) -> Void)? = nil
     ) {
         self.selectedText = selectedText
         self.pageIndex = pageIndex
@@ -129,6 +131,7 @@ struct ProPDFTextSelectionHUD: View {
         self.onAdjustStart = onAdjustStart
         self.onAdjustEnd = onAdjustEnd
         self.onDismiss = onDismiss
+        self.onSaveVocabulary = onSaveVocabulary
     }
 
     @State private var showingNoteInput = false
@@ -240,10 +243,11 @@ struct ProPDFTextSelectionHUD: View {
                     .accessibilityLabel("Copy")
                     .help("Copy text")
 
-                    // Define (Dictionary)
+                    // Define (Dictionary & Vocabulary Auto-Save)
                     Button {
                         HapticEngine.light()
                         SystemDictionaryPresenter.shared.presentDefinition(for: selectedText)
+                        onSaveVocabulary?(selectedText)
                     } label: {
                         Image(systemName: "book.closed")
                             .font(.system(size: 13, weight: .medium))
@@ -252,7 +256,7 @@ struct ProPDFTextSelectionHUD: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Define")
+                    .accessibilityLabel("Define Word")
                     .help("Define Word")
 
                     // More Options (•••)
@@ -472,6 +476,23 @@ struct ProPDFTextSelectionHUD: View {
                     .padding(.vertical, 4)
                 }
                 .buttonStyle(.plain)
+
+                if let onSaveVocabulary = onSaveVocabulary {
+                    Button {
+                        HapticEngine.light()
+                        showingMorePopover = false
+                        onSaveVocabulary(selectedText)
+                    } label: {
+                        HStack {
+                            Label("Save to Vocabulary", systemImage: "character.book.closed.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.orange)
+                            Spacer()
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Button {
                     HapticEngine.medium()

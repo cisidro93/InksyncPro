@@ -271,6 +271,9 @@ class ReaderProgressTracker: ObservableObject {
             ConversionManager.shared.saveProgressOnly()
         }
 
+        // Sync live progress, streak, and recent book cover to App Group for Home & Lock Screen Widgets
+        AppGroupSyncService.shared.syncToAppGroup()
+
         // Broadcast to the app village (ModernLibraryView, ReadNowTabView, SeriesDetailView)
         NotificationCenter.default.post(
             name: .readingProgressDidChange,
@@ -399,6 +402,33 @@ class ReaderProgressTracker: ObservableObject {
             }
         }
         return streak
+    }
+    
+    func totalMinutesReadToday() -> Int {
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        var totalSeconds: Double = 0
+        for prog in progressMap.values {
+            if let events = prog.sessionEvents {
+                for event in events where event.date >= startOfToday {
+                    totalSeconds += event.secondsSpent
+                }
+            }
+        }
+        return Int(totalSeconds / 60.0)
+    }
+
+    func totalMinutesReadThisWeek() -> Int {
+        let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
+        var totalSeconds: Double = 0
+        for prog in progressMap.values {
+            if let events = prog.sessionEvents {
+                for event in events where event.date >= cutoff {
+                    totalSeconds += event.secondsSpent
+                }
+            }
+        }
+        return Int(totalSeconds / 60.0)
     }
     
     func totalPagesThisWeek() -> Int {
