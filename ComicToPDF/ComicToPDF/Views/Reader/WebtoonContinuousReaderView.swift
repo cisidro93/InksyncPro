@@ -135,8 +135,12 @@ public struct WebtoonContinuousReaderView: UIViewRepresentable {
             
             if isActive {
                 if displayLink == nil {
-                    displayLink = CADisplayLink(target: self, selector: #selector(handleDisplayLinkStep))
-                    displayLink?.add(to: .main, forMode: .common)
+                    let dl = CADisplayLink(target: self, selector: #selector(handleDisplayLinkStep(_:)))
+                    if #available(iOS 15.0, *) {
+                        dl.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+                    }
+                    dl.add(to: .main, forMode: .common)
+                    self.displayLink = dl
                 }
             } else {
                 displayLink?.invalidate()
@@ -144,9 +148,10 @@ public struct WebtoonContinuousReaderView: UIViewRepresentable {
             }
         }
         
-        @objc private func handleDisplayLinkStep() {
+        @objc private func handleDisplayLinkStep(_ dl: CADisplayLink) {
             guard let sv = scrollView, isAutoScrolling else { return }
-            let delta = scrollSpeed / 60.0
+            let dt = dl.duration > 0 ? dl.duration : (1.0 / 60.0)
+            let delta = scrollSpeed * dt
             let newY = sv.contentOffset.y + delta
             let maxOffset = sv.contentSize.height - sv.bounds.height
             

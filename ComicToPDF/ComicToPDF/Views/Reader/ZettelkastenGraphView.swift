@@ -347,8 +347,12 @@ final class ZettelkastenGraphEngine: NSObject, ObservableObject {
         stopSimulation()
         tickCount = 0
         let proxy = ZettelkastenDisplayLinkProxy(target: self)
-        displayLink = CADisplayLink(target: proxy, selector: #selector(ZettelkastenDisplayLinkProxy.tick))
-        displayLink?.add(to: .main, forMode: .common)
+        let dl = CADisplayLink(target: proxy, selector: #selector(ZettelkastenDisplayLinkProxy.tick))
+        if #available(iOS 15.0, *) {
+            dl.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        }
+        dl.add(to: .main, forMode: .common)
+        displayLink = dl
     }
 
     func stopSimulation() {
