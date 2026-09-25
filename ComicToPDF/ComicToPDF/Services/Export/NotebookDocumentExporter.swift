@@ -242,8 +242,7 @@ public final class NotebookDocumentExporter: NSObject, MFMailComposeViewControll
         title: String,
         content: String,
         author: String? = nil,
-        format: NotebookExportFormat = .pdf,
-        conversionManager: ConversionManager? = nil
+        format: NotebookExportFormat = .pdf
     ) async throws -> URL {
         let tempURL: URL
         switch format {
@@ -272,7 +271,7 @@ public final class NotebookDocumentExporter: NSObject, MFMailComposeViewControll
             Logger.shared.log("NotebookDocumentExporter: Saved \(format.rawValue) book to Library Documents at \(destinationURL.lastPathComponent)", category: "Export", type: .success)
 
             // Trigger Library rescan
-            (conversionManager ?? ConversionManager.shared).scanLibrary(addedByMode: .pro)
+            ConversionManager.shared.scanLibrary(addedByMode: .pro)
             return destinationURL
         } catch {
             throw NotebookExportError.fileWriteFailed(error.localizedDescription)

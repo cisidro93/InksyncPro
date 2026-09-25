@@ -1522,8 +1522,7 @@ struct GlobalNotebookView: View {
                 let savedURL = try await NotebookDocumentExporter.shared.saveToLibraryAsBook(
                     title: notebook.title,
                     content: content,
-                    format: format,
-                    conversionManager: conversionManager
+                    format: format
                 )
                 Logger.shared.log("Saved notebook '\(notebook.title)' to library at \(savedURL.path)", category: "Notebook", type: .success)
                 HapticEngine.success()
