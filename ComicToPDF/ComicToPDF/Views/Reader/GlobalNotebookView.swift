@@ -2759,7 +2759,7 @@ struct EditNotebookSheet: View {
                         HStack(spacing: 2) {
                             Image(systemName: "doc.text")
                                 .font(.system(size: 7))
-                            Text("\(notebook.notes.count) notes")
+                            Text("Notebook")
                                 .font(.system(size: 8, weight: .semibold, design: .rounded))
                         }
                         .foregroundColor(.white.opacity(0.85))
