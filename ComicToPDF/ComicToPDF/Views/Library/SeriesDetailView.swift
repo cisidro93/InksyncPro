@@ -35,6 +35,12 @@ struct SeriesDetailView: View {
     @State private var showingBatchDeleteConfirmation: Bool = false
     
     // Drag-to-select Gestures & Coordinate Tracking
+    enum DragSelectionMode {
+        case undetermined
+        case scrolling
+        case swipeSelecting
+    }
+    @State private var dragSelectionMode: DragSelectionMode = .undetermined
     @State private var cellFrames: [UUID: CGRect] = [:]
     @State private var scrollOffset: CGFloat = 0
     @State private var dragStartIndex: Int? = nil
@@ -905,6 +911,12 @@ struct SeriesDetailView: View {
             Divider()
             
             Button {
+                presentVolumeStudio(initialSelection: Set(visualIssues.map(\.id)), initialMode: .assign)
+            } label: {
+                Label("Volume Studio & Grouping", systemImage: "books.vertical.fill")
+            }
+            
+            Button {
                 showManualVolumeLinker = true
             } label: {
                 Label("Link Volumes Manually", systemImage: "link.circle")
@@ -1045,7 +1057,7 @@ struct SeriesDetailView: View {
                 isSelectionMode ?
                 DragGesture(minimumDistance: 2, coordinateSpace: .named("SeriesDetailViewport"))
                     .onChanged { drag in
-                        handleDragUpdate(to: drag.location, viewportHeight: viewportHeight, scrollProxy: scrollProxy)
+                        handleDragChanged(drag, viewportHeight: viewportHeight, scrollProxy: scrollProxy, colCount: colCount)
                     }
                     .onEnded { _ in
                         handleDragEnded()
@@ -1235,7 +1247,7 @@ struct SeriesDetailView: View {
                 showBatchMetadataEditor = true
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_AssignVolumeAction"))) { _ in
-                showBatchVolumeAssignment = true
+                presentVolumeStudio(initialSelection: selection, initialMode: .assign)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MoveToSeriesAction"))) { _ in
                 showingBatchSeriesAssignment = true
@@ -2166,7 +2178,40 @@ struct SeriesDetailView: View {
         return nil
     }
     
-    private func handleDragUpdate(to location: CGPoint, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
+    private func handleDragChanged(_ drag: DragGesture.Value, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy, colCount: Int) {
+        if dragSelectionMode == .undetermined {
+            let dx = drag.translation.width
+            let dy = drag.translation.height
+            let distance = hypot(dx, dy)
+            
+            // 1. Did touch begin on or near the selection circle (top-right of cell)?
+            let isNearCheckmark: Bool = {
+                if let pdf = findPDFUnderTouch(at: drag.startLocation),
+                   let frame = cellFrames[pdf.id] {
+                    let checkmarkArea = CGRect(x: frame.maxX - 52, y: frame.minY, width: 52, height: 52)
+                    return checkmarkArea.contains(drag.startLocation)
+                }
+                return false
+            }()
+            
+            if isNearCheckmark && distance >= 2 {
+                dragSelectionMode = .swipeSelecting
+            } else if abs(dx) >= 12 && abs(dx) > abs(dy) * 0.75 {
+                // Horizontal sweep across columns -> swipe select
+                dragSelectionMode = .swipeSelecting
+            } else if abs(dy) >= 14 && abs(dy) > abs(dx) * 1.3 {
+                // Vertical flick/scroll on card body -> let ScrollView handle scrolling smoothly!
+                dragSelectionMode = .scrolling
+            } else if distance > 28 {
+                dragSelectionMode = .swipeSelecting
+            }
+        }
+        
+        guard dragSelectionMode == .swipeSelecting else { return }
+        handleDragUpdate(to: drag.location, viewportHeight: viewportHeight, scrollProxy: scrollProxy, colCount: colCount)
+    }
+
+    private func handleDragUpdate(to location: CGPoint, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy, colCount: Int) {
         lastDragLocation = location
         
         // Coordinates in cellFrames are in viewport space, so compare directly
@@ -2186,15 +2231,17 @@ struct SeriesDetailView: View {
         }
         
         let touchViewportY = location.y
+        let topThreshold: CGFloat = 90
+        let bottomThreshold: CGFloat = max(100, viewportHeight - 115)
         
-        if touchViewportY < 60 || touchViewportY > viewportHeight - 60 {
+        if touchViewportY < topThreshold || touchViewportY > bottomThreshold {
             if autoScrollTask == nil {
                 autoScrollTask = Task {
                     while !Task.isCancelled {
-                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                        try? await Task.sleep(nanoseconds: 80_000_000) // 80ms for 120Hz responsiveness
                         if Task.isCancelled { break }
                         await MainActor.run {
-                            performAutoScroll(viewportHeight: viewportHeight, scrollProxy: scrollProxy)
+                            performAutoScroll(viewportHeight: viewportHeight, scrollProxy: scrollProxy, colCount: colCount)
                         }
                     }
                 }
@@ -2227,24 +2274,29 @@ struct SeriesDetailView: View {
         }
     }
     
-    private func performAutoScroll(viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
+    private func performAutoScroll(viewportHeight: CGFloat, scrollProxy: ScrollViewProxy, colCount: Int) {
         guard let currentIndex = currentDragIndex else { return }
         let touchViewportY = lastDragLocation.y
         let currentIssues = visualIssues
+        guard !currentIssues.isEmpty else { return }
         
-        if touchViewportY < 60 {
-            let targetIndex = max(0, currentIndex - 1)
+        let topThreshold: CGFloat = 90
+        let bottomThreshold: CGFloat = max(100, viewportHeight - 115)
+        let stride = max(1, colCount)
+        
+        if touchViewportY < topThreshold {
+            let targetIndex = max(0, currentIndex - stride)
             if targetIndex != currentIndex {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.linear(duration: 0.12)) {
                     scrollProxy.scrollTo(currentIssues[targetIndex].id, anchor: .top)
                 }
                 currentDragIndex = targetIndex
                 updateSelectionForCurrentRange()
             }
-        } else if touchViewportY > viewportHeight - 60 {
-            let targetIndex = min(currentIssues.count - 1, currentIndex + 1)
+        } else if touchViewportY > bottomThreshold {
+            let targetIndex = min(currentIssues.count - 1, currentIndex + stride)
             if targetIndex != currentIndex {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.linear(duration: 0.12)) {
                     scrollProxy.scrollTo(currentIssues[targetIndex].id, anchor: .bottom)
                 }
                 currentDragIndex = targetIndex
@@ -2259,6 +2311,7 @@ struct SeriesDetailView: View {
         dragStartIndex = nil
         currentDragIndex = nil
         initialSelectionBeforeDrag.removeAll()
+        dragSelectionMode = .undetermined
     }
     
     private var seriesDetailsCard: some View {

@@ -12,19 +12,22 @@ struct VolumeStudioView: View {
     @EnvironmentObject var settingsManager: AppSettingsManager
 
     enum VolumeType: String, CaseIterable, Identifiable {
-        case virtual = "Virtual Volume"
+        case virtual = "Virtual Omnibus"
+        case assign = "Assign Volume"
         case physicalMerge = "Standalone Archive"
 
         var id: String { rawValue }
         var icon: String {
             switch self {
             case .virtual: return "bolt.shield.fill"
+            case .assign: return "folder.badge.plus"
             case .physicalMerge: return "archivebox.fill"
             }
         }
         var shortDescription: String {
             switch self {
-            case .virtual: return "Instant, 0 MB disk space. Continuous reading & CBL sync."
+            case .virtual: return "Instant 0 MB omnibus. Continuous reading & CBL sync."
+            case .assign: return "Tags files with a volume number to organize them into series shelves."
             case .physicalMerge: return "Merged single-file CBZ, EPUB, or PDF for export."
             }
         }
@@ -172,9 +175,13 @@ struct VolumeStudioView: View {
     }
 
     private var isSaveDisabled: Bool {
-        volumeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        selectedFiles.isEmpty ||
-        isProcessingMerge
+        if selectedFiles.isEmpty || isProcessingMerge {
+            return true
+        }
+        if volumeType == .assign {
+            return false
+        }
+        return volumeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     // MARK: - View Body
@@ -236,6 +243,9 @@ struct VolumeStudioView: View {
         }
         switch volumeType {
         case .virtual: return "Create Volume"
+        case .assign:
+            let trimmed = volumeName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "Clear Volume Grouping" : "Assign Volume \(trimmed)"
         case .physicalMerge: return "Convert & Merge"
         }
     }
@@ -380,57 +390,92 @@ struct VolumeStudioView: View {
             }
             .padding(.vertical, 4)
 
-            // Tag Issues in Series
-            Toggle(isOn: $tagIssuesWithVolumeName) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Tag issues with Volume in Series")
-                        .font(.system(.subheadline, design: .rounded))
-                        .foregroundColor(.inkTextPrimary)
-                    Text("Writes volume number to issue metadata so they organize into collapsible shelves in the series view.")
-                        .font(.system(.caption2, design: .rounded))
-                        .foregroundColor(.inkTextSecondary)
-                }
-            }
-            .padding(.vertical, 2)
-
             // Mode-Specific Controls
-            if volumeType == .virtual {
-                // Remote Sync URL
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Remote Sync URL (ComicRack CBL / CSV)")
-                        .font(.system(.caption, design: .rounded).bold())
-                        .foregroundColor(.inkTextSecondary)
-
-                    TextField("https://example.com/readinglist.cbl", text: $remoteSyncURL)
-                        .font(.system(.footnote, design: .rounded))
-                        .autocorrectionDisabled(true)
-                        .textInputAutocapitalization(.never)
-                        .padding(10)
-                        .background(Color.inkSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(Color.inkBorderSubtle, lineWidth: 1)
-                        )
-
-                    Text("Automatically syncs issue reading order from hosted reading lists.")
-                        .font(.system(.caption2, design: .rounded))
-                        .foregroundColor(.inkTextSecondary)
+            if volumeType == .assign {
+                // Auto-Detect from Filenames button
+                Button {
+                    autoDetectVolumesFromFilenames()
+                } label: {
+                    HStack {
+                        Image(systemName: "sparkles")
+                            .foregroundColor(.inkBlue)
+                        Text("Auto-Detect Volume from Filenames")
+                            .font(.system(.subheadline, design: .rounded).bold())
+                            .foregroundColor(.inkTextPrimary)
+                        Spacer()
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.caption)
+                            .foregroundColor(.inkTextSecondary)
+                    }
+                    .padding(.vertical, 4)
                 }
-                .padding(.vertical, 4)
-            } else {
-                // Standalone Archive Options
-                Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
-                    .font(.system(.subheadline, design: .rounded))
 
-                Toggle("Delete source files after merge", isOn: $deleteSourceFilesAfterMerge)
-                    .font(.system(.subheadline, design: .rounded))
-
-                Picker("Compression Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
-                    ForEach(CompressionPreset.allCases) { preset in
-                        Text(preset.displayName).tag(preset)
+                if !volumeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Button(role: .destructive) {
+                        volumeName = ""
+                        saveVolumeAssignment(volumeName: "")
+                    } label: {
+                        HStack {
+                            Image(systemName: "xmark.circle")
+                            Text("Clear Volume Tag from Issues")
+                        }
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundColor(.red)
+                        .padding(.vertical, 4)
                     }
                 }
-                .font(.system(.subheadline, design: .rounded))
+            } else {
+                // Tag Issues in Series
+                Toggle(isOn: $tagIssuesWithVolumeName) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Tag issues with Volume in Series")
+                            .font(.system(.subheadline, design: .rounded))
+                            .foregroundColor(.inkTextPrimary)
+                        Text("Writes volume number to issue metadata so they organize into collapsible shelves in the series view.")
+                            .font(.system(.caption2, design: .rounded))
+                            .foregroundColor(.inkTextSecondary)
+                    }
+                }
+                .padding(.vertical, 2)
+
+                if volumeType == .virtual {
+                    // Remote Sync URL
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Remote Sync URL (ComicRack CBL / CSV)")
+                            .font(.system(.caption, design: .rounded).bold())
+                            .foregroundColor(.inkTextSecondary)
+
+                        TextField("https://example.com/readinglist.cbl", text: $remoteSyncURL)
+                            .font(.system(.footnote, design: .rounded))
+                            .autocorrectionDisabled(true)
+                            .textInputAutocapitalization(.never)
+                            .padding(10)
+                            .background(Color.inkSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .strokeBorder(Color.inkBorderSubtle, lineWidth: 1)
+                            )
+
+                        Text("Automatically syncs issue reading order from hosted reading lists.")
+                            .font(.system(.caption2, design: .rounded))
+                            .foregroundColor(.inkTextSecondary)
+                    }
+                    .padding(.vertical, 4)
+                } else {
+                    // Standalone Archive Options
+                    Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
+                        .font(.system(.subheadline, design: .rounded))
+
+                    Toggle("Delete source files after merge", isOn: $deleteSourceFilesAfterMerge)
+                        .font(.system(.subheadline, design: .rounded))
+
+                    Picker("Compression Quality", selection: $settingsManager.conversionSettings.compressionQuality) {
+                        ForEach(CompressionPreset.allCases) { preset in
+                            Text(preset.displayName).tag(preset)
+                        }
+                    }
+                    .font(.system(.subheadline, design: .rounded))
+                }
             }
         } header: {
             Text("Volume Properties")
@@ -798,13 +843,51 @@ struct VolumeStudioView: View {
     private func handlePrimaryAction() {
         HapticEngine.medium()
         let trimmedName = volumeName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty, !selectedFiles.isEmpty else { return }
+        guard !selectedFiles.isEmpty else { return }
 
         switch volumeType {
         case .virtual:
+            guard !trimmedName.isEmpty else { return }
             saveVirtualVolume(name: trimmedName)
+        case .assign:
+            saveVolumeAssignment(volumeName: trimmedName)
         case .physicalMerge:
+            guard !trimmedName.isEmpty else { return }
             executePhysicalMerge(name: trimmedName)
+        }
+    }
+
+    private func saveVolumeAssignment(volumeName: String) {
+        let trimmed = volumeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tag: String? = trimmed.isEmpty ? nil : parseVolumeTag(from: trimmed)
+        for file in selectedFiles {
+            if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == file.id }) {
+                conversionManager.convertedPDFs[idx].metadata.volume = tag
+            }
+        }
+        conversionManager.saveLibrary()
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+        HapticEngine.success()
+        dismiss()
+    }
+
+    private func autoDetectVolumesFromFilenames() {
+        HapticEngine.medium()
+        var updatedCount = 0
+        for file in selectedFiles {
+            let parsed = DeterministicFilenameParser.parse(filename: file.name)
+            if let vol = parsed.volume, !vol.isEmpty {
+                if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == file.id }) {
+                    conversionManager.convertedPDFs[idx].metadata.volume = vol
+                    updatedCount += 1
+                }
+            }
+        }
+        if updatedCount > 0 {
+            conversionManager.saveLibrary()
+            NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+            HapticEngine.success()
+            dismiss()
         }
     }
 

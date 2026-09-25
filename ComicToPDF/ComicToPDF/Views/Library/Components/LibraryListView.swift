@@ -30,6 +30,12 @@ struct LibraryListView: View {
     @State private var selectedDetailSeries: SeriesGroup? = nil
 
     // Drag-to-select Gestures & Coordinate Tracking
+    enum DragSelectionMode {
+        case undetermined
+        case scrolling
+        case swipeSelecting
+    }
+    @State private var dragSelectionMode: DragSelectionMode = .undetermined
     @State private var cellFrames: [String: CGRect] = [:]
     @State private var scrollOffset: CGFloat = 0
     @State private var dragStartIndex: Int? = nil
@@ -120,7 +126,7 @@ struct LibraryListView: View {
                             isBatchMode ?
                             DragGesture(minimumDistance: 2, coordinateSpace: .named("libraryListViewport"))
                                 .onChanged { drag in
-                                    handleDragUpdate(to: drag.location, viewportHeight: viewportGeo.size.height, scrollProxy: proxy)
+                                    handleDragChanged(drag, viewportHeight: viewportGeo.size.height, scrollProxy: proxy)
                                 }
                                 .onEnded { _ in
                                     handleDragEnded()
@@ -809,6 +815,39 @@ struct LibraryListView: View {
         return nil
     }
     
+    private func handleDragChanged(_ drag: DragGesture.Value, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
+        if dragSelectionMode == .undetermined {
+            let dx = drag.translation.width
+            let dy = drag.translation.height
+            let distance = hypot(dx, dy)
+            
+            // Check if touch started on/near the checkmark (trailing side of row)
+            let isNearCheckmark: Bool = {
+                if let item = findItemUnderTouch(at: drag.startLocation),
+                   let frame = cellFrames[item.id] {
+                    let checkmarkArea = CGRect(x: frame.maxX - 60, y: frame.minY, width: 60, height: frame.height)
+                    return checkmarkArea.contains(drag.startLocation)
+                }
+                return false
+            }()
+            
+            if isNearCheckmark && distance >= 2 {
+                dragSelectionMode = .swipeSelecting
+            } else if abs(dx) >= 14 && abs(dx) > abs(dy) * 0.75 {
+                // Horizontal sweep across list -> swipe select
+                dragSelectionMode = .swipeSelecting
+            } else if abs(dy) >= 12 && abs(dy) > abs(dx) * 1.3 {
+                // Vertical flick/scroll on row body -> let List scroll naturally!
+                dragSelectionMode = .scrolling
+            } else if distance > 28 {
+                dragSelectionMode = .swipeSelecting
+            }
+        }
+        
+        guard dragSelectionMode == .swipeSelecting else { return }
+        handleDragUpdate(to: drag.location, viewportHeight: viewportHeight, scrollProxy: scrollProxy)
+    }
+
     private func handleDragUpdate(to location: CGPoint, viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
         lastDragLocation = location
         // Coordinates in cellFrames are in viewport space, so compare directly
@@ -842,11 +881,14 @@ struct LibraryListView: View {
         }
         
         let touchViewportY = location.y
-        if touchViewportY < 60 || touchViewportY > viewportHeight - 60 {
+        let topThreshold: CGFloat = 90
+        let bottomThreshold: CGFloat = max(100, viewportHeight - 115)
+        
+        if touchViewportY < topThreshold || touchViewportY > bottomThreshold {
             if autoScrollTask == nil {
                 autoScrollTask = Task {
                     while !Task.isCancelled {
-                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                        try? await Task.sleep(nanoseconds: 80_000_000)
                         if Task.isCancelled { break }
                         await MainActor.run {
                             performAutoScroll(viewportHeight: viewportHeight, scrollProxy: scrollProxy)
@@ -898,20 +940,24 @@ struct LibraryListView: View {
     private func performAutoScroll(viewportHeight: CGFloat, scrollProxy: ScrollViewProxy) {
         guard let currentIndex = currentDragIndex else { return }
         let touchViewportY = lastDragLocation.y
+        guard !items.isEmpty else { return }
         
-        if touchViewportY < 60 {
+        let topThreshold: CGFloat = 90
+        let bottomThreshold: CGFloat = max(100, viewportHeight - 115)
+        
+        if touchViewportY < topThreshold {
             let targetIndex = max(0, currentIndex - 1)
             if targetIndex != currentIndex {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.linear(duration: 0.12)) {
                     scrollProxy.scrollTo(items[targetIndex].id, anchor: .top)
                 }
                 currentDragIndex = targetIndex
                 updateSelectionForCurrentRange()
             }
-        } else if touchViewportY > viewportHeight - 60 {
+        } else if touchViewportY > bottomThreshold {
             let targetIndex = min(items.count - 1, currentIndex + 1)
             if targetIndex != currentIndex {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.linear(duration: 0.12)) {
                     scrollProxy.scrollTo(items[targetIndex].id, anchor: .bottom)
                 }
                 currentDragIndex = targetIndex
@@ -926,6 +972,7 @@ struct LibraryListView: View {
         dragStartIndex = nil
         currentDragIndex = nil
         initialSelectionBeforeDrag.removeAll()
+        dragSelectionMode = .undetermined
     }
 }
 
