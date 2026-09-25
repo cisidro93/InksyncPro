@@ -38,6 +38,25 @@ final class EPUBThemeInjectionService {
             case .oled: return "#FFFFFF"
             }
         }
+
+        /// Theme-harmonized active sentence highlight background for on-device TTS narration (Marco Arment Standard).
+        var ttsHighlightBackground: String {
+            switch self {
+            case .light: return "rgba(245, 166, 35, 0.28)" // Warm radiant gold
+            case .sepia: return "rgba(180, 115, 30, 0.22)" // Muted warm parchment ochre
+            case .dark: return "rgba(255, 179, 64, 0.24)"  // Radiant warm amber
+            case .oled: return "rgba(255, 190, 70, 0.22)"  // Subtle warm amber glow
+            }
+        }
+
+        var ttsHighlightGlow: String {
+            switch self {
+            case .light: return "0 0 6px rgba(245, 166, 35, 0.16)"
+            case .sepia: return "0 0 6px rgba(180, 115, 30, 0.14)"
+            case .dark: return "0 0 10px rgba(255, 179, 64, 0.18)"
+            case .oled: return "0 0 10px rgba(255, 190, 70, 0.16)"
+            }
+        }
     }
     
     enum TypographyFont: String, CaseIterable, Codable {

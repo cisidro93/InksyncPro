@@ -754,6 +754,42 @@ enum EBookTheme: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Theme-adaptive active sentence TTS highlight styling (Marco Arment Ergonomic Standard).
+    /// Soft radiant amber and ochre glows prevent ocular fatigue and eliminate high-contrast strobe snapping.
+    var cssTtsHighlightBg: String {
+        switch self {
+        case .paper:
+            return "rgba(245, 166, 35, 0.28)" // Warm radiant gold
+        case .parchment:
+            return "rgba(218, 142, 28, 0.25)" // Warm antique honey
+        case .sepia:
+            return "rgba(180, 115, 30, 0.22)" // Muted warm parchment ochre
+        case .slate:
+            return "rgba(255, 185, 75, 0.24)" // Soft amber on cool slate
+        case .night:
+            return "rgba(255, 179, 64, 0.22)" // Radiant warm amber on deep dark
+        case .oled:
+            return "rgba(255, 190, 70, 0.22)" // Subtle warm amber glow
+        case .custom:
+            return isDark ? "rgba(255, 179, 64, 0.22)" : "rgba(245, 166, 35, 0.28)"
+        }
+    }
+
+    var cssTtsHighlightGlow: String {
+        switch self {
+        case .paper, .parchment:
+            return "0 0 6px rgba(245, 166, 35, 0.16)"
+        case .sepia:
+            return "0 0 6px rgba(180, 115, 30, 0.14)"
+        case .slate:
+            return "0 0 10px rgba(255, 185, 75, 0.18)"
+        case .night, .oled:
+            return "0 0 10px rgba(255, 179, 64, 0.18)"
+        case .custom:
+            return isDark ? "0 0 10px rgba(255, 179, 64, 0.18)" : "0 0 6px rgba(245, 166, 35, 0.16)"
+        }
+    }
+
     // Backwards compat shim for callers passing a ColorScheme
     func background(colorScheme: ColorScheme) -> Color { background }
     func foreground(colorScheme: ColorScheme) -> Color { text }

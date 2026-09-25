@@ -2037,7 +2037,11 @@ struct EBookReaderView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
 
-        // Wrap active spoken sentence in a luminous in-document highlight mark
+        let theme = prefs.activeTheme
+        let ttsBg = theme.cssTtsHighlightBg
+        let ttsGlow = theme.cssTtsHighlightGlow
+
+        // Wrap active spoken sentence in a theme-adaptive soft-focus highlight mark (Marco Arment Standard)
         let js = """
         (function() {
             var oldMarks = document.querySelectorAll('mark.inksync-tts-highlight');
@@ -2056,10 +2060,12 @@ struct EBookReaderView: View {
                     var range = sel.getRangeAt(0);
                     var mark = document.createElement('mark');
                     mark.className = 'inksync-tts-highlight';
-                    mark.style.backgroundColor = 'rgba(255, 214, 10, 0.38)';
-                    mark.style.borderRadius = '3.5px';
-                    mark.style.boxShadow = '0 0 8px rgba(255, 179, 0, 0.45)';
+                    mark.style.backgroundColor = '\(ttsBg)';
+                    mark.style.borderRadius = '4px';
+                    mark.style.padding = '2px 4px';
+                    mark.style.boxShadow = '\(ttsGlow)';
                     mark.style.color = 'inherit';
+                    mark.style.transition = 'background-color 0.22s ease-in-out, box-shadow 0.22s ease-in-out';
                     try {
                         range.surroundContents(mark);
                         mark.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });

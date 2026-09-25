@@ -150,13 +150,14 @@ final class EPUBStyleSheetBuilder: Sendable {
             background-color: rgba(255, 214, 10, 0.4) !important;
         }
         
-        /* On-Device TTS Active Sentence Highlighting */
+        /* On-Device TTS Active Sentence Highlighting (Marco Arment Ergonomic Standard) */
         mark.inksync-tts-active {
-            background-color: rgba(94, 92, 230, 0.35) !important;
+            background-color: \(theme.ttsHighlightBackground) !important;
+            box-shadow: \(theme.ttsHighlightGlow) !important;
             color: inherit !important;
             border-radius: 4px !important;
             padding: 2px 4px !important;
-            transition: background-color 0.2s ease-in-out !important;
+            transition: background-color 0.22s cubic-bezier(0.2, 0, 0.2, 1), box-shadow 0.22s ease-in-out !important;
         }
         """
     }

@@ -808,26 +808,35 @@ struct SeriesDetailView: View {
 
                     ForEach(volumes, id: \.self) { vol in
                         let isSelected = selectedVolumeFilter == vol
+                        let issuesInVol = localIssues.filter { ($0.metadata.volume ?? "") == vol }
+                        let isCompletedVol = !issuesInVol.isEmpty && issuesInVol.allSatisfy { (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) >= 0.95 }
                         Button {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
                                 selectedVolumeFilter = vol
                             }
                         } label: {
-                            Text(vol == "Ungrouped" ? "Ungrouped" : "Vol. \(vol)")
-                                .font(.system(size: 13, weight: isSelected ? .bold : .semibold, design: .rounded))
-                                .padding(.horizontal, 13)
-                                .padding(.vertical, 7)
-                                .background(
-                                    isSelected
-                                        ? AnyView(Capsule().fill(Theme.orange.gradient).shadow(color: Theme.orange.opacity(0.35), radius: 4, y: 2))
-                                        : AnyView(Capsule().fill(Color(uiColor: .secondarySystemFill)))
-                                )
-                                .foregroundColor(isSelected ? .white : Color(uiColor: .label))
-                                .clipShape(Capsule())
-                                .overlay(
-                                    Capsule()
-                                        .strokeBorder(isSelected ? Color.white.opacity(0.3) : Color.primary.opacity(0.08), lineWidth: 0.8)
-                                )
+                            HStack(spacing: 4) {
+                                if isCompletedVol && vol != "Ungrouped" {
+                                    Image(systemName: "checkmark.seal.fill")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(isSelected ? .white : Theme.orange)
+                                }
+                                Text(vol == "Ungrouped" ? "Ungrouped" : "Vol. \(vol)")
+                                    .font(.system(size: 13, weight: isSelected ? .bold : .semibold, design: .rounded))
+                            }
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 7)
+                            .background(
+                                isSelected
+                                    ? AnyView(Capsule().fill(Theme.orange.gradient).shadow(color: Theme.orange.opacity(0.35), radius: 4, y: 2))
+                                    : AnyView(Capsule().fill(Color(uiColor: .secondarySystemFill)))
+                            )
+                            .foregroundColor(isSelected ? .white : Color(uiColor: .label))
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(isSelected ? Color.white.opacity(0.3) : (isCompletedVol && vol != "Ungrouped" ? Theme.orange.opacity(0.3) : Color.primary.opacity(0.08)), lineWidth: 0.8)
+                            )
                         }
                     }
                 } else if !localIssues.isEmpty {

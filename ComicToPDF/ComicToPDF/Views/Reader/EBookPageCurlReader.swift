@@ -464,6 +464,13 @@ extension EBookPageCurlReader {
             containerBounds.size
         }
 
+        // Typographic Measure Invariant (Oliver Reichenstein standard):
+        // Dual-column spreads require at least 820pt of render width so each column maintains
+        // a 380pt+ width (preserving 65-75 characters per line).
+        // If the Study Notebook sidebar or Split View narrows render width below 820pt,
+        // auto-mode gracefully falls back to a single generous column.
+        static let minDualColumnRenderWidth: CGFloat = 820.0
+
         static func computeColumnCount(prefs: EBookPreferences, size: CGSize) -> Int {
             let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
             let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
@@ -476,8 +483,9 @@ extension EBookPageCurlReader {
                 return 1
             }
 
-            // Compact Split View or Slide Over (width < 600): Always 1 column to avoid squished text
-            if renderWidth < 600 {
+            // Compact Split View, Slide Over, or iPad with Study Notebook active:
+            // When renderWidth < minDualColumnRenderWidth, fall back to 1 column unless explicitly overridden
+            if renderWidth < minDualColumnRenderWidth && prefs.columnCount == 0 {
                 return 1
             }
 
@@ -487,8 +495,8 @@ extension EBookPageCurlReader {
             }
 
             // Auto column mode:
-            if isLandscape {
-                return prefs.autoLandscapeDualPage ? 2 : (isPad && renderWidth >= 700 ? 2 : 1)
+            if isLandscape && isPad && renderWidth >= minDualColumnRenderWidth {
+                return prefs.autoLandscapeDualPage ? 2 : 1
             } else {
                 return 1
             }

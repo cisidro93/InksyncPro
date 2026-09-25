@@ -12,23 +12,30 @@ struct VolumeStudioView: View {
     @EnvironmentObject var settingsManager: AppSettingsManager
 
     enum VolumeType: String, CaseIterable, Identifiable {
-        case virtual = "Virtual Omnibus"
+        case virtual = "Digital Atelier Binder"
         case assign = "Assign Volume"
         case physicalMerge = "Standalone Archive"
 
         var id: String { rawValue }
+        var tabTitle: String {
+            switch self {
+            case .virtual: return "Atelier Binder"
+            case .assign: return "Assign Vol"
+            case .physicalMerge: return "Standalone"
+            }
+        }
         var icon: String {
             switch self {
-            case .virtual: return "bolt.shield.fill"
+            case .virtual: return "book.closed.fill"
             case .assign: return "folder.badge.plus"
             case .physicalMerge: return "archivebox.fill"
             }
         }
         var shortDescription: String {
             switch self {
-            case .virtual: return "Instant 0 MB omnibus. Continuous reading & CBL sync."
+            case .virtual: return "0 MB virtual cloth-bound volume. Instant continuous reading & CBL sync without duplicating files."
             case .assign: return "Tags files with a volume number to organize them into series shelves."
-            case .physicalMerge: return "Merged single-file CBZ, EPUB, or PDF for export."
+            case .physicalMerge: return "Merged single-file CBZ, EPUB, or PDF for external export."
             }
         }
     }
@@ -242,7 +249,7 @@ struct VolumeStudioView: View {
             return "Save Changes"
         }
         switch volumeType {
-        case .virtual: return "Create Volume"
+        case .virtual: return "Bind Virtual Volume (0 MB)"
         case .assign:
             let trimmed = volumeName.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? "Clear Volume Grouping" : "Assign Volume \(trimmed)"
@@ -299,7 +306,7 @@ struct VolumeStudioView: View {
         VStack(alignment: .leading, spacing: 6) {
             Picker("Volume Strategy", selection: $volumeType) {
                 ForEach(VolumeType.allCases) { type in
-                    Label(type.rawValue, systemImage: type.icon)
+                    Label(type.tabTitle, systemImage: type.icon)
                         .tag(type)
                 }
             }

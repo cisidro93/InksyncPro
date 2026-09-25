@@ -1232,9 +1232,13 @@ struct BookReaderEngine: View {
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let isLandscape = renderWidth > renderHeight
 
-        // iPhone Portrait or compact Split View/Slide Over (width < 600): Strictly 1 column
-        if (!isPad && !isLandscape) || renderWidth < 600 {
-            return 1
+        // Typographic Measure Invariant (Oliver Reichenstein standard):
+        // Dual-column spreads require at least 820pt of render width so each column maintains
+        // a 380pt+ measure (preserving 65-75 characters per line).
+        // If the Study Notebook sidebar or Split View narrows render width below 820pt,
+        // auto-mode gracefully falls back to a single generous column.
+        if (!isPad && !isLandscape) || renderWidth < 820 {
+            return prefs.columnCount > 1 ? prefs.columnCount : 1
         }
 
         let defaultColumns = (isPad && isLandscape) ? 2 : 1

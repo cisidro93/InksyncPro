@@ -75,11 +75,11 @@ struct ManualVolumeLinkerView: View {
                 VStack(spacing: 0) {
                     // Header Description Card
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Volume Linker: \(seriesTitle)")
+                        Text("Digital Atelier Binder: \(seriesTitle)")
                             .font(.title2.bold())
                             .foregroundColor(Theme.text)
                         
-                        Text("Group files into virtual volumes to filter and organize them on your device. Changes are written directly to file metadata tags.")
+                        Text("Curate and bind issues into virtual volumes with zero disk duplication. Changes sync automatically to file metadata and library shelves.")
                             .font(.subheadline)
                             .foregroundColor(Theme.textSecondary)
                             .lineLimit(3)
@@ -172,13 +172,33 @@ struct ManualVolumeLinkerView: View {
                     } else {
                         List {
                             ForEach(volumeGroups, id: \.name) { group in
-                                Section(header: HStack {
+                                let completedCount = group.issues.filter { (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) >= 0.95 }.count
+                                let isCompletedRun = !group.issues.isEmpty && completedCount == group.issues.count
+                                Section(header: HStack(spacing: 6) {
                                     Text(group.name == "Ungrouped" ? "Ungrouped Issues" : "Volume: \(group.name)")
                                         .font(.headline)
                                         .foregroundColor(group.name == "Ungrouped" ? Theme.textSecondary : Theme.orange)
-                                    
+
+                                    if isCompletedRun && group.name != "Ungrouped" {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: "checkmark.seal.fill")
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundColor(Theme.orange)
+                                            Text("Completed Run")
+                                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                                .foregroundColor(Theme.orange)
+                                        }
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 2.5)
+                                        .background(Theme.orange.opacity(0.12))
+                                        .clipShape(Capsule())
+                                        .overlay(
+                                            Capsule().strokeBorder(Theme.orange.opacity(0.3), lineWidth: 0.8)
+                                        )
+                                    }
+
                                     Spacer()
-                                    
+
                                     if group.name != "Ungrouped" {
                                         Button {
                                             prepareEditVolume(name: group.name, issues: group.issues)
@@ -188,7 +208,7 @@ struct ManualVolumeLinkerView: View {
                                                 .foregroundColor(Theme.blue)
                                         }
                                         .buttonStyle(.borderless)
-                                        
+
                                         Button {
                                             unlinkVolume(group.name)
                                         } label: {
@@ -206,7 +226,7 @@ struct ManualVolumeLinkerView: View {
                                                 Text(pdf.name)
                                                     .font(.subheadline)
                                                     .foregroundColor(Theme.text)
-                                                
+
                                                 HStack(spacing: 8) {
                                                     if let issue = pdf.metadata.issueNumber {
                                                         Text("Issue #\(issue)")
@@ -217,7 +237,7 @@ struct ManualVolumeLinkerView: View {
                                                             .foregroundColor(Theme.blue)
                                                             .cornerRadius(3)
                                                     }
-                                                    
+
                                                     if let vol = pdf.metadata.volume {
                                                         Text("Volume \(vol)")
                                                             .font(.caption2)
@@ -226,6 +246,21 @@ struct ManualVolumeLinkerView: View {
                                                             .background(Theme.orange.opacity(0.1))
                                                             .foregroundColor(Theme.orange)
                                                             .cornerRadius(3)
+                                                    }
+
+                                                    let progress = ReaderProgressTracker.shared.progress(for: pdf.id)?.completionFraction ?? 0
+                                                    if progress >= 0.95 {
+                                                        HStack(spacing: 2) {
+                                                            Image(systemName: "checkmark.circle.fill")
+                                                                .font(.system(size: 9.5, weight: .bold))
+                                                            Text("Read")
+                                                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                                        }
+                                                        .foregroundColor(Theme.green)
+                                                    } else if progress > 0.02 {
+                                                        Text("\(Int(progress * 100))%")
+                                                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                                            .foregroundColor(Theme.textSecondary)
                                                     }
                                                 }
                                             }
