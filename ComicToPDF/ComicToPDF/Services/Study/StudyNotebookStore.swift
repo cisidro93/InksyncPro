@@ -82,6 +82,11 @@ public final class StudyNotebookStore: ObservableObject {
         return notes.first { $0.id == id }
     }
     
+    /// Backward-compatible alias for `activeNote`.
+    public var selectedNote: StudyNote? {
+        activeNote
+    }
+    
     // MARK: - Card CRUD Operations
     
     public func addCard(_ card: StudyCard) {

@@ -243,7 +243,7 @@ public struct StudyNotebookContainerView: View {
                 
                 Section("Export Knowledge Base") {
                     Button {
-                        if let currentNote = store.selectedNote {
+                        if let currentNote = store.activeNote {
                             if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                                let rootVC = windowScene.windows.first?.rootViewController {
                                 let md = (currentNote.cueColumnText.isEmpty ? "" : "### Cues\n" + currentNote.cueColumnText + "\n\n")

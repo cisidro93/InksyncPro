@@ -67,7 +67,9 @@ final class SleepTimerManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.handleBackground()
+            MainActor.assumeIsolated {
+                self?.handleBackground()
+            }
         }
 
         NotificationCenter.default.addObserver(
@@ -75,7 +77,9 @@ final class SleepTimerManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.handleForeground()
+            MainActor.assumeIsolated {
+                self?.handleForeground()
+            }
         }
     }
 
