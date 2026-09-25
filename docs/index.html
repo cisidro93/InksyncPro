@@ -4,190 +4,527 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>InkSync Pro | The Ultimate Comic & Manga E-Reader Upgrade</title>
+    <title>InkSync Pro | The Ultimate Digital Reading & Study Studio</title>
     <meta name="description"
-        content="Transform standard CBZ files into immersive Panel-View compatible EPUBs for your Kindle and e-readers. InkSync Pro is the all-in-one local processing vault.">
+        content="A unified, high-performance reading and study system for iPad and iPhone. Fluid 120Hz ProMotion engine, synchronized live narration with spatial text highlighting, multi-page Cornell study notebooks, smart matrix panel flow, and 1-tap volume management. 100% on-device and private.">
     <meta name="keywords"
-        content="comic reader, cbz to epub, kindle panel view, guided view, manga converter, inksync pro, manga reader ios">
+        content="digital reader, comic reader, epub reader, pdf reader, cornell notes, tts continuous audio narration, study notebook, apple pencil inking, volume studio, inksync pro, ipad reading app">
 
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
-    <meta property="og:title" content="InkSync Pro | The Ultimate Comic & Manga E-Reader Upgrade">
+    <meta property="og:title" content="InkSync Pro | The Ultimate Digital Reading & Study Studio">
     <meta property="og:description"
-        content="Local processing vault that converts CBZ archives into native, panel-optimized EPUBs for your Kindle.">
+        content="A unified, high-performance reading and study system. Synchronized spatial narration, Apple Pencil Cornell notebooks, smart matrix panel traversal, and 1-tap volume linking.">
+    <meta property="og:image" content="app_logo.png">
+
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
-    <meta property="twitter:title" content="InkSync Pro | The Ultimate Comic & Manga E-Reader Upgrade">
+    <meta property="twitter:title" content="InkSync Pro | The Ultimate Digital Reading & Study Studio">
     <meta property="twitter:description"
-        content="Local processing vault that converts CBZ archives into native, panel-optimized EPUBs for your Kindle.">
+        content="A unified, high-performance reading and study system. Synchronized spatial narration, Apple Pencil Cornell notebooks, smart matrix panel traversal, and 1-tap volume linking.">
+    <meta property="twitter:image" content="app_logo.png">
 
     <link rel="icon" type="image/png" href="app_logo.png">
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@400;700;900&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap"
         rel="stylesheet">
 </head>
 
 <body>
     <div class="glow-bg"></div>
     <div class="glow-bg pink-glow"></div>
+    <div class="glow-bg amber-glow"></div>
 
+    <!-- Navigation -->
     <nav class="navbar glass">
         <a href="index.html" class="logo-link">
             <img src="app_logo.png" alt="InkSync Pro Logo" class="logo-image">
             <span class="logo-text">InkSync Pro</span>
         </a>
         <div class="nav-links">
+            <a href="#showcase">Showcase</a>
             <a href="#features">Features</a>
-            <a href="#how-it-works">How it Works</a>
+            <a href="#notebook">Study Studio</a>
+            <a href="#volumes">Volume Studio</a>
+            <a href="#why-us">Comparison</a>
             <a href="privacy.html">Privacy</a>
+        </div>
+        <div class="nav-cta">
+            <a href="#download" class="btn btn-nav">Get Started</a>
+            <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle navigation menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
         </div>
     </nav>
 
+    <!-- Mobile Navigation Drawer -->
+    <div class="mobile-nav-drawer glass" id="mobileNavDrawer">
+        <div class="mobile-nav-links">
+            <a href="#showcase" class="mobile-nav-item">Showcase</a>
+            <a href="#features" class="mobile-nav-item">Features</a>
+            <a href="#notebook" class="mobile-nav-item">Study Studio</a>
+            <a href="#volumes" class="mobile-nav-item">Volume Studio</a>
+            <a href="#why-us" class="mobile-nav-item">Comparison</a>
+            <a href="privacy.html" class="mobile-nav-item">Privacy Policy</a>
+            <a href="terms.html" class="mobile-nav-item">Terms of Service</a>
+            <a href="#download" class="btn btn-primary mobile-download-btn">Get Started</a>
+        </div>
+    </div>
+
+    <!-- Hero Section -->
     <header class="hero">
         <div class="hero-content">
-            <div class="badge">Coming Soon to the App Store 🚀</div>
-            <h1 class="hero-title">Your Comics,<br> <span class="gradient-text">Beautifully Processed.</span></h1>
-            <p class="hero-subtitle">Convert CBZ archives into native, panel-optimized EPUBs for your Kindle and
-                e-readers. Completely local, completely private, and blazing fast.</p>
+            <div class="badge">
+                <span class="badge-dot"></span>
+                Crafted for iPad, iPhone & Apple Pencil
+            </div>
+            <h1 class="hero-title">
+                Read with Fluidity.<br>
+                <span class="gradient-text">Study with Depth.</span>
+            </h1>
+            <p class="hero-subtitle">
+                A distraction-free reading and annotation studio for EPUB, PDF, and graphic archives. Featuring synchronized text narration with continuous page turns, structured Cornell notebooks with Apple Pencil handwriting, and direct volume organization—completely private on your device.
+            </p>
             <div class="hero-cta">
-                <a href="#" class="btn btn-primary" onclick="alert('Link to App Store coming soon!')">
+                <a href="#download" class="btn btn-primary">
                     <svg class="apple-icon" viewBox="0 0 384 512" width="20" height="20" fill="currentColor">
                         <path
                             d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 24 184.8 8 277.3c-28.3 162.1 48.7 301.9 104.9 301.9 26.6 0 37.4-15.5 68.6-15.5 30.5 0 39.8 15.5 68.4 15.5 59.8 0 119.5-120.3 119.5-120.3-54.8-22-80.4-71.1-80.7-130.2zM247.6 8C273 13.5 293 30.6 308.2 56.5c15 25.4 20.5 54.3 17.6 81.3-30.8 1.4-60.8-14.8-80.2-40.3-19.4-25.5-25.7-56.1-22.3-84.7 27.6-6 50.8-1 64.3 4.8z" />
                     </svg>
                     Download on the App Store
                 </a>
-                <a href="#features" class="btn btn-secondary glass">Explore Features</a>
+                <a href="#showcase" class="btn btn-secondary glass">Explore Live Showcase</a>
+            </div>
+            <div class="hero-stats">
+                <div class="stat-item">
+                    <span class="stat-number">120 Hz</span>
+                    <span class="stat-label">ProMotion Fluidity</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat-item">
+                    <span class="stat-number">100%</span>
+                    <span class="stat-label">On-Device Privacy</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat-item">
+                    <span class="stat-number">0 MB</span>
+                    <span class="stat-label">Virtual Omnibuses</span>
+                </div>
             </div>
         </div>
+
+        <!-- High-Fidelity Interactive Reader Device Mockup -->
         <div class="hero-visual">
-            <div class="app-mockup glass">
-                <div class="mockup-header">
-                    <span class="dot red"></span>
-                    <span class="dot yellow"></span>
-                    <span class="dot green"></span>
-                </div>
-                <!-- Simulating the app UI -->
-                <div class="mockup-body">
-                    <div class="mockup-nav">Library</div>
-                    <div class="mockup-grid">
-                        <div class="mockup-card gradient-1"></div>
-                        <div class="mockup-card gradient-2"></div>
-                        <div class="mockup-card gradient-3"></div>
-                        <div class="mockup-card gradient-4"></div>
+            <div class="ipad-mockup glass">
+                <div class="mockup-bezel">
+                    <!-- Status / Chrome Header -->
+                    <div class="mockup-top-bar">
+                        <div class="mockup-clock">9:41 AM</div>
+                        <div class="mockup-dynamic-island" id="mockupIsland">
+                            <span class="audio-wave"></span>
+                            <span class="audio-wave"></span>
+                            <span class="audio-wave"></span>
+                            <span class="tts-label" id="islandLabel">Narration Active • 1.2×</span>
+                        </div>
+                        <div class="mockup-icons">
+                            <span class="icon-battery"></span>
+                        </div>
+                    </div>
+
+                    <!-- Reader Document Canvas View -->
+                    <div class="reader-viewport">
+                        <!-- Top Floating Reader Toolbar -->
+                        <div class="reader-hud-top glass">
+                            <div class="reader-doc-meta">
+                                <span class="doc-badge">EPUB & PDF</span>
+                                <span class="doc-title">The Art of Architecture • Selected Essays</span>
+                            </div>
+                            <div class="reader-hud-actions">
+                                <span class="action-pill active-pill" id="actionNarrationPill">✨ Narration On</span>
+                                <span class="action-pill" id="actionCornellPill">Cornell Note</span>
+                            </div>
+                        </div>
+
+                        <!-- Live Document Page with Real Spoken Amber Highlighting -->
+                        <div class="document-page">
+                            <div class="doc-chapter-header">CHAPTER II: FORM, SPACE, AND INTENT</div>
+                            <p class="doc-paragraph">
+                                A thoughtfully built tool does not demand attention; it recedes quietly into the background, leaving only the reader and the idea. Every line drawn along the margin stays fixed in place, responding naturally to the tip of the pencil.
+                            </p>
+                            <!-- Active TTS Highlight Simulated In-Document -->
+                            <p class="doc-paragraph highlighted-line">
+                                <span class="spatial-highlight">"Focus is not achieved by accumulating features, but by eliminating friction between thought, reading, and understanding,"</span> the author reflected as the spoken words flowed in effortless synchrony.
+                            </p>
+                            <p class="doc-paragraph">
+                                Alongside the page, the structured Cornell notebook records annotations and summaries into clean pages, always ready to export back into your library.
+                            </p>
+                            <div class="page-footer-meta">
+                                <span>Page 14 of 38</span>
+                                <span class="reading-speed">Reading Pace: 240 WPM</span>
+                            </div>
+                        </div>
+
+                        <!-- Continuous Audio Floating Control Pill -->
+                        <div class="narration-floating-bar glass">
+                            <button class="audio-btn-play" id="audioPlayBtn" aria-label="Play or Pause Narration" title="Pause / Resume Narration">❚❚</button>
+                            <div class="audio-track-info">
+                                <div class="track-title" id="audioTrackTitle">Continuous Live Highlighting</div>
+                                <div class="track-sub" id="audioTrackSub">Hands-Free Page Advancement Active</div>
+                            </div>
+                            <button class="audio-speed-tag" id="audioSpeedBtn" title="Click to cycle playback speed" aria-label="Cycle speed">1.2x</button>
+                        </div>
+
+                        <!-- Bottom Floating Glass Pill Tab Bar (InkTabBar) -->
+                        <div class="mockup-tab-bar glass">
+                            <div class="tab-item active-tab" data-mockup-tab="narration">
+                                <span class="tab-icon">📖</span>
+                                <span class="tab-label">Reader</span>
+                            </div>
+                            <div class="tab-item" data-mockup-tab="notebook">
+                                <span class="tab-icon">📓</span>
+                                <span class="tab-label">Notebook</span>
+                            </div>
+                            <div class="tab-item" data-mockup-tab="smartflow">
+                                <span class="tab-icon">📐</span>
+                                <span class="tab-label">Smart Flow</span>
+                            </div>
+                            <div class="tab-item" data-mockup-tab="volumes">
+                                <span class="tab-icon">📚</span>
+                                <span class="tab-label">Volumes</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </header>
 
-    <section id="features" class="features-section">
-        <h2 class="section-title">Built for the <span class="gradient-text">Ultimate Reading Experience</span></h2>
+    <!-- Interactive Feature Showcase Switcher -->
+    <section id="showcase" class="showcase-section">
+        <div class="section-header">
+            <div class="badge">Thoughtful Architecture</div>
+            <h2 class="section-title">Core <span class="gradient-text">Capabilities</span></h2>
+            <p class="section-subtitle">Designed from the ground up for deep reading, academic study, and graphic literature.</p>
+        </div>
 
-        <div class="feature-grid">
-            <div class="feature-card glass hover-lift">
-                <div class="feature-icon">🔍</div>
-                <h3>AI Panel Extraction</h3>
-                <p>Advanced neural tracking detects and maps comic panels to generate native "Guided View" metadata for
-                    your Kindle device.</p>
+        <!-- Showcase Tab Controls -->
+        <div class="showcase-nav-pills">
+            <button class="showcase-tab active" data-tab="narration">
+                <span class="tab-emoji">🎙️</span>
+                <span>Synchronized Narration</span>
+            </button>
+            <button class="showcase-tab" data-tab="notebook">
+                <span class="tab-emoji">📓</span>
+                <span>Cornell Study Notebooks</span>
+            </button>
+            <button class="showcase-tab" data-tab="smartflow">
+                <span class="tab-emoji">📐</span>
+                <span>Smart Panel Flow</span>
+            </button>
+            <button class="showcase-tab" data-tab="volumes">
+                <span class="tab-emoji">📚</span>
+                <span>Volume Management</span>
+            </button>
+            <button class="showcase-tab" data-tab="engine">
+                <span class="tab-emoji">⚡</span>
+                <span>Hardware Acceleration</span>
+            </button>
+        </div>
+
+        <!-- Tab Content Panes -->
+        <div class="showcase-display glass">
+            <!-- Pane 1: Spatial Narration -->
+            <div class="showcase-pane active" id="pane-narration">
+                <div class="pane-content">
+                    <div class="pane-badge">Continuous Audio Architecture</div>
+                    <h3>Synchronized reading with automated page advancement</h3>
+                    <p>
+                        Listen to your documents while reading along visually. InkSync Pro highlights spoken text line-by-line and turns pages automatically as playback progresses, keeping you immersed without touching the screen.
+                    </p>
+                    <ul class="pane-feature-list">
+                        <li><strong>Continuous Page Turns:</strong> Audio proceeds uninterrupted across page turns and chapter transitions with zero playback pause.</li>
+                        <li><strong>Natural Neural Voices:</strong> Automatically selects Apple's highest quality on-device neural voices with human cadence and sentence pauses.</li>
+                        <li><strong>Adjustable Speed Controls:</strong> Fine-tune playback velocity from 0.5× up to 2.5× with pitch preservation for comfortable comprehension.</li>
+                    </ul>
+                </div>
+                <div class="pane-preview preview-narration">
+                    <div class="simulated-narration-box glass">
+                        <div class="pulse-indicator">
+                            <span class="ring-pulse"></span>
+                            <span class="core-dot"></span>
+                            Speech Synthesis Engine
+                        </div>
+                        <div class="sample-spoken-text">
+                            "Every line drawn along the margin stays fixed in place, responding naturally to the tip of the pencil."
+                        </div>
+                        <div class="highlight-geometry-badge">Active Sentence Highlight • Page 14</div>
+                    </div>
+                </div>
             </div>
-            <div class="feature-card glass hover-lift">
-                <div class="feature-icon">📚</div>
-                <h3>Smart Auto-Grouping</h3>
-                <p>Import a massive folder of disjointed issues, and InkSync Pro will automatically sort and group them
-                    by series.</p>
+
+            <!-- Pane 2: Cornell Study Studio -->
+            <div class="showcase-pane" id="pane-notebook">
+                <div class="pane-content">
+                    <div class="pane-badge">Integrated Notebooks</div>
+                    <h3>Structured Cornell notes with Apple Pencil inking</h3>
+                    <p>
+                        Every document connects directly to an integrated multi-page study notebook organized around the proven Cornell 3-Zone methodology.
+                    </p>
+                    <ul class="pane-feature-list">
+                        <li><strong>Three-Zone Layout:</strong> Dedicated columns for Cues, Notes, and Summaries encourage active recall and clear information architecture.</li>
+                        <li><strong>Apple Pencil Pro Inking:</strong> Low-latency vector drawing layers with palm rejection, 1-finger drawing, and 2-finger navigation.</li>
+                        <li><strong>Direct Book & Markdown Export:</strong> Save completed notes directly back into your library as a new PDF/EPUB, or export clean Markdown files.</li>
+                    </ul>
+                </div>
+                <div class="pane-preview preview-notebook">
+                    <div class="cornell-notebook-mock glass">
+                        <div class="cornell-header">
+                            <span>Prev</span>
+                            <span class="cornell-page-pill">Page 3 of 8 ▾</span>
+                            <span>Next</span>
+                            <span class="cornell-add-pill">+ Add Page</span>
+                        </div>
+                        <div class="cornell-body">
+                            <div class="cornell-cues">
+                                <div class="zone-label">CUES / QUESTIONS</div>
+                                <div class="sample-cue">• Core principle?</div>
+                                <div class="sample-cue">• Key variables?</div>
+                            </div>
+                            <div class="cornell-notes">
+                                <div class="zone-label">NOTES & HANDWRITING</div>
+                                <div class="sample-note">Decoupled rendering ensures zero layout shift during orientation changes.</div>
+                                <div class="pencil-scribble-sim">✍️ [Vector Inking Layer Active]</div>
+                            </div>
+                        </div>
+                        <div class="cornell-summary">
+                            <div class="zone-label">SUMMARY</div>
+                            <div class="sample-summary">Local-first data architecture operates completely on-device with zero external servers.</div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="feature-card glass hover-lift">
-                <div class="feature-icon">☁️</div>
-                <h3>Send to Kindle (Wi-Fi)</h3>
-                <p>Built-in Wi-Fi Transfer and Cloud Sync API lets you teleport your converted comics straight to your
-                    e-reader seamlessly.</p>
+
+            <!-- Pane 3: Smart Matrix Flow -->
+            <div class="showcase-pane" id="pane-smartflow">
+                <div class="pane-content">
+                    <div class="pane-badge">Visual Navigation</div>
+                    <h3>Panel-by-panel navigation for graphic archives</h3>
+                    <p>
+                        Read dense graphic novels, manga, and multi-column documents comfortably on portable displays without manual pinching and zooming.
+                    </p>
+                    <ul class="pane-feature-list">
+                        <li><strong>Custom M×N Matrix Grids:</strong> Divide complex pages into 2×2, 3×2, or customized coordinate focus zones with a single tap.</li>
+                        <li><strong>Directional Traversal:</strong> Seamlessly switch between Western Left-to-Right and Manga Right-to-Left panel sequences.</li>
+                        <li><strong>Tap-to-Preview Simulator:</strong> Inspect and fine-tune quadrant zoom levels and boundaries with instant live feedback.</li>
+                    </ul>
+                </div>
+                <div class="pane-preview preview-smartflow">
+                    <div class="matrix-grid-mock glass">
+                        <div class="grid-header">SMART MATRIX: 2 × 2 TRAVERSAL</div>
+                        <div class="grid-cells">
+                            <div class="grid-quadrant active-quad">Zone 1 (01)</div>
+                            <div class="grid-quadrant">Zone 2 (02)</div>
+                            <div class="grid-quadrant">Zone 3 (03)</div>
+                            <div class="grid-quadrant">Zone 4 (04)</div>
+                        </div>
+                        <div class="grid-footer">Sequence: Top-Right → Top-Left → Bottom-Right → Bottom-Left</div>
+                    </div>
+                </div>
             </div>
-            <div class="feature-card glass hover-lift">
-                <div class="feature-icon">🗄️</div>
-                <h3>ComicVine Integration</h3>
-                <p>Tag your files with official metadata. Search for issue descriptions, cover art, and volume numbers
-                    instantly.</p>
+
+            <!-- Pane 4: Volume Studio -->
+            <div class="showcase-pane" id="pane-volumes">
+                <div class="pane-content">
+                    <div class="pane-badge">Library Organization</div>
+                    <h3>Effortless volume grouping with 1-tap assignment</h3>
+                    <p>
+                        Consolidate extensive multi-chapter series into structured volumes. Keep your library organized without duplicating large files or digging through menus.
+                    </p>
+                    <ul class="pane-feature-list">
+                        <li><strong>Zero-Byte Virtual Omnibuses:</strong> Group dozens of individual issues into a single volume without duplicating files or using extra storage.</li>
+                        <li><strong>1-Tap Volume Assignment:</strong> Prominent assignment pills let you organize selected issues instantly from the library screen.</li>
+                        <li><strong>Sequential Gap Detection:</strong> Automatically identifies missing issue numbers and tracks completion progress across each volume.</li>
+                    </ul>
+                </div>
+                <div class="pane-preview preview-volumes">
+                    <div class="volume-studio-mock glass">
+                        <div class="vol-filter-bar-sim">
+                            <span class="vpill-active">Assign Volume</span>
+                            <span class="vpill">All Volumes</span>
+                            <span class="vpill">Vol. 1</span>
+                            <span class="vpill">Vol. 2</span>
+                            <span class="vpill">Ungrouped</span>
+                        </div>
+                        <div class="vol-card-sim">
+                            <div class="vol-title-row">
+                                <span class="vol-name">Volume 01 (Issues #1 - #6)</span>
+                                <span class="vol-badge-pill">6 / 6 Read</span>
+                            </div>
+                            <div class="vol-progress-bar"><div class="vol-progress-fill"></div></div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="feature-card glass hover-lift">
-                <div class="feature-icon">✂️</div>
-                <h3>Smart Image Cropping</h3>
-                <p>Automatically trim out blank margins and split dual/spread pages so they render beautifully on
-                    portrait screens.</p>
-            </div>
-            <div class="feature-card glass hover-lift">
-                <div class="feature-icon">🔒</div>
-                <h3>Private Vault</h3>
-                <p>A secure FaceID/TouchID locked vault to store your rarest or most sensitive comics away from the main
-                    library.</p>
-            </div>
-            <div class="feature-card glass hover-lift">
-                <div class="feature-icon">✏️</div>
-                <h3>Advanced Metadata Editor</h3>
-                <p>Manually override issue details, titles, and volume numbers. Inject your own high-res cover images
-                    from your Photos app.</p>
-            </div>
-            <div class="feature-card glass hover-lift">
-                <div class="feature-icon">🎨</div>
-                <h3>Custom Export Profiles</h3>
-                <p>Save your favorite conversion settings (e.g., Manga RTL, EPUB Image Pipeline) as presets for 1-click
-                    batch processing.</p>
-            </div>
-            <div class="feature-card glass hover-lift">
-                <div class="feature-icon">📓</div>
-                <h3>Study Notebook</h3>
-                <p>An integrated dashboard for highlights, voice dictation, and handwriting OCR to track personal thoughts and references.</p>
-            </div>
-            <div class="feature-card glass hover-lift">
-                <div class="feature-icon">📦</div>
-                <h3>Zettelkasten Exporter</h3>
-                <p>Export all highlights, custom tags, and notes as atomic, Obsidian-ready Markdown archives in one click.</p>
+
+            <!-- Pane 5: 120Hz Native Engine -->
+            <div class="showcase-pane" id="pane-engine">
+                <div class="pane-content">
+                    <div class="pane-badge">System Performance</div>
+                    <h3>120Hz ProMotion responsiveness and Metal rendering</h3>
+                    <p>
+                        Engineered in native Swift and Metal shaders to provide instantaneous touch response and steady 120 FPS navigation.
+                    </p>
+                    <ul class="pane-feature-list">
+                        <li><strong>Fluid Page Turns:</strong> Optimized WebKit and PDFKit pipelines prevent white flashes and repagination stutter.</li>
+                        <li><strong>Automatic Margin Trimming:</strong> Intelligent edge detection eliminates scanned white borders to maximize readable screen area.</li>
+                        <li><strong>Double-Spread Splitter:</strong> Automatically analyzes wide landscape scans and splits them into clean portrait pages.</li>
+                    </ul>
+                </div>
+                <div class="pane-preview preview-engine">
+                    <div class="fps-meter-mock glass">
+                        <div class="fps-num">120</div>
+                        <div class="fps-unit">FPS PROMOTION TOUCH PIPELINE</div>
+                        <div class="fps-graph">
+                            <div class="fps-bar" style="height: 90%;"></div>
+                            <div class="fps-bar" style="height: 95%;"></div>
+                            <div class="fps-bar" style="height: 100%;"></div>
+                            <div class="fps-bar" style="height: 98%;"></div>
+                            <div class="fps-bar" style="height: 100%;"></div>
+                            <div class="fps-bar" style="height: 100%;"></div>
+                        </div>
+                        <div class="fps-sub">Zero Frame Drops During Rapid Gestures</div>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
 
-    <section id="how-it-works" class="marketing-section">
-        <h2 class="section-title">Why <span class="gradient-text">InkSync Pro?</span></h2>
+    <!-- Comprehensive Feature Grid -->
+    <section id="features" class="features-section">
+        <div class="section-header">
+            <div class="badge">Designed for Focus</div>
+            <h2 class="section-title">Built for the <span class="gradient-text">Complete Reader</span></h2>
+            <p class="section-subtitle">Every tool, gesture, and view is tailored to support sustained reading and serious study.</p>
+        </div>
+
+        <div class="feature-grid">
+            <div class="feature-card glass hover-lift">
+                <div class="feature-icon">🎙️</div>
+                <h3>Synchronized Audio Narration</h3>
+                <p>Line-by-line amber highlighting follows spoken narration directly on the page, with automatic hands-free page turns.</p>
+            </div>
+
+            <div class="feature-card glass hover-lift">
+                <div class="feature-icon">📓</div>
+                <h3>Cornell Study Notebooks</h3>
+                <p>Multi-page 3-zone notes with Apple Pencil handwriting, Markdown support, and direct exports back to your library.</p>
+            </div>
+
+            <div class="feature-card glass hover-lift">
+                <div class="feature-icon">📐</div>
+                <h3>Smart Panel Flow</h3>
+                <p>Adaptive coordinate grids and directional panel traversal for comics, manga, and technical diagrams.</p>
+            </div>
+
+            <div class="feature-card glass hover-lift">
+                <div class="feature-icon">📚</div>
+                <h3>Unified Volume Studio</h3>
+                <p>Organize issues into 0 MB virtual omnibuses with prominent 1-tap volume assignment pills.</p>
+            </div>
+
+            <div class="feature-card glass hover-lift">
+                <div class="feature-icon">⚡</div>
+                <h3>120Hz ProMotion Inking</h3>
+                <p>Low-latency Apple Pencil handwriting, palm rejection, 1-finger drawing, and 2-finger pan/zoom isolation.</p>
+            </div>
+
+            <div class="feature-card glass hover-lift">
+                <div class="feature-icon">✂️</div>
+                <h3>Automatic Margin Crop & Split</h3>
+                <p>Trims dead border space and automatically splits landscape double-page spreads into portrait pages.</p>
+            </div>
+
+            <div class="feature-card glass hover-lift">
+                <div class="feature-icon">🔒</div>
+                <h3>Biometric Private Vault</h3>
+                <p>Hardware-level Face ID and Touch ID security to protect sensitive documents with zero cloud leakage.</p>
+            </div>
+
+            <div class="feature-card glass hover-lift">
+                <div class="feature-icon">📶</div>
+                <h3>Wireless Local Sync</h3>
+                <p>Transfer converted documents directly across your local Wi-Fi network to standalone e-ink devices.</p>
+            </div>
+
+            <div class="feature-card glass hover-lift">
+                <div class="feature-icon">🗄️</div>
+                <h3>Smart Catalog Scraper</h3>
+                <p>Automatic volume pattern matching, issue gap detection, reading statistics, and high-resolution cover assignment.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Why InkSync Pro (Comparison) Section -->
+    <section id="why-us" class="marketing-section">
+        <div class="section-header">
+            <div class="badge">Design Philosophy</div>
+            <h2 class="section-title">A Focused <span class="gradient-text">Alternative</span></h2>
+            <p class="section-subtitle">How InkSync Pro approaches digital reading compared to conventional document viewers.</p>
+        </div>
 
         <div class="comparison-container glass">
             <div class="comparison-half old-way">
-                <h3>The Old Way ❌</h3>
+                <h3>Conventional Document Viewers</h3>
                 <ul class="comparison-list">
-                    <li>Reading tiny text on unoptimized CBZ files</li>
-                    <li>Relying on slow, cloud-based conversion servers</li>
-                    <li>Losing privacy when uploading to third parties</li>
-                    <li>Manually plugging in cables to transfer files</li>
-                    <li>Disorganized files with no cover art or metadata</li>
+                    <li>Audio stops abruptly at each page boundary with disconnected text tracking</li>
+                    <li>External note-taking requires constant split-screen app switching</li>
+                    <li>Organizing series requires nested, multi-tap menus and complex folders</li>
+                    <li>Visible flashes and layout shifts during page curl transitions</li>
+                    <li>Reading activity and library metadata uploaded to third-party servers</li>
+                    <li>Large multi-gigabyte file duplication required to assemble collections</li>
                 </ul>
             </div>
 
             <div class="comparison-divider">VS</div>
 
             <div class="comparison-half new-way">
-                <h3>The InkSync Way ✨</h3>
+                <h3>InkSync Pro</h3>
                 <ul class="comparison-list">
-                    <li>Native Kindle "Guided View" via AI Panel tracking</li>
-                    <li>Blazing fast on-device processing (Apple Silicon)</li>
-                    <li>100% Private—your files never leave your device</li>
-                    <li>Wireless "Send to Kindle" Wi-Fi transfers</li>
-                    <li>Auto-grouping and ComicVine metadata scraping</li>
-                    <li>Native Study Notebook & Obsidian Markdown export</li>
+                    <li>Continuous hands-free narration that turns pages automatically with line highlights</li>
+                    <li>Integrated Cornell notebooks with Apple Pencil handwriting alongside your document</li>
+                    <li>1-tap volume assignment pills with instant 0 MB virtual omnibuses</li>
+                    <li>Fluid 120Hz ProMotion touch response and Metal graphics acceleration</li>
+                    <li>100% on-device private processing with zero accounts or external tracking</li>
+                    <li>Zero-byte virtual volumes that organize your library without wasting disk space</li>
                 </ul>
             </div>
         </div>
 
-        <div class="final-cta">
-            <h2 class="final-cta-title">Ready to Upgrade Your Library?</h2>
-            <p class="final-cta-subtitle">Join thousands of readers who have supercharged their e-ink experience. No
-                subscriptions. No ads. Just pure reading.</p>
-            <a href="#" class="btn btn-primary" onclick="alert('Link to App Store coming soon!')">Get InkSync Pro
-                Today</a>
+        <!-- Download CTA Banner -->
+        <div id="download" class="final-cta glass">
+            <h2 class="final-cta-title">Experience InkSync Pro</h2>
+            <p class="final-cta-subtitle">
+                Designed for iPad and iPhone. Compatible with Apple Pencil and Apple Pencil Pro on iOS 16+.
+            </p>
+            <div class="cta-actions">
+                <a href="#" class="btn btn-primary" onclick="alert('InkSync Pro is launching on the App Store soon! Stay tuned.')">
+                    <svg class="apple-icon" viewBox="0 0 384 512" width="20" height="20" fill="currentColor">
+                        <path
+                            d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 24 184.8 8 277.3c-28.3 162.1 48.7 301.9 104.9 301.9 26.6 0 37.4-15.5 68.6-15.5 30.5 0 39.8 15.5 68.4 15.5 59.8 0 119.5-120.3 119.5-120.3-54.8-22-80.4-71.1-80.7-130.2zM247.6 8C273 13.5 293 30.6 308.2 56.5c15 25.4 20.5 54.3 17.6 81.3-30.8 1.4-60.8-14.8-80.2-40.3-19.4-25.5-25.7-56.1-22.3-84.7 27.6-6 50.8-1 64.3 4.8z" />
+                    </svg>
+                    Download on the App Store
+                </a>
+            </div>
+            <div class="cta-footnote">100% On-Device &bull; No Subscriptions &bull; No Tracking</div>
         </div>
     </section>
 
+    <!-- Footer -->
     <footer class="footer">
         <div class="footer-content">
             <a href="index.html" class="logo-link footer-logo">
@@ -195,11 +532,13 @@
                 <span class="logo-text">InkSync Pro</span>
             </a>
             <div class="footer-links">
+                <a href="#showcase">Showcase</a>
+                <a href="#features">Features</a>
                 <a href="mailto:support@inksyncpro.app">Support</a>
                 <a href="privacy.html">Privacy Policy</a>
                 <a href="terms.html">Terms of Service</a>
             </div>
-            <p class="copyright">&copy; 2026 InkSync Pro. All rights reserved.</p>
+            <p class="copyright">&copy; 2026 InkSync Pro. All rights reserved. 100% On-Device & Privacy Focused.</p>
         </div>
     </footer>
 

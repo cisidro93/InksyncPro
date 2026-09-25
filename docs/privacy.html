@@ -20,7 +20,7 @@
             <span class="logo-text">InkSync Pro</span>
         </a>
         <div class="nav-links">
-            <a href="index.html">Back to Home</a>
+            <a href="index.html" class="back-link">← Back to Home</a>
         </div>
     </nav>
 
@@ -44,15 +44,11 @@
 
         <section>
             <h2>3. Third-Party Services</h2>
-            <p>While the app operates locally, you may choose to interact with the following third-party services from
-                within the app:</p>
+            <p>While the app operates 100% locally, you may optionally choose to connect external cloud services for file transfers and metadata:</p>
             <ul>
-                <li><strong>ComicVine API:</strong> Used strictly when you explicitly request metadata (issue
-                    descriptions, volume details) for a comic. Your search queries are sent directly to ComicVine.</li>
-                <li><strong>AI Integration Providers (OpenAI, Anthropic, Google Gemini, OpenRouter):</strong> If you choose to enable AI-powered panel extraction or smart metadata tools and configure your own API keys, your query data is transmitted directly and securely to the respective AI provider's API. No intermediate servers or proxies are used.</li>
-                <li><strong>iCloud:</strong> Used if you choose to export files to your iCloud Drive or rely on iCloud
-                    device backups. This is governed by Apple's privacy policies.</li>
-                <li><strong>Dropbox API:</strong> If you choose to link your Dropbox account, the app communicates directly with Dropbox via PKCE OAuth to download and sync your selected comic files. Your credentials and files are processed securely and locally on your device.</li>
+                <li><strong>ComicVine API:</strong> Used strictly when you explicitly request online metadata (issue descriptions, volume covers) for an archive. Search queries are sent directly between your device and ComicVine.</li>
+                <li><strong>iCloud Drive:</strong> Used if you choose to export files to your iCloud Drive or utilize system device backups. This is governed directly by Apple's privacy policy.</li>
+                <li><strong>Dropbox API:</strong> If you choose to link a Dropbox account, the app communicates directly with Dropbox via PKCE OAuth to download and sync your selected files. Your credentials and files remain strictly local on your device.</li>
             </ul>
         </section>
 

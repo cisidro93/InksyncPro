@@ -43,7 +43,7 @@ final class NotebookSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechS
 
     // MARK: - Voices
     var availableVoices: [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices().sorted { $0.language < $1.language }
+        NaturalSpeechVoiceSelector.shared.sortedAvailableVoices
     }
 
     var personalVoices: [AVSpeechSynthesisVoice] {
@@ -189,6 +189,7 @@ final class NotebookSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechS
 
     func setVoice(_ voice: AVSpeechSynthesisVoice) {
         self.selectedVoice = voice
+        NaturalSpeechVoiceSelector.shared.preferredVoiceIdentifier = voice.identifier
         if isPlaying {
             synthesizer.stopSpeaking(at: .immediate)
             speakCurrentBlock()
@@ -222,24 +223,12 @@ final class NotebookSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechS
         onSentenceChanged?(index, text)
 
         let utterance = AVSpeechUtterance(string: text)
-        let baseRate = AVSpeechUtteranceDefaultSpeechRate
-        utterance.rate = min(AVSpeechUtteranceMaximumSpeechRate, max(AVSpeechUtteranceMinimumSpeechRate, baseRate * speechRate))
-        utterance.pitchMultiplier = 1.0
-        utterance.volume = 1.0
-
-        if let selectedVoice {
-            utterance.voice = selectedVoice
-        } else if let personal = personalVoices.first {
-            utterance.voice = personal
-        } else {
-            let isJapanese = text.unicodeScalars.contains { scalar in
-                (0x3040...0x309F).contains(scalar.value) ||
-                (0x30A0...0x30FF).contains(scalar.value) ||
-                (0x4E00...0x9FAF).contains(scalar.value)
-            }
-            let lang = isJapanese ? "ja-JP" : (Locale.current.language.languageCode?.identifier ?? "en-US")
-            utterance.voice = AVSpeechSynthesisVoice(language: lang) ?? AVSpeechSynthesisVoice(language: "en-US")
-        }
+        NaturalSpeechVoiceSelector.shared.configureNaturalUtterance(
+            utterance,
+            voice: selectedVoice ?? personalVoices.first,
+            speechRate: speechRate,
+            isSentenceUnit: true
+        )
 
         self.activeUtterance = utterance
         self.isPlaying = true

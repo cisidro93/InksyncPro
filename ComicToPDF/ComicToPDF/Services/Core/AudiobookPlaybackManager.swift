@@ -26,9 +26,9 @@ final class AudiobookPlaybackManager: NSObject, ObservableObject, AVSpeechSynthe
     @Published var activeBookID: UUID? = nil
     @Published var selectedVoice: AVSpeechSynthesisVoice? = nil
 
-    /// All available speech voices on device
+    /// All available speech voices on device sorted by natural quality
     var availableVoices: [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices()
+        NaturalSpeechVoiceSelector.shared.sortedAvailableVoices
     }
 
     /// User's custom iOS Personal Voices (Settings -> Accessibility -> Personal Voice)
@@ -139,6 +139,16 @@ final class AudiobookPlaybackManager: NSObject, ObservableObject, AVSpeechSynthe
         }
     }
 
+    /// Sets voice for speech synthesis.
+    func setVoice(_ voice: AVSpeechSynthesisVoice) {
+        self.selectedVoice = voice
+        NaturalSpeechVoiceSelector.shared.preferredVoiceIdentifier = voice.identifier
+        if isPlaying {
+            synthesizer.stopSpeaking(at: .immediate)
+            speakParagraph(at: currentParagraphIndex)
+        }
+    }
+
     /// Stop playback and release audio session.
     func stop() {
         synthesizer.stopSpeaking(at: .immediate)
@@ -170,17 +180,12 @@ final class AudiobookPlaybackManager: NSObject, ObservableObject, AVSpeechSynthe
         onParagraphChanged?(index)
 
         let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * playbackRate
-        utterance.pitchMultiplier = 1.0
-        utterance.volume = 1.0
-
-        if let selectedVoice {
-            utterance.voice = selectedVoice
-        } else if let personalVoice = personalVoices.first {
-            utterance.voice = personalVoice
-        } else if let defaultVoice = AVSpeechSynthesisVoice(language: Locale.current.language.languageCode?.identifier ?? "en-US") {
-            utterance.voice = defaultVoice
-        }
+        NaturalSpeechVoiceSelector.shared.configureNaturalUtterance(
+            utterance,
+            voice: selectedVoice ?? personalVoices.first,
+            speechRate: playbackRate,
+            isSentenceUnit: true
+        )
 
         activeUtterance = utterance
         isPlaying = true

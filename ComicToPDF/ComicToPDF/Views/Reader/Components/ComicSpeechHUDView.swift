@@ -293,10 +293,14 @@ final class VoicePreviewSynthesizer: NSObject, ObservableObject, AVSpeechSynthes
         activeTestingVoiceId = voice.identifier
         HapticEngine.selection()
 
-        let sampleText = "Hello! This is \(voice.name). Ready to read aloud."
+        let sampleText = "Hello! This is \(voice.name). Ready to read aloud with natural cadence."
         let utterance = AVSpeechUtterance(string: sampleText)
-        utterance.voice = voice
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        NaturalSpeechVoiceSelector.shared.configureNaturalUtterance(
+            utterance,
+            voice: voice,
+            speechRate: 1.0,
+            isSentenceUnit: true
+        )
         synth.speak(utterance)
     }
 
