@@ -270,6 +270,21 @@ struct SettingsView: View {
             }
             
             NavigationLink {
+                NaturalSpeechSettingsView()
+            } label: {
+                HStack(spacing: 12) {
+                    settingsIcon("waveform.and.mic", color: .indigo)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Speech & Natural Narration")
+                            .font(.body)
+                        Text("Apple neural voices, reading cadence, language")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            NavigationLink {
                 eInkExportSubpage
             } label: {
                 HStack(spacing: 12) {
@@ -277,7 +292,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("E-Ink & Device Export")
                             .font(.body)
-                        Text("Send to Kindle, target profiles, dithering")
+                        Text("Send to E-Reader, target profiles, dithering")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
@@ -625,10 +640,10 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var sendToKindleSection: some View {
-        Section(header: Text("Send to Kindle")) {
+        Section(header: Text("E-Reader Device Delivery")) {
             HStack {
                 settingsIcon("envelope.fill", color: Color(UIColor.systemGray))
-                TextField("Your @kindle.com Email", text: $kindleEmail)
+                TextField("Device Delivery Email", text: $kindleEmail)
                     .keyboardType(.emailAddress)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
@@ -690,7 +705,7 @@ struct SettingsView: View {
             }
             
             HStack {
-                settingsIcon("kindle", color: Color(UIColor.systemGray))
+                settingsIcon("ipad.and.iphone", color: Color(UIColor.systemGray))
                 Toggle("Optimize for E-Readers", isOn: $settingsManager.conversionSettings.optimizeForDevice)
             }
             
@@ -724,7 +739,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Slice Landscape Spreads into 2 Pages")
                             .font(.system(size: 15))
-                        Text("Keep OFF for native full-bleed landscape on Kindle & Reader")
+                        Text("Keep OFF for native full-bleed landscape on E-Readers")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     }
@@ -749,7 +764,7 @@ struct SettingsView: View {
                 settingsIcon("books.vertical.fill", color: .purple)
                 Picker("Split Omnibus at Size", selection: $settingsManager.conversionSettings.omnibusSplitThresholdMB) {
                     Text("100 MB").tag(100)
-                    Text("200 MB (Kindle Safe)").tag(200)
+                    Text("200 MB (Device Safe)").tag(200)
                     Text("500 MB").tag(500)
                     Text("1,000 MB").tag(1000)
                     Text("Infinite / Disable Split").tag(99999)

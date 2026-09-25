@@ -391,11 +391,11 @@ struct StudyNotebookView: View {
             .help("Paste copied text or web article from clipboard")
 
             let exportMenu = Menu {
-                Section("Document & Kindle Export") {
+                Section("Document & E-Reader Export") {
                     Button { exportNotes(as: .pdf) } label: { Label("Export as PDF (.pdf)", systemImage: "doc.richtext") }
                     Button { exportEPUB() } label: { Label("Export as EPUB (.epub)", systemImage: "book.pages") }
-                    Button { sendToKindle(as: .pdf) } label: { Label("Send to Kindle (PDF)", systemImage: "paperplane") }
-                    Button { sendToKindle(as: .epub) } label: { Label("Send to Kindle (EPUB)", systemImage: "paperplane.fill") }
+                    Button { sendToKindle(as: .pdf) } label: { Label("Send to E-Reader (PDF)", systemImage: "paperplane") }
+                    Button { sendToKindle(as: .epub) } label: { Label("Send to E-Reader (EPUB)", systemImage: "paperplane.fill") }
                     Button { saveToLibraryAsBook(format: .pdf) } label: { Label("Save as PDF Book in Library", systemImage: "book.badge.plus") }
                     Button { saveToLibraryAsBook(format: .epub) } label: { Label("Save as EPUB Book in Library", systemImage: "books.vertical") }
                 }

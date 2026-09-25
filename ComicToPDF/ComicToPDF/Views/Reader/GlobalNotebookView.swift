@@ -1280,7 +1280,7 @@ struct GlobalNotebookView: View {
                     Label("Edit Details", systemImage: "pencil")
                 }
 
-                Section("Export & Kindle") {
+                Section("Export & E-Reader Delivery") {
                     Button {
                         exportNotebook(notebook, format: .pdf)
                     } label: {
@@ -1296,13 +1296,13 @@ struct GlobalNotebookView: View {
                     Button {
                         sendNotebookToKindle(notebook, format: .pdf)
                     } label: {
-                        Label("Send to Kindle (PDF)", systemImage: "paperplane")
+                        Label("Send to E-Reader (PDF)", systemImage: "paperplane")
                     }
 
                     Button {
                         sendNotebookToKindle(notebook, format: .epub)
                     } label: {
-                        Label("Send to Kindle (EPUB)", systemImage: "paperplane.fill")
+                        Label("Send to E-Reader (EPUB)", systemImage: "paperplane.fill")
                     }
 
                     Button {

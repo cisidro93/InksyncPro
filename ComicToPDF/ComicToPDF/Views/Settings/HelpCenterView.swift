@@ -63,7 +63,7 @@ struct HelpCenterView: View {
                     HelpRow(
                         icon: "icloud.and.arrow.up.fill",
                         iconColor: .cyan,
-                        title: "Quick Send to Kindle",
+                        title: "Quick Send to E-Reader",
                         subtitle: "Share directly to your device"
                     )
                 }
@@ -191,7 +191,7 @@ struct QuickStartGuideView: View {
                 StepCard(
                     stepNumber: 3,
                     title: "Choose Conversion Mode",
-                    description: "Select 'Standard' for full-page reading or 'Guided View' for panel-by-panel navigation on Kindle.",
+                    description: "Select 'Standard' for full-page reading or 'Guided View' for panel-by-panel navigation on e-readers.",
                     icon: "slider.horizontal.3",
                     color: .purple
                 )
@@ -209,7 +209,7 @@ struct QuickStartGuideView: View {
                 StepCard(
                     stepNumber: 5,
                     title: "Convert & Export",
-                    description: "Tap 'Start Conversion', then long-press the converted file to export via 'Cloud Sync (Send to Kindle)'.",
+                    description: "Tap 'Start Conversion', then long-press the converted file to export via 'E-Reader Delivery'.",
                     icon: "icloud.and.arrow.up.fill",
                     color: .green
                 )
@@ -300,9 +300,9 @@ struct FeatureGuideView: View {
                     FeatureContent(
                         sections: [
                             ("Standard Mode", "Preserves original page layout. Best for tablets and large e-readers."),
-                            ("Guided View Mode", "Adds panel-by-panel navigation. Perfect for Kindle devices where you want to zoom into each panel."),
+                            ("Guided View Mode", "Adds panel-by-panel navigation. Perfect for portable e-readers where you want to zoom into each panel."),
                             ("Compression Options", "Choose between High Quality (largest files), Balanced, or Compact for smaller file sizes."),
-                            ("Auto-Split", "Large files can be automatically split to meet Kindle's file size limits.")
+                            ("Auto-Split", "Large files can be automatically split to meet device file size limits.")
                         ]
                     )
                     
@@ -319,10 +319,10 @@ struct FeatureGuideView: View {
                 case .cloudSync:
                     FeatureContent(
                         sections: [
-                            ("Send to Kindle", "Long-press a converted file and select 'Quick Send to Kindle' from the share menu."),
-                            ("Kindle Email", "Files are sent to your Kindle's email address (@kindle.com) for delivery."),
-                            ("WiFi Sync", "Connect your Kindle to WiFi to receive the file. Delivery typically takes 2-5 minutes."),
-                            ("Library Access", "Your comic will appear in your Kindle library on all linked devices.")
+                            ("Send to E-Reader", "Long-press a converted file and select 'Send to E-Reader' from the share menu."),
+                            ("Delivery Email", "Files are sent to your dedicated e-reader delivery email address for direct over-the-air sync."),
+                            ("WiFi Sync", "Connect your e-reader to WiFi to receive the document. Delivery typically takes 2-5 minutes."),
+                            ("Library Access", "Your comic will appear in your device library on all linked readers.")
                         ]
                     )
                     
@@ -369,18 +369,18 @@ struct FAQView: View {
     var body: some View {
         List {
             FAQItem(
-                question: "Why does my Kindle show fewer pages than expected?",
-                answer: "In landscape mode, Kindle may display two pages as a 'spread'. This is normal behavior for reflowable content. The total content is the same."
+                question: "Why does my e-reader show fewer pages than expected?",
+                answer: "In landscape mode, readers may display two pages as a 'spread'. This is normal behavior for reflowable content. The total content is the same."
             )
             
             FAQItem(
                 question: "What's the difference between Standard and Guided View?",
-                answer: "Standard mode shows full pages as-is. Guided View adds panel-by-panel navigation, letting you tap through each frame - ideal for smaller Kindle screens."
+                answer: "Standard mode shows full pages as-is. Guided View adds panel-by-panel navigation, letting you tap through each frame - ideal for smaller e-ink screens."
             )
             
             FAQItem(
-                question: "Why isn't my file appearing on Kindle?",
-                answer: "Ensure your Kindle is connected to WiFi. Files sent via Cloud Sync typically arrive within 2-5 minutes. Check your Kindle's email settings and spam folder."
+                question: "Why isn't my file appearing on my e-reader?",
+                answer: "Ensure your e-reader is connected to WiFi. Files sent via Device Delivery typically arrive within 2-5 minutes. Check your device's delivery email settings and spam filter."
             )
             
             FAQItem(
@@ -456,8 +456,8 @@ struct TroubleshootingView: View {
                 )
                 
                 TroubleshootItem(
-                    issue: "File too large for Kindle",
-                    solution: "Enable Auto-Split in Settings to automatically break large files into smaller parts that Kindle can accept."
+                    issue: "File too large for e-reader",
+                    solution: "Enable Auto-Split in Settings to automatically break large files into smaller parts that your device can accept."
                 )
                 
                 TroubleshootItem(
@@ -466,8 +466,8 @@ struct TroubleshootingView: View {
                 )
                 
                 TroubleshootItem(
-                    issue: "Kindle email delivery fails",
-                    solution: "Verify your Kindle email address ends with @kindle.com. Check that your sending email is approved in Amazon's 'Approved Personal Document E-mail List'."
+                    issue: "Device email delivery fails",
+                    solution: "Verify your device delivery email address is correct and that your sending email is in your e-reader provider's approved sender list."
                 )
             }
             

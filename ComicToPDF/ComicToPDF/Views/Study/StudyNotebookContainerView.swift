@@ -257,7 +257,7 @@ public struct StudyNotebookContainerView: View {
                             }
                         }
                     } label: {
-                        Label("Export Note to PDF / Kindle", systemImage: "paperplane")
+                        Label("Send Note to E-Reader (PDF)", systemImage: "paperplane")
                     }
 
                     Button {
