@@ -16,6 +16,8 @@ enum AnnotationTypeFilter: String, CaseIterable, Identifiable {
         case .notes: return "text.alignleft"
         }
     }
+}
+
 // MARK: - Silk Ribbon Bookmark Component (Direction B Signature)
 struct RibbonBookmarkShape: Shape {
     var notchDepth: CGFloat = 5
