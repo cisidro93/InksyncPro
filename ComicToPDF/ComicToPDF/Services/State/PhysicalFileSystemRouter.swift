@@ -502,7 +502,7 @@ class PhysicalFileSystemRouter {
             let accessing = !Self.isSandboxURL(url) ? url.startAccessingSecurityScopedResource() : false
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
-            guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
+            guard let archive = Archive(url: url, accessMode: .read) else { return nil }
             
             let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
             var candidateEntries: [(path: String, entry: ZIPFoundation.Entry, size: UInt64)] = []
