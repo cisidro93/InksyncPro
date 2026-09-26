@@ -151,14 +151,21 @@ struct CBTExtractor {
                     return img
                 }
                 if let img = image {
-                    return img
+                    let modeRaw = UserDefaults.standard.string(forKey: "coverSpreadCropMode") ?? CoverSpreadCropMode.rightHalf.rawValue
+                    let mode = CoverSpreadCropMode(rawValue: modeRaw) ?? .rightHalf
+                    return ImageProcessor.cropSpreadCover(image: img, mode: mode)
                 }
             }
 
             offset = newOffset
         }
 
-        return firstValidImage
+        if let fallback = firstValidImage {
+            let modeRaw = UserDefaults.standard.string(forKey: "coverSpreadCropMode") ?? CoverSpreadCropMode.rightHalf.rawValue
+            let mode = CoverSpreadCropMode(rawValue: modeRaw) ?? .rightHalf
+            return ImageProcessor.cropSpreadCover(image: fallback, mode: mode)
+        }
+        return nil
     }
 
     /// Synchronously retrieves the number of images inside a TAR/CBT archive.

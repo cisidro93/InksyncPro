@@ -308,9 +308,19 @@ struct PPLReaderView: View {
         if isPortrait && isSpread && autoSplitPortraitSpreads, let img = bufferManager.currentImage {
             let rightHalf = NormalizedRect(x: 500, y: 0, width: 500, height: 1000)
             let leftHalf  = NormalizedRect(x: 0,   y: 0, width: 500, height: 1000)
-            let rect = isMangaMode
-                ? (splitHalf == 0 ? rightHalf : leftHalf)
-                : (splitHalf == 0 ? leftHalf  : rightHalf)
+            let isCover = currentPageIndex == 0
+            let rect: NormalizedRect = {
+                if isCover {
+                    // For a wraparound cover, front cover is on the right half in Western/LTR
+                    return isMangaMode
+                        ? (splitHalf == 0 ? leftHalf : rightHalf)
+                        : (splitHalf == 0 ? rightHalf : leftHalf)
+                } else {
+                    return isMangaMode
+                        ? (splitHalf == 0 ? rightHalf : leftHalf)
+                        : (splitHalf == 0 ? leftHalf  : rightHalf)
+                }
+            }()
             MetalCanvasView(image: img, lockedRect: rect, isPPLEnabled: true)
                 .id("single-split-\(currentPageIndex)")
         } else {

@@ -86,6 +86,9 @@ struct AdvancedMetadataEditorView: View {
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var customCoverImage: UIImage? = nil
     @State private var currentCoverImage: UIImage? = nil
+    @State private var rawSourceCoverImage: UIImage? = nil
+    @State private var hasSpreadCover: Bool = false
+    @State private var selectedSpreadMode: CoverSpreadCropMode = .rightHalf
     
     private var isPad: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
@@ -129,7 +132,11 @@ struct AdvancedMetadataEditorView: View {
             .onChange(of: selectedPhotoItem) { _, newItem in
                 Task {
                     if let data = try? await newItem?.loadTransferable(type: Data.self), let uiImage = UIImage(data: data) {
-                        await MainActor.run { self.customCoverImage = uiImage }
+                        await MainActor.run {
+                            self.customCoverImage = uiImage
+                            self.rawSourceCoverImage = uiImage
+                            self.hasSpreadCover = ImageProcessor.isDoublePageSpread(size: uiImage.size)
+                        }
                     }
                 }
             }
@@ -139,43 +146,94 @@ struct AdvancedMetadataEditorView: View {
     @ViewBuilder
     private var coverImageSection: some View {
         CustomGlassCard(title: "Cover Image", icon: "photo.artframe") {
-            HStack {
-                Spacer()
-                ZStack(alignment: .bottomTrailing) {
-                    Group {
-                        if let customCover = customCoverImage {
-                            Image(uiImage: customCover)
-                                .resizable()
-                                .scaledToFill()
-                        } else if let currentCover = currentCoverImage {
-                            Image(uiImage: currentCover)
-                                .resizable()
-                                .scaledToFill()
-                        } else {
-                            Rectangle()
-                                .fill(Color.inkSurface)
-                                .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(Theme.textSecondary))
+            VStack(spacing: 14) {
+                HStack {
+                    Spacer()
+                    ZStack(alignment: .bottomTrailing) {
+                        Group {
+                            if let customCover = customCoverImage {
+                                Image(uiImage: customCover)
+                                    .resizable()
+                                    .scaledToFill()
+                            } else if let currentCover = currentCoverImage {
+                                Image(uiImage: currentCover)
+                                    .resizable()
+                                    .scaledToFill()
+                            } else {
+                                Rectangle()
+                                    .fill(Color.inkSurface)
+                                    .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(Theme.textSecondary))
+                            }
+                        }
+                        .frame(width: 160, height: 230)
+                        .cornerRadius(12)
+                        .clipped()
+                        .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                        )
+                        
+                        PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
+                            Image(systemName: "camera.circle.fill")
+                                .font(.system(size: isPad ? 38 : 34))
+                                .foregroundStyle(.white, Color.inkBlue)
+                                .shadow(radius: 4)
+                                .offset(x: 12, y: 12)
                         }
                     }
-                    .frame(width: 160, height: 230)
-                    .cornerRadius(12)
-                    .clipped()
-                    .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                    )
-                    
-                    PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
-                        Image(systemName: "camera.circle.fill")
-                            .font(.system(size: isPad ? 38 : 34))
-                            .foregroundStyle(.white, Color.inkBlue)
-                            .shadow(radius: 4)
-                            .offset(x: 12, y: 12)
-                    }
+                    Spacer()
                 }
-                Spacer()
+
+                if hasSpreadCover {
+                    VStack(spacing: 8) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "rectangle.split.2x1")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(Color.inkBlue)
+                            Text("Double-Page Spread Cover Detected")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundColor(Color.inkText)
+                        }
+
+                        HStack(spacing: 8) {
+                            spreadCropButton(title: "Right (Front)", icon: "rectangle.righthalf.inset.filled", mode: .rightHalf)
+                            spreadCropButton(title: "Left (Front)", icon: "rectangle.lefthalf.inset.filled", mode: .leftHalf)
+                            spreadCropButton(title: "Full", icon: "rectangle.split.2x1", mode: .fullSpread)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
             }
+        }
+    }
+
+    private func spreadCropButton(title: String, icon: String, mode: CoverSpreadCropMode) -> some View {
+        let isSelected = selectedSpreadMode == mode
+        return Button {
+            HapticEngine.selection()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                selectedSpreadMode = mode
+                if let raw = rawSourceCoverImage {
+                    customCoverImage = ImageProcessor.cropSpreadCover(image: raw, mode: mode)
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(isSelected ? Color.inkBlue : Color.inkSurface)
+            .foregroundColor(isSelected ? .white : Color.inkSecondary)
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? Color.clear : Color.primary.opacity(0.12), lineWidth: 1)
+            )
         }
     }
     
@@ -223,10 +281,23 @@ struct AdvancedMetadataEditorView: View {
         self.volume = pdf.metadata.volume ?? ""
         self.issueNumber = pdf.metadata.issueNumber ?? ""
         self.tags = pdf.metadata.tags
+        self.selectedSpreadMode = pdf.metadata.coverSpreadMode ?? .rightHalf
         
+        let fileURL = pdf.url
         Task {
             if let image = await conversionManager.loadCoverThumbnail(for: pdf) {
                 await MainActor.run { self.currentCoverImage = image }
+            }
+            let raw = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                PhysicalFileSystemRouter.extractCoverImageStatic(from: fileURL, cropSpread: false)
+            }.value
+            if let raw = raw {
+                await MainActor.run {
+                    self.rawSourceCoverImage = raw
+                    if ImageProcessor.isDoublePageSpread(size: raw.size) {
+                        self.hasSpreadCover = true
+                    }
+                }
             }
         }
     }
@@ -240,6 +311,9 @@ struct AdvancedMetadataEditorView: View {
         updatedMeta.volume = volume.isEmpty ? nil : volume
         updatedMeta.issueNumber = issueNumber.isEmpty ? nil : issueNumber
         updatedMeta.tags = tags
+        if hasSpreadCover {
+            updatedMeta.coverSpreadMode = selectedSpreadMode
+        }
         
         conversionManager.updateMetadata(for: pdf, with: updatedMeta, newCover: customCoverImage)
         dismiss()

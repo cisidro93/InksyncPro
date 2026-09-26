@@ -1131,7 +1131,7 @@ class PhysicalFileSystemRouter {
         return .unknown
     }
 
-    nonisolated static func extractCoverImageStatic(from url: URL) -> UIImage? {
+    nonisolated static func extractCoverImageStatic(from url: URL, cropSpread: Bool = true) -> UIImage? {
         let ext = url.pathExtension.lowercased()
         let detected = detectFormat(at: url)
         
@@ -1139,6 +1139,9 @@ class PhysicalFileSystemRouter {
         let isZIP = detected == .zip || (detected == .unknown && ["cbz", "zip", "epub"].contains(ext))
         let isRAR = detected == .rar || (detected == .unknown && (ext == "cbr" || ext == "rar"))
         let isCBT = ext == "cbt" || ext == "tar"
+
+        let defaultSpreadModeRaw = UserDefaults.standard.string(forKey: "coverSpreadCropMode") ?? CoverSpreadCropMode.rightHalf.rawValue
+        let defaultSpreadMode = CoverSpreadCropMode(rawValue: defaultSpreadModeRaw) ?? .rightHalf
 
         if isPDF {
             let accessing = !isSandboxURL(url) ? url.startAccessingSecurityScopedResource() : false
@@ -1157,7 +1160,7 @@ class PhysicalFileSystemRouter {
                 let drawPage: (PDFPage) -> UIImage? = { page in
                     let pageBounds = page.bounds(for: .mediaBox)
                     guard pageBounds.width > 0 && pageBounds.height > 0 && !pageBounds.width.isNaN && !pageBounds.height.isNaN else { return nil }
-                    let size = CGSize(width: 300, height: 450)
+                    let size = CGSize(width: 600, height: 900)
                     let scale = min(size.width / pageBounds.width, size.height / pageBounds.height)
                     let scaledSize = CGSize(width: pageBounds.width * scale, height: pageBounds.height * scale)
                     guard scaledSize.width > 0 && scaledSize.height > 0 && !scaledSize.width.isNaN && !scaledSize.height.isNaN else { return nil }
@@ -1174,44 +1177,41 @@ class PhysicalFileSystemRouter {
                     }
                 }
                 
-                // Try up to the first 8 pages to find a portrait cover
+                // Try up to the first 8 pages to find a valid cover
                 var firstSpreadImage: UIImage? = nil
                 var firstValidPageImage: UIImage? = nil
                 for i in 0..<min(document.pageCount, 8) {
                     let pageImage = autoreleasepool { () -> UIImage? in
                         guard let page = document.page(at: i) else { return nil }
-                        let bounds = page.bounds(for: .mediaBox)
-                        // Skip landscape (two-page spread)
-                        if bounds.width > bounds.height && document.pageCount > 1 {
-                            return drawPage(page)
+                        guard let rendered = drawPage(page) else { return nil }
+                        if firstValidPageImage == nil { firstValidPageImage = rendered }
+                        if PhysicalFileSystemRouter.containsDisclaimerText(in: rendered) {
+                            Logger.shared.log("[Disclaimer Detector] Skipping PDF page \(i) due to disclaimer/warning text.", category: "FileSystem", type: .warning)
+                            return nil
                         }
-                        if let portrait = drawPage(page) {
-                            if firstValidPageImage == nil { firstValidPageImage = portrait }
-                            if PhysicalFileSystemRouter.containsDisclaimerText(in: portrait) {
-                                Logger.shared.log("[Disclaimer Detector] Skipping PDF page \(i) due to disclaimer/warning text.", category: "FileSystem", type: .warning)
-                                return nil
-                            }
-                            return portrait
-                        }
-                        return nil
+                        return rendered
                     }
                     
                     if let img = pageImage {
-                        if let page = document.page(at: i) {
-                            let bounds = page.bounds(for: .mediaBox)
-                            if bounds.width > bounds.height && document.pageCount > 1 {
-                                if firstSpreadImage == nil { firstSpreadImage = img }
+                        if ImageProcessor.isDoublePageSpread(size: img.size) {
+                            if firstSpreadImage == nil { firstSpreadImage = img }
+                            if cropSpread {
+                                return ImageProcessor.cropSpreadCover(image: img, mode: defaultSpreadMode)
                             } else {
                                 return img
                             }
+                        } else {
+                            return img
                         }
                     }
                 }
                 
                 // Fallback to the first spread, or first valid page, or page 0 if nothing else worked
-                if let fallback = firstSpreadImage ?? firstValidPageImage { return fallback }
-                if let page = document.page(at: 0) {
-                    return drawPage(page)
+                if let fallback = firstSpreadImage ?? firstValidPageImage {
+                    return cropSpread ? ImageProcessor.cropSpreadCover(image: fallback, mode: defaultSpreadMode) : fallback
+                }
+                if let page = document.page(at: 0), let rendered = drawPage(page) {
+                    return cropSpread ? ImageProcessor.cropSpreadCover(image: rendered, mode: defaultSpreadMode) : rendered
                 }
                 return nil
             }
@@ -1275,7 +1275,7 @@ class PhysicalFileSystemRouter {
                                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                                 kCGImageSourceShouldCacheImmediately: true,
                                 kCGImageSourceCreateThumbnailWithTransform: true,
-                                kCGImageSourceThumbnailMaxPixelSize: 600
+                                kCGImageSourceThumbnailMaxPixelSize: 900
                             ] as CFDictionary
                             
                             if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
@@ -1295,15 +1295,22 @@ class PhysicalFileSystemRouter {
                     }
                     
                     if let img = image {
-                        if img.size.width > img.size.height {
+                        if ImageProcessor.isDoublePageSpread(size: img.size) {
                             if firstSpreadImage == nil { firstSpreadImage = img }
-                            continue
+                            if cropSpread {
+                                return ImageProcessor.cropSpreadCover(image: img, mode: defaultSpreadMode)
+                            } else {
+                                return img
+                            }
                         }
                         return img
                     }
                 }
                 
-                return firstSpreadImage ?? firstValidImage
+                if let fallback = firstSpreadImage ?? firstValidImage {
+                    return cropSpread ? ImageProcessor.cropSpreadCover(image: fallback, mode: defaultSpreadMode) : fallback
+                }
+                return nil
             } catch {
                 Logger.shared.log("Failed to extract archive: \(error.localizedDescription)", category: "Archive", type: .warning)
             }
@@ -1347,7 +1354,7 @@ class PhysicalFileSystemRouter {
                                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                                     kCGImageSourceShouldCacheImmediately: true,
                                     kCGImageSourceCreateThumbnailWithTransform: true,
-                                    kCGImageSourceThumbnailMaxPixelSize: 600
+                                    kCGImageSourceThumbnailMaxPixelSize: 900
                                 ] as CFDictionary
                                 
                                 if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
@@ -1365,13 +1372,20 @@ class PhysicalFileSystemRouter {
                             }
                         }
                         guard let img = image else { continue }
-                        if img.size.width > img.size.height {
+                        if ImageProcessor.isDoublePageSpread(size: img.size) {
                             if firstSpread == nil { firstSpread = img }
-                            continue
+                            if cropSpread {
+                                return ImageProcessor.cropSpreadCover(image: img, mode: defaultSpreadMode)
+                            } else {
+                                return img
+                            }
                         }
                         return img
                     }
-                    return firstSpread ?? firstValidImage
+                    if let fallback = firstSpread ?? firstValidImage {
+                        return cropSpread ? ImageProcessor.cropSpreadCover(image: fallback, mode: defaultSpreadMode) : fallback
+                    }
+                    return nil
                 } catch {
                     Logger.shared.log("PhysicalFileSystemRouter: CBR cover extraction failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .warning)
                     return nil

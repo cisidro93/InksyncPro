@@ -392,6 +392,23 @@ struct PDFMetadata: Codable, Equatable, Hashable, Sendable {
     var readingEventLabel: String?
     var isOptional: Bool?
     var hasFormatOverride: Bool? = false
+    
+    // ✅ Double-Page Spread Cover Crop Setting
+    public var coverSpreadMode: CoverSpreadCropMode? = nil
+}
+
+public enum CoverSpreadCropMode: String, Codable, CaseIterable, Sendable {
+    case rightHalf = "right"     // Standard Western / Wraparound (Front Cover is on the Right)
+    case leftHalf = "left"       // Alternative / Manga scans (Front Cover is on the Left)
+    case fullSpread = "full"     // Full uncropped wide spread
+    
+    public var displayName: String {
+        switch self {
+        case .rightHalf: return "Right Half (Front)"
+        case .leftHalf: return "Left Half (Front)"
+        case .fullSpread: return "Full Spread"
+        }
+    }
 }
 
 // âœ… NEW: Chapter Structure

@@ -721,6 +721,24 @@ struct SettingsView: View {
                 }
 
                 HStack(alignment: .center, spacing: 12) {
+                    settingsIcon("rectangle.portrait.split.2x1", color: .indigo)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Spread Cover Handling")
+                            .font(.system(size: 15))
+                        Text("Extracts front cover from double-page wraparounds")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Picker("", selection: $ebookPrefs.coverSpreadCropMode) {
+                        ForEach(CoverSpreadCropMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                HStack(alignment: .center, spacing: 12) {
                     settingsIcon("book.double.fill", color: .purple)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Pair Front Cover with Page 1")

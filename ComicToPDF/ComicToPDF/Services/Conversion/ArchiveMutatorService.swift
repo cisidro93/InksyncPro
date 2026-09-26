@@ -324,13 +324,24 @@ class ArchiveMutatorService {
         
         _ = try archive.extract(targetEntry, to: tempURL)
         
-        guard let extractedImage = UIImage(contentsOfFile: tempURL.path),
-              let jpegData = extractedImage.jpegData(compressionQuality: 0.9) else {
+        guard let extractedImage = UIImage(contentsOfFile: tempURL.path) else {
             try? fileManager.removeItem(at: tempURL)
             throw NSError(domain: "CoverError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to render image payload"])
         }
+        try? fileManager.removeItem(at: tempURL)
         
-        try? fileManager.removeItem(at: tempURL) 
+        let finalImage: UIImage
+        if ImageProcessor.isDoublePageSpread(size: extractedImage.size) {
+            let modeRaw = UserDefaults.standard.string(forKey: "coverSpreadCropMode") ?? CoverSpreadCropMode.rightHalf.rawValue
+            let mode = CoverSpreadCropMode(rawValue: modeRaw) ?? .rightHalf
+            finalImage = ImageProcessor.cropSpreadCover(image: extractedImage, mode: mode)
+        } else {
+            finalImage = extractedImage
+        }
+        
+        guard let jpegData = finalImage.jpegData(compressionQuality: 0.9) else {
+            throw NSError(domain: "CoverError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image payload"])
+        } 
         
         let variantID = UUID()
         let variantURL = coversDir.appendingPathComponent("\(variantID.uuidString).jpg")

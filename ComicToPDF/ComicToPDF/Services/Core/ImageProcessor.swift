@@ -136,6 +136,53 @@ struct ImageProcessor {
         return slices
     }
     
+    // MARK: - Double-Page Spread Cover Processing
+
+    /// Returns true if the image dimensions represent a double-page horizontal spread (width > height * 1.15).
+    static func isDoublePageSpread(size: CGSize) -> Bool {
+        guard size.width > 0 && size.height > 0 && !size.width.isNaN && !size.height.isNaN else { return false }
+        return size.width > size.height * 1.15
+    }
+
+    /// Crops a double-page spread cover into a single portrait cover based on the specified mode.
+    /// In standard wraparound covers (Western comics and physical dust jackets):
+    /// [ Back Cover (Left) | Spine | Front Cover (Right) ] -> .rightHalf extracts the Front Cover!
+    static func cropSpreadCover(image: UIImage, mode: CoverSpreadCropMode = .rightHalf) -> UIImage {
+        if mode == .fullSpread { return image }
+        guard isDoublePageSpread(size: image.size) else { return image }
+
+        let cgImageToUse: CGImage?
+        if let cg = image.cgImage {
+            cgImageToUse = cg
+        } else {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = image.scale
+            let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+            let renderedImage = renderer.image { _ in image.draw(at: .zero) }
+            cgImageToUse = renderedImage.cgImage
+        }
+
+        guard let cgImage = cgImageToUse else { return image }
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
+        let halfWidth = width / 2.0
+
+        let cropRect: CGRect
+        switch mode {
+        case .rightHalf:
+            // Right half contains the front cover in standard wraparounds
+            cropRect = CGRect(x: halfWidth, y: 0, width: halfWidth, height: height)
+        case .leftHalf:
+            // Left half contains the front cover in inverted/manga scan formats
+            cropRect = CGRect(x: 0, y: 0, width: halfWidth, height: height)
+        case .fullSpread:
+            return image
+        }
+
+        guard let cropped = cgImage.cropping(to: cropRect) else { return image }
+        return UIImage(cgImage: cropped, scale: image.scale, orientation: image.imageOrientation)
+    }
+    
     // MARK: - Color Space Conversion & Verification
     
     /// Checks if a UIImage uses a wide color space (Display P3, Adobe RGB, etc.).

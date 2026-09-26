@@ -138,6 +138,17 @@ class EBookPreferences: ObservableObject {
     @AppStorage("ebook_showBatteryPercentage") var showBatteryPercentage: Bool = true
     @AppStorage("ebook_fullBleedSpreads") var fullBleedSpreads: Bool = true
     @AppStorage("ebook_linkCoverAsSpread") var linkCoverAsSpread: Bool = false
+    
+    // MARK: - Double-Page Spread Cover Crop Mode
+    @AppStorage("coverSpreadCropMode") var coverSpreadCropModeRaw: String = CoverSpreadCropMode.rightHalf.rawValue
+    var coverSpreadCropMode: CoverSpreadCropMode {
+        get { CoverSpreadCropMode(rawValue: coverSpreadCropModeRaw) ?? .rightHalf }
+        set {
+            coverSpreadCropModeRaw = newValue.rawValue
+            objectWillChange.send()
+        }
+    }
+    
     @AppStorage("volumeButtonsTurnPages") var volumeButtonsTurnPages: Bool = true {
         didSet { objectWillChange.send() }
     }
