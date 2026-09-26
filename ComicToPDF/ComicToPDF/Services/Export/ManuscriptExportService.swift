@@ -1,4 +1,5 @@
 import Foundation
+import ZIPFoundation
 
 // MARK: - ManuscriptExportService
 // Pure value-type service. No @MainActor dependency.
@@ -8,6 +9,7 @@ enum ManuscriptExportFormat {
     case markdownZip      // one .md file per chapter, zipped
     case plainText        // single .txt with --- chapter breaks
     case markdownBundle   // single .md with # Chapter headings
+    case epubKindle       // publication-grade EPUB with Kindle TOC
 }
 
 enum ManuscriptExportError: LocalizedError {
@@ -107,6 +109,171 @@ struct ManuscriptExportService {
             throw ManuscriptExportError.fileWriteFailed(filename)
         }
         return url
+    }
+
+    /// Exports all chapters as a Kindle-ready EPUB with professional typography, TOC, and metadata.
+    static func exportAsEPUB(
+        title: String,
+        author: String? = nil,
+        chapters: [(title: String, markdown: String)]
+    ) throws -> URL {
+        guard !chapters.isEmpty else { throw ManuscriptExportError.noDocuments }
+
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let epubDir = tempDir.appendingPathComponent("EPUB_Manuscript", isDirectory: true)
+        let oebpsDir = epubDir.appendingPathComponent("OEBPS", isDirectory: true)
+        let textDir = oebpsDir.appendingPathComponent("text", isDirectory: true)
+        let cssDir = oebpsDir.appendingPathComponent("css", isDirectory: true)
+        let metaInfDir = epubDir.appendingPathComponent("META-INF", isDirectory: true)
+
+        try fm.createDirectory(at: textDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: cssDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: metaInfDir, withIntermediateDirectories: true)
+
+        let css = """
+        @page { margin: 1in; }
+        body {
+            font-family: Georgia, Baskerville, "Times New Roman", serif;
+            font-size: 1.05em;
+            line-height: 1.6;
+            color: #111111;
+            margin: 0;
+            padding: 5%;
+        }
+        h1 {
+            font-size: 1.8em;
+            text-align: center;
+            margin-top: 2em;
+            margin-bottom: 1.5em;
+            font-weight: bold;
+        }
+        p {
+            text-indent: 1.5em;
+            margin-top: 0;
+            margin-bottom: 0;
+            text-align: justify;
+        }
+        p.first-p {
+            text-indent: 0;
+        }
+        .section-break {
+            text-align: center;
+            margin: 1.8em 0;
+            font-size: 1.2em;
+            letter-spacing: 0.3em;
+        }
+        """
+        try css.write(to: cssDir.appendingPathComponent("style.css"), atomically: true, encoding: .utf8)
+
+        var manifestItems: [String] = [
+            "<item id=\"css\" href=\"css/style.css\" media-type=\"text/css\"/>",
+            "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>",
+            "<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>"
+        ]
+        var spineItems: [String] = []
+        var tocEntries: [EPUBManifestBuilder.EPUBTOCEntry] = []
+
+        for (idx, chapter) in chapters.enumerated() {
+            let chapterID = String(format: "chapter_%03d", idx + 1)
+            let htmlName = "\(chapterID).xhtml"
+            let sanitizedTitle = chapter.title.isEmpty ? "Chapter \(idx + 1)" : chapter.title
+
+            var bodyHTML = "<h1>\(sanitizedTitle.xmlEscaped())</h1>\n"
+            let paragraphs = chapter.markdown.components(separatedBy: "\n\n")
+            for (pIdx, p) in paragraphs.enumerated() {
+                let trimmed = p.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty { continue }
+                if trimmed == "* * *" || trimmed == "***" || trimmed == "---" {
+                    bodyHTML += "    <div class=\"section-break\">* * *</div>\n"
+                } else {
+                    let cls = pIdx == 0 ? " class=\"first-p\"" : ""
+                    bodyHTML += "    <p\(cls)>\(trimmed.xmlEscaped())</p>\n"
+                }
+            }
+
+            let xhtml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en">
+            <head>
+                <meta charset="utf-8"/>
+                <title>\(sanitizedTitle.xmlEscaped())</title>
+                <link rel="stylesheet" type="text/css" href="../css/style.css"/>
+            </head>
+            <body>
+            \(bodyHTML)
+            </body>
+            </html>
+            """
+            try xhtml.write(to: textDir.appendingPathComponent(htmlName), atomically: true, encoding: .utf8)
+
+            manifestItems.append("<item id=\"\(chapterID)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
+            spineItems.append("<itemref idref=\"\(chapterID)\"/>")
+
+            tocEntries.append(
+                EPUBManifestBuilder.EPUBTOCEntry(
+                    title: sanitizedTitle,
+                    href: "text/\(htmlName)",
+                    playOrder: idx + 1
+                )
+            )
+        }
+
+        let firstHref = "text/chapter_001.xhtml"
+        let bookUUID = UUID().uuidString
+        let safeAuthor = (author?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? "Author"
+
+        let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstHref, tocEntries: tocEntries)
+        try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
+
+        let ncxContent = EPUBManifestBuilder.buildNCXContent(bookUUID: bookUUID, baseFilename: title, firstPageHref: firstHref, tocEntries: tocEntries)
+        try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
+
+        let modified = ISO8601DateFormatter().string(from: Date())
+        let opf = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="BookID">
+            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <dc:identifier id="BookID">urn:uuid:\(bookUUID)</dc:identifier>
+                <dc:title>\(title.xmlEscaped())</dc:title>
+                <dc:creator>\(safeAuthor.xmlEscaped())</dc:creator>
+                <dc:language>en</dc:language>
+                <meta property="dcterms:modified">\(modified)</meta>
+            </metadata>
+            <manifest>
+                \(manifestItems.joined(separator: "\n        "))
+            </manifest>
+            <spine toc="ncx">
+                \(spineItems.joined(separator: "\n        "))
+            </spine>
+            <guide>
+                <reference type="toc" title="Table of Contents" href="nav.xhtml#toc"/>
+                <reference type="text" title="Text" href="\(firstHref)"/>
+            </guide>
+        </package>
+        """
+        try opf.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
+
+        try EPUBManifestBuilder.containerXML.write(to: metaInfDir.appendingPathComponent("container.xml"), atomically: true, encoding: .utf8)
+
+        let cleanTitle = sanitize(title).isEmpty ? "Manuscript" : sanitize(title)
+        let outputZipURL = tempDir.appendingPathComponent("\(cleanTitle).epub")
+
+        let archive = try Archive(url: outputZipURL, accessMode: .create, pathEncoding: .utf8)
+        let mimetypePath = epubDir.appendingPathComponent("mimetype")
+        try "application/epub+zip".write(to: mimetypePath, atomically: true, encoding: .ascii)
+        try archive.addEntry(with: "mimetype", fileURL: mimetypePath, compressionMethod: .none)
+        try archive.addEntry(with: "META-INF/container.xml", fileURL: metaInfDir.appendingPathComponent("container.xml"), compressionMethod: .none)
+
+        let enumerator = fm.enumerator(at: oebpsDir, includingPropertiesForKeys: [.isDirectoryKey])
+        while let fileURL = enumerator?.nextObject() as? URL {
+            let res = try fileURL.resourceValues(forKeys: [.isDirectoryKey])
+            if res.isDirectory == true { continue }
+            let rel = fileURL.path.replacingOccurrences(of: epubDir.path + "/", with: "")
+            try archive.addEntry(with: rel, fileURL: fileURL, compressionMethod: .deflate)
+        }
+
+        return outputZipURL
     }
 
     // MARK: - Helpers

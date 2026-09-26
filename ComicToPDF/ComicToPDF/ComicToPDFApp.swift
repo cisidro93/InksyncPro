@@ -74,6 +74,7 @@ struct InksyncProApp: App {
             SDSeriesMemory.self,
             SDManuscriptProject.self,
             SDManuscriptDocument.self,
+            SDHoldingTrayItem.self,
             SDOPDSServer.self,
             SDNotebook.self,
             SDVocabularyWord.self

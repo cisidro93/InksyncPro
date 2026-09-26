@@ -389,7 +389,7 @@ final class ConversionOrchestrator: Sendable {
     }
     
     @discardableResult
-    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, customAuthor: String? = nil, explicitFormat: OutputFormat? = nil, manager: ConversionManager) async -> [ConvertedPDF] {
+    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, customAuthor: String? = nil, explicitFormat: OutputFormat? = nil, customChapterTitles: [String]? = nil, manager: ConversionManager) async -> [ConvertedPDF] {
         guard !sourceFiles.isEmpty else { return [] }
         
         #if os(iOS)
@@ -663,7 +663,7 @@ final class ConversionOrchestrator: Sendable {
                 var overrideCover: Data? = nil
                 if let baseCover = firstEPUBFileCoverData, generatedBatches.count > 1 { overrideCover = CoverGenerator.generateCover(from: baseCover, partNumber: batchIndex + 1, totalParts: generatedBatches.count) }
                 
-                try await merger.mergeEPUBs(sourceURLs: batch, outputURL: finalOutputURL, settings: jobSettings, overrideCoverData: overrideCover, sourceMetadata: sourceFiles.first?.metadata)
+                try await merger.mergeEPUBs(sourceURLs: batch, outputURL: finalOutputURL, settings: jobSettings, overrideCoverData: overrideCover, sourceMetadata: sourceFiles.first?.metadata, chapterTitles: customChapterTitles)
                 PhysicalFileSystemRouter.excludeFromBackup(at: finalOutputURL)
                 
                 let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0

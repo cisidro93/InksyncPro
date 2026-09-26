@@ -230,7 +230,7 @@ struct ReaderView: View {
                 // after pages are populated to avoid a race where pages.count is still 0.
                 trackProgress(isPageTurn: false)
                 let extracted = pages
-                toc = CBZTableOfContents.build(from: extracted)
+                toc = CBZTableOfContents.build(from: extracted, unzippedDir: unzippedDir)
             }
             // ─── Item 6: Restore AFTER pages are populated ───
             // prepareArchive() fills `pages` async; restoring page index before
@@ -238,7 +238,7 @@ struct ReaderView: View {
             .onChange(of: pages) { _, newPages in
                 guard !newPages.isEmpty else { return }
                 if fileURL.pathExtension.lowercased() != "pdf" {
-                    toc = CBZTableOfContents.build(from: newPages)
+                    toc = CBZTableOfContents.build(from: newPages, unzippedDir: unzippedDir)
                 }
                 // One-shot restore via hasRestoredProgress flag (not currentPageIndex
                 // comparison, which incorrectly skips books last read at page 0)

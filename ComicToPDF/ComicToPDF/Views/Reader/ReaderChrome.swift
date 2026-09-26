@@ -81,8 +81,13 @@ struct ReaderChrome: View {
     // Optional floating sub-header (e.g. Smart Tier / Quadrant HUD)
     var subHeaderView: AnyView? = nil
 
+    // Interactive Flow Flags
+    var flaggedPages: [Int] = []
+    var onSelectFlaggedPage: ((Int) -> Void)? = nil
+
     // Scrubber interaction state
     @State private var isScrubbing: Bool = false
+    @State private var showingFlagStrip: Bool = false
 
     init(
         title: String,
@@ -126,7 +131,9 @@ struct ReaderChrome: View {
         ambientColor: Color = .clear,
         sessionStartTime: Date? = nil,
         onSwipeDown: (() -> Void)? = nil,
-        subHeaderView: AnyView? = nil
+        subHeaderView: AnyView? = nil,
+        flaggedPages: [Int] = [],
+        onSelectFlaggedPage: ((Int) -> Void)? = nil
     ) {
         self.title = title
         self.pageText = pageText
@@ -170,6 +177,8 @@ struct ReaderChrome: View {
         self.sessionStartTime = sessionStartTime
         self.onSwipeDown = onSwipeDown
         self.subHeaderView = subHeaderView
+        self.flaggedPages = flaggedPages
+        self.onSelectFlaggedPage = onSelectFlaggedPage
     }
 
     // MARK: - Body
@@ -447,6 +456,19 @@ struct ReaderChrome: View {
                             Label("Page Thumbnails", systemImage: "square.grid.2x2")
                         }
                     }
+                    if !flaggedPages.isEmpty {
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                showingFlagStrip.toggle()
+                            }
+                            HapticEngine.selection()
+                        } label: {
+                            Label(
+                                showingFlagStrip ? "Hide Flow Flags" : "Flow Flags (\(flaggedPages.count))",
+                                systemImage: "flag.fill"
+                            )
+                        }
+                    }
                 }
                 Section("Tools") {
                     if let onAnnotations = onAnnotationsToggle {
@@ -521,6 +543,22 @@ struct ReaderChrome: View {
 
     private var bottomBar: some View {
         VStack(spacing: 0) {
+            // ── Interactive Flow Flags Strip ──────────────────────────────────
+            if showingFlagStrip && !flaggedPages.isEmpty {
+                PageFlagStrip(
+                    flaggedIndices: flaggedPages,
+                    totalPages: totalPages,
+                    selectedPageIndex: max(0, Int(round(currentProgress * Double(max(totalPages - 1, 1))))),
+                    onSelectPage: { page in
+                        onSelectFlaggedPage?(page)
+                    }
+                )
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             // ── Scrubber ───────────────────────────────────────────────────────
             if let custom = customScrubber {
                 custom

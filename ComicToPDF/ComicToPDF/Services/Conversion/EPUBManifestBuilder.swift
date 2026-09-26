@@ -43,38 +43,87 @@ public struct EPUBManifestBuilder {
         """
     }
 
-    /// Generates a nav.xhtml pointing to the correct first content page.
-    /// - Parameter firstPageHref: The href of the first spine item, e.g. "text/page_0001.xhtml"
-    ///   or "text/cover.xhtml" when a badged cover is prepended.
-    public static func buildNavContent(firstPageHref: String = "text/page_0001.xhtml", isManga: Bool = false) -> String {
-        // lang fixed to "en" — see buildCoverXHTML comment. isManga param kept for
-        // call-site compatibility but does not affect the output language tag.
+    public struct EPUBTOCEntry: Sendable {
+        public let title: String
+        public let href: String
+        public let playOrder: Int
+
+        public init(title: String, href: String, playOrder: Int) {
+            self.title = title
+            self.href = href
+            self.playOrder = playOrder
+        }
+    }
+
+    /// Generates a nav.xhtml pointing to the correct first content page and chapter navigation.
+    /// - Parameters:
+    ///   - firstPageHref: The href of the first spine item, e.g. "text/page_0001.xhtml"
+    ///   - tocEntries: Optional list of chapter navigation entries for merged volumes or multi-part issues.
+    public static func buildNavContent(
+        firstPageHref: String = "text/page_0001.xhtml",
+        tocEntries: [EPUBTOCEntry] = [],
+        isManga: Bool = false
+    ) -> String {
+        let listItems: String
+        if tocEntries.isEmpty {
+            listItems = "<li><a href=\"\(firstPageHref)\">Start Reading</a></li>"
+        } else {
+            listItems = tocEntries.map { entry in
+                "<li><a href=\"\(entry.href)\">\(entry.title.xmlEscaped())</a></li>"
+            }.joined(separator: "\n                ")
+        }
+
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
         <head><title>Navigation</title><meta charset="utf-8" /></head>
         <body>
-            <nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol><li><a href="\(firstPageHref)">Start Reading</a></li></ol></nav>
-            <nav epub:type="landmarks"><h1>Landmarks</h1><ol><li><a epub:type="cover" href="\(firstPageHref)">Cover</a></li><li><a epub:type="bodymatter" href="\(firstPageHref)">Start</a></li></ol></nav>
+            <nav epub:type="toc" id="toc"><h1>Table of Contents</h1>
+            <ol>
+                \(listItems)
+            </ol>
+            </nav>
+            <nav epub:type="landmarks"><h1>Landmarks</h1><ol><li><a epub:type="cover" href="\(firstPageHref)">Cover</a></li><li><a epub:type="toc" href="#toc">Table of Contents</a></li><li><a epub:type="bodymatter" href="\(firstPageHref)">Start</a></li></ol></nav>
         </body>
         </html>
         """
     }
 
-    @available(*, deprecated, renamed: "buildNavContent(firstPageHref:)")
+    @available(*, deprecated, renamed: "buildNavContent(firstPageHref:tocEntries:isManga:)")
     public static let navContent = buildNavContent()
 
-    public static func buildNCXContent(bookUUID: String, baseFilename: String, firstPageHref: String = "text/page_0001.xhtml") -> String {
+    public static func buildNCXContent(
+        bookUUID: String,
+        baseFilename: String,
+        firstPageHref: String = "text/page_0001.xhtml",
+        tocEntries: [EPUBTOCEntry] = []
+    ) -> String {
+        let navPoints: String
+        if tocEntries.isEmpty {
+            navPoints = """
+                <navPoint id="navPoint-1" playOrder="1">
+                    <navLabel><text>Start</text></navLabel>
+                    <content src="\(firstPageHref)"/>
+                </navPoint>
+            """
+        } else {
+            navPoints = tocEntries.map { entry in
+                """
+                    <navPoint id="navPoint-\(entry.playOrder)" playOrder="\(entry.playOrder)">
+                        <navLabel><text>\(entry.title.xmlEscaped())</text></navLabel>
+                        <content src="\(entry.href)"/>
+                    </navPoint>
+                """
+            }.joined(separator: "\n")
+        }
+
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
             <head><meta name="dtb:uid" content="urn:uuid:\(bookUUID)"/></head>
             <docTitle><text>\(baseFilename.xmlEscaped())</text></docTitle>
             <navMap>
-                <navPoint id="navPoint-1" playOrder="1">
-                    <navLabel><text>Start</text></navLabel>
-                    <content src="\(firstPageHref)"/>
-                </navPoint>
+            \(navPoints)
             </navMap>
         </ncx>
         """
@@ -138,6 +187,7 @@ public struct EPUBManifestBuilder {
             </spine>
             <guide>
                 <reference type="cover" title="Cover" href="\(firstPageHref)"/>
+                <reference type="toc" title="Table of Contents" href="nav.xhtml#toc"/>
                 <reference type="text" title="Text" href="\(firstPageHref)"/>
             </guide>
         </package>

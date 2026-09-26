@@ -200,14 +200,28 @@ public struct CornellNoteEditorView: View {
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
             
-            TextEditor(text: $note.cueColumnText)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundColor(.inkTextPrimary)
-                .lineSpacing(4)
-                .padding(.horizontal, 6)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
-                .focused($focusedField, equals: .cueColumn)
+            ZStack(alignment: .topLeading) {
+                if note.cueColumnText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("• Key questions\n• Vocabulary\n• Review cues")
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundColor(.inkTextTertiary.opacity(0.45))
+                        .italic()
+                        .lineSpacing(4)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 8)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+
+                TextEditor(text: $note.cueColumnText)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(.inkTextPrimary)
+                    .lineSpacing(4)
+                    .padding(.horizontal, 6)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+                    .focused($focusedField, equals: .cueColumn)
+            }
         }
         .background(Color.primary.opacity(0.02))
     }
@@ -274,14 +288,28 @@ public struct CornellNoteEditorView: View {
                 .padding(.horizontal, isCompact ? 8 : 12)
                 .padding(.top, 8)
                 
-                TextEditor(text: $note.mainNotesMarkdown)
-                    .font(.system(size: 14, weight: .regular, design: .rounded))
-                    .foregroundColor(.inkTextPrimary)
-                    .lineSpacing(5)
-                    .padding(.horizontal, 8)
-                    .scrollContentBackground(.hidden)
-                    .background(Color.clear)
-                    .focused($focusedField, equals: .mainNotes)
+                ZStack(alignment: .topLeading) {
+                    if note.mainNotesMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("# Core Concepts & Big Ideas\n• Supporting arguments & proofs\n• Formulas & definitions\n==Cloze recall markers==")
+                            .font(.system(size: 14, weight: .regular, design: .rounded))
+                            .foregroundColor(.inkTextTertiary.opacity(0.45))
+                            .italic()
+                            .lineSpacing(5)
+                            .padding(.horizontal, 12)
+                            .padding(.top, 8)
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                    }
+
+                    TextEditor(text: $note.mainNotesMarkdown)
+                        .font(.system(size: 14, weight: .regular, design: .rounded))
+                        .foregroundColor(.inkTextPrimary)
+                        .lineSpacing(5)
+                        .padding(.horizontal, 8)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                        .focused($focusedField, equals: .mainNotes)
+                }
             }
             
             // Recitation Cover Mode Overlay
@@ -338,14 +366,28 @@ public struct CornellNoteEditorView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
             
-            TextEditor(text: $note.summaryText)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(.inkTextPrimary)
-                .lineSpacing(3)
-                .padding(.horizontal, 8)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
-                .focused($focusedField, equals: .summary)
+            ZStack(alignment: .topLeading) {
+                if note.summaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Synthesize the key takeaways and actionable conclusions in 2–3 concise sentences...")
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundColor(.inkTextTertiary.opacity(0.45))
+                        .italic()
+                        .lineSpacing(3)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+
+                TextEditor(text: $note.summaryText)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(.inkTextPrimary)
+                    .lineSpacing(3)
+                    .padding(.horizontal, 8)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+                    .focused($focusedField, equals: .summary)
+            }
         }
         .background(Color.primary.opacity(0.03))
     }

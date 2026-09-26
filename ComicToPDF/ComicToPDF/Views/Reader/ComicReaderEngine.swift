@@ -106,6 +106,7 @@ final class ComicImageCache: ObservableObject {
     @Published var loadError: String? = nil   // Non-nil = show error view with exit button
     @Published var loadDiagnosticReport: DocumentDiagnosticReport? = nil
     @Published var isLandscapeArray: [Bool] = []
+    @Published var toc: CBZTableOfContents = CBZTableOfContents(chapters: [])
     var pageCount: Int = 0
     let pdfID: UUID
     let isPDF: Bool
@@ -146,6 +147,15 @@ final class ComicImageCache: ObservableObject {
                 let coord = VirtualPageCoordinator(files: resolvedFiles)
                 self.virtualCoordinator = coord
                 self.pageCount = coord.totalPageCount
+                var runningIndex = 0
+                let virtualChapters = resolvedFiles.enumerated().map { idx, file -> CBZTableOfContents.Chapter in
+                    let pageCount = file.pageCount
+                    let title = ChapterTitleSanitizer.sanitize(filename: file.name, fallbackIndex: idx, seriesName: omni.name)
+                    let chapter = CBZTableOfContents.Chapter(title: title, firstPageIndex: runningIndex, pageCount: max(1, pageCount))
+                    runningIndex += pageCount
+                    return chapter
+                }
+                self.toc = CBZTableOfContents(chapters: virtualChapters)
                 self.isLoading = false
                 self.scanPageOrientations(resolvedURL: nil)
             } else {
@@ -394,10 +404,12 @@ final class ComicImageCache: ObservableObject {
                         accessed.stopAccessingSecurityScopedResource()
                     }
                 }
+                let parsedTOC = CBZTableOfContents.build(from: archive, sortedEntries: sortedEntries)
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
                     self.cbzURL = resolvedURL
                     self.entries = sortedEntries
+                    self.toc = parsedTOC
                     self.pageCount = sortedEntries.count
                     self.isLoading = false
                     self.scanPageOrientations(resolvedURL: resolvedURL)
@@ -1470,6 +1482,7 @@ struct ComicReaderEngine: View {
     @State private var currentIndex: Int = 0
     @State private var showJumpToPage = false
     @State private var jumpToPageText = ""
+    @State private var showingTOCSheet = false
     @State private var sessionStartTime: Date? = nil
     @State private var readingMode: ComicReadingMode = .pageHorizontal
     @State private var lastPageTurnReadingMode: ComicReadingMode = .pageHorizontal
@@ -1841,6 +1854,9 @@ struct ComicReaderEngine: View {
             ReadingJumpToastOverlay()
         }
         .overlay { if prefs.showReadingRuler { ReadingRulerOverlay() } }
+        .sheet(isPresented: $showingTOCSheet) {
+            ReaderTOCSheet(toc: cache.toc, currentPageIndex: $currentIndex)
+        }
         .onAppear {
             pageEntryTime = Date()
             if sessionStartTime == nil {
@@ -2393,6 +2409,11 @@ struct ComicReaderEngine: View {
             onSettingsToggle: {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showingSettingsHUD.toggle() }
             },
+            onTOCToggle: cache.toc.chapters.count > 1 ? {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    showingTOCSheet = true
+                }
+            } : nil,
             onAnnotationsToggle: {
                 NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
             },
@@ -2477,10 +2498,13 @@ struct ComicReaderEngine: View {
             },
             ambientColor: ambientPageColor,
             sessionStartTime: sessionStartTime,
-            onSwipeDown: saveProgressAndDismiss,
             subHeaderView: (readingMode == .panelNavigation && guidedPanelBadgeText != nil)
                 ? AnyView(comicPanelBadgeView(label: guidedPanelBadgeText!))
-                : nil
+                : nil,
+            flaggedPages: pdf.metadata.bookmarkedPages,
+            onSelectFlaggedPage: { targetPage in
+                currentIndex = targetPage
+            }
         )
     }
 

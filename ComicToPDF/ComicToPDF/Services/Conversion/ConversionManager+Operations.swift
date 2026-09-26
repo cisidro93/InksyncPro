@@ -191,7 +191,7 @@ extension ConversionManager {
     }
 
     // MARK: - Merge & Convert
-    func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String, mangaMode: Bool = false, customAuthor: String? = nil) async {
+    func mergePDFs(_ pdfs: [ConvertedPDF], outputName: String, mangaMode: Bool = false, customAuthor: String? = nil, customChapterTitles: [String]? = nil) async {
         isConverting = true; processingStatus = "Merging..."; statusMessage = "Starting merge..."
         let docRoot = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let docDir = docRoot.appendingPathComponent("Merged")
@@ -235,7 +235,8 @@ extension ConversionManager {
         do {
             var mergeSettings = ConversionSettings()
             mergeSettings.mangaMode = mangaMode
-            try await Task.detached { try await merger.mergeEPUBs(sourceURLs: sourceURLs, outputURL: outputURL, settings: mergeSettings) }.value
+            let titles = customChapterTitles
+            try await Task.detached { try await merger.mergeEPUBs(sourceURLs: sourceURLs, outputURL: outputURL, settings: mergeSettings, chapterTitles: titles) }.value
             // ✅ FIX: Release all security-scoped access tokens after the merge is fully complete.
             for (url, wasAccessing) in accessingTokens where wasAccessing {
                 url.stopAccessingSecurityScopedResource()
@@ -336,7 +337,7 @@ extension ConversionManager {
     }
     
     @discardableResult
-    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, customAuthor: String? = nil, explicitFormat: OutputFormat? = nil) async -> [ConvertedPDF] {
+    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, customAuthor: String? = nil, explicitFormat: OutputFormat? = nil, customChapterTitles: [String]? = nil) async -> [ConvertedPDF] {
         // Cloud files: download the first cloud file to vault, then re-run convertAndMerge
         // once it's local. A full multi-file parallel download would need queue state.
         if let firstCloud = sourceFiles.first(where: { if case .cloud = $0.sourceMode { return true } else { return false } }) {
@@ -357,6 +358,7 @@ extension ConversionManager {
                 overrideSeries: overrideSeries,
                 customAuthor: customAuthor,
                 explicitFormat: explicitFormat,
+                customChapterTitles: customChapterTitles,
                 manager: self
             )
         }
@@ -367,6 +369,7 @@ extension ConversionManager {
             overrideSeries: overrideSeries,
             customAuthor: customAuthor,
             explicitFormat: explicitFormat,
+            customChapterTitles: customChapterTitles,
             manager: self
         )
     }

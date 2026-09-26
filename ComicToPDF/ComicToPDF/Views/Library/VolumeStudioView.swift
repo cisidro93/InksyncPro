@@ -58,6 +58,9 @@ struct VolumeStudioView: View {
     @State private var mangaMode: Bool = false
     @State private var deleteSourceFilesAfterMerge: Bool = false
     @State private var isProcessingMerge: Bool = false
+    @State private var includeTOC: Bool = true
+    @State private var tocTitlePreset: ChapterTitleSanitizer.TitleFormatPreset = .smartClean
+    @State private var customChapterTitles: [UUID: String] = [:]
 
     // Pattern Recognition & Smart Suggestions
     @State private var patternSuggestedIssues: [ConvertedPDF] = []
@@ -501,6 +504,29 @@ struct VolumeStudioView: View {
                         }
                     }
                     .font(.system(.subheadline, design: .rounded))
+
+                    // Chapter Table of Contents (TOC) Options
+                    if standaloneOutputFormat == .epub {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Toggle("Generate Chapter Table of Contents (TOC)", isOn: $includeTOC)
+                                .font(.system(.subheadline, design: .rounded).bold())
+
+                            if includeTOC {
+                                Picker("TOC Title Style", selection: $tocTitlePreset) {
+                                    ForEach(ChapterTitleSanitizer.TitleFormatPreset.allCases) { preset in
+                                        Text(preset.rawValue).tag(preset)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .padding(.top, 2)
+
+                                Text("Kindle & in-app reader will display each chapter's first page as a selectable entry.")
+                                    .font(.system(.caption2, design: .rounded))
+                                    .foregroundColor(.inkTextSecondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
                 }
             }
         } header: {
@@ -717,6 +743,28 @@ struct VolumeStudioView: View {
                                 Text(pdf.formattedSize)
                                     .font(.system(.caption2, design: .rounded))
                                     .foregroundColor(.inkTextSecondary)
+                            }
+
+                            // Editable Chapter Title for Table of Contents (Kindle & In-App)
+                            if volumeType == .physicalMerge && includeTOC {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "list.bullet.rectangle")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.inkBlue)
+                                    TextField(
+                                        "TOC Title...",
+                                        text: Binding(
+                                            get: { customChapterTitles[pdf.id] ?? resolvedChapterTitle(for: pdf, index: index) },
+                                            set: { customChapterTitles[pdf.id] = $0 }
+                                        )
+                                    )
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(Color.inkBackground.opacity(0.8), in: RoundedRectangle(cornerRadius: 6))
+                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.inkBorderSubtle, lineWidth: 0.5))
+                                }
+                                .padding(.top, 2)
                             }
                         }
 
@@ -981,19 +1029,34 @@ struct VolumeStudioView: View {
         dismiss()
     }
 
+    private func resolvedChapterTitle(for pdf: ConvertedPDF, index: Int) -> String {
+        if let custom = customChapterTitles[pdf.id], !custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return custom.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return ChapterTitleSanitizer.sanitize(
+            filename: pdf.name,
+            fallbackIndex: index,
+            seriesName: parentSeriesID ?? pdf.metadata.series,
+            preset: tocTitlePreset
+        )
+    }
+
     private func executePhysicalMerge(name: String) {
         isProcessingMerge = true
         let files = selectedFiles
         let isManga = mangaMode
         let seriesTag = parentSeriesID ?? files.first?.metadata.series
-        let shouldDelete = deleteSourceFilesAfterMerge
+        let orderedChapterTitles: [String]? = (includeTOC && standaloneOutputFormat == .epub)
+            ? files.enumerated().map { idx, pdf in resolvedChapterTitle(for: pdf, index: idx) }
+            : nil
 
         Task {
             let mergedBooks = await conversionManager.convertAndMerge(
                 sourceFiles: files,
                 outputName: name,
                 mangaMode: isManga,
-                overrideSeries: seriesTag
+                overrideSeries: seriesTag,
+                customChapterTitles: orderedChapterTitles
             )
 
             await MainActor.run {

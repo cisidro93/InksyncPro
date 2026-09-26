@@ -119,6 +119,26 @@ struct ManuscriptEditorWorkspace: View {
 
     private var binderList: some View {
         List(selection: $selectedDocumentID) {
+            // Novel Goal & Milestone Progress
+            if project.targetWordCount > 0 {
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Novel Goal")
+                                .font(.caption.bold())
+                                .foregroundStyle(Color.inkTextSecondary)
+                            Spacer()
+                            Text("\(project.currentWordCount) / \(project.targetWordCount) (\(Int(project.progressPercentage * 100))%)")
+                                .font(.caption2.bold())
+                                .foregroundStyle(Color.inkAccentKnowledge)
+                        }
+                        ProgressView(value: project.progressPercentage)
+                            .tint(Color.inkAccentKnowledge)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
             Section("Chapters") {
                 ForEach(sortedDocuments) { doc in
                     HStack {
@@ -128,9 +148,23 @@ struct ManuscriptEditorWorkspace: View {
                             Text(doc.title)
                                 .font(.system(size: 15, weight: .medium))
                                 .foregroundStyle(Color.inkTextPrimary)
-                            Text("\(doc.wordCount) words")
-                                .font(.caption2)
-                                .foregroundStyle(Color.inkTextTertiary)
+                            HStack(spacing: 6) {
+                                Text("\(doc.wordCount) words")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.inkTextTertiary)
+                                if !doc.flowPlaceholders.isEmpty {
+                                    HStack(spacing: 2) {
+                                        Image(systemName: "flag.fill")
+                                            .font(.system(size: 8))
+                                        Text("\(doc.flowPlaceholders.count)")
+                                            .font(.system(size: 9, weight: .bold))
+                                    }
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Color.orange.opacity(0.18), in: Capsule())
+                                    .foregroundStyle(Color.orange)
+                                }
+                            }
                         }
                         Spacer()
                     }
@@ -156,6 +190,10 @@ struct ManuscriptEditorWorkspace: View {
 
                 // Export menu
                 Menu {
+                    Button {
+                        performExport(format: .epubKindle)
+                    } label: { Label("Export as Kindle EPUB (.epub)", systemImage: "book.closed") }
+
                     Button {
                         performExport(format: .markdownZip)
                     } label: { Label("Export as Markdown (.zip)", systemImage: "archivebox") }
@@ -246,6 +284,26 @@ struct ManuscriptEditorWorkspace: View {
             .onChange(of: document.id) { _, _ in editorMode = .write }
 
             if editorMode == .write {
+                // Fact Placeholder button [CHECK: ...]
+                Button {
+                    insertFlowPlaceholder(into: document)
+                } label: {
+                    Image(systemName: "flag.badge.ellipsis")
+                        .foregroundStyle(Color.orange)
+                }
+                .help("Insert Fact Check Placeholder (⌘⇧X)")
+                .keyboardShortcut("x", modifiers: [.command, .shift])
+
+                // Section Break button (* * *)
+                Button {
+                    insertSectionBreak(into: document)
+                } label: {
+                    Image(systemName: "asterisk")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.inkTextSecondary)
+                }
+                .help("Insert Section Break (* * *)")
+
                 Button {
                     toggleSpeechDictation()
                 } label: {
@@ -253,6 +311,28 @@ struct ManuscriptEditorWorkspace: View {
                         .foregroundStyle(speechManager.isRecording ? Color.red : Color.inkAccentKnowledge)
                 }
                 .keyboardShortcut("d", modifiers: [.command])
+            }
+
+            // Open placeholders indicator
+            if !document.flowPlaceholders.isEmpty {
+                Button {
+                    withAnimation {
+                        isInspectorVisible = true
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "flag.fill")
+                            .font(.system(size: 9))
+                        Text("\(document.flowPlaceholders.count)")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(Color.orange)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.15), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("\(document.flowPlaceholders.count) unverified fact check(s)")
             }
 
             // Word count chip
@@ -341,6 +421,8 @@ struct ManuscriptEditorWorkspace: View {
             do {
                 let url: URL
                 switch format {
+                case .epubKindle:
+                    url = try ManuscriptExportService.exportAsEPUB(title: projectTitle, chapters: chapters)
                 case .markdownZip:
                     url = try ManuscriptExportService.exportAsMarkdownZip(title: projectTitle, chapters: chapters)
                 case .markdownBundle:
@@ -361,6 +443,28 @@ struct ManuscriptEditorWorkspace: View {
                 }
             }
         }
+    }
+
+    // MARK: - NEO Authoring Actions
+
+    private func insertFlowPlaceholder(into document: SDManuscriptDocument) {
+        HapticEngine.selection()
+        let placeholder = " [CHECK: fact or detail] "
+        if document.contentMarkdown.isEmpty {
+            document.contentMarkdown = placeholder.trimmingCharacters(in: .whitespaces)
+        } else {
+            document.contentMarkdown += placeholder
+        }
+        document.modifiedAt = Date()
+        try? modelContext.save()
+    }
+
+    private func insertSectionBreak(into document: SDManuscriptDocument) {
+        HapticEngine.selection()
+        let sectionBreak = "\n\n* * *\n\n"
+        document.contentMarkdown += sectionBreak
+        document.modifiedAt = Date()
+        try? modelContext.save()
     }
 
     // MARK: - Binder Actions
@@ -451,7 +555,8 @@ struct WikilinkAwareEditor: View {
             TextEditor(text: Binding(
                 get: { document.contentMarkdown },
                 set: { newValue in
-                    document.contentMarkdown = newValue
+                    let smartText = SDManuscriptDocument.applySmartTypography(to: newValue)
+                    document.contentMarkdown = smartText
                     document.modifiedAt = Date()
                     try? modelContext.save()
                 }
@@ -604,7 +709,8 @@ struct InkTextEditor: View {
         TextEditor(text: Binding(
             get: { document.contentMarkdown },
             set: { newValue in
-                document.contentMarkdown = newValue
+                let smartText = SDManuscriptDocument.applySmartTypography(to: newValue)
+                document.contentMarkdown = smartText
                 document.modifiedAt = Date()
                 try? modelContext.save()
             }
@@ -736,7 +842,11 @@ struct FocusModeEditor: View {
         }
         .onAppear { text = document.contentMarkdown }
         .onChange(of: text) { _, newValue in
-            document.contentMarkdown = newValue
+            let smartText = SDManuscriptDocument.applySmartTypography(to: newValue)
+            if smartText != newValue {
+                text = smartText
+            }
+            document.contentMarkdown = smartText
             document.modifiedAt = Date()
             try? modelContext.save()
         }
@@ -799,11 +909,45 @@ struct InspectorPane: View {
     let document: SDManuscriptDocument
     let allAnnotations: [SDAnnotation]
 
+    enum InspectorTab: String, CaseIterable {
+        case holdingTray = "Holding Tray"
+        case research = "Research"
+        case placeholders = "Placeholders"
+    }
+
+    @State private var selectedTab: InspectorTab = .holdingTray
+    @Query(sort: \SDHoldingTrayItem.createdAt, order: .reverse) private var holdingItems: [SDHoldingTrayItem]
+
     private var attachedNotes: [SDAnnotation] {
         allAnnotations.filter { document.attachedNoteIDs.contains($0.id.uuidString) }
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            Picker("Inspector Tab", selection: $selectedTab) {
+                Text("Holding (\(holdingItems.count))").tag(InspectorTab.holdingTray)
+                Text("Research (\(attachedNotes.count))").tag(InspectorTab.research)
+                Text("Checks (\(document.flowPlaceholders.count))").tag(InspectorTab.placeholders)
+            }
+            .pickerStyle(.segmented)
+            .padding(10)
+            .background(Color.inkSurfaceRaised)
+
+            Divider()
+
+            switch selectedTab {
+            case .holdingTray:
+                HoldingTrayInspectorView(document: document)
+            case .research:
+                researchView
+            case .placeholders:
+                PlaceholdersInspectorView(document: document)
+            }
+        }
+        .background(Color.inkBackground)
+    }
+
+    private var researchView: some View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "pin.fill")
@@ -818,8 +962,8 @@ struct InspectorPane: View {
                     .foregroundStyle(Color.inkTextTertiary)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Color.inkSurfaceRaised)
+            .padding(.vertical, 10)
+            .background(Color.inkSurfaceRaised.opacity(0.5))
 
             Divider()
 
@@ -849,7 +993,384 @@ struct InspectorPane: View {
                 }
             }
         }
-        .background(Color.inkBackground)
+    }
+}
+
+// MARK: - Holding Tray Inspector View (Saved for Later & Discards)
+struct HoldingTrayInspectorView: View {
+    let document: SDManuscriptDocument
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \SDHoldingTrayItem.createdAt, order: .reverse) private var allItems: [SDHoldingTrayItem]
+
+    @State private var selectedCategory: HoldingTrayCategory = .savedForLater
+    @State private var showingAddSheet: Bool = false
+    @State private var newClipText: String = ""
+    @State private var newClipTitle: String = ""
+
+    private var filteredItems: [SDHoldingTrayItem] {
+        allItems.filter { $0.category == selectedCategory }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Category Segmented Control & Add Button
+            HStack(spacing: 8) {
+                Picker("Category", selection: $selectedCategory) {
+                    ForEach(HoldingTrayCategory.allCases, id: \.self) { cat in
+                        let count = allItems.filter { $0.category == cat }.count
+                        Text("\(cat.rawValue) (\(count))").tag(cat)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Button {
+                    newClipTitle = document.title
+                    newClipText = ""
+                    showingAddSheet = true
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color.inkAccentKnowledge)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.inkSurfaceRaised.opacity(0.5))
+
+            Divider()
+
+            if filteredItems.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: selectedCategory == .savedForLater ? "tray" : "trash")
+                        .font(.system(size: 28))
+                        .foregroundStyle(Color.inkTextTertiary)
+                    Text(selectedCategory == .savedForLater ? "No Saved Clips" : "No Discarded Text")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(Color.inkTextSecondary)
+                    Text(selectedCategory == .savedForLater
+                        ? "Save text snippets or research ideas for later without placing them in the draft yet."
+                        : "Cut text or discarded scenes will be safely preserved here.")
+                        .font(.caption)
+                        .foregroundStyle(Color.inkTextTertiary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                }
+                .frame(maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(filteredItems) { item in
+                            HoldingTrayCard(item: item) { textToInsert in
+                                HapticEngine.success()
+                                if document.contentMarkdown.isEmpty {
+                                    document.contentMarkdown = textToInsert
+                                } else {
+                                    document.contentMarkdown += "\n\n" + textToInsert
+                                }
+                                document.modifiedAt = Date()
+                                try? modelContext.save()
+                            }
+                        }
+                    }
+                    .padding(12)
+                }
+            }
+        }
+        .sheet(isPresented: $showingAddSheet) {
+            NavigationStack {
+                VStack(spacing: 14) {
+                    TextField("Source or Note Title", text: $newClipTitle)
+                        .font(.system(.body, design: .rounded))
+                        .padding(10)
+                        .background(Color.inkSurfaceRaised, in: RoundedRectangle(cornerRadius: 8))
+
+                    TextEditor(text: $newClipText)
+                        .font(.system(.body, design: .serif))
+                        .padding(10)
+                        .background(Color.inkSurfaceRaised, in: RoundedRectangle(cornerRadius: 8))
+                        .frame(minHeight: 140)
+
+                    Spacer()
+                }
+                .padding()
+                .navigationTitle("New Holding Clip")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showingAddSheet = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            let item = SDHoldingTrayItem(
+                                text: newClipText,
+                                category: selectedCategory,
+                                sourceTitle: newClipTitle.isEmpty ? document.title : newClipTitle,
+                                projectID: document.project?.id,
+                                documentID: document.id
+                            )
+                            modelContext.insert(item)
+                            try? modelContext.save()
+                            showingAddSheet = false
+                        }
+                        .disabled(newClipText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+}
+
+// MARK: - Holding Tray Card
+struct HoldingTrayCard: View {
+    let item: SDHoldingTrayItem
+    let onInsert: (String) -> Void
+    @Environment(\.modelContext) private var modelContext
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(item.sourceTitle)
+                    .font(.caption.bold())
+                    .foregroundStyle(Color.inkTextSecondary)
+                    .lineLimit(1)
+                Spacer()
+                Text("\(item.wordCount) w")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(Color.inkTextTertiary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.inkSurfaceRaised, in: Capsule())
+            }
+
+            Text(item.text)
+                .font(.system(size: 13, design: .serif))
+                .foregroundStyle(Color.inkTextPrimary)
+                .lineLimit(5)
+
+            HStack(spacing: 8) {
+                Button {
+                    onInsert(item.text)
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.turn.down.left")
+                        Text("Insert")
+                    }
+                    .font(.caption2.bold())
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.inkAccentKnowledge, in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    UIPasteboard.general.string = item.text
+                    HapticEngine.selection()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "doc.on.doc")
+                        Text("Copy")
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(Color.inkTextSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.inkSurfaceRaised, in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button(role: .destructive) {
+                    HapticEngine.medium()
+                    modelContext.delete(item)
+                    try? modelContext.save()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.caption2)
+                        .foregroundStyle(Color.red.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 2)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .inkCard(radius: InkRadius.thumbnail)
+    }
+}
+
+// MARK: - Placeholders Inspector View (NEO Flow Placeholders)
+struct PlaceholdersInspectorView: View {
+    let document: SDManuscriptDocument
+    @Environment(\.modelContext) private var modelContext
+    @State private var resolvingQuery: String? = nil
+    @State private var replacementText: String = ""
+
+    private var placeholders: [String] {
+        document.flowPlaceholders
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Image(systemName: "flag.badge.ellipsis")
+                    .font(.caption)
+                    .foregroundStyle(Color.orange)
+                Text("Drafting Placeholders")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.inkTextPrimary)
+                Spacer()
+                Text("\(placeholders.count)")
+                    .font(.caption.bold())
+                    .foregroundStyle(Color.orange)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color.inkSurfaceRaised.opacity(0.5))
+
+            Divider()
+
+            if placeholders.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "flag.slash")
+                        .font(.system(size: 30))
+                        .foregroundStyle(Color.inkTextTertiary)
+                    Text("All Facts Verified")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(Color.inkTextSecondary)
+                    Text("No open [CHECK: ...] or [TODO: ...] placeholders in this chapter. Press ⌘⇧X to drop a placeholder during fast drafting without breaking your flow.")
+                        .font(.caption)
+                        .foregroundStyle(Color.inkTextTertiary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                }
+                .frame(maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(placeholders, id: \.self) { query in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(alignment: .top) {
+                                    Image(systemName: "flag.fill")
+                                        .font(.caption2)
+                                        .foregroundStyle(Color.orange)
+                                        .padding(.top, 2)
+                                    Text(query)
+                                        .font(.system(size: 13, weight: .medium, design: .serif))
+                                        .foregroundStyle(Color.inkTextPrimary)
+                                        .lineLimit(4)
+                                    Spacer()
+                                }
+
+                                HStack(spacing: 8) {
+                                    Button {
+                                        UIPasteboard.general.string = query
+                                        HapticEngine.selection()
+                                    } label: {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: "doc.on.doc")
+                                            Text("Copy")
+                                        }
+                                        .font(.caption2)
+                                        .foregroundStyle(Color.inkTextSecondary)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.inkSurfaceRaised, in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        resolvingQuery = query
+                                        replacementText = ""
+                                    } label: {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: "pencil")
+                                            Text("Replace")
+                                        }
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(Color.inkAccentKnowledge)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.inkSurfaceRaised, in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Spacer()
+
+                                    Button(role: .destructive) {
+                                        HapticEngine.medium()
+                                        document.resolvePlaceholder(query, replacement: "")
+                                        try? modelContext.save()
+                                    } label: {
+                                        HStack(spacing: 2) {
+                                            Image(systemName: "xmark.circle")
+                                            Text("Remove")
+                                        }
+                                        .font(.caption2)
+                                        .foregroundStyle(Color.red.opacity(0.8))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .inkCard(radius: InkRadius.thumbnail)
+                        }
+                    }
+                    .padding(12)
+                }
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { resolvingQuery != nil },
+            set: { if !$0 { resolvingQuery = nil } }
+        )) {
+            NavigationStack {
+                VStack(spacing: 14) {
+                    if let query = resolvingQuery {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "flag.fill")
+                                .foregroundStyle(Color.orange)
+                            Text("Placeholder: \(query)")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(Color.inkTextPrimary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(Color.inkSurfaceRaised, in: RoundedRectangle(cornerRadius: 8))
+
+                        TextField("Enter verified fact or replacement prose", text: $replacementText)
+                            .font(.system(.body, design: .serif))
+                            .padding(12)
+                            .background(Color.inkSurfaceRaised, in: RoundedRectangle(cornerRadius: 8))
+
+                        Spacer()
+                    }
+                }
+                .padding()
+                .navigationTitle("Resolve Placeholder")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { resolvingQuery = nil }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Insert & Clear") {
+                            if let query = resolvingQuery {
+                                HapticEngine.success()
+                                document.resolvePlaceholder(query, replacement: replacementText)
+                                try? modelContext.save()
+                                resolvingQuery = nil
+                            }
+                        }
+                    }
+                }
+            }
+            .presentationDetents([.fraction(0.35)])
+        }
     }
 }
 

@@ -5,7 +5,14 @@ import ZIPFoundation
 struct EPUBMerger: Sendable {
     
     // Merge multiple EPUBs into a single omnibus EPUB
-    func mergeEPUBs(sourceURLs: [URL], outputURL: URL, settings: ConversionSettings, overrideCoverData: Data? = nil, sourceMetadata: PDFMetadata? = nil) async throws {
+    func mergeEPUBs(
+        sourceURLs: [URL],
+        outputURL: URL,
+        settings: ConversionSettings,
+        overrideCoverData: Data? = nil,
+        sourceMetadata: PDFMetadata? = nil,
+        chapterTitles: [String]? = nil
+    ) async throws {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -45,6 +52,8 @@ struct EPUBMerger: Sendable {
         
         var manifestItems: [String] = []
         var spineItems: [String] = []
+        var tocEntries: [EPUBManifestBuilder.EPUBTOCEntry] = []
+
         manifestItems.append("<item id=\"css\" href=\"css/comic.css\" media-type=\"text/css\"/>")
         manifestItems.append("<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
         manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
@@ -67,17 +76,19 @@ struct EPUBMerger: Sendable {
             let destURL = imagesDir.appendingPathComponent(coverFilename)
             try? coverData.write(to: destURL)
             
-            // The cover image must carry properties="cover-image" so that the OPF
-            // <meta name="cover" content="cover_img"/> is consistent. Kindle's
-            // ingestor checks that the item referenced by <meta name="cover"> has this
-            // property and fails with E999 if it does not. The duplicate is still
-            // suppressed because cover.xhtml (first spine item) wraps the image —
-            // auto-injection only fires when a cover-image item has NO spine XHTML wrapper.
             manifestItems.append("<item id=\"cover_img\" href=\"images/\(coverFilename)\" media-type=\"image/jpeg\" properties=\"cover-image\"/>")
             let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: settings.mangaMode)
             try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
             manifestItems.append("<item id=\"cover_page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
             spineItems.append("<itemref idref=\"cover_page\"\(spreadTracker.coverSpreadTag)/>")
+            
+            tocEntries.append(
+                EPUBManifestBuilder.EPUBTOCEntry(
+                    title: "Cover",
+                    href: "text/cover.xhtml",
+                    playOrder: 1
+                )
+            )
         }
         
         // 3. Process Each EPUB
@@ -88,6 +99,7 @@ struct EPUBMerger: Sendable {
             
             // Extract Images
             let foundImages = try findImages(in: unzipDir)
+            var recordedTOCForThisFile = false
             
             for (imgIndex, imgURL) in foundImages.enumerated() {
                 // Skip the first page of the first EPUB if we are using it as the cover
@@ -147,6 +159,28 @@ struct EPUBMerger: Sendable {
                     let spreadTag = spreadTracker.tagForPage(isLandscape: isLandscape)
                     spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
+                    // Record TOC entry for the first page of this chapter file
+                    if !recordedTOCForThisFile {
+                        recordedTOCForThisFile = true
+                        let title: String
+                        if let custom = chapterTitles, index < custom.count, !custom[index].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            title = custom[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                        } else {
+                            title = ChapterTitleSanitizer.sanitize(
+                                filename: url.lastPathComponent,
+                                fallbackIndex: index,
+                                seriesName: sourceMetadata?.series
+                            )
+                        }
+                        tocEntries.append(
+                            EPUBManifestBuilder.EPUBTOCEntry(
+                                title: title,
+                                href: "text/\(htmlName)",
+                                playOrder: tocEntries.count + 1
+                            )
+                        )
+                    }
+                    
                     globalPageIndex += 1
                 }
             }
@@ -174,11 +208,11 @@ struct EPUBMerger: Sendable {
         try opfContent.write(to: oebpsDir.appendingPathComponent("content.opf"), atomically: true, encoding: .utf8)
         
         // 5. Nav
-        let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref, isManga: settings.mangaMode)
+        let navContent = EPUBManifestBuilder.buildNavContent(firstPageHref: firstPageHref, tocEntries: tocEntries, isManga: settings.mangaMode)
         try navContent.write(to: oebpsDir.appendingPathComponent("nav.xhtml"), atomically: true, encoding: .utf8)
         
         // 5.5 NCX
-        let ncxContent = EPUBManifestBuilder.buildNCXContent(bookUUID: bookUUID, baseFilename: opfTitle, firstPageHref: firstPageHref)
+        let ncxContent = EPUBManifestBuilder.buildNCXContent(bookUUID: bookUUID, baseFilename: opfTitle, firstPageHref: firstPageHref, tocEntries: tocEntries)
         try ncxContent.write(to: oebpsDir.appendingPathComponent("toc.ncx"), atomically: true, encoding: .utf8)
         
         // 6. Zip
