@@ -369,6 +369,28 @@ class ReaderProgressTracker: ObservableObject {
         )
     }
     
+    /// Completely resets reading progress and clears read state for a document
+    @MainActor
+    func clearReadingData(for pdfID: UUID, in manager: ConversionManager? = nil) {
+        deleteProgress(for: pdfID)
+        
+        let targetManager = manager ?? ConversionManager.shared
+        if let idx = targetManager.convertedPDFs.firstIndex(where: { $0.id == pdfID }) {
+            targetManager.convertedPDFs[idx].metadata.lastReadPage = 0
+            targetManager.saveProgressOnly()
+        }
+        
+        AppGroupSyncService.shared.syncToAppGroup()
+        
+        NotificationCenter.default.post(
+            name: .readingProgressDidChange,
+            object: nil,
+            userInfo: ["pdfID": pdfID]
+        )
+        
+        HapticEngine.shared.play(.light)
+    }
+    
     // MARK: - Stats
     
     func readingStreak() -> Int {

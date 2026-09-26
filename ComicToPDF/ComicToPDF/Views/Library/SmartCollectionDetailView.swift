@@ -552,6 +552,11 @@ import SwiftUI
     private func singleContextMenu(_ pdf: ConvertedPDF) -> some View {
         let isCloud = { if case .cloud = pdf.sourceMode { return true }; return false }()
         Button { handleSingleTap(pdf) } label: { Label("Read Now", systemImage: "book.fill") }
+        if (pdf.metadata.lastReadPage ?? 0) > 0 || ReaderProgressTracker.shared.progress(for: pdf.id) != nil {
+            Button(role: .destructive) {
+                ReaderProgressTracker.shared.clearReadingData(for: pdf.id, in: conversionManager)
+            } label: { Label("Clear Reading Data", systemImage: "arrow.counterclockwise") }
+        }
         if isCloud {
             Divider()
             Button { downloadFile(pdf, thenConvert: false) } label: { Label("Download", systemImage: "arrow.down.circle") }

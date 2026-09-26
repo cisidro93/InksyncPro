@@ -2234,6 +2234,10 @@ struct SeriesDetailView: View {
                 ReaderProgressTracker.shared.markUnread(pdfID: pdf.id)
             } label: { Label("Mark as Unread", systemImage: "circle") }
             
+            Button(role: .destructive) {
+                ReaderProgressTracker.shared.clearReadingData(for: pdf.id, in: conversionManager)
+            } label: { Label("Clear Reading Data", systemImage: "arrow.counterclockwise") }
+            
             Button {
                 withAnimation {
                     if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {

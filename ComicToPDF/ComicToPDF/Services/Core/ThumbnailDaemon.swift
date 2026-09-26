@@ -64,10 +64,19 @@ actor ThumbnailDaemon {
         for pdf in pdfs {
             let cachedURL = cacheDirectory.appendingPathComponent("\(pdf.id.uuidString).webp")
             if FileManager.default.fileExists(atPath: cachedURL.path) {
-                // Read from disk asynchronously
+                // Read from disk asynchronously and validate quality
                 if let data = try? Data(contentsOf: cachedURL),
                    let image = UIImage(data: data) {
-                    self.cacheInMemory(image, for: pdf.id)
+                    if PhysicalFileSystemRouter.containsDisclaimerText(in: image) ||
+                       PhysicalFileSystemRouter.isBlankOrSolidColorImage(image) ||
+                       PhysicalFileSystemRouter.isSuspiciouslyLowRes(image) {
+                        try? FileManager.default.removeItem(at: cachedURL)
+                        missingPDFs.append(pdf)
+                    } else {
+                        self.cacheInMemory(image, for: pdf.id)
+                    }
+                } else {
+                    missingPDFs.append(pdf)
                 }
             } else {
                 missingPDFs.append(pdf)
@@ -102,7 +111,11 @@ actor ThumbnailDaemon {
                     }
 
                     let thumbnailImage: UIImage? = autoreleasepool {
-                        guard let image = PhysicalFileSystemRouter.extractCoverImageStatic(from: url) else { return nil }
+                        var rawImage = PhysicalFileSystemRouter.extractCoverImageStatic(from: url)
+                        if rawImage == nil && url.pathExtension.lowercased() == "epub" {
+                            rawImage = PhysicalFileSystemRouter.generateTypographicCover(title: pdf.name, author: pdf.metadata.author ?? "")
+                        }
+                        guard let image = rawImage else { return nil }
                         let thumbnail = image.preparingThumbnail(of: CGSize(width: 300, height: 450)) ?? image
                         if let data = thumbnail.jpegData(compressionQuality: 0.85) {
                             try? data.write(to: cachedURL, options: .atomic)

@@ -9,9 +9,10 @@ struct ImportQueueView: View {
     @ObservedObject private var queue = ImportQueueManager.shared
     @Environment(\.dismiss) private var dismiss
 
-    // Duplicate handling
+    // Natural duplicate handling
     @State private var pendingDuplicates: [URL] = []
-    @State private var showDuplicateAlert = false
+    @State private var skippedDuplicateCount: Int = 0
+    @State private var showDuplicateToast = false
 
     // Series conflict handling
     @State private var showSeriesConflict = false
@@ -30,6 +31,17 @@ struct ImportQueueView: View {
                     emptyStateView
                 } else {
                     stagedListView
+                }
+
+                // Natural duplicate notification banner (non-intrusive toast)
+                if showDuplicateToast {
+                    VStack {
+                        duplicateToastView
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        Spacer()
+                    }
+                    .padding(.top, 8)
+                    .zIndex(10)
                 }
 
                 // Staging-in-progress overlay
@@ -65,16 +77,6 @@ struct ImportQueueView: View {
                         .fontWeight(.semibold)
                         .disabled(queue.stagedURLs.isEmpty)
                 }
-            }
-            // Duplicate files alert
-            .alert("Duplicates Detected", isPresented: $showDuplicateAlert) {
-                Button("Skip Duplicates", role: .cancel) { pendingDuplicates = [] }
-                Button("Import Anyway") {
-                    queue.forceStage(pendingDuplicates)
-                    pendingDuplicates = []
-                }
-            } message: {
-                Text("\(pendingDuplicates.count) file(s) already exist in your library or queue. Import anyway?")
             }
             // Series name conflict sheet
             .sheet(isPresented: $showSeriesConflict) {
@@ -214,6 +216,61 @@ struct ImportQueueView: View {
         .disabled(queue.isStagingFiles)
     }
 
+    // MARK: - Natural Duplicate Toast
+
+    private var duplicateToastView: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.green)
+                .font(.system(size: 18, weight: .semibold))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(skippedDuplicateCount) duplicate\(skippedDuplicateCount == 1 ? "" : "s") skipped")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primary)
+                Text("Pre-existing files were omitted automatically.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button("Import Anyway") {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showDuplicateToast = false
+                }
+                queue.forceStage(pendingDuplicates)
+                pendingDuplicates = []
+            }
+            .font(.caption.weight(.bold))
+            .foregroundColor(.inkBlue)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.inkBlue.opacity(0.12), in: Capsule())
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showDuplicateToast = false
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.bold))
+                    .foregroundColor(.secondary)
+                    .padding(6)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.12), radius: 10, y: 4)
+        .padding(.horizontal, 16)
+    }
+
     // MARK: Actions
 
     private func addFiles() {
@@ -229,9 +286,16 @@ struct ImportQueueView: View {
                     queue.isStagingFiles = false
                     if result.skippedDuplicates > 0 {
                         pendingDuplicates = result.duplicateURLs
+                        skippedDuplicateCount = result.skippedDuplicates
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            showDuplicateToast = true
+                        }
+                        // Non-intrusive auto-dismiss after 6 seconds
                         Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 400_000_000)
-                            showDuplicateAlert = true
+                            try? await Task.sleep(nanoseconds: 6_000_000_000)
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                showDuplicateToast = false
+                            }
                         }
                     }
                 }

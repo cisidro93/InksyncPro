@@ -900,6 +900,10 @@ struct LibraryGridView: View {
                 ReaderProgressTracker.shared.markUnread(pdfID: pdf.id)
             } label: { Label("Mark as Unread", systemImage: "circle") }
             
+            Button(role: .destructive) {
+                ReaderProgressTracker.shared.clearReadingData(for: pdf.id, in: conversionManager)
+            } label: { Label("Clear Reading Data", systemImage: "arrow.counterclockwise") }
+            
             Divider()
             
             Button { onAction(.toggleVault, pdf) } label: { Label(pdf.isPrivate ? "Remove from Vault" : "Move to Vault", systemImage: pdf.isPrivate ? "lock.open" : "lock.fill") }

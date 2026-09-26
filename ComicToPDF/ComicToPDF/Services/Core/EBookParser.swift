@@ -100,14 +100,34 @@ actor EBookParser {
         
         let fileManager = FileManager.default
         let tempDirectory = fileManager.temporaryDirectory
-        let tempFileURL = tempDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension((href as NSString).pathExtension)
+        
+        var effectiveHref = href
+        
+        // If href points to an XHTML/HTML wrapper, extract the actual <img> or <image> src first
+        let hrefExt = (href as NSString).pathExtension.lowercased()
+        if hrefExt == "xhtml" || hrefExt == "html" || hrefExt == "htm" {
+            if let entry = findEntryStatic(named: href, in: archive) {
+                var xhtmlData = Data()
+                _ = try? archive.extract(entry) { xhtmlData.append($0) }
+                if let resolved = resolveImageFromXHTML(data: xhtmlData, basePath: entry.path) {
+                    effectiveHref = resolved
+                }
+            }
+        }
+        
+        let targetExt = (effectiveHref as NSString).pathExtension.isEmpty ? "jpg" : (effectiveHref as NSString).pathExtension
+        let tempFileURL = tempDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension(targetExt)
         
         do {
-            var targetEntry: Entry? = archive[href]
+            var targetEntry: Entry? = findEntryStatic(named: effectiveHref, in: archive)
+            
+            // If still nil, fall back to searching for any cover/front image entry in archive
             if targetEntry == nil {
-                let lowerHref = href.lowercased()
+                let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
                 for e in archive {
-                    if e.path.lowercased().hasSuffix(lowerHref) {
+                    let ext = (e.path as NSString).pathExtension.lowercased()
+                    let lower = e.path.lowercased()
+                    if imageExts.contains(ext) && (lower.contains("cover") || lower.contains("front")) {
                         targetEntry = e
                         break
                     }
@@ -126,6 +146,27 @@ actor EBookParser {
             try? fileManager.removeItem(at: tempFileURL)
             return nil
         }
+    }
+    
+    static func findEntryStatic(named path: String, in archive: Archive) -> Entry? {
+        if let exact = archive[path] { return exact }
+        let target = path.lowercased()
+        for entry in archive {
+            if entry.path.lowercased().hasSuffix(target) || entry.path.lowercased() == target { return entry }
+        }
+        return nil
+    }
+    
+    static func resolveImageFromXHTML(data: Data, basePath: String) -> String? {
+        let parser = MiniXMLParser(data: data)
+        let candidate = parser.firstAttributeValue(tag: "img", attribute: "src") ??
+                        parser.firstAttributeValue(tag: "image", attribute: "xlink:href") ??
+                        parser.firstAttributeValue(tag: "image", attribute: "href")
+        guard let src = candidate, !src.isEmpty else { return nil }
+        let dir = (basePath as NSString).deletingLastPathComponent
+        let combined = dir.isEmpty ? src : "\(dir)/\(src)"
+        let normalized = (combined as NSString).standardizingPath
+        return normalized.hasPrefix("/") ? String(normalized.dropFirst()) : normalized
     }
     
     // MARK: - Private Helpers
@@ -177,11 +218,32 @@ actor EBookParser {
         metadata.isbn = parser.allTextContents(tag: "identifier")
             .first { $0.hasPrefix("urn:isbn:") || $0.hasPrefix("ISBN") } ?? ""
         
-        // Cover: look for <meta name="cover" content="itemId">
-        if let coverItemId = parser.firstAttributeValue(tag: "meta", attribute: "content",
-                                                         where: "name", equals: "cover") {
-            // Find the href for that manifest item id
+        // Cover:
+        // 1. EPUB 3 cover: look for item with properties="cover-image"
+        if let epub3Cover = parser.manifestItem(wherePropertiesContains: "cover-image", opfDir: opfDir) {
+            metadata.coverItem = epub3Cover
+        }
+        
+        // 2. EPUB 2 cover: look for <meta name="cover" content="itemId">
+        if metadata.coverItem.isEmpty,
+           let coverItemId = parser.firstAttributeValue(tag: "meta", attribute: "content", where: "name", equals: "cover") {
             metadata.coverItem = parser.manifestHref(forId: coverItemId, opfDir: opfDir) ?? ""
+        }
+        
+        // 3. Heuristic: manifest image item with id or href containing "cover"
+        if metadata.coverItem.isEmpty,
+           let heuristicCover = parser.manifestImageHref(matchingIdOrHref: "cover", opfDir: opfDir) {
+            metadata.coverItem = heuristicCover
+        }
+        
+        // 4. Dereference XHTML cover wrapper if cover points to an XHTML / HTML file
+        let coverExt = (metadata.coverItem as NSString).pathExtension.lowercased()
+        if coverExt == "xhtml" || coverExt == "html" || coverExt == "htm" {
+            if let entry = findEntry(named: metadata.coverItem, in: archive),
+               let xhtmlData = try? readEntry(entry: entry, in: archive),
+               let realImageHref = EBookParser.resolveImageFromXHTML(data: xhtmlData, basePath: metadata.coverItem) {
+                metadata.coverItem = realImageHref
+            }
         }
         
         // 1. Locate and parse the Table of Contents (TOC) Map
@@ -347,7 +409,7 @@ class MiniXMLParser: NSObject, XMLParserDelegate {
     // Collected results
     private var textByTag: [String: [String]] = [:]
     private var attributesByTag: [String: [[String: String]]] = [:]
-    private var manifestItems: [(id: String, href: String)] = []
+    private var manifestItems: [(id: String, href: String, mediaType: String, properties: String)] = []
     private var spineRefs: [String] = []
     private var inSpine = false
     
@@ -374,6 +436,26 @@ class MiniXMLParser: NSObject, XMLParserDelegate {
         return joined
     }
     
+    func manifestItem(wherePropertiesContains property: String, opfDir: String) -> String? {
+        _ = parse()
+        guard let item = manifestItems.first(where: {
+            $0.properties.components(separatedBy: .whitespaces).contains(property) || $0.properties.contains(property)
+        }) else { return nil }
+        return opfDir.isEmpty ? item.href : "\(opfDir)/\(item.href)"
+    }
+    
+    func manifestImageHref(matchingIdOrHref keyword: String, opfDir: String) -> String? {
+        _ = parse()
+        let lower = keyword.lowercased()
+        let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
+        guard let item = manifestItems.first(where: {
+            let ext = ($0.href as NSString).pathExtension.lowercased()
+            let isImg = $0.mediaType.hasPrefix("image/") || imageExts.contains(ext)
+            return isImg && ($0.id.lowercased().contains(lower) || $0.href.lowercased().contains(lower))
+        }) else { return nil }
+        return opfDir.isEmpty ? item.href : "\(opfDir)/\(item.href)"
+    }
+    
     func spineItemRefs() -> [String] {
         _ = parse(); return spineRefs
     }
@@ -397,9 +479,11 @@ class MiniXMLParser: NSObject, XMLParserDelegate {
         let lower = nodeName.lowercased()
         attributesByTag[lower, default: []].append(attributes)
         
-        // Capture manifest items
+        // Capture manifest items with media-type and properties
         if lower == "item", let id = attributes["id"], let href = attributes["href"] {
-            manifestItems.append((id: id, href: href))
+            let mediaType = attributes["media-type"] ?? ""
+            let properties = attributes["properties"] ?? ""
+            manifestItems.append((id: id, href: href, mediaType: mediaType, properties: properties))
         }
         
         // Detect spine scope
