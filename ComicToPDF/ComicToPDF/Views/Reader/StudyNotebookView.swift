@@ -154,7 +154,6 @@ struct StudyNotebookView: View {
     @AppStorage("studyNotebookInputMode") private var inputMode: InputMode = .markdown
     @State private var paperStyle: PaperStyle = .plain
     @State private var paperSpacing: CGFloat = 24.0
-    @State private var selectedBookForReader: ConvertedPDF? = nil
     @State private var isShowingBookPicker = false
     @AppStorage("studyNotebookPlacement") private var notebookPlacement: SidebarPlacement = .right
     @State private var canvasView = PKCanvasView()
@@ -461,7 +460,7 @@ struct StudyNotebookView: View {
                 if let matchedPDF = fetchBackingBook() {
                     Button {
                         HapticEngine.light()
-                        selectedBookForReader = matchedPDF
+                        AppRouter.shared.presentFullScreen(.read(matchedPDF))
                     } label: {
                         Image(systemName: "book")
                             .font(.system(size: 15, weight: .semibold))
@@ -1026,7 +1025,6 @@ struct StudyNotebookView: View {
                                 withAnimation { isShowingBookSavedToast = false }
                                 if let savedURL = savedBookURL,
                                    let book = conversionManager.convertedPDFs.first(where: { $0.url == savedURL }) ?? conversionManager.convertedPDFs.first(where: { $0.name == savedURL.deletingPathExtension().lastPathComponent }) {
-                                    selectedBookForReader = book
                                     AppRouter.shared.presentFullScreen(.read(book))
                                 }
                             }
@@ -1129,20 +1127,16 @@ struct StudyNotebookView: View {
                         }
                     }
                 }
-            }
-            .fullScreenCover(item: $selectedBookForReader) { pdf in
-                UnifiedReaderView(pdf: pdf, startWithNotebookOpen: true)
-                    .environmentObject(conversionManager)
-                    .environmentObject(settingsManager)
-            }
             .sheet(isPresented: $isShowingBookPicker) {
                 BookPickerSheet { selectedBook in
                     linkBookToNotebook(selectedBook)
-                    selectedBookForReader = selectedBook
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        AppRouter.shared.presentFullScreen(.read(selectedBook))
+                    }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .inkTabGoToLibraryRoot)) { _ in
-                selectedBookForReader = nil
+                AppRouter.shared.dismissFullScreen()
             }
             .onReceive(NotificationCenter.default.publisher(for: .annotationsDidChange)) { notification in
                 if let targetPDFID = notification.userInfo?["pdfID"] as? UUID,

@@ -31,7 +31,6 @@ public struct StudyNotebookContainerView: View {
     @Query private var allAnnotations: [SDAnnotation]
     @Query private var allPDFs: [SDConvertedPDF]
     @EnvironmentObject var conversionManager: ConversionManager
-    @State private var selectedBookForReader: ConvertedPDF? = nil
     
     // View Mode & Sidebar
     @State private var activeMode: StudyWorkspaceMode = .cornellNotes
@@ -128,10 +127,6 @@ public struct StudyNotebookContainerView: View {
         }
         .sheet(item: $shareExportItem) { payload in
             StudyShareSheet(items: [payload.text])
-        }
-        .fullScreenCover(item: $selectedBookForReader) { pdf in
-            UnifiedReaderView(pdf: pdf)
-                .environmentObject(conversionManager)
         }
         .onAppear {
             store.syncFromSwiftData(annotations: allAnnotations, pdfs: allPDFs)

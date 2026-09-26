@@ -111,11 +111,13 @@ final class ComicImageCache: ObservableObject {
     let pdfID: UUID
     let isPDF: Bool
     let isStream: Bool
+    let isManga: Bool
     let sourceMode: SourceMode
     var activelyAccessedURL: URL?
     
     init(pdf: ConvertedPDF, prefetchLimit: Int = 2) {
         self.pdfID = pdf.id
+        self.isManga = (pdf.contentType == .manga || pdf.metadata.isManga == true)
         self.prefetchLimit = prefetchLimit
         self.sourceMode = pdf.sourceMode
         self.cache.totalCostLimit = 150 * 1024 * 1024 // 150 MB absolute RAM cap
@@ -3179,6 +3181,11 @@ struct ComicPageView: View {
     var onShare: (() -> Void)? = nil
     var onBookmark: (() -> Void)? = nil
     
+    enum SpreadSide: Int, CaseIterable {
+        case side1 = 1 // First chronological reading side (Right for Manga RTL, Left for Western LTR)
+        case side2 = 2 // Second chronological reading side (Left for Manga RTL, Right for Western LTR)
+    }
+
     @ObservedObject private var prefs = EBookPreferences.shared
     @State private var image: UIImage? = nil
     @State private var displayImage: UIImage? = nil
@@ -3187,9 +3194,159 @@ struct ComicPageView: View {
     @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
+    @State private var activeSpreadSide: SpreadSide = .side1
     @State private var shareItem: UIImage? = nil
     @State private var showShareSheet = false
     @State private var cropTask: Task<Void, Never>? = nil
+
+    private var isMangaMode: Bool {
+        if let saved = ReaderProgressTracker.shared.progress(for: cache.pdfID)?.prefersMangaMode {
+            return saved
+        }
+        return cache.isManga
+    }
+
+    private func isWideSpreadInPortrait(image: UIImage, container: CGSize) -> Bool {
+        let isPortrait = container.height > container.width
+        let imageAspect = image.size.width / max(1, image.size.height)
+        return isPortrait && (imageAspect > 1.15)
+    }
+
+    private func targetOffset(for side: SpreadSide, containerSize: CGSize, renderedSize: CGSize) -> CGFloat {
+        let maxW = max(0, (renderedSize.width * currentScale - containerSize.width) / 2)
+        guard maxW > 0 else { return 0 }
+        
+        // In Manga (RTL): side1 is Right (-maxW), side2 is Left (+maxW)
+        // In Western (LTR): side1 is Left (+maxW), side2 is Right (-maxW)
+        if isMangaMode {
+            return (side == .side1) ? -maxW : maxW
+        } else {
+            return (side == .side1) ? maxW : -maxW
+        }
+    }
+
+    private var spreadPillTitle: String {
+        if isMangaMode {
+            switch activeSpreadSide {
+            case .side1:
+                return "Spread: Side 1 (Right) · Tap for Left"
+            case .side2:
+                return "Spread: Side 2 (Left) · Tap for Right"
+            }
+        } else {
+            switch activeSpreadSide {
+            case .side1:
+                return "Spread: Side 1 (Left) · Tap for Right"
+            case .side2:
+                return "Spread: Side 2 (Right) · Tap for Left"
+            }
+        }
+    }
+
+    private func toggleSpreadSide(containerSize: CGSize, renderedSize: CGSize) {
+        HapticEngine.selection()
+        let nextSide: SpreadSide = (activeSpreadSide == .side1) ? .side2 : .side1
+        activeSpreadSide = nextSide
+        let targetX = targetOffset(for: nextSide, containerSize: containerSize, renderedSize: renderedSize)
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.84)) {
+            offset = CGSize(width: targetX, height: 0)
+            lastOffset = offset
+        }
+    }
+
+    private func handleSpreadDragEnded(translation: CGSize, velocity: CGSize, containerSize: CGSize, renderedSize: CGSize) {
+        let maxW = max(0, (renderedSize.width * currentScale - containerSize.width) / 2)
+        guard maxW > 0 else {
+            lastOffset = offset
+            validateAndClampOffset(containerSize: containerSize, renderedSize: renderedSize)
+            return
+        }
+        
+        let offset1 = targetOffset(for: .side1, containerSize: containerSize, renderedSize: renderedSize)
+        let offset2 = targetOffset(for: .side2, containerSize: containerSize, renderedSize: renderedSize)
+        
+        let dragDelta = translation.width
+        let predicted = velocity.width
+        let threshold: CGFloat = 35.0
+        
+        let newSide: SpreadSide
+        if isMangaMode {
+            // In Manga (RTL): Side 1 is Right (-maxW), Side 2 is Left (+maxW)
+            // Dragging right (positive delta) shifts image right -> reveals left half (Side 2)
+            // Dragging left (negative delta) shifts image left -> reveals right half (Side 1)
+            if dragDelta > threshold || predicted > 60 {
+                newSide = .side2
+            } else if dragDelta < -threshold || predicted < -60 {
+                newSide = .side1
+            } else {
+                let dist1 = abs(offset.width - offset1)
+                let dist2 = abs(offset.width - offset2)
+                newSide = (dist1 < dist2) ? .side1 : .side2
+            }
+        } else {
+            // In Western (LTR): Side 1 is Left (+maxW), Side 2 is Right (-maxW)
+            // Dragging left (negative delta) shifts image left -> reveals right half (Side 2)
+            // Dragging right (positive delta) shifts image right -> reveals left half (Side 1)
+            if dragDelta < -threshold || predicted < -60 {
+                newSide = .side2
+            } else if dragDelta > threshold || predicted > 60 {
+                newSide = .side1
+            } else {
+                let dist1 = abs(offset.width - offset1)
+                let dist2 = abs(offset.width - offset2)
+                newSide = (dist1 < dist2) ? .side1 : .side2
+            }
+        }
+        
+        if newSide != activeSpreadSide {
+            HapticEngine.light()
+        }
+        activeSpreadSide = newSide
+        let targetX = targetOffset(for: newSide, containerSize: containerSize, renderedSize: renderedSize)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+            offset = CGSize(width: targetX, height: 0)
+            lastOffset = offset
+        }
+    }
+
+    private func spreadNavigationHUD(containerSize: CGSize, renderedSize: CGSize) -> some View {
+        Button {
+            toggleSpreadSide(containerSize: containerSize, renderedSize: renderedSize)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.left.and.right.square")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.inkViolet)
+                
+                Text(spreadPillTitle)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                
+                HStack(spacing: 4) {
+                    Capsule()
+                        .fill((activeSpreadSide == .side1) ? Color.inkViolet : Color.white.opacity(0.35))
+                        .frame(width: (activeSpreadSide == .side1) ? 14 : 6, height: 6)
+                    Capsule()
+                        .fill((activeSpreadSide == .side2) ? Color.inkViolet : Color.white.opacity(0.35))
+                        .frame(width: (activeSpreadSide == .side2) ? 14 : 6, height: 6)
+                }
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: activeSpreadSide)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Color.black.opacity(0.65)
+                    .background(.ultraThinMaterial)
+            )
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
+            )
+            .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
+        }
+        .buttonStyle(.plain)
+    }
 
     /// Compute the rendered width/height according to the user's active ComicPageFitMode.
     private func renderSize(for image: UIImage, in container: CGSize, fitMode: ComicPageFitMode) -> CGSize {
@@ -3296,7 +3453,7 @@ struct ComicPageView: View {
                     let rendered = renderSize(for: img, in: geo.size, fitMode: fitMode)
                     let isPannable = (currentScale > 1.01) || (rendered.height > geo.size.height + 2) || (rendered.width > geo.size.width + 2)
 
-                    ZStack {
+                    ZStack(alignment: .bottom) {
                         Color.black.ignoresSafeArea()
 
                         Image(uiImage: img)
@@ -3328,18 +3485,29 @@ struct ComicPageView: View {
                                         height: lastOffset.height + val.translation.height
                                     )
                                 },
-                                onEnded: { _ in
-                                    lastOffset = offset
-                                    validateAndClampOffset(containerSize: geo.size, renderedSize: rendered)
+                                onEnded: { val in
+                                    if isWideSpreadInPortrait(image: img, container: geo.size) && fitMode == .fillScreen && currentScale < 1.05 {
+                                        handleSpreadDragEnded(translation: val.translation, velocity: val.predictedEndTranslation, containerSize: geo.size, renderedSize: rendered)
+                                    } else {
+                                        lastOffset = offset
+                                        validateAndClampOffset(containerSize: geo.size, renderedSize: rendered)
+                                    }
                                 }
                             )
                             .onTapGesture(count: 2) { loc in
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                    if currentScale > 1.05 {
+                                    if isWideSpreadInPortrait(image: img, container: geo.size) && fitMode == .fillScreen && currentScale < 1.05 {
+                                        toggleSpreadSide(containerSize: geo.size, renderedSize: rendered)
+                                    } else if currentScale > 1.05 {
                                         currentScale = 1.0
                                         lastScale = 1.0
-                                        offset = .zero
-                                        lastOffset = .zero
+                                        if isWideSpreadInPortrait(image: img, container: geo.size) && fitMode == .fillScreen {
+                                            let targetX = targetOffset(for: activeSpreadSide, containerSize: geo.size, renderedSize: rendered)
+                                            offset = CGSize(width: targetX, height: 0)
+                                        } else {
+                                            offset = .zero
+                                        }
+                                        lastOffset = offset
                                     } else {
                                         if prefs.comicPageFitMode == .fitPage {
                                             prefs.comicPageFitMode = .fillScreen
@@ -3362,6 +3530,71 @@ struct ComicPageView: View {
                                     }
                                 }
                             }
+
+                        // Wide double-page spread navigation HUD pill in portrait Fill Screen mode
+                        if isWideSpreadInPortrait(image: img, container: geo.size) && fitMode == .fillScreen && currentScale < 1.05 {
+                            spreadNavigationHUD(containerSize: geo.size, renderedSize: rendered)
+                                .padding(.bottom, 52)
+                                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        }
+                    }
+                    .onChange(of: geo.size) { _, newSize in
+                        let newRendered = renderSize(for: img, in: newSize, fitMode: fitMode)
+                        if isWideSpreadInPortrait(image: img, container: newSize) && fitMode == .fillScreen {
+                            let targetX = targetOffset(for: activeSpreadSide, containerSize: newSize, renderedSize: newRendered)
+                            offset = CGSize(width: targetX, height: 0)
+                            lastOffset = offset
+                        } else {
+                            validateAndClampOffset(containerSize: newSize, renderedSize: newRendered)
+                        }
+                    }
+                    .onAppear {
+                        if isWideSpreadInPortrait(image: img, container: geo.size) && fitMode == .fillScreen && offset == .zero {
+                            let targetX = targetOffset(for: activeSpreadSide, containerSize: geo.size, renderedSize: rendered)
+                            offset = CGSize(width: targetX, height: 0)
+                            lastOffset = offset
+                        }
+                    }
+                    .onChange(of: displayImage) { _, newImg in
+                        guard let newImg else { return }
+                        if isWideSpreadInPortrait(image: newImg, container: geo.size) && fitMode == .fillScreen && offset == .zero {
+                            let newRendered = renderSize(for: newImg, in: geo.size, fitMode: fitMode)
+                            let targetX = targetOffset(for: activeSpreadSide, containerSize: geo.size, renderedSize: newRendered)
+                            offset = CGSize(width: targetX, height: 0)
+                            lastOffset = offset
+                        }
+                    }
+                    .onChange(of: prefs.comicPageFitMode) { _, newFitMode in
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            currentScale = 1.0
+                            lastScale = 1.0
+                            activeSpreadSide = .side1
+                            if isWideSpreadInPortrait(image: img, container: geo.size) && newFitMode == .fillScreen {
+                                let newRendered = renderSize(for: img, in: geo.size, fitMode: newFitMode)
+                                let targetX = targetOffset(for: .side1, containerSize: geo.size, renderedSize: newRendered)
+                                offset = CGSize(width: targetX, height: 0)
+                                lastOffset = offset
+                            } else {
+                                offset = .zero
+                                lastOffset = .zero
+                            }
+                        }
+                        updateDisplayImage()
+                    }
+                    .onChange(of: index) { _, newIndex in
+                        image = cache.getImage(at: newIndex)
+                        activeSpreadSide = .side1
+                        currentScale = 1.0
+                        lastScale = 1.0
+                        updateDisplayImage()
+                        if isWideSpreadInPortrait(image: img, container: geo.size) && fitMode == .fillScreen {
+                            let targetX = targetOffset(for: .side1, containerSize: geo.size, renderedSize: rendered)
+                            offset = CGSize(width: targetX, height: 0)
+                            lastOffset = offset
+                        } else {
+                            offset = .zero
+                            lastOffset = .zero
+                        }
                     }
                     .onDisappear {
                         cropTask?.cancel()
@@ -3420,10 +3653,6 @@ struct ComicPageView: View {
             image = cache.getImage(at: index)
             updateDisplayImage()
         }
-        .onChange(of: index) { _, newIndex in
-            image = cache.getImage(at: newIndex)
-            updateDisplayImage()
-        }
         .onChange(of: image) { _, _ in
             updateDisplayImage()
         }
@@ -3431,15 +3660,6 @@ struct ComicPageView: View {
             updateDisplayImage()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Reader_CropInsetsChanged"))) { _ in
-            updateDisplayImage()
-        }
-        .onChange(of: prefs.comicPageFitMode) { _, _ in
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                offset = .zero
-                lastOffset = .zero
-                currentScale = 1.0
-                lastScale = 1.0
-            }
             updateDisplayImage()
         }
         .onChange(of: currentScale) { oldScale, newScale in
