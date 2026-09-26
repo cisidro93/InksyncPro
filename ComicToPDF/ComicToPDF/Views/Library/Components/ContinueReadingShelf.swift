@@ -41,7 +41,7 @@ struct ContinueReadingShelf: View {
                             .contextMenu {
                                 Button {
                                     HapticEngine.selection()
-                                    ReaderProgressTracker.shared.clearReadingData(for: pdf.id, in: conversionManager)
+                                    ReaderProgressTracker.shared.clearReadingData(for: pdf.id, in: ConversionManager.shared)
                                 } label: {
                                     Label("Clear Reading History", systemImage: "clock.arrow.circlepath")
                                 }

@@ -100,15 +100,57 @@ struct StudyNotebookView: View {
 
         var icon: String {
             switch self {
-            case .zettelkasten: return "tree.fill"
-            case .cornell:      return "doc.text.fill"
-            case .para:         return "rocket.fill"
-            case .marginalia:   return "scribble.variable"
+            case .zettelkasten: return "point.3.connected.trianglepath.dotted"
+            case .cornell:      return "rectangle.split.2x1.fill"
+            case .para:         return "folder.fill.badge.gearshape"
+            case .marginalia:   return "pencil.and.scribble"
+            }
+        }
+
+        var shortLabel: String {
+            switch self {
+            case .zettelkasten: return "Zettelkasten"
+            case .cornell:      return "Cornell"
+            case .para:         return "PARA"
+            case .marginalia:   return "Marginalia"
+            }
+        }
+
+        var actionSubtitle: String {
+            switch self {
+            case .zettelkasten: return "Atomic Cards & [[Links]]"
+            case .cornell:      return "3-Zone Recall & Summary"
+            case .para:         return "Second Brain Folders"
+            case .marginalia:   return "Adlerian Margin Stamps"
+            }
+        }
+
+        var themeColor: Color {
+            switch self {
+            case .zettelkasten: return Color(hex: "#8E60E6")
+            case .cornell:      return Color(hex: "#2D7FF9")
+            case .para:         return Color(hex: "#10B981")
+            case .marginalia:   return Color(hex: "#F59E0B")
+            }
+        }
+
+        var gradient: LinearGradient {
+            switch self {
+            case .zettelkasten:
+                return LinearGradient(colors: [Color(hex: "#8E60E6"), Color(hex: "#6B38C9")], startPoint: .topLeading, endPoint: .bottomTrailing)
+            case .cornell:
+                return LinearGradient(colors: [Color(hex: "#2D7FF9"), Color(hex: "#1B5EC4")], startPoint: .topLeading, endPoint: .bottomTrailing)
+            case .para:
+                return LinearGradient(colors: [Color(hex: "#10B981"), Color(hex: "#059669")], startPoint: .topLeading, endPoint: .bottomTrailing)
+            case .marginalia:
+                return LinearGradient(colors: [Color(hex: "#F59E0B"), Color(hex: "#D97706")], startPoint: .topLeading, endPoint: .bottomTrailing)
             }
         }
     }
 
     @AppStorage("studyNotebookSystem") private var noteSystem: NoteTakingSystem = .zettelkasten
+    @State private var showingZettelBoardSheet: Bool = false
+    @State private var selectedPARACategory: PARACategory? = nil
     @AppStorage("studyNotebookInputMode") private var inputMode: InputMode = .markdown
     @State private var paperStyle: PaperStyle = .plain
     @State private var paperSpacing: CGFloat = 24.0
@@ -508,13 +550,17 @@ struct StudyNotebookView: View {
                             .buttonStyle(.plain)
                         }
 
-                        Image(systemName: "notebook.toptab.fill")
-                            .foregroundStyle(LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .font(.system(size: 18, weight: .bold))
+                        HStack(spacing: 6) {
+                            Image(systemName: "notebook.toptab.fill")
+                                .foregroundStyle(LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .font(.system(size: 17, weight: .bold))
 
-                        Text(availableWidth > 450 ? "Study Notebook" : "Notes")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
+                            Text(availableWidth > 500 ? "Study Notebook" : "Notes")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
 
                         // Notebook Multi-Page Navigation Pill
                         HStack(spacing: 3) {
@@ -604,7 +650,7 @@ struct StudyNotebookView: View {
 
                         Spacer()
 
-                        if availableWidth > 550 {
+                        if availableWidth > 680 {
                             // WIDE TOOLBAR
                             inputPicker
                             pasteButton
@@ -630,7 +676,7 @@ struct StudyNotebookView: View {
 
                             highlighterButton
                             statsMenu
-                        } else if availableWidth > 380 {
+                        } else if availableWidth > 420 {
                             // MEDIUM TOOLBAR
                             inputPicker
                             pasteButton
@@ -787,40 +833,66 @@ struct StudyNotebookView: View {
                     .overlay(Rectangle().frame(height: 1).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
 
                     // ── Multi-Modal System Selector Bar (Zettelkasten / Cornell / PARA / Marginalia) ──
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(NoteTakingSystem.allCases) { sys in
-                                Button {
-                                    HapticEngine.light()
-                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
-                                        noteSystem = sys
+                    VStack(spacing: 6) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(NoteTakingSystem.allCases) { sys in
+                                    let isSelected = noteSystem == sys
+                                    Button {
+                                        HapticEngine.selection()
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                            noteSystem = sys
+                                        }
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: sys.icon)
+                                                .font(.system(size: 11, weight: .bold))
+                                                .foregroundColor(isSelected ? .white : sys.themeColor)
+
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text(sys.shortLabel)
+                                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                                    .lineLimit(1)
+                                                
+                                                Text(sys.actionSubtitle)
+                                                    .font(.system(size: 8.5, weight: .semibold, design: .rounded))
+                                                    .lineLimit(1)
+                                                    .opacity(isSelected ? 0.95 : 0.65)
+                                            }
+                                        }
+                                        .fixedSize(horizontal: true, vertical: false)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            isSelected
+                                                ? AnyShapeStyle(sys.gradient)
+                                                : AnyShapeStyle(Color.primary.opacity(0.05))
+                                        )
+                                        .foregroundColor(isSelected ? .white : Color.primary.opacity(0.85))
+                                        .clipShape(Capsule())
+                                        .shadow(color: isSelected ? sys.themeColor.opacity(0.4) : .clear, radius: 4, y: 2)
+                                        .overlay(
+                                            Capsule()
+                                                .strokeBorder(
+                                                    isSelected ? Color.white.opacity(0.4) : sys.themeColor.opacity(0.25),
+                                                    lineWidth: 0.8
+                                                )
+                                        )
                                     }
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: sys.icon)
-                                            .font(.system(size: 10, weight: .bold))
-                                        Text(sys.rawValue)
-                                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                                    }
-                                    .fixedSize(horizontal: true, vertical: false)
-                                    .foregroundColor(noteSystem == sys ? .white : Theme.textSecondary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(
-                                        noteSystem == sys
-                                            ? AnyShapeStyle(Color(hex: "#7B5EA7"))
-                                            : AnyShapeStyle(Color.primary.opacity(0.05))
-                                    )
-                                    .clipShape(Capsule())
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
+                            .padding(.horizontal, 12)
+                            .padding(.top, 4)
+                            .padding(.bottom, 2)
                         }
-                        .padding(.horizontal, 12)
+
+                        // Active System Specialized Action Sub-Bar
+                        systemSpecializedSubBar
                     }
-                    .padding(.vertical, 6)
-                    .background(Color.primary.opacity(0.02))
-                    .overlay(Rectangle().frame(height: 0.5).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
+                    .padding(.vertical, 4)
+                    .background(Color.inkBackground.opacity(0.4).background(.ultraThinMaterial))
+                    .overlay(Rectangle().frame(height: 0.5).foregroundColor(Color.primary.opacity(0.08)), alignment: .bottom)
 
                     smartPageIndexBar
 
@@ -887,6 +959,22 @@ struct StudyNotebookView: View {
                                                 in: Capsule()
                                             )
                                             .shadow(color: Color.orange.opacity(0.3), radius: 4, x: 0, y: 2)
+                                        }
+                                        .buttonStyle(.plain)
+
+                                        Button {
+                                            insertTemplateForCurrentSystem()
+                                        } label: {
+                                            HStack(spacing: 5) {
+                                                Image(systemName: noteSystem.icon)
+                                                Text("Start \(noteSystem.shortLabel) Template")
+                                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                            }
+                                            .foregroundColor(noteSystem.themeColor)
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 7)
+                                            .background(noteSystem.themeColor.opacity(0.12), in: Capsule())
+                                            .overlay(Capsule().stroke(noteSystem.themeColor.opacity(0.25), lineWidth: 0.8))
                                         }
                                         .buttonStyle(.plain)
                                     }
@@ -1024,6 +1112,23 @@ struct StudyNotebookView: View {
                 WritingAssistantSheet(text: $localNotes)
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showingZettelBoardSheet) {
+                NavigationStack {
+                    ZettelkastenBoardView(
+                        annotations: bookHighlights,
+                        pdfs: resolvedPDF != nil ? [resolvedPDF!] : []
+                    )
+                    .navigationTitle("Zettelkasten Board")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                showingZettelBoardSheet = false
+                            }
+                        }
+                    }
+                }
             }
             .fullScreenCover(item: $selectedBookForReader) { pdf in
                 UnifiedReaderView(pdf: pdf, startWithNotebookOpen: true)
@@ -1260,6 +1365,7 @@ struct StudyNotebookView: View {
         self.localNotes = loadedText
         self.cornellCuesText = page.cornellCueText ?? ""
         self.cornellSummaryText = page.cornellSummaryText ?? ""
+        self.selectedPARACategory = page.paraCategory
 
         if let dData = page.drawingData, let drawing = try? PKDrawing(data: dData) {
             self.canvasView.drawing = drawing
@@ -1372,6 +1478,7 @@ struct StudyNotebookView: View {
         self.activeNoteAnnotation?.cornellCueText = cues
         self.activeNoteAnnotation?.cornellSummaryText = summary
         self.activeNoteAnnotation?.drawingData = drawingData
+        self.activeNoteAnnotation?.paraCategory = self.selectedPARACategory
         self.activeNoteAnnotation?.modifiedAt = Date()
         if let annotation = self.activeNoteAnnotation {
             SpotlightIndexer.shared.indexAnnotation(annotation)
@@ -1403,6 +1510,7 @@ struct StudyNotebookView: View {
                     self.activeNoteAnnotation?.cornellCueText = cues
                     self.activeNoteAnnotation?.cornellSummaryText = summary
                     self.activeNoteAnnotation?.drawingData = drawingData
+                    self.activeNoteAnnotation?.paraCategory = self.selectedPARACategory
                     self.activeNoteAnnotation?.modifiedAt = Date()
                     if let annotation = self.activeNoteAnnotation {
                         SpotlightIndexer.shared.indexAnnotation(annotation)
@@ -2668,5 +2776,516 @@ extension StudyNotebookView {
         } else {
             cornellSummaryText = "Summary: Core concepts reviewed and recorded."
         }
+    }
+}
+
+// MARK: - Multi-Modal Study System Sub-Bars & Actions
+private extension StudyNotebookView {
+    @ViewBuilder
+    var systemSpecializedSubBar: some View {
+        switch noteSystem {
+        case .zettelkasten:
+            zettelkastenSubBar
+        case .cornell:
+            cornellSubBar
+        case .para:
+            paraSubBar
+        case .marginalia:
+            marginaliaSubBar
+        }
+    }
+
+    var zettelkastenSubBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    Image(systemName: "leaf.arrow.triangle.circlepath")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("Maturity:")
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(Color(hex: "#8E60E6"))
+                .padding(.leading, 4)
+
+                let currentMat = activeNoteAnnotation?.maturityRaw ?? "fleeting"
+                ForEach(["fleeting", "literature", "permanent"], id: \.self) { mat in
+                    let isCurrent = currentMat.lowercased() == mat
+                    Button {
+                        setNoteMaturity(mat)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: maturityIcon(for: mat))
+                                .font(.system(size: 9, weight: .bold))
+                            Text(maturityTitle(for: mat))
+                                .font(.system(size: 10, weight: isCurrent ? .bold : .medium, design: .rounded))
+                        }
+                        .foregroundColor(isCurrent ? .white : .primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            isCurrent
+                            ? AnyShapeStyle(Color(hex: "#8E60E6"))
+                            : AnyShapeStyle(Color.primary.opacity(0.06)),
+                            in: Capsule()
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(isCurrent ? Color.white.opacity(0.3) : Color.primary.opacity(0.08), lineWidth: 0.8)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Divider()
+                    .frame(height: 14)
+                    .padding(.horizontal, 2)
+
+                Button {
+                    insertWikiLink()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "link.badge.plus")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("[[Wiki-Link]]")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(Color(hex: "#8E60E6"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(hex: "#8E60E6").opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    HapticEngine.medium()
+                    showingZettelBoardSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "circle.grid.3x3.circle.fill")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("Visual Board")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(
+                        LinearGradient(colors: [Color(hex: "#8E60E6"), Color(hex: "#6B38C9")], startPoint: .leading, endPoint: .trailing),
+                        in: Capsule()
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    autoLinkZettelConcepts()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("Auto-Link")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(Color(hex: "#8E60E6"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(hex: "#8E60E6").opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 3)
+        }
+    }
+
+    var cornellSubBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    Image(systemName: "rectangle.split.2x1.fill")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("3-Zone Active:")
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(Color(hex: "#2D7FF9"))
+                .padding(.leading, 4)
+
+                Button {
+                    HapticEngine.selection()
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        isCoveredForRecitation.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: isCoveredForRecitation ? "eye.slash.fill" : "eye.fill")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(isCoveredForRecitation ? "Recite Mode: Hidden" : "Recite Mode")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(isCoveredForRecitation ? .white : Color(hex: "#2D7FF9"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        isCoveredForRecitation
+                        ? AnyShapeStyle(Color.orange)
+                        : AnyShapeStyle(Color(hex: "#2D7FF9").opacity(0.12)),
+                        in: Capsule()
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    generateCornellCues()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("AI Cues")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(Color(hex: "#2D7FF9"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(hex: "#2D7FF9").opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    generateCornellSummary()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "text.alignleft")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("AI Summary")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(Color(hex: "#2D7FF9"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(hex: "#2D7FF9").opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 3)
+        }
+    }
+
+    var paraSubBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    Image(systemName: "folder.fill.badge.gearshape")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("PARA Category:")
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(Color(hex: "#10B981"))
+                .padding(.leading, 4)
+
+                ForEach(PARACategory.allCases) { cat in
+                    let isCurrent = selectedPARACategory == cat
+                    Button {
+                        togglePARACategory(cat)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: cat.iconName)
+                                .font(.system(size: 9, weight: .bold))
+                            Text(cat.displayName)
+                                .font(.system(size: 10, weight: isCurrent ? .bold : .medium, design: .rounded))
+                        }
+                        .foregroundColor(isCurrent ? .white : .primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            isCurrent
+                            ? AnyShapeStyle(Color(hex: "#10B981"))
+                            : AnyShapeStyle(Color.primary.opacity(0.06)),
+                            in: Capsule()
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(isCurrent ? Color.white.opacity(0.3) : Color.primary.opacity(0.08), lineWidth: 0.8)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if let current = selectedPARACategory {
+                    Button {
+                        stampPARATag(current)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "tag.fill")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("Stamp #\(current.rawValue)")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundColor(Color(hex: "#10B981"))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(hex: "#10B981").opacity(0.12), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 3)
+        }
+    }
+
+    var marginaliaSubBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    Image(systemName: "pencil.and.scribble")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("Adlerian Stamps:")
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(Color(hex: "#F59E0B"))
+                .padding(.leading, 4)
+
+                ForEach(MarginaliaSymbol.allCases) { sym in
+                    Button {
+                        stampMarginaliaSymbol(sym)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(sym.symbolString)
+                                .font(.system(size: 10))
+                            Text(sym.displayName)
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                        }
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(hex: "#F59E0B").opacity(0.12), in: Capsule())
+                        .overlay(Capsule().stroke(Color(hex: "#F59E0B").opacity(0.2), lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Divider()
+                    .frame(height: 14)
+                    .padding(.horizontal, 2)
+
+                Button {
+                    HapticEngine.light()
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showHighlightsDrawer.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "quote.opening")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("Quotes (\(bookHighlights.count))")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(
+                        LinearGradient(colors: [Color(hex: "#F59E0B"), Color(hex: "#D97706")], startPoint: .leading, endPoint: .trailing),
+                        in: Capsule()
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    stampQuoteFromCurrentPage()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.doc")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("Quote Page")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(Color(hex: "#F59E0B"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(hex: "#F59E0B").opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 3)
+        }
+    }
+
+    func maturityTitle(for raw: String) -> String {
+        switch raw.lowercased() {
+        case "fleeting", "seedling": return "Fleeting"
+        case "literature", "incubating": return "Literature"
+        case "permanent", "evergreen": return "Permanent"
+        default: return "Fleeting"
+        }
+    }
+
+    func maturityIcon(for raw: String) -> String {
+        switch raw.lowercased() {
+        case "fleeting", "seedling": return "sparkles"
+        case "literature", "incubating": return "book.closed.fill"
+        case "permanent", "evergreen": return "brain.head.profile"
+        default: return "sparkles"
+        }
+    }
+
+    func setNoteMaturity(_ maturity: String) {
+        HapticEngine.selection()
+        activeNoteAnnotation?.maturityRaw = maturity
+        let tag = "#zettel/\(maturity)"
+        if !localNotes.contains(tag) {
+            let clean = localNotes
+                .replacingOccurrences(of: "#zettel/fleeting", with: "")
+                .replacingOccurrences(of: "#zettel/literature", with: "")
+                .replacingOccurrences(of: "#zettel/permanent", with: "")
+                .replacingOccurrences(of: "#zettel/seedling", with: "")
+                .replacingOccurrences(of: "#zettel/incubating", with: "")
+                .replacingOccurrences(of: "#zettel/evergreen", with: "")
+            localNotes = "**Maturity:** \(tag)\n" + clean.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        debounceSave()
+    }
+
+    func insertWikiLink() {
+        HapticEngine.light()
+        let placeholder = " [[Concept]] "
+        localNotes += placeholder
+        debounceSave()
+    }
+
+    func autoLinkZettelConcepts() {
+        HapticEngine.medium()
+        guard let active = activeNoteAnnotation else { return }
+        let connections = ZettelkastenAutoLinker.shared.discoverConnections(for: active, in: bookHighlights)
+        if connections.isEmpty {
+            localNotes += "\n\n*[[No direct concept connections found in active highlights]]*\n"
+        } else {
+            var linksMd = "\n\n### 🔗 Auto-Linked Concepts\n"
+            for conn in connections.prefix(3) {
+                let title = conn.targetAnnotation?.selectedText?.prefix(30) ?? "Related Card"
+                let pIndex = (conn.targetAnnotation?.pageIndex ?? 0) + 1
+                linksMd += "- [[\(title)]] *(Page \(pIndex))*\n"
+            }
+            localNotes += linksMd
+        }
+        debounceSave()
+    }
+
+    func togglePARACategory(_ category: PARACategory) {
+        HapticEngine.selection()
+        if selectedPARACategory == category {
+            selectedPARACategory = nil
+            activeNoteAnnotation?.paraCategory = nil
+        } else {
+            selectedPARACategory = category
+            activeNoteAnnotation?.paraCategory = category
+            stampPARATag(category)
+        }
+        debounceSave()
+    }
+
+    func stampPARATag(_ category: PARACategory) {
+        let tag = "#para/\(category.rawValue)"
+        if !localNotes.contains(tag) {
+            let clean = localNotes
+                .replacingOccurrences(of: "#para/project", with: "")
+                .replacingOccurrences(of: "#para/area", with: "")
+                .replacingOccurrences(of: "#para/resource", with: "")
+                .replacingOccurrences(of: "#para/archive", with: "")
+            localNotes = "**Category:** \(tag)\n" + clean.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        debounceSave()
+    }
+
+    func stampMarginaliaSymbol(_ symbol: MarginaliaSymbol) {
+        HapticEngine.light()
+        activeNoteAnnotation?.marginaliaSymbol = symbol
+        let stamp: String
+        switch symbol {
+        case .question:
+            stamp = "\n> ❓ **Question:** "
+        case .insight:
+            stamp = "\n> ❗ **Crucial Insight:** "
+        case .favorite:
+            stamp = "\n> ★ **Key Thesis:** "
+        case .anchor:
+            let pageNum = (activeReaderPageIndex ?? currentNotebookPageIndex) + 1
+            stamp = "\n[📍 Page \(pageNum)](page:\(pageNum - 1))\n"
+        }
+        localNotes += stamp
+        debounceSave()
+    }
+
+    func stampQuoteFromCurrentPage() {
+        HapticEngine.medium()
+        let currentPage = activeReaderPageIndex ?? currentNotebookPageIndex
+        let pageHighlights = bookHighlights.filter { $0.pageIndex == currentPage }
+        if let first = pageHighlights.first {
+            insertHighlightIntoNote(first)
+        } else {
+            showHighlightsDrawer = true
+        }
+    }
+
+    func insertTemplateForCurrentSystem() {
+        HapticEngine.selection()
+        switch noteSystem {
+        case .zettelkasten:
+            let dateStr = Date().formatted(date: .abbreviated, time: .omitted)
+            localNotes = """
+            # \(bookTitle.isEmpty ? "Atomic Idea" : bookTitle)
+
+            **Maturity:** #zettel/fleeting | **Date:** \(dateStr)
+            **Source:** [[\(bookTitle)]]
+
+            ## Core Concept
+            State your atomic thesis here in one clear, standalone statement.
+
+            ## Argument & Evidence
+            - 
+
+            ## References & Connections
+            - [[Related Concept]]
+            """
+        case .cornell:
+            localNotes = """
+            # Key Concepts & Discussion
+
+            - 
+            """
+            cornellCuesText = "❓ Central Thesis\n\n❓ Key Evidence\n\n❓ Practical Application"
+            cornellSummaryText = "Summary: "
+        case .para:
+            let cat = selectedPARACategory ?? .project
+            localNotes = """
+            # \(cat.displayName): \(bookTitle.isEmpty ? "Initiative" : bookTitle)
+
+            **Status:** #para/\(cat.rawValue) | **Updated:** \(Date().formatted(date: .abbreviated, time: .omitted))
+
+            ## Target & Desired Outcome
+            - 
+
+            ## Action Items
+            - [ ] Review key chapter highlights
+            - [ ] Synthesize action points
+
+            ## Reference Notes
+            - 
+            """
+        case .marginalia:
+            let pageNum = (activeReaderPageIndex ?? currentNotebookPageIndex) + 1
+            localNotes = """
+            # Active Reading Notes — Page \(pageNum)
+
+            > ★ **Core Thesis:** 
+
+            > ❓ **Questions:** 
+            - 
+
+            > 💡 **Key Insight:** 
+            - 
+            """
+        }
+        debounceSave()
     }
 }

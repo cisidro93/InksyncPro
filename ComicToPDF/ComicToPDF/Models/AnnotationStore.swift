@@ -828,7 +828,7 @@ enum PARACategory: String, CaseIterable, Identifiable {
     
     var iconName: String {
         switch self {
-        case .project:  return "rocket.fill"
+        case .project:  return "target"
         case .area:     return "house.fill"
         case .resource: return "books.vertical.fill"
         case .archive:  return "archivebox.fill"
