@@ -1127,6 +1127,7 @@ struct StudyNotebookView: View {
                         }
                     }
                 }
+            }
             .sheet(isPresented: $isShowingBookPicker) {
                 BookPickerSheet { selectedBook in
                     linkBookToNotebook(selectedBook)
