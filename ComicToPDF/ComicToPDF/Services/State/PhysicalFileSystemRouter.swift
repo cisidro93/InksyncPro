@@ -569,7 +569,7 @@ class PhysicalFileSystemRouter {
             guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
             
             let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
-            var candidateEntries: [(path: String, entry: ZIPFoundation.Entry, size: UInt32)] = []
+            var candidateEntries: [(path: String, entry: ZIPFoundation.Entry, size: UInt64)] = []
             
             for entry in archive {
                 if entry.type == .directory { continue }
@@ -586,7 +586,7 @@ class PhysicalFileSystemRouter {
                     continue
                 }
                 
-                candidateEntries.append((entry.path, entry, entry.uncompressedSize))
+                candidateEntries.append((path: entry.path, entry: entry, size: entry.uncompressedSize))
             }
             
             let sortedCandidates = candidateEntries.sorted { a, b in

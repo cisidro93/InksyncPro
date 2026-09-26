@@ -136,12 +136,12 @@ struct ProDocumentInspectorView: View {
             }
             .sheet(isPresented: $showShareSheet) {
                 if let text = shareExportItem {
-                    ShareSheet(items: [text])
+                    ShareSheet(activityItems: [text])
                 }
             }
             .sheet(isPresented: $showPDFShareSheet) {
                 if let url = exportPDFURL {
-                    ShareSheet(items: [url])
+                    ShareSheet(activityItems: [url])
                 }
             }
             .background(Color.inkBackground)
@@ -555,15 +555,4 @@ private struct OutlineNodeRow: View {
             }
         }
     }
-}
-
-// MARK: - ShareSheet UIKit Bridge
-private struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
