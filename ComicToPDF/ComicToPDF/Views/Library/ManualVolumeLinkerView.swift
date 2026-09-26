@@ -46,18 +46,16 @@ struct ManualVolumeLinkerView: View {
         var ungrouped: [ConvertedPDF] = []
         
         for pdf in freshIssues {
-            if let vol = pdf.metadata.volume, !vol.trimmingCharacters(in: .whitespaces).isEmpty {
-                groups[vol, default: []].append(pdf)
+            if let vol = pdf.resolvedVolume {
+                let norm = VolumeNormalizer.normalize(vol) ?? vol
+                groups[norm, default: []].append(pdf)
             } else {
                 ungrouped.append(pdf)
             }
         }
         
         let sortedGroups = groups.keys.sorted { a, b in
-            if let ia = Int(a.filter { $0.isNumber }), let ib = Int(b.filter { $0.isNumber }) {
-                return ia < ib
-            }
-            return a.localizedStandardCompare(b) == .orderedAscending
+            VolumeNormalizer.compare(a, b)
         }.map { (name: $0, issues: groups[$0] ?? []) }
         
         var result = sortedGroups

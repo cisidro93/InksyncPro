@@ -38,6 +38,28 @@ struct ContinueReadingShelf: View {
                         PremiumHeroCard(pdf: pdf)
                             .tag(index)
                             .onTapGesture { onTap(pdf) }
+                            .contextMenu {
+                                Button {
+                                    HapticEngine.selection()
+                                    ReaderProgressTracker.shared.clearReadingData(for: pdf.id, in: conversionManager)
+                                } label: {
+                                    Label("Clear Reading History", systemImage: "clock.arrow.circlepath")
+                                }
+                                
+                                Button {
+                                    HapticEngine.selection()
+                                    ReaderProgressTracker.shared.markUnread(pdfID: pdf.id)
+                                } label: {
+                                    Label("Mark as Unread", systemImage: "circle")
+                                }
+                                
+                                Button {
+                                    HapticEngine.selection()
+                                    ReaderProgressTracker.shared.markComplete(pdfID: pdf.id, totalPages: pdf.pageCount)
+                                } label: {
+                                    Label("Mark as Read", systemImage: "checkmark.circle")
+                                }
+                            }
                             .padding(.horizontal, hSizeClass == .regular ? 24 : 16)
                     }
                 }

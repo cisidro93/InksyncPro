@@ -211,12 +211,13 @@ struct SeriesDetailView: View {
         }
         
         if let selectedVolume = selectedVolumeFilter {
+            let normFilter = VolumeNormalizer.normalize(selectedVolume) ?? selectedVolume
             return baseIssues.filter { pdf in
                 let vol = pdf.resolvedVolume
-                if selectedVolume == "Ungrouped" {
+                if normFilter == "Ungrouped" {
                     return vol == nil || vol!.isEmpty
                 } else {
-                    return vol == selectedVolume
+                    return vol == normFilter || (vol != nil && VolumeNormalizer.normalize(vol) == normFilter)
                 }
             }
         }
@@ -227,7 +228,8 @@ struct SeriesDetailView: View {
     var volumeGroups: [(key: String, issues: [ConvertedPDF])] {
         let allGroups = cachedVolumeGroups
         if let selectedVolume = selectedVolumeFilter {
-            return allGroups.filter { $0.key == selectedVolume }
+            let normFilter = VolumeNormalizer.normalize(selectedVolume) ?? selectedVolume
+            return allGroups.filter { $0.key == normFilter }
         }
         return allGroups
     }
@@ -243,15 +245,16 @@ struct SeriesDetailView: View {
                 continue
             }
             if let vol = pdf.resolvedVolume {
-                groups[vol, default: []].append(pdf)
+                let normVol = VolumeNormalizer.normalize(vol) ?? vol
+                groups[normVol, default: []].append(pdf)
             } else {
                 ungrouped.append(pdf)
             }
         }
         
-        // Sort volume keys numerically
+        // Sort volume keys numerically with strict, deterministic natural ordering
         var result = groups.map { (key: String, issues: [ConvertedPDF]) in (key: key, issues: issues) }
-            .sorted { (Int($0.key) ?? 0) < (Int($1.key) ?? 0) }
+            .sorted { VolumeNormalizer.compare($0.key, $1.key) }
         
         if !ungrouped.isEmpty {
             result.append((key: "Ungrouped", issues: ungrouped))
@@ -808,7 +811,7 @@ struct SeriesDetailView: View {
 
                     ForEach(volumes, id: \.self) { vol in
                         let isSelected = selectedVolumeFilter == vol
-                        let issuesInVol = localIssues.filter { ($0.metadata.volume ?? "") == vol }
+                        let issuesInVol = localIssues.filter { $0.resolvedVolume == vol || VolumeNormalizer.normalize($0.resolvedVolume) == vol }
                         let isCompletedVol = !issuesInVol.isEmpty && issuesInVol.allSatisfy { (ReaderProgressTracker.shared.progress(for: $0.id)?.completionFraction ?? 0) >= 0.95 }
                         Button {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
@@ -821,7 +824,7 @@ struct SeriesDetailView: View {
                                         .font(.system(size: 10, weight: .bold))
                                         .foregroundColor(isSelected ? .white : Theme.orange)
                                 }
-                                Text(vol == "Ungrouped" ? "Ungrouped" : "Vol. \(vol)")
+                                Text(VolumeNormalizer.displayLabel(for: vol))
                                     .font(.system(size: 13, weight: isSelected ? .bold : .semibold, design: .rounded))
                             }
                             .padding(.horizontal, 13)
@@ -2103,6 +2106,39 @@ struct SeriesDetailView: View {
                 systemImage: isPinned ? "pin.slash" : "pin"
             )
         }
+        
+        Divider()
+
+        // ── READING STATUS / SHELF MANAGEMENT ──
+        let hasReadingHistory = (pdf.metadata.lastReadPage ?? 0) > 0 || ReaderProgressTracker.shared.progress(for: pdf.id) != nil
+        if hasReadingHistory {
+            Button {
+                HapticEngine.selection()
+                ReaderProgressTracker.shared.clearReadingData(for: pdf.id, in: conversionManager)
+                localIssues = sortedIssues
+                updateVolumeGroups()
+            } label: {
+                Label("Clear Reading History", systemImage: "clock.arrow.circlepath")
+            }
+            
+            Button {
+                HapticEngine.selection()
+                ReaderProgressTracker.shared.markUnread(pdfID: pdf.id)
+                localIssues = sortedIssues
+                updateVolumeGroups()
+            } label: {
+                Label("Mark as Unread", systemImage: "circle")
+            }
+        } else {
+            Button {
+                HapticEngine.selection()
+                ReaderProgressTracker.shared.markComplete(pdfID: pdf.id, totalPages: pdf.pageCount)
+                localIssues = sortedIssues
+                updateVolumeGroups()
+            } label: {
+                Label("Mark as Read", systemImage: "checkmark.circle")
+            }
+        }
     }
 
     @ViewBuilder
@@ -2120,7 +2156,7 @@ struct SeriesDetailView: View {
             
             // Direct Volume Assignment Submenu
             SwiftUI.Menu {
-                if let currentVol = pdf.metadata.volume, !currentVol.isEmpty {
+                if let currentVol = pdf.resolvedVolume, !currentVol.isEmpty {
                     Button(role: .destructive) {
                         setIssueVolume(pdf, to: nil)
                     } label: {
@@ -2134,8 +2170,8 @@ struct SeriesDetailView: View {
                         setIssueVolume(pdf, to: vol)
                     } label: {
                         HStack {
-                            Text("Volume \(vol)")
-                            if pdf.metadata.volume == vol {
+                            Text(VolumeNormalizer.displayLabel(for: vol))
+                            if pdf.resolvedVolume == vol || VolumeNormalizer.normalize(pdf.metadata.volume) == vol {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -2633,9 +2669,10 @@ struct SeriesDetailView: View {
     
     private func addSelectionToVolume(volumeKey: String) {
         guard !selection.isEmpty else { return }
+        let normKey = VolumeNormalizer.normalize(volumeKey) ?? volumeKey
         for id in selection {
             if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == id }) {
-                conversionManager.convertedPDFs[idx].metadata.volume = volumeKey
+                conversionManager.convertedPDFs[idx].metadata.volume = normKey
             }
         }
         conversionManager.saveLibrary()
@@ -2649,9 +2686,10 @@ struct SeriesDetailView: View {
     
     private func unlinkVolume(_ name: String) {
         HapticEngine.medium()
+        let normName = VolumeNormalizer.normalize(name) ?? name
         for idx in conversionManager.convertedPDFs.indices {
             let pdf = conversionManager.convertedPDFs[idx]
-            if freshIssues.contains(where: { $0.id == pdf.id }) && pdf.metadata.volume == name {
+            if freshIssues.contains(where: { $0.id == pdf.id }) && (pdf.metadata.volume == name || VolumeNormalizer.normalize(pdf.metadata.volume) == normName || pdf.resolvedVolume == normName) {
                 conversionManager.convertedPDFs[idx].metadata.volume = nil
             }
         }
@@ -2662,7 +2700,7 @@ struct SeriesDetailView: View {
     
     private func setIssueVolume(_ pdf: ConvertedPDF, to volumeKey: String?) {
         if let idx = conversionManager.convertedPDFs.firstIndex(where: { $0.id == pdf.id }) {
-            conversionManager.convertedPDFs[idx].metadata.volume = volumeKey
+            conversionManager.convertedPDFs[idx].metadata.volume = VolumeNormalizer.normalize(volumeKey)
             conversionManager.saveLibrary()
             NotificationCenter.default.post(name: .libraryUpdated, object: nil)
             HapticEngine.success()

@@ -71,7 +71,7 @@ struct DeterministicFilenameParser {
         
         return ParsedTokens(
             seriesName: seriesName.isEmpty ? base : seriesName,
-            volume: volume,
+            volume: VolumeNormalizer.normalize(volume),
             issueNumber: issueNumber,
             title: title
         )

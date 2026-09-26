@@ -194,12 +194,16 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
     
     // MARK: - Volume & Issue Resolution
     
-    /// Returns the assigned volume from metadata, falling back to deterministic filename parsing.
+    /// Returns the assigned volume from metadata, falling back to deterministic filename parsing,
+    /// canonicalized via VolumeNormalizer to eliminate duplicate buckets (e.g. "Vol. 9" vs "Vol. 09").
     var resolvedVolume: String? {
-        if let vol = metadata.volume, !vol.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return vol
-        }
-        return DeterministicFilenameParser.parse(filename: name).volume
+        let raw: String? = {
+            if let vol = metadata.volume, !vol.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return vol
+            }
+            return DeterministicFilenameParser.parse(filename: name).volume
+        }()
+        return VolumeNormalizer.normalize(raw)
     }
     
     /// Returns the numeric issue number, checking metadata first, then deterministic tokens, then heuristics.

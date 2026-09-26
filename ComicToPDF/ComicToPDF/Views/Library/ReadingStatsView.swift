@@ -444,9 +444,7 @@ struct ReadingStatsView: View {
                 if lhs.baseName != rhs.baseName {
                     return lhs.baseName.localizedStandardCompare(rhs.baseName) == .orderedAscending
                 }
-                let v1 = Int(lhs.volume ?? "") ?? 0
-                let v2 = Int(rhs.volume ?? "") ?? 0
-                return v1 < v2
+                return VolumeNormalizer.compare(lhs.volume ?? "", rhs.volume ?? "")
             }
             .prefix(15)
             .map { $0 }

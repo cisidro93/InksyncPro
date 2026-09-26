@@ -879,6 +879,36 @@ struct LibraryGridView: View {
         Button { onAction(.sendToKindle, pdf) } label: { Label("Send to Kindle", systemImage: "k.circle.fill") }
         
         Divider()
+
+        // ── 2.5 READING STATUS / SHELF MANAGEMENT ──
+        let hasReadingHistory = (pdf.metadata.lastReadPage ?? 0) > 0 || ReaderProgressTracker.shared.progress(for: pdf.id) != nil
+        if hasReadingHistory {
+            Button {
+                HapticEngine.selection()
+                ReaderProgressTracker.shared.clearReadingData(for: pdf.id, in: conversionManager)
+                onDropApplied()
+            } label: {
+                Label("Clear Reading History", systemImage: "clock.arrow.circlepath")
+            }
+            
+            Button {
+                HapticEngine.selection()
+                ReaderProgressTracker.shared.markUnread(pdfID: pdf.id)
+                onDropApplied()
+            } label: {
+                Label("Mark as Unread", systemImage: "circle")
+            }
+        } else {
+            Button {
+                HapticEngine.selection()
+                ReaderProgressTracker.shared.markComplete(pdfID: pdf.id, totalPages: pdf.pageCount)
+                onDropApplied()
+            } label: {
+                Label("Mark as Read", systemImage: "checkmark.circle")
+            }
+        }
+        
+        Divider()
         
         // ── 3. GROUPED FUNCTIONAL SUBMENUS ──
         
@@ -893,16 +923,22 @@ struct LibraryGridView: View {
             Divider()
             
             Button {
+                HapticEngine.selection()
                 ReaderProgressTracker.shared.markComplete(pdfID: pdf.id, totalPages: pdf.pageCount)
+                onDropApplied()
             } label: { Label("Mark as Read", systemImage: "checkmark.circle") }
             
             Button {
+                HapticEngine.selection()
                 ReaderProgressTracker.shared.markUnread(pdfID: pdf.id)
+                onDropApplied()
             } label: { Label("Mark as Unread", systemImage: "circle") }
             
             Button(role: .destructive) {
+                HapticEngine.selection()
                 ReaderProgressTracker.shared.clearReadingData(for: pdf.id, in: conversionManager)
-            } label: { Label("Clear Reading Data", systemImage: "arrow.counterclockwise") }
+                onDropApplied()
+            } label: { Label("Clear Reading History", systemImage: "arrow.counterclockwise") }
             
             Divider()
             

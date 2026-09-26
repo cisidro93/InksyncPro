@@ -267,6 +267,7 @@ class ReaderProgressTracker: ObservableObject {
 
         // Keep ConversionManager in-memory library and SQLite progress in sync
         if let idx = ConversionManager.shared.convertedPDFs.firstIndex(where: { $0.id == updated.pdfID }) {
+            ConversionManager.shared.objectWillChange.send()
             ConversionManager.shared.convertedPDFs[idx].metadata.lastReadPage = updated.currentPageIndex
             ConversionManager.shared.saveProgressOnly()
         }
@@ -376,6 +377,7 @@ class ReaderProgressTracker: ObservableObject {
         
         let targetManager = manager ?? ConversionManager.shared
         if let idx = targetManager.convertedPDFs.firstIndex(where: { $0.id == pdfID }) {
+            targetManager.objectWillChange.send()
             targetManager.convertedPDFs[idx].metadata.lastReadPage = 0
             targetManager.saveProgressOnly()
         }
@@ -387,6 +389,7 @@ class ReaderProgressTracker: ObservableObject {
             object: nil,
             userInfo: ["pdfID": pdfID]
         )
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
         
         HapticEngine.light()
     }

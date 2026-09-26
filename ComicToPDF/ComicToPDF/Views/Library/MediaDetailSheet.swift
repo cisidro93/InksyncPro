@@ -246,6 +246,33 @@ struct MediaDetailSheet: View {
                         squareButton(title: "Rename", icon: "pencil", action: .rename)
                     }
                     
+                    // Reading Status / Shelf Action
+                    let hasReadingHistory = (pdf.metadata.lastReadPage ?? 0) > 0 || ReaderProgressTracker.shared.progress(for: pdf.id) != nil
+                    if hasReadingHistory {
+                        Button {
+                            HapticEngine.selection()
+                            ReaderProgressTracker.shared.clearReadingData(for: pdf.id, in: conversionManager)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Image(systemName: "clock.arrow.circlepath")
+                                Text("Clear Reading History")
+                                    .fontWeight(.semibold)
+                                Spacer()
+                            }
+                            .font(.system(size: 15))
+                            .foregroundColor(.inkOrange)
+                            .padding(.vertical, 14)
+                            .background(Color.inkOrange.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .strokeBorder(Color.inkOrange.opacity(0.3), lineWidth: 1)
+                            )
+                        }
+                    }
+                    
                     // Destructive
                     Button {
                         HapticEngine.warning()
