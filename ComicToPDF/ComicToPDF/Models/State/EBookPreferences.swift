@@ -214,6 +214,36 @@ class EBookPreferences: ObservableObject {
         didSet { objectWillChange.send() }
     }
 
+    // MARK: - Orientation-Adaptive Page Spread Engine (Apple Books & Kindle Parity)
+    /// Canonical layout resolver conforming to the Apple Books & Kindle orientation standard:
+    /// In Portrait (width <= height), ALWAYS returns 1 (single page / 1 column) regardless of reading mode.
+    /// In Landscape (width > height), returns 2 (dual page spread) unless explicitly set to single page (columnCount == 1).
+    func effectiveColumnCount(for size: CGSize) -> Int {
+        let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
+        let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
+        let isLandscape = renderWidth > renderHeight
+        if !isLandscape {
+            // Strict Invariant (Apple Books & Kindle Parity):
+            // In Portrait, ALWAYS single page mode (1 column) regardless of reading mode.
+            return 1
+        }
+
+        // In Landscape:
+        if columnCount == 1 {
+            return 1
+        }
+        if !autoLandscapeDualPage && columnCount == 0 && !pdfDualPage {
+            return 1
+        }
+        return 2
+    }
+
+    /// True if the current viewport should render as a dual-page spread.
+    /// Strict Invariant: ALWAYS false in portrait, true in landscape (unless single page is explicitly selected).
+    func shouldDisplayDualPage(for size: CGSize) -> Bool {
+        return effectiveColumnCount(for: size) > 1
+    }
+
     // MARK: - Auto-Theme Scheduling
     @AppStorage("ebook_autoThemeEnabled")   var isAutoThemeEnabled: Bool = false {
         didSet { objectWillChange.send() }

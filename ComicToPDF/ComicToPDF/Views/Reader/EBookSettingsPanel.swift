@@ -847,6 +847,7 @@ struct EBookSettingsPanel: View {
                     ReaderSettingsToggleRow(
                         label: "Dual-Page Spreads",
                         icon: "rectangle.split.2x1",
+                        subtitle: "Landscape → dual · Portrait → single",
                         isOn: $prefs.pdfDualPage
                     )
                     Divider().padding(.leading, 44)
@@ -957,7 +958,18 @@ struct EBookSettingsPanel: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "ipad.landscape")
+                            .font(.system(size: 11))
+                        Text("Portrait mode displays 1 page. Dual spreads activate in landscape.")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                    }
+                    .foregroundStyle(Color.inkTextTertiary)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
                 }
 
                 // Pagination
@@ -1194,6 +1206,7 @@ struct EBookSettingsPanel: View {
                     ReaderSettingsToggleRow(
                         label: "Two-Up (Dual Page)",
                         icon: "rectangle.split.2x1",
+                        subtitle: "Landscape → dual · Portrait → single",
                         isOn: Binding(
                             get: { prefs.pdfDualPage },
                             set: { prefs.pdfDualPage = $0 }
@@ -1260,6 +1273,7 @@ struct ReaderSettingsSection<Content: View>: View {
 struct ReaderSettingsToggleRow: View {
     let label: String
     let icon: String
+    var subtitle: String? = nil
     @Binding var isOn: Bool
 
     private var isPad: Bool {
@@ -1272,9 +1286,16 @@ struct ReaderSettingsToggleRow: View {
                 .font(.system(size: isPad ? 17 : 15, weight: .medium))
                 .foregroundStyle(isOn ? Color.orange : Color.inkTextSecondary)
                 .frame(width: 28)
-            Text(label)
-                .font(.system(size: isPad ? 17 : 15))
-                .foregroundStyle(Color.inkTextPrimary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: isPad ? 17 : 15))
+                    .foregroundStyle(Color.inkTextPrimary)
+                if let subtitle = subtitle {
+                    Text(subtitle)
+                        .font(.system(size: isPad ? 12 : 11))
+                        .foregroundStyle(Color.inkTextSecondary)
+                }
+            }
             Spacer()
             Toggle("", isOn: $isOn)
                 .labelsHidden()

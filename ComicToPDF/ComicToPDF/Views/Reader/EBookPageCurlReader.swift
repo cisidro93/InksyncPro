@@ -467,39 +467,28 @@ extension EBookPageCurlReader {
         // Typographic Measure Invariant (Oliver Reichenstein standard):
         // Dual-column spreads require at least 820pt of render width so each column maintains
         // a 380pt+ width (preserving 65-75 characters per line).
-        // If the Study Notebook sidebar or Split View narrows render width below 820pt,
-        // auto-mode gracefully falls back to a single generous column.
+        // Typographic Measure Invariant (Oliver Reichenstein standard):
+        // Dual-column spreads require at least 820pt of render width so each column maintains
+        // a 380pt+ measure (preserving 65-75 characters per line).
+        // If Split View narrows render width below 820pt, auto-mode gracefully falls back to a single column.
         static let minDualColumnRenderWidth: CGFloat = 820.0
 
         static func computeColumnCount(prefs: EBookPreferences, size: CGSize) -> Int {
             let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
             let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
-            let isPad = UIDevice.current.userInterfaceIdiom == .pad
-            let isPhone = UIDevice.current.userInterfaceIdiom == .phone
             let isLandscape = renderWidth > renderHeight
 
-            // iPhone Portrait: Strictly 1 column
-            if isPhone && !isLandscape {
+            // Strict Invariant (Apple Books & Kindle Parity):
+            // In Portrait, ALWAYS single page mode (1 column) regardless of device or settings.
+            guard isLandscape else {
                 return 1
             }
 
-            // Compact Split View, Slide Over, or iPad with Study Notebook active:
-            // When renderWidth < minDualColumnRenderWidth, fall back to 1 column unless explicitly overridden
             if renderWidth < minDualColumnRenderWidth && prefs.columnCount == 0 {
                 return 1
             }
 
-            // Explicit user preference:
-            if prefs.columnCount > 0 {
-                return prefs.columnCount
-            }
-
-            // Auto column mode:
-            if isLandscape && isPad && renderWidth >= minDualColumnRenderWidth {
-                return prefs.autoLandscapeDualPage ? 2 : 1
-            } else {
-                return 1
-            }
+            return prefs.effectiveColumnCount(for: size)
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -1173,7 +1162,8 @@ extension EBookPageCurlReader {
             isTransitioning = true
             defer { isTransitioning = false }
 
-            let dual = isDualPageMode
+            let isLandscape = orientation.isLandscape
+            let dual = isLandscape && isDualPageMode
 
             if dual {
                 let leftIndex = currentPageIndex % 2 == 0 ? currentPageIndex : currentPageIndex - 1

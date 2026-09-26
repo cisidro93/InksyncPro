@@ -3630,8 +3630,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.isOpaque = false
 
         let prefs = EBookPreferences.shared
-        let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
-        let isDual = (isPad ? prefs.pdfDualPage : (isLandscape && prefs.pdfDualPage)) || (prefs.autoLandscapeDualPage && isLandscape)
+        let isDual = !prefs.isPDFSmartTiersActive && prefs.shouldDisplayDualPage(for: UIScreen.main.bounds.size)
 
         let inkingState = InksyncInkingState.shared
         let currentToolMode = inkingState.activeToolMode
@@ -3849,9 +3848,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if context.coordinator.fingerGlide?.minimumPressDuration != targetPressDuration {
             context.coordinator.fingerGlide?.minimumPressDuration = targetPressDuration
         }
-        let isPhone = UIDevice.current.userInterfaceIdiom == .phone
-        let isLandscape = uiView.bounds.width > uiView.bounds.height
-        let isDual = !prefs.isPDFSmartTiersActive && ((!isPhone ? prefs.pdfDualPage : (isLandscape && prefs.pdfDualPage)) || (prefs.autoLandscapeDualPage && isLandscape))
+        let isDual = !prefs.isPDFSmartTiersActive && prefs.shouldDisplayDualPage(for: uiView.bounds.size)
         let isManga = prefs.pdfRTL || pdf.isMangaBook || UserDefaults.standard.bool(forKey: "isMangaMode")
         if uiView.displaysRTL != isManga {
             uiView.displaysRTL = isManga
@@ -3859,7 +3856,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
 
         if uiView.displayMode != targetDisplayMode {
+            let activePage = uiView.currentPage
             uiView.displayMode = targetDisplayMode
+            if let activePage = activePage {
+                uiView.go(to: activePage)
+            }
         }
         let targetDisplaysAsBook = !prefs.linkCoverAsSpread
         if uiView.displaysAsBook != targetDisplaysAsBook {

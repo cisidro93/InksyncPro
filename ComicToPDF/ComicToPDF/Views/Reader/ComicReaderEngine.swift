@@ -1545,27 +1545,25 @@ struct ComicReaderEngine: View {
     
     func shouldShowTwoUpSpread(for size: CGSize) -> Bool {
         let isLandscape = size.width > size.height
-        if UIDevice.current.userInterfaceIdiom == .phone && !isLandscape {
-            return false
-        }
-        let pdfDual = EBookPreferences.shared.pdfDualPage || (EBookPreferences.shared.autoLandscapeDualPage && isLandscape)
-        let isDual = prefersTwoUpSpreads || pdfDual
-        guard isDual else { return false }
+        // Strict Invariant (Apple Books & Kindle Parity):
+        // In Portrait (width <= height), ALWAYS single page mode (1 page) regardless of device or preferences.
+        guard isLandscape else { return false }
+        guard readingMode != .webtoonScroll else { return false }
         guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .panelNavigation else { return false }
-        return true
+        guard prefersTwoUpSpreads else { return false }
+        return EBookPreferences.shared.shouldDisplayDualPage(for: size)
     }
 
     private var isCurrentlyTwoUp: Bool {
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
             let isLandscape = windowScene.interfaceOrientation.isLandscape
-            if UIDevice.current.userInterfaceIdiom == .phone && !isLandscape {
-                return false
-            }
-            let pdfDual = EBookPreferences.shared.pdfDualPage || (EBookPreferences.shared.autoLandscapeDualPage && isLandscape)
-            let isDual = prefersTwoUpSpreads || pdfDual
-            guard isDual else { return false }
+            // Strict Invariant: Portrait is ALWAYS single page mode
+            guard isLandscape else { return false }
+            guard readingMode != .webtoonScroll else { return false }
             guard readingMode == .pageHorizontal || readingMode == .mangaRTL || readingMode == .panelNavigation else { return false }
-            return true
+            guard prefersTwoUpSpreads else { return false }
+            let size = windowScene.screen.bounds.size
+            return EBookPreferences.shared.shouldDisplayDualPage(for: size)
         }
         return false
     }

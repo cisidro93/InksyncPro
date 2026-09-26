@@ -597,9 +597,7 @@ struct EPUBWebView: View {
         
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let isPhone = UIDevice.current.userInterfaceIdiom == .phone
-        let isLandscape = renderWidth > renderHeight
-        let defaultColumns = (isPad && isLandscape) ? 2 : 1
-        let cols = (isPhone && !isLandscape) ? 1 : (prefs.columnCount == 0 ? defaultColumns : prefs.columnCount)
+        let cols = prefs.effectiveColumnCount(for: CGSize(width: renderWidth, height: renderHeight))
         
         let m = isPaged ? (isPhone ? max(12.0, min(margin, 16.0)) : max(20.0, margin)) : (isPhone ? max(12.0, min(margin, 16.0)) : margin)
         let gap = 2 * m
@@ -1227,22 +1225,7 @@ struct BookReaderEngine: View {
     var isMangaMode: Bool { pdf.metadata.isManga == true || pdf.contentType == .manga }
 
     private func computeColumnCount(for size: CGSize) -> Int {
-        let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
-        let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
-        let isPad = UIDevice.current.userInterfaceIdiom == .pad
-        let isLandscape = renderWidth > renderHeight
-
-        // Typographic Measure Invariant (Oliver Reichenstein standard):
-        // Dual-column spreads require at least 820pt of render width so each column maintains
-        // a 380pt+ measure (preserving 65-75 characters per line).
-        // If the Study Notebook sidebar or Split View narrows render width below 820pt,
-        // auto-mode gracefully falls back to a single generous column.
-        if (!isPad && !isLandscape) || renderWidth < 820 {
-            return prefs.columnCount > 1 ? prefs.columnCount : 1
-        }
-
-        let defaultColumns = (isPad && isLandscape) ? 2 : 1
-        return prefs.columnCount == 0 ? defaultColumns : prefs.columnCount
+        return prefs.effectiveColumnCount(for: size)
     }
 
     private var currentProgressBinding: Binding<Double> {
