@@ -3848,6 +3848,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         if context.coordinator.fingerGlide?.minimumPressDuration != targetPressDuration {
             context.coordinator.fingerGlide?.minimumPressDuration = targetPressDuration
         }
+        let isPhone = UIDevice.current.userInterfaceIdiom == .phone
         let isDual = !prefs.isPDFSmartTiersActive && prefs.shouldDisplayDualPage(for: uiView.bounds.size)
         let isManga = prefs.pdfRTL || pdf.isMangaBook || UserDefaults.standard.bool(forKey: "isMangaMode")
         if uiView.displaysRTL != isManga {
