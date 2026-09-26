@@ -217,6 +217,27 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
         return nil
     }
     
+    /// Deterministic natural issue sorting comparator (orders by issue number ascending, then title/filename).
+    static func naturalIssueSort(_ a: ConvertedPDF, _ b: ConvertedPDF) -> Bool {
+        let n1 = a.resolvedIssueNumber
+        let n2 = b.resolvedIssueNumber
+        if let v1 = n1, let v2 = n2 {
+            if abs(v1 - v2) > 0.0001 { return v1 < v2 }
+        } else if n1 != nil && n2 == nil {
+            return true
+        } else if n1 == nil && n2 != nil {
+            return false
+        }
+        let t1 = a.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? a.name : a.metadata.title
+        let t2 = b.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? b.name : b.metadata.title
+        return t1.localizedStandardCompare(t2) == .orderedAscending
+    }
+
+    /// Convenience flag indicating whether this book is marked as manga by content type or metadata.
+    var isMangaBook: Bool {
+        contentType == .manga || metadata.isManga == true
+    }
+    
     init(id: UUID = UUID(), name: String, url: URL, pageCount: Int, fileSize: Int64, metadata: PDFMetadata, collectionId: UUID? = nil, isFavorite: Bool = false, isPrivate: Bool = false, coverImageData: Data? = nil, contentType: ContentType? = nil, chapters: [Chapter] = [], addedByMode: AppUIMode = .pro, contentHash: String? = nil) {
         self.id = id
         self.name = name

@@ -54,6 +54,7 @@ struct VolumeStudioView: View {
     @State private var tagIssuesWithVolumeName: Bool = true
 
     // Standalone Physical Archive Settings
+    @State private var standaloneOutputFormat: OutputFormat = .cbz
     @State private var mangaMode: Bool = false
     @State private var deleteSourceFilesAfterMerge: Bool = false
     @State private var isProcessingMerge: Bool = false
@@ -87,7 +88,17 @@ struct VolumeStudioView: View {
         _volumeType = State(initialValue: existingOmnibus != nil ? .virtual : initialMode)
         _volumeName = State(initialValue: existingOmnibus?.name ?? suggestedName)
         _remoteSyncURL = State(initialValue: existingOmnibus?.remoteSyncURL ?? "")
-        _fileIDs = State(initialValue: existingOmnibus?.fileIDs ?? initialFileIDs)
+        
+        var resolvedIDs = existingOmnibus?.fileIDs ?? initialFileIDs
+        if existingOmnibus == nil && !resolvedIDs.isEmpty {
+            let all = ConversionManager.shared.visiblePDFs
+            let matching = resolvedIDs.compactMap { id in all.first(where: { $0.id == id }) }
+            if matching.count == resolvedIDs.count {
+                resolvedIDs = matching.sorted(by: ConvertedPDF.naturalIssueSort).map(\.id)
+            }
+        }
+        _fileIDs = State(initialValue: resolvedIDs)
+        _standaloneOutputFormat = State(initialValue: AppSettingsManager.shared.conversionSettings.outputFormat)
     }
 
     init(
@@ -96,9 +107,10 @@ struct VolumeStudioView: View {
         parentSeriesID: String? = nil,
         initialMode: VolumeType = .virtual
     ) {
+        let sorted = initialFiles.sorted(by: ConvertedPDF.naturalIssueSort)
         self.init(
             existingOmnibus: nil,
-            initialFileIDs: initialFiles.map(\.id),
+            initialFileIDs: sorted.map(\.id),
             suggestedName: suggestedName,
             parentSeriesID: parentSeriesID,
             initialMode: initialMode
@@ -470,6 +482,13 @@ struct VolumeStudioView: View {
                     .padding(.vertical, 4)
                 } else {
                     // Standalone Archive Options
+                    Picker("Output Format", selection: $standaloneOutputFormat) {
+                        ForEach(OutputFormat.allCases) { format in
+                            Label(format.rawValue, systemImage: format.icon).tag(format)
+                        }
+                    }
+                    .font(.system(.subheadline, design: .rounded))
+
                     Toggle("Manga Mode (Right-to-Left)", isOn: $mangaMode)
                         .font(.system(.subheadline, design: .rounded))
 
@@ -832,17 +851,35 @@ struct VolumeStudioView: View {
         guard !fileIDs.contains(pdf.id) else { return }
         fileIDs.append(pdf.id)
         selectedFiles.append(pdf)
+        if existingOmnibus == nil {
+            selectedFiles.sort(by: ConvertedPDF.naturalIssueSort)
+            fileIDs = selectedFiles.map(\.id)
+        }
+        if !mangaMode && pdf.isMangaBook {
+            mangaMode = true
+        }
         updateSmartSuggestions()
     }
 
     private func reloadInitialFiles() {
         let all = conversionManager.visiblePDFs
-        selectedFiles = fileIDs.compactMap { id in all.first(where: { $0.id == id }) }
+        var loaded = fileIDs.compactMap { id in all.first(where: { $0.id == id }) }
+        if existingOmnibus == nil {
+            loaded.sort(by: ConvertedPDF.naturalIssueSort)
+            fileIDs = loaded.map(\.id)
+        }
+        selectedFiles = loaded
         if volumeName.isEmpty, let first = selectedFiles.first {
             if let series = first.metadata.series, !series.isEmpty {
                 volumeName = "\(series) Volume 1"
             } else {
                 volumeName = "Volume 1"
+            }
+        }
+        if !mangaMode {
+            let hasManga = selectedFiles.contains(where: { $0.isMangaBook })
+            if hasManga {
+                mangaMode = true
             }
         }
     }

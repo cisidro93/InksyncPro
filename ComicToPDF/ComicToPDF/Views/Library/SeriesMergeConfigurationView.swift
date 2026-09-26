@@ -19,9 +19,10 @@ struct SeriesMergeConfigurationView: View {
     }
     
     var body: some View {
+        let sortedIDs = sourceFiles.filter { initialSelection.contains($0.id) }.sorted(by: ConvertedPDF.naturalIssueSort).map(\.id)
         VolumeStudioView(
             existingOmnibus: nil,
-            initialFileIDs: Array(initialSelection),
+            initialFileIDs: sortedIDs,
             suggestedName: suggestedName ?? "",
             parentSeriesID: sourceFiles.first?.metadata.series,
             initialMode: .physicalMerge

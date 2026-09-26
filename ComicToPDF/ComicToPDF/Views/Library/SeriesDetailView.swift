@@ -1466,14 +1466,7 @@ struct SeriesDetailView: View {
 
     private func presentVolumeStudio(initialSelection: Set<UUID>, initialMode: VolumeStudioView.VolumeType = .virtual, overrideSuggestedName: String? = nil) {
         let items = freshIssues.filter { initialSelection.contains($0.id) }
-        let sortedItems = items.sorted {
-            let n1 = Double($0.metadata.issueNumber ?? "")
-            let n2 = Double($1.metadata.issueNumber ?? "")
-            if let v1 = n1, let v2 = n2 { return v1 < v2 }
-            if n1 != nil && n2 == nil { return true }
-            if n1 == nil && n2 != nil { return false }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-        }
+        let sortedItems = items.sorted(by: ConvertedPDF.naturalIssueSort)
         let sortedIDs = sortedItems.map { $0.id }
         
         var foundSeries: String? = nil
@@ -1523,7 +1516,7 @@ struct SeriesDetailView: View {
                 LazyView {
                     VolumeStudioView(
                         existingOmnibus: nil,
-                        initialFileIDs: Array(selection),
+                        initialFileIDs: freshIssues.filter { selection.contains($0.id) }.sorted(by: ConvertedPDF.naturalIssueSort).map(\.id),
                         suggestedName: mergeConfigSuggestedName ?? "\(series.title) Volume",
                         parentSeriesID: series.id,
                         initialMode: .physicalMerge

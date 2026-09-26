@@ -32,6 +32,10 @@ struct PageCurlReader: UIViewControllerRepresentable {
         let linkCover = EBookPreferences.shared.linkCoverAsSpread
 
         var i = 0
+        if !linkCover && totalPages > 0 {
+            allSpreads.append([0])
+            i = 1
+        }
         while i < totalPages {
             let isL = isPageLandscape(i, landscapeArray: landscapeArray)
             if isL {
@@ -638,6 +642,10 @@ struct SmartMidSpineCurlReader: UIViewControllerRepresentable {
         }
 
         var i = 0
+        if !linkCover && pageCount > 0 {
+            allSpreads.append([0])
+            i = 1
+        }
         while i < pageCount {
             if isPageL(i) {
                 allSpreads.append([i])

@@ -3648,9 +3648,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // Use singlePage (non-continuous) as the default mode so PDFViewPageChanged fires
         // reliably on every page turn. singlePageContinuous only fires on visible-page
         // threshold crossings which can miss pages when scrolling quickly.
+        let isManga = isMangaMode || prefs.pdfRTL || pdf.metadata.isManga == true || pdf.contentType == .manga
+        pdfView.displaysRTL = isManga
         pdfView.usePageViewController(false)
         pdfView.displayMode = isDual ? .twoUp : .singlePage
-        pdfView.displaysAsBook = false // Pair 2 pages from page 0 regardless without empty left flyleaf void
+        pdfView.displaysAsBook = !prefs.linkCoverAsSpread
 
         // Panels & Boox Parity: In dual mode, eliminate spine and edge gaps so spreads fill 100% of available screen space.
         // On iPhone in single-page mode, zero out page break margins so the book fills the full screen width cleanly.
@@ -3850,12 +3852,16 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let isPhone = UIDevice.current.userInterfaceIdiom == .phone
         let isLandscape = uiView.bounds.width > uiView.bounds.height
         let isDual = !prefs.isPDFSmartTiersActive && ((!isPhone ? prefs.pdfDualPage : (isLandscape && prefs.pdfDualPage)) || (prefs.autoLandscapeDualPage && isLandscape))
+        let isManga = isMangaMode || prefs.pdfRTL || pdf.metadata.isManga == true || pdf.contentType == .manga
+        if uiView.displaysRTL != isManga {
+            uiView.displaysRTL = isManga
+        }
         let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
 
         if uiView.displayMode != targetDisplayMode {
             uiView.displayMode = targetDisplayMode
         }
-        let targetDisplaysAsBook = false
+        let targetDisplaysAsBook = !prefs.linkCoverAsSpread
         if uiView.displaysAsBook != targetDisplaysAsBook {
             uiView.displaysAsBook = targetDisplaysAsBook
         }

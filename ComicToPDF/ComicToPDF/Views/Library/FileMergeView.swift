@@ -11,7 +11,7 @@ struct FileMergeView: View {
     }
     
     var body: some View {
-        let files = conversionManager.convertedPDFs.filter { initialSelection.contains($0.id) }
+        let files = conversionManager.convertedPDFs.filter { initialSelection.contains($0.id) }.sorted(by: ConvertedPDF.naturalIssueSort)
         VolumeStudioView(initialFiles: files, initialMode: .physicalMerge)
     }
 }

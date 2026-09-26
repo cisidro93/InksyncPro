@@ -369,10 +369,10 @@ final class ComicImageCache: ObservableObject {
                 }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
                 
                 let isEPUB = resolvedURL.pathExtension.lowercased() == "epub" || pdf.name.lowercased().hasSuffix(".epub")
-                if sortedEntries.isEmpty || isEPUB {
+                if sortedEntries.isEmpty {
                     if let accessed = accessedURL { accessed.stopAccessingSecurityScopedResource() }
                     if isEPUB {
-                        Logger.shared.log("ComicReaderEngine: EPUB document detected in comic archive loader. Auto-switching to BookReader.", category: "Reader", type: .warning)
+                        Logger.shared.log("ComicReaderEngine: Text-only EPUB (no image pages) detected in comic archive loader. Auto-switching to BookReader.", category: "Reader", type: .info)
                         await MainActor.run {
                             NotificationCenter.default.post(name: NSNotification.Name("SwitchToBookReader"), object: nil)
                         }
@@ -1571,8 +1571,13 @@ struct ComicReaderEngine: View {
         var allSpreads: [[Int]] = []
         let landscapeArray = cache.isLandscapeArray
         let pageCount = cache.pageCount
+        let linkCover = EBookPreferences.shared.linkCoverAsSpread
 
         var i = 0
+        if !linkCover && pageCount > 0 {
+            allSpreads.append([0])
+            i = 1
+        }
         while i < pageCount {
             let isL = isPageLandscape(i, landscapeArray: landscapeArray)
             if isL {

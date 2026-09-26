@@ -336,7 +336,7 @@ extension ConversionManager {
     }
     
     @discardableResult
-    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, customAuthor: String? = nil) async -> [ConvertedPDF] {
+    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, customAuthor: String? = nil, explicitFormat: OutputFormat? = nil) async -> [ConvertedPDF] {
         // Cloud files: download the first cloud file to vault, then re-run convertAndMerge
         // once it's local. A full multi-file parallel download would need queue state.
         if let firstCloud = sourceFiles.first(where: { if case .cloud = $0.sourceMode { return true } else { return false } }) {
@@ -356,6 +356,7 @@ extension ConversionManager {
                 mangaMode: mangaMode,
                 overrideSeries: overrideSeries,
                 customAuthor: customAuthor,
+                explicitFormat: explicitFormat,
                 manager: self
             )
         }
@@ -365,6 +366,7 @@ extension ConversionManager {
             mangaMode: mangaMode,
             overrideSeries: overrideSeries,
             customAuthor: customAuthor,
+            explicitFormat: explicitFormat,
             manager: self
         )
     }

@@ -39,7 +39,7 @@ struct UnifiedReaderView: View {
         if pdf.url.pathExtension.lowercased() == "epub" {
             if pdf.contentType == .book {
                 initialCheck = false
-            } else if pdf.contentType == .hybrid {
+            } else if pdf.contentType == .hybrid || pdf.contentType == .comic || pdf.contentType == .manga || pdf.metadata.isManga == true {
                 initialCheck = true
             } else {
                 initialCheck = nil
@@ -102,6 +102,9 @@ struct UnifiedReaderView: View {
     /// Determines whether we need an async background check for this EPUB
     private var needsEPUBComicCheck: Bool {
         let ext = pdf.url.pathExtension.lowercased()
+        if pdf.contentType == .comic || pdf.contentType == .manga || pdf.metadata.isManga == true {
+            return false
+        }
         return ext == "epub" && pdf.metadata.hasFormatOverride != true && epubComicCheckResult == nil
     }
     
@@ -133,7 +136,7 @@ struct UnifiedReaderView: View {
         } else if pdf.url.pathExtension.lowercased() == "epub" || pdf.name.lowercased().hasSuffix(".epub") {
             if activeEngineOverride == .book {
                 return (.eBook, "Manual engine override active: eBook mode requested for EPUB.")
-            } else if activeEngineOverride == .comic || epubComicCheckResult == true || pdf.contentType == .hybrid {
+            } else if activeEngineOverride == .comic || epubComicCheckResult == true || pdf.contentType == .hybrid || pdf.contentType == .comic || pdf.contentType == .manga || pdf.metadata.isManga == true {
                 return (.comic, "Image-heavy / comic EPUB detected. ComicReaderEngine active.")
             } else {
                 return (.eBook, "Standard reflowable or fixed-layout EPUB document. WebKit dual-page median layout active.")
@@ -343,10 +346,11 @@ struct UnifiedReaderView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openMergedBook)) { notif in
             if let nextBook = notif.object as? ConvertedPDF, nextBook.id != currentBook.id {
                 Logger.shared.log("UnifiedReaderView: auto-transitioning in-place to '\(nextBook.name)'", category: "Reader", type: .info)
+                let isComicOrManga = nextBook.contentType == .comic || nextBook.contentType == .manga || nextBook.metadata.isManga == true
                 withAnimation(.easeInOut(duration: 0.22)) {
                     currentBook = nextBook
                     activeEngineOverride = nil
-                    epubComicCheckResult = (nextBook.url.pathExtension.lowercased() == "epub" && nextBook.contentType == .book) ? false : nil
+                    epubComicCheckResult = (nextBook.url.pathExtension.lowercased() == "epub") ? (isComicOrManga ? true : (nextBook.contentType == .book ? false : nil)) : nil
                 }
                 AppRouter.shared.updateCurrentReaderBook(nextBook)
             }
@@ -576,7 +580,7 @@ struct UnifiedReaderView: View {
                     
                     if let opfStr = String(data: opfData, encoding: .utf8) {
                         let lowerOPF = opfStr.lowercased()
-                        if lowerOPF.contains("comic-book") || lowerOPF.contains("comicbook") || (lowerOPF.contains("fixed-layout") && lowerOPF.contains("manga")) {
+                        if lowerOPF.contains("comic-book") || lowerOPF.contains("comicbook") || lowerOPF.contains("content=\"comic\"") || lowerOPF.contains("content=\"manga\"") || (lowerOPF.contains("fixed-layout") && (lowerOPF.contains("comic") || lowerOPF.contains("manga"))) || lowerOPF.contains("page-progression-direction=\"rtl\"") {
                             isComic = true
                             Logger.shared.log("isEPUBComic: ✅ OPF metadata matched — routing to ComicReader", category: "Reader", type: .success)
                         }

@@ -389,7 +389,7 @@ final class ConversionOrchestrator: Sendable {
     }
     
     @discardableResult
-    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, customAuthor: String? = nil, manager: ConversionManager) async -> [ConvertedPDF] {
+    func convertAndMerge(sourceFiles: [ConvertedPDF], outputName: String, mangaMode: Bool, overrideSeries: String? = nil, customAuthor: String? = nil, explicitFormat: OutputFormat? = nil, manager: ConversionManager) async -> [ConvertedPDF] {
         guard !sourceFiles.isEmpty else { return [] }
         
         #if os(iOS)
@@ -426,6 +426,9 @@ final class ConversionOrchestrator: Sendable {
         try? FileManager.default.createDirectory(at: documentsDir, withIntermediateDirectories: true)
         var jobSettings = await MainActor.run { AppSettingsManager.shared.conversionSettings }
         jobSettings.mangaMode = mangaMode
+        if let explicitFormat = explicitFormat {
+            jobSettings.outputFormat = explicitFormat
+        }
         
         do {
             if jobSettings.outputFormat == .pdf || jobSettings.outputFormat == .cbz {
@@ -537,14 +540,16 @@ final class ConversionOrchestrator: Sendable {
                         }
                     }
                     
+                    let isMangaActive = jobSettings.mangaMode || mangaMode
                     let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
                     let inferredMode = sourceFiles.first?.addedByMode ?? .pro
-                    var meta = PDFMetadata(title: outputFilename, series: overrideSeries, sourceFileIDs: sourceFiles.map { $0.id }, isManga: jobSettings.mangaMode)
+                    var meta = PDFMetadata(title: outputFilename, series: overrideSeries, sourceFileIDs: sourceFiles.map { $0.id }, isManga: isMangaActive)
                     let resolvedAuthor = (customAuthor?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? sourceFiles.first?.metadata.author ?? sourceFiles.first?.metadata.writer
                     if let author = resolvedAuthor {
                         meta.author = author
                         meta.writer = author
                     }
+                    let defaultType: ContentType = (jobSettings.outputFormat == .cbz ? .comic : (sourceFiles.first?.contentType ?? .comic))
                     let outputPDF = ConvertedPDF(
                         id: UUID(),
                         name: outputFilename,
@@ -553,7 +558,7 @@ final class ConversionOrchestrator: Sendable {
                         fileSize: finalFileSize,
                         metadata: meta,
                         collectionId: sourceFiles.first?.collectionId,
-                        contentType: sourceFiles.first?.contentType ?? .comic,
+                        contentType: isMangaActive ? .manga : defaultType,
                         addedByMode: inferredMode
                     )
                     newMergedPDFs.append(outputPDF)
@@ -664,8 +669,9 @@ final class ConversionOrchestrator: Sendable {
                 let finalFileSize = (try? finalOutputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
                 let outputURL = finalOutputURL
                 let totalPages = await Task.detached(priority: .background) { return PhysicalFileSystemRouter.getPageCountStatic(from: outputURL) }.value
+                let isMangaActive = mangaMode || jobSettings.mangaMode
                 let inferredMode = sourceFiles.first?.addedByMode ?? .pro
-                var meta = PDFMetadata(title: outputFilename, series: overrideSeries, sourceFileIDs: sourceFiles.map { $0.id }, isManga: mangaMode)
+                var meta = PDFMetadata(title: outputFilename, series: overrideSeries, sourceFileIDs: sourceFiles.map { $0.id }, isManga: isMangaActive)
                 let resolvedAuthor = (customAuthor?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? sourceFiles.first?.metadata.author ?? sourceFiles.first?.metadata.writer
                 if let author = resolvedAuthor {
                     meta.author = author
@@ -679,7 +685,7 @@ final class ConversionOrchestrator: Sendable {
                     fileSize: finalFileSize,
                     metadata: meta,
                     collectionId: sourceFiles.first?.collectionId,
-                    contentType: mangaMode ? .manga : .comic,
+                    contentType: isMangaActive ? .manga : .comic,
                     addedByMode: inferredMode
                 )
                 newMergedPDFs.append(outputPDF)
