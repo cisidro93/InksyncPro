@@ -3648,7 +3648,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // Use singlePage (non-continuous) as the default mode so PDFViewPageChanged fires
         // reliably on every page turn. singlePageContinuous only fires on visible-page
         // threshold crossings which can miss pages when scrolling quickly.
-        let isManga = isMangaMode || prefs.pdfRTL || pdf.metadata.isManga == true || pdf.contentType == .manga
+        let isManga = prefs.pdfRTL || pdf.isMangaBook || UserDefaults.standard.bool(forKey: "isMangaMode")
         pdfView.displaysRTL = isManga
         pdfView.usePageViewController(false)
         pdfView.displayMode = isDual ? .twoUp : .singlePage
@@ -3852,7 +3852,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let isPhone = UIDevice.current.userInterfaceIdiom == .phone
         let isLandscape = uiView.bounds.width > uiView.bounds.height
         let isDual = !prefs.isPDFSmartTiersActive && ((!isPhone ? prefs.pdfDualPage : (isLandscape && prefs.pdfDualPage)) || (prefs.autoLandscapeDualPage && isLandscape))
-        let isManga = isMangaMode || prefs.pdfRTL || pdf.metadata.isManga == true || pdf.contentType == .manga
+        let isManga = prefs.pdfRTL || pdf.isMangaBook || UserDefaults.standard.bool(forKey: "isMangaMode")
         if uiView.displaysRTL != isManga {
             uiView.displaysRTL = isManga
         }
