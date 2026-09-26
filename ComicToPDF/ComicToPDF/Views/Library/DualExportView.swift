@@ -448,7 +448,7 @@ struct KindleSpreadPreFlightCard: View {
     }
     
     private var isManga: Bool {
-        mangaMode || pdf.metadata.isManga
+        mangaMode || (pdf.metadata.isManga ?? false)
     }
 
     var body: some View {

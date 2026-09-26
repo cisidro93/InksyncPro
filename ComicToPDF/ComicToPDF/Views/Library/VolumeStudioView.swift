@@ -1046,6 +1046,7 @@ struct VolumeStudioView: View {
         let files = selectedFiles
         let isManga = mangaMode
         let seriesTag = parentSeriesID ?? files.first?.metadata.series
+        let shouldDelete = deleteSourceFilesAfterMerge
         let orderedChapterTitles: [String]? = (includeTOC && standaloneOutputFormat == .epub)
             ? files.enumerated().map { idx, pdf in resolvedChapterTitle(for: pdf, index: idx) }
             : nil
