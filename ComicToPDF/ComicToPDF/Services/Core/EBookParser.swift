@@ -64,6 +64,8 @@ actor EBookParser {
     /// Parse the spine (reading order) and metadata from an EPUB file.
     /// Returns nil gracefully on any error; all errors are logged.
     func parse(epub url: URL) async -> EBookMetadata? {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         do {
             guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else {
                 Logger.shared.log("EBookParser: cannot open archive at \(url.lastPathComponent)", category: "EBook", type: .error)
@@ -96,6 +98,8 @@ actor EBookParser {
     
     /// Extracts only the cover image entry into a UIImage. Memory-safe streaming.
     static func extractCover(from url: URL, href: String) async -> URL? {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: .utf8) else { return nil }
         
         let fileManager = FileManager.default

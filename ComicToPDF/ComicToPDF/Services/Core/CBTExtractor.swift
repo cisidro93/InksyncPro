@@ -77,6 +77,7 @@ struct CBTExtractor {
         let blockSize = 512
         var offset = 0
         var consecutiveZeroBlocks = 0
+        var firstValidImage: UIImage? = nil
 
         while offset + blockSize <= archiveData.count {
             let headerBlock = archiveData[offset ..< offset + blockSize]
@@ -143,6 +144,7 @@ struct CBTExtractor {
                 let fileData = archiveData[dataStart ..< dataEnd]
                 let image = autoreleasepool { () -> UIImage? in
                     guard let img = UIImage(data: fileData) else { return nil }
+                    if firstValidImage == nil { firstValidImage = img }
                     if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
                         return nil
                     }
@@ -156,7 +158,7 @@ struct CBTExtractor {
             offset = newOffset
         }
 
-        return nil
+        return firstValidImage
     }
 
     /// Synchronously retrieves the number of images inside a TAR/CBT archive.

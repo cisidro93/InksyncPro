@@ -5,6 +5,7 @@ import Combine
 class LibraryViewModel: ObservableObject {
     @Published var cachedLibraryItems: [LibraryListItem] = []
     private var cachedLibraryItemIDs: [String] = []
+    private var cachedLibraryToken: String = ""
     @Published var searchText: String = ""
 
     // Search Debouncing
@@ -92,15 +93,16 @@ class LibraryViewModel: ObservableObject {
 
             guard !Task.isCancelled else { return }
             let newIDs = finalItems.map(\.id)
+            let cacheToken = "\(shelf.rawValue)_\(filter.rawValue)_\(folderID?.uuidString ?? "root")_\(sortOption.rawValue)_\(newIDs.joined(separator: ","))"
 
             await MainActor.run { [weak self] in
                 guard let self = self else { return }
                 guard !Task.isCancelled else { return }
 
-                // ID-equality guard: skip the SwiftUI diff entirely when nothing changed.
-                // This absorbs spurious SwiftData onChange events (e.g. reading-progress
-                // writes) that don't actually change what's visible in the library grid.
-                guard newIDs != self.cachedLibraryItemIDs else { return }
+                // Token-equality guard: skip the SwiftUI diff entirely when nothing changed,
+                // but always update when shelf, filter, folder, sort, or items differ.
+                guard cacheToken != self.cachedLibraryToken else { return }
+                self.cachedLibraryToken = cacheToken
                 self.cachedLibraryItemIDs = newIDs
 
                 withAnimation(.easeOut(duration: 0.18)) {

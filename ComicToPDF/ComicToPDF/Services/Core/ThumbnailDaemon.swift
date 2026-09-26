@@ -64,17 +64,10 @@ actor ThumbnailDaemon {
         for pdf in pdfs {
             let cachedURL = cacheDirectory.appendingPathComponent("\(pdf.id.uuidString).webp")
             if FileManager.default.fileExists(atPath: cachedURL.path) {
-                // Read from disk asynchronously and validate quality
+                // Read from disk asynchronously and cache in memory
                 if let data = try? Data(contentsOf: cachedURL),
                    let image = UIImage(data: data) {
-                    if PhysicalFileSystemRouter.containsDisclaimerText(in: image) ||
-                       PhysicalFileSystemRouter.isBlankOrSolidColorImage(image) ||
-                       PhysicalFileSystemRouter.isSuspiciouslyLowRes(image) {
-                        try? FileManager.default.removeItem(at: cachedURL)
-                        missingPDFs.append(pdf)
-                    } else {
-                        self.cacheInMemory(image, for: pdf.id)
-                    }
+                    self.cacheInMemory(image, for: pdf.id)
                 } else {
                     missingPDFs.append(pdf)
                 }

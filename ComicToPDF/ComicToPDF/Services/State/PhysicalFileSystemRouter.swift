@@ -121,45 +121,7 @@ class PhysicalFileSystemRouter {
     }
 
     func purgeLegacyCachedCoversIfNeeded(manager: ConversionManager) {
-        guard !UserDefaults.standard.bool(forKey: "didPurgeDisclaimerAndBlankCovers_v4") else { return }
-        UserDefaults.standard.set(true, forKey: "didPurgeDisclaimerAndBlankCovers_v4")
-        
-        Task.detached(priority: .utility) {
-            let coversDir = Self.getCoversDirectory()
-            let fm = FileManager.default
-            var purgedCount = 0
-            if let files = try? fm.contentsOfDirectory(at: coversDir, includingPropertiesForKeys: nil) {
-                for file in files where file.pathExtension.lowercased() == "jpg" {
-                    if let data = try? Data(contentsOf: file), let img = UIImage(data: data) {
-                        if Self.containsDisclaimerText(in: img) || Self.isBlankOrSolidColorImage(img) || Self.isSuspiciouslyLowRes(img) {
-                            try? fm.removeItem(at: file)
-                            purgedCount += 1
-                        }
-                    }
-                }
-            }
-            // Also purge bad entries from ThumbnailDaemon cache directory
-            let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? fm.temporaryDirectory
-            let daemonCacheDir = appSupport.appendingPathComponent("ThumbnailCache", isDirectory: true)
-            if let daemonFiles = try? fm.contentsOfDirectory(at: daemonCacheDir, includingPropertiesForKeys: nil) {
-                for file in daemonFiles where file.pathExtension.lowercased() == "webp" {
-                    if let data = try? Data(contentsOf: file), let img = UIImage(data: data) {
-                        if Self.containsDisclaimerText(in: img) || Self.isBlankOrSolidColorImage(img) || Self.isSuspiciouslyLowRes(img) {
-                            try? fm.removeItem(at: file)
-                            purgedCount += 1
-                        }
-                    }
-                }
-            }
-            
-            await MainActor.run {
-                manager.thumbnailCache.removeAllObjects()
-                if purgedCount > 0 {
-                    Logger.shared.log("PhysicalFileSystemRouter: Purged \(purgedCount) disclaimer/blank covers from disk. Triggering backfill.", category: "Library")
-                    Self.shared.backfillMissingThumbnails(manager: manager)
-                }
-            }
-        }
+        // Safe no-op: Preserve all valid user covers without destructive disk purges.
     }
     
     func migrateFlatFilesToSeriesDirectories(manager: ConversionManager) async {
@@ -281,15 +243,6 @@ class PhysicalFileSystemRouter {
     func loadCoverThumbnail(for pdf: ConvertedPDF, manager: ConversionManager) async -> UIImage? {
         let keyStr = pdf.id.uuidString
         if let cached = manager.thumbnailCache.object(forKey: keyStr as NSString) {
-            if Self.containsDisclaimerText(in: cached) || Self.isBlankOrSolidColorImage(cached) || Self.isSuspiciouslyLowRes(cached) {
-                manager.thumbnailCache.removeObject(forKey: keyStr as NSString)
-                if let url = getCoverURL(for: pdf) { try? FileManager.default.removeItem(at: url) }
-                Task { await ThumbnailDaemon.shared.clearCache(for: pdf.id) }
-                Task(priority: .userInitiated) {
-                    await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)
-                }
-                return nil
-            }
             return cached
         }
         // ✅ PERF: Resolve cover URL on MainActor *once*, before the background task.
@@ -299,12 +252,6 @@ class PhysicalFileSystemRouter {
         return await Task.detached(priority: .userInitiated) { () -> UIImage? in
             // 1. Check ultra-fast Daemon cache first
             if let daemonCached = await ThumbnailDaemon.shared.getCachedThumbnail(for: pdf.id) {
-                if Self.containsDisclaimerText(in: daemonCached) || Self.isBlankOrSolidColorImage(daemonCached) || Self.isSuspiciouslyLowRes(daemonCached) {
-                    await ThumbnailDaemon.shared.clearCache(for: pdf.id)
-                    if let url = coverURL { try? FileManager.default.removeItem(at: url) }
-                    await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)
-                    return nil
-                }
                 await MainActor.run { manager.thumbnailCache.setObject(daemonCached, forKey: keyStr as NSString) }
                 return daemonCached
             }
@@ -322,12 +269,6 @@ class PhysicalFileSystemRouter {
                     
                     if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
                         let thumbnail = UIImage(cgImage: cg)
-                        if Self.containsDisclaimerText(in: thumbnail) || Self.isBlankOrSolidColorImage(thumbnail) || Self.isSuspiciouslyLowRes(thumbnail) {
-                            try? FileManager.default.removeItem(at: url)
-                            await ThumbnailDaemon.shared.clearCache(for: pdf.id)
-                            await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)
-                            return nil
-                        }
                         await MainActor.run { manager.thumbnailCache.setObject(thumbnail, forKey: keyStr as NSString) }
                         return thumbnail
                     }
@@ -335,9 +276,7 @@ class PhysicalFileSystemRouter {
             }
             
             if let data = coverImageData, let image = UIImage(data: data) {
-                if !Self.containsDisclaimerText(in: image) && !Self.isBlankOrSolidColorImage(image) && !Self.isSuspiciouslyLowRes(image) {
-                    return image
-                }
+                return image
             }
             return nil
         }.value
@@ -475,10 +414,8 @@ class PhysicalFileSystemRouter {
         }
         
         if let coverURL = getCoverURL(for: pdf), FileManager.default.fileExists(atPath: coverURL.path) {
-            if let data = try? Data(contentsOf: coverURL), let img = UIImage(data: data) {
-                if !Self.containsDisclaimerText(in: img) && !Self.isBlankOrSolidColorImage(img) && !Self.isSuspiciouslyLowRes(img) {
-                    return
-                }
+            if let data = try? Data(contentsOf: coverURL), data.count > 100, UIImage(data: data) != nil {
+                return
             }
             try? FileManager.default.removeItem(at: coverURL)
         }
@@ -521,10 +458,8 @@ class PhysicalFileSystemRouter {
     func generateCoverThumbnailFromLocalURL(for pdf: ConvertedPDF, localURL: URL, manager: ConversionManager) async {
         // Skip if cover already exists on disk and is valid
         if let coverURL = getCoverURL(for: pdf), FileManager.default.fileExists(atPath: coverURL.path) {
-            if let data = try? Data(contentsOf: coverURL), let img = UIImage(data: data) {
-                if !Self.containsDisclaimerText(in: img) && !Self.isBlankOrSolidColorImage(img) && !Self.isSuspiciouslyLowRes(img) {
-                    return
-                }
+            if let data = try? Data(contentsOf: coverURL), data.count > 100, UIImage(data: data) != nil {
+                return
             }
             try? FileManager.default.removeItem(at: coverURL)
         }
@@ -557,15 +492,16 @@ class PhysicalFileSystemRouter {
             if let tempCoverURL = await EBookParser.extractCover(from: url, href: coverItem) {
                 defer { try? FileManager.default.removeItem(at: tempCoverURL) }
                 if let data = try? Data(contentsOf: tempCoverURL), let image = UIImage(data: data) {
-                    if !Self.isBlankOrSolidColorImage(image) && !Self.isSuspiciouslyLowRes(image) {
-                        return image
-                    }
+                    return image
                 }
             }
         }
         
         // 2. Direct EPUB archive image search fallback
         let archiveCoverTask = Task.detached(priority: .userInitiated) { () -> UIImage? in
+            let accessing = !Self.isSandboxURL(url) ? url.startAccessingSecurityScopedResource() : false
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            
             guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
             
             let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
@@ -578,7 +514,7 @@ class PhysicalFileSystemRouter {
                       !entry.path.contains("__MACOSX"),
                       !(entry.path as NSString).lastPathComponent.hasPrefix("._"),
                       !entry.path.hasSuffix(".DS_Store"),
-                      entry.uncompressedSize >= 5000
+                      entry.uncompressedSize >= 1000
                 else { continue }
                 
                 let filename = (entry.path as NSString).lastPathComponent.lowercased()
@@ -606,10 +542,7 @@ class PhysicalFileSystemRouter {
                 do {
                     _ = try archive.extract(candidate.entry) { data.append($0) }
                     if let image = UIImage(data: data) {
-                        if !PhysicalFileSystemRouter.isBlankOrSolidColorImage(image) &&
-                           !PhysicalFileSystemRouter.isSuspiciouslyLowRes(image) {
-                            return image
-                        }
+                        return image
                     }
                 } catch {
                     continue
@@ -1097,56 +1030,11 @@ class PhysicalFileSystemRouter {
     }
     
     nonisolated static func isBlankOrSolidColorImage(_ image: UIImage) -> Bool {
-        guard let cgImage = image.cgImage else { return false }
-        
-        let width = 8
-        let height = 8
-        let bytesPerPixel = 1
-        let bytesPerRow = width * bytesPerPixel
-        var rawBytes = [UInt8](repeating: 0, count: width * height)
-        
-        let colorSpace = CGColorSpaceCreateDeviceGray()
-        guard let context = CGContext(
-            data: &rawBytes,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else { return false }
-        
-        context.interpolationQuality = .low
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-        
-        var minVal: UInt8 = 255
-        var maxVal: UInt8 = 0
-        var sum: Int = 0
-        
-        for byte in rawBytes {
-            if byte < minVal { minVal = byte }
-            if byte > maxVal { maxVal = byte }
-            sum += Int(byte)
-        }
-        
-        let range = Int(maxVal) - Int(minVal)
-        let average = Double(sum) / Double(width * height)
-        
-        if range <= 8 {
-            return true
-        }
-        if average >= 248 && range <= 18 {
-            return true
-        }
-        if average <= 6 && range <= 18 {
-            return true
-        }
-        
         return false
     }
     
     nonisolated static func isSuspiciouslyLowRes(_ image: UIImage) -> Bool {
-        return image.size.width < 50 || image.size.height < 50
+        return image.size.width < 10 || image.size.height < 10
     }
     
     nonisolated static func generateTypographicCover(title: String, author: String) -> UIImage {
@@ -1257,7 +1145,14 @@ class PhysicalFileSystemRouter {
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             
             return autoreleasepool { () -> UIImage? in
-                guard let document = PDFDocument(url: url) else { return nil }
+                var document = PDFDocument(url: url)
+                if document == nil, let mappedData = try? Data(contentsOf: url, options: .alwaysMapped) {
+                    document = PDFDocument(data: mappedData)
+                }
+                guard let document else { return nil }
+                if document.isLocked {
+                    document.unlock(withPassword: "")
+                }
                 
                 let drawPage: (PDFPage) -> UIImage? = { page in
                     let pageBounds = page.bounds(for: .mediaBox)
@@ -1281,6 +1176,7 @@ class PhysicalFileSystemRouter {
                 
                 // Try up to the first 8 pages to find a portrait cover
                 var firstSpreadImage: UIImage? = nil
+                var firstValidPageImage: UIImage? = nil
                 for i in 0..<min(document.pageCount, 8) {
                     let pageImage = autoreleasepool { () -> UIImage? in
                         guard let page = document.page(at: i) else { return nil }
@@ -1290,13 +1186,9 @@ class PhysicalFileSystemRouter {
                             return drawPage(page)
                         }
                         if let portrait = drawPage(page) {
-                            if PhysicalFileSystemRouter.isSuspiciouslyLowRes(portrait) { return nil }
+                            if firstValidPageImage == nil { firstValidPageImage = portrait }
                             if PhysicalFileSystemRouter.containsDisclaimerText(in: portrait) {
                                 Logger.shared.log("[Disclaimer Detector] Skipping PDF page \(i) due to disclaimer/warning text.", category: "FileSystem", type: .warning)
-                                return nil
-                            }
-                            if PhysicalFileSystemRouter.isBlankOrSolidColorImage(portrait) {
-                                Logger.shared.log("[Blank Detector] Skipping PDF page \(i) due to blank/solid color.", category: "FileSystem", type: .warning)
                                 return nil
                             }
                             return portrait
@@ -1316,8 +1208,8 @@ class PhysicalFileSystemRouter {
                     }
                 }
                 
-                // Fallback to the first spread, or page 0 if nothing else worked
-                if let fallback = firstSpreadImage { return fallback }
+                // Fallback to the first spread, or first valid page, or page 0 if nothing else worked
+                if let fallback = firstSpreadImage ?? firstValidPageImage { return fallback }
                 if let page = document.page(at: 0) {
                     return drawPage(page)
                 }
@@ -1360,6 +1252,7 @@ class PhysicalFileSystemRouter {
                 imageEntries = coverMatches + nonCoverMatches
 
                 var firstSpreadImage: UIImage? = nil
+                var firstValidImage: UIImage? = nil
                 for (path, entry) in imageEntries.prefix(10) {
                     if PhysicalFileSystemRouter.isDisclaimerFilename(path) {
                         Logger.shared.log("[Disclaimer Detector] Skipping ZIP entry '\(path)' due to disclaimer filename.", category: "FileSystem", type: .warning)
@@ -1387,15 +1280,9 @@ class PhysicalFileSystemRouter {
                             
                             if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
                                 let img = UIImage(cgImage: cg)
-                                if PhysicalFileSystemRouter.isSuspiciouslyLowRes(img) {
-                                    return nil
-                                }
+                                if firstValidImage == nil { firstValidImage = img }
                                 if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
                                     Logger.shared.log("[Disclaimer Detector] Skipping ZIP entry '\(entry.path)' due to disclaimer/warning text content.", category: "FileSystem", type: .warning)
-                                    return nil
-                                }
-                                if PhysicalFileSystemRouter.isBlankOrSolidColorImage(img) {
-                                    Logger.shared.log("[Blank Detector] Skipping ZIP entry '\(entry.path)' due to blank/solid color.", category: "FileSystem", type: .warning)
                                     return nil
                                 }
                                 return img
@@ -1416,7 +1303,7 @@ class PhysicalFileSystemRouter {
                     }
                 }
                 
-                return firstSpreadImage
+                return firstSpreadImage ?? firstValidImage
             } catch {
                 Logger.shared.log("Failed to extract archive: \(error.localizedDescription)", category: "Archive", type: .warning)
             }
@@ -1442,6 +1329,7 @@ class PhysicalFileSystemRouter {
                         .sorted { $0.fileName.localizedStandardCompare($1.fileName) == .orderedAscending }
 
                     var firstSpread: UIImage? = nil
+                    var firstValidImage: UIImage? = nil
                     for entry in sorted.prefix(10) {
                         if PhysicalFileSystemRouter.isDisclaimerFilename(entry.fileName) {
                             Logger.shared.log("[Disclaimer Detector] Skipping CBR entry '\(entry.fileName)' due to disclaimer filename.", category: "FileSystem", type: .warning)
@@ -1464,15 +1352,9 @@ class PhysicalFileSystemRouter {
                                 
                                 if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOpts) {
                                     let img = UIImage(cgImage: cg)
-                                    if PhysicalFileSystemRouter.isSuspiciouslyLowRes(img) {
-                                        return nil
-                                    }
+                                    if firstValidImage == nil { firstValidImage = img }
                                     if PhysicalFileSystemRouter.containsDisclaimerText(in: img) {
                                         Logger.shared.log("[Disclaimer Detector] Skipping CBR entry '\(entry.fileName)' due to disclaimer/warning text content.", category: "FileSystem", type: .warning)
-                                        return nil
-                                    }
-                                    if PhysicalFileSystemRouter.isBlankOrSolidColorImage(img) {
-                                        Logger.shared.log("[Blank Detector] Skipping CBR entry '\(entry.fileName)' due to blank/solid color.", category: "FileSystem", type: .warning)
                                         return nil
                                     }
                                     return img
@@ -1489,7 +1371,7 @@ class PhysicalFileSystemRouter {
                         }
                         return img
                     }
-                    return firstSpread  // fallback if every page is landscape
+                    return firstSpread ?? firstValidImage
                 } catch {
                     Logger.shared.log("PhysicalFileSystemRouter: CBR cover extraction failed for '\(url.lastPathComponent)': \(error.localizedDescription)", category: "Archive", type: .warning)
                     return nil

@@ -229,12 +229,6 @@ actor LibraryModelActor {
                 didUpdate = true
                 Logger.shared.log("LibraryRepository: healed content type for '\(doc.name)' from \(currentType) to \(inferredType)", category: "Library", type: .success)
             }
-
-            // 3. Clear series for novel books
-            if doc.contentType == .book && doc.metadata.series != nil {
-                doc.metadata.series = nil
-                didUpdate = true
-            }
         }
         
         // Strip sequential prefixes from existing collection names

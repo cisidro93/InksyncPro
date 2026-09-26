@@ -137,6 +137,8 @@ struct ModernLibraryView: View {
         hasher.combine(sortOption)
         hasher.combine(tapAction)
         hasher.combine(viewModel.currentFolderID)
+        hasher.combine(viewModel.contentShelf)
+        hasher.combine(viewModel.filterState)
         hasher.combine(viewModel.cachedLibraryItems.count)
         for item in viewModel.cachedLibraryItems {
             hasher.combine(item.id)
@@ -1204,7 +1206,7 @@ struct ModernLibraryView: View {
                 counts[.converted, default: 0] += 1
             }
             
-            if pdf.contentType == .comic && !(pdf.metadata.isManga ?? false) {
+            if (pdf.contentType == .comic || pdf.contentType == .hybrid) && !(pdf.metadata.isManga ?? false) {
                 counts[.comics, default: 0] += 1
             } else if pdf.contentType == .manga || (pdf.metadata.isManga ?? false) {
                 counts[.manga, default: 0] += 1
