@@ -159,6 +159,8 @@ public struct BooxSectionFlowWorkspace: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Capsule().fill(Color.inkSurfaceRaised))
+
+                HelpPillButton(context: .neoFlowStudio)
             }
 
             Spacer()

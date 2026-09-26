@@ -812,6 +812,9 @@ struct StudyNotebookView: View {
                                 .clipShape(Circle())
                         }
 
+                        // Contextual Visual Help Guide Pill
+                        HelpPillButton(context: .studyNotebook)
+
                         Button {
                             NotificationCenter.default.post(name: .hideStudyNotebook, object: nil)
                         } label: {

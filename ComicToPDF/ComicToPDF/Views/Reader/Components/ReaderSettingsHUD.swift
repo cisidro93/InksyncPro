@@ -25,10 +25,18 @@ struct ReaderSettingsHUD: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
-                // ── Drag pill ───────────────────────────────────────────────────────
-                InkSheetDragPill()
-                    .padding(.top, 4)
-                    .padding(.bottom, 12)
+                // ── Drag pill & Contextual Help ─────────────────────────────────────
+                ZStack {
+                    InkSheetDragPill()
+
+                    HStack {
+                        Spacer()
+                        HelpPillButton(context: .readerControls)
+                            .padding(.trailing, 16)
+                    }
+                }
+                .padding(.top, 4)
+                .padding(.bottom, 12)
 
                 // ── Reader Engine Switcher (When PDF is loaded in Comic engine) ─────
                 if isPDF || onSwitchToProPDF != nil {

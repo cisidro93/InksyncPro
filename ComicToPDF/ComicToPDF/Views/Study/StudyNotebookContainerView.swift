@@ -182,6 +182,9 @@ public struct StudyNotebookContainerView: View {
                 // Action Menu (+)
                 headerActionMenu
                 
+                // Contextual Visual Help Guide Pill
+                HelpPillButton(context: .studySuiteHub)
+
                 // Dismiss Button (if presented modally)
                 if showDismissButton {
                     Button {
