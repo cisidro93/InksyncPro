@@ -309,13 +309,6 @@ struct CBZToEPUBConverter: Sendable {
             let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: isManga)
             try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
             manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
-            let coverSpreadTag: String
-            if settings.linkCoverAsSpread {
-                coverSpreadTag = isManga ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-            } else {
-                coverSpreadTag = ""
-            }
-            spineItems.append("<itemref idref=\"cover-page\"\(coverSpreadTag)/>")
             hasBadgedCover = true
         }
         
@@ -349,8 +342,14 @@ struct CBZToEPUBConverter: Sendable {
         var firstContentW = 1980
         var firstContentH = 2640
         
-        // Content pages always start at counter 2 if a cover is present, or 1 if no cover.
-        var globalPageCounter = hasBadgedCover ? 2 : 1
+        var spreadTracker = EPUBManifestBuilder.SpreadTagTracker(
+            isManga: isManga,
+            linkCoverAsSpread: settings.linkCoverAsSpread,
+            hasCover: hasBadgedCover || (batchIndex == 0)
+        )
+        if hasBadgedCover {
+            spineItems.append("<itemref idref=\"cover-page\"\(spreadTracker.coverSpreadTag)/>")
+        }
         
         for (localIndex, item) in batch.enumerated() {
             let isFirstImageOfBook = (localIndex == 0 && batchIndex == 0)
@@ -380,13 +379,9 @@ struct CBZToEPUBConverter: Sendable {
                 let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: newImageName, isManga: isManga)
                 try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
                 manifestItems.append("<item id=\"cover-page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
-                let coverSpreadTag = settings.linkCoverAsSpread
-                    ? (isManga ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\"")
-                    : ""
-                spineItems.append("<itemref idref=\"cover-page\"\(coverSpreadTag)/>")
+                spineItems.append("<itemref idref=\"cover-page\"\(spreadTracker.coverSpreadTag)/>")
                 // Mark cover as handled — firstPageHref and coverMetaID logic below reads hasBadgedCover.
                 hasBadgedCover = true
-                globalPageCounter = 2
                 // Do NOT generate a regular page XHTML for the cover image here — cover.xhtml is the spine entry.
                 continue
             }
@@ -448,47 +443,8 @@ struct CBZToEPUBConverter: Sendable {
             try chunkXHTML.write(to: textDir.appendingPathComponent(chunkName), atomically: true, encoding: .utf8)
             manifestItems.append("<item id=\"page_\(chunkIndex)\" href=\"text/\(chunkName)\" media-type=\"application/xhtml+xml\"/>")
             
-            // Universally Apply Advanced Landscape Spread Tagging (RTL vs LTR)
-            let spreadTag: String
-            if isLandscapeImage {
-                // rendition:page-spread-center tells Kindle to expand this single landscape
-                // page across both columns in landscape orientation. spread-none was previously
-                // used here but it directly cancels the spread expansion — removed.
-                spreadTag = " properties=\"rendition:page-spread-center\""
-            } else if settings.linkCoverAsSpread {
-                if isManga {
-                    // RTL Manga Sequence: Cover (page 1) is Right, Page 2 is Left, Page 3 is Right
-                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                } else {
-                    // LTR Western Sequence: Cover (page 1) is Left, Page 2 is Right, Page 3 is Left
-                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                }
-            } else {
-                if globalPageCounter == 1 && !hasBadgedCover {
-                    spreadTag = "" // Cover stands alone centered
-                } else if isManga {
-                    // RTL Manga Sequence: Page 2 is Right, Page 3 is Left
-                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                } else {
-                    // LTR Western Sequence: Page 2 is Left, Page 3 is Right
-                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                }
-            }
-            
+            let spreadTag = spreadTracker.tagForPage(isLandscape: isLandscapeImage)
             spineItems.append("<itemref idref=\"page_\(chunkIndex)\"\(spreadTag)/>")
-            
-            if isLandscapeImage {
-                // A full-bleed landscape spread spans both columns on Kindle.
-                // Synchronize globalPageCounter so the next portrait page begins on the
-                // natural leading side (page-spread-left in LTR, page-spread-right in RTL).
-                if settings.linkCoverAsSpread {
-                    globalPageCounter += (globalPageCounter % 2 == 0) ? 1 : 2
-                } else {
-                    globalPageCounter += (globalPageCounter % 2 != 0) ? 1 : 2
-                }
-            } else {
-                globalPageCounter += 1
-            }
             currentChunkImages.removeAll()
         }
         

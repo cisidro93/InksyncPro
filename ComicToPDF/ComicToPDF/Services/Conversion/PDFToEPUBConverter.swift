@@ -420,27 +420,15 @@ final class PDFToEPUBConverter: Sendable {
 """
         
         var spineItems = coverSpine
-        var globalPageCounter = coverSpine.isEmpty ? 1 : 2
+        var spreadTracker = EPUBManifestBuilder.SpreadTagTracker(
+            isManga: mangaMode,
+            linkCoverAsSpread: linkCoverAsSpread,
+            hasCover: !coverSpine.isEmpty
+        )
         for (index, _) in xhtmlFiles.enumerated() {
             let pageNum = index + 1
-            let spreadTag: String
-            if linkCoverAsSpread {
-                if mangaMode {
-                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                } else {
-                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                }
-            } else {
-                if globalPageCounter == 1 {
-                    spreadTag = "" // Cover stands alone centered
-                } else if mangaMode {
-                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
-                } else {
-                    spreadTag = (globalPageCounter % 2 == 1) ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                }
-            }
+            let spreadTag = spreadTracker.tagForPage(isLandscape: false)
             spineItems += "<itemref idref=\"chunk\(pageNum)\"\(spreadTag)/>\n        "
-            globalPageCounter += 1
         }
         
         let coverMetaTag: String

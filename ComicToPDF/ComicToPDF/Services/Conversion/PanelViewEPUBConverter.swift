@@ -440,49 +440,20 @@ class PanelViewEPUBConverter {
     ///              3->page-spread-right, 4->page-spread-left (Subsequent pairs)
     private func buildSpineItems(pageCatalog: [PageEntry], isManga: Bool, needsBlank: Bool, hasBadgedCover: Bool, linkCoverAsSpread: Bool) -> [String] {
         var items: [String] = []
+        var spreadTracker = EPUBManifestBuilder.SpreadTagTracker(
+            isManga: isManga,
+            linkCoverAsSpread: linkCoverAsSpread,
+            hasCover: hasBadgedCover
+        )
 
         if hasBadgedCover {
-            let coverSpreadTag: String
-            if linkCoverAsSpread {
-                coverSpreadTag = isManga ? #" properties="page-spread-right""# : #" properties="page-spread-left""#
-            } else {
-                coverSpreadTag = ""
-            }
-            items.append(#"<itemref idref="cover-page"\#(coverSpreadTag)/>"#)
+            items.append(#"<itemref idref="cover-page"\#(spreadTracker.coverSpreadTag)/>"#)
         }
-
-        var globalPageCounter = hasBadgedCover ? 2 : 1
 
         for entry in pageCatalog {
             let idref = "page\(entry.paddedNum)"
-            let spreadTag: String
-            if entry.isLandscape {
-                spreadTag = #" properties="rendition:page-spread-center""#
-            } else if linkCoverAsSpread {
-                if isManga {
-                    spreadTag = (globalPageCounter % 2 == 1) ? #" properties="page-spread-right""# : #" properties="page-spread-left""#
-                } else {
-                    spreadTag = (globalPageCounter % 2 == 1) ? #" properties="page-spread-left""# : #" properties="page-spread-right""#
-                }
-            } else {
-                if globalPageCounter == 1 {
-                    spreadTag = "" // Cover stands alone centered
-                } else if isManga {
-                    spreadTag = (globalPageCounter % 2 == 1) ? #" properties="page-spread-left""# : #" properties="page-spread-right""#
-                } else {
-                    spreadTag = (globalPageCounter % 2 == 1) ? #" properties="page-spread-right""# : #" properties="page-spread-left""#
-                }
-            }
+            let spreadTag = spreadTracker.tagForPage(isLandscape: entry.isLandscape)
             items.append(#"<itemref idref="\#(idref)"\#(spreadTag)/>"#)
-            if entry.isLandscape {
-                if linkCoverAsSpread {
-                    globalPageCounter += (globalPageCounter % 2 == 0) ? 1 : 2
-                } else {
-                    globalPageCounter += (globalPageCounter % 2 != 0) ? 1 : 2
-                }
-            } else {
-                globalPageCounter += 1
-            }
         }
 
         if needsBlank {

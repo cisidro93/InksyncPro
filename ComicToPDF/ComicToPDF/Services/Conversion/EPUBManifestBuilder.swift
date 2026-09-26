@@ -215,4 +215,79 @@ public struct EPUBManifestBuilder {
         </html>
         """
     }
+
+    /// Single source of truth for EPUB 3 / Amazon KF8 spread property synthesis.
+    ///
+    /// Spread Pairing Invariant:
+    /// - In Manga (RTL):
+    ///   - Reading proceeds from Right to Left.
+    ///   - A 2-page spread consists of [Left Page | Right Page].
+    ///   - The reader reads the RIGHT page first (leading slot), and the LEFT page second (trailing slot).
+    ///   - Therefore: Leading slot = "page-spread-right", Trailing slot = "page-spread-left".
+    /// - In Western (LTR):
+    ///   - Reading proceeds from Left to Right.
+    ///   - The reader reads the LEFT page first (leading slot), and the RIGHT page second (trailing slot).
+    ///   - Therefore: Leading slot = "page-spread-left", Trailing slot = "page-spread-right".
+    /// - Cover Behavior:
+    ///   - When linkCoverAsSpread is false: The cover stands alone. The first content page starts the first spread on the leading slot.
+    ///   - When linkCoverAsSpread is true: The cover consumes the leading slot. The first content page is paired with the cover in the trailing slot.
+    /// - Landscape Spreads:
+    ///   - A landscape image receives "rendition:page-spread-center" and occupies both columns.
+    ///   - The subsequent portrait page starts a fresh spread on the leading slot.
+    public struct SpreadTagTracker: Sendable {
+        public enum Slot: Sendable {
+            case leading
+            case trailing
+        }
+
+        public let isManga: Bool
+        public let linkCoverAsSpread: Bool
+        public let hasCover: Bool
+        public private(set) var currentSlot: Slot
+        private var hasPlacedFirstPageWithoutCover: Bool = false
+
+        public init(isManga: Bool, linkCoverAsSpread: Bool, hasCover: Bool) {
+            self.isManga = isManga
+            self.linkCoverAsSpread = linkCoverAsSpread
+            self.hasCover = hasCover
+            // When cover is linked as spread, cover consumes the leading slot, so first content page is trailing.
+            // When cover stands alone (or no cover), the first content page begins on the leading slot.
+            self.currentSlot = (hasCover && linkCoverAsSpread) ? .trailing : .leading
+        }
+
+        /// Spread property string for the dedicated cover spine item (e.g. cover.xhtml), if present.
+        public var coverSpreadTag: String {
+            guard hasCover && linkCoverAsSpread else { return "" }
+            return isManga ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+        }
+
+        /// Synthesizes the exact spread property attribute string for a content page itemref.
+        public mutating func tagForPage(isLandscape: Bool) -> String {
+            if isLandscape {
+                // A full-bleed landscape spread spans both columns on Kindle.
+                // Reset slot to leading so the subsequent portrait page begins the next spread cleanly.
+                currentSlot = .leading
+                return " properties=\"rendition:page-spread-center\""
+            }
+
+            // Edge case: if the book has NO dedicated cover file and linkCoverAsSpread is false,
+            // the very first content page acts as the standalone cover.
+            if !hasCover && !linkCoverAsSpread && !hasPlacedFirstPageWithoutCover {
+                hasPlacedFirstPageWithoutCover = true
+                currentSlot = .leading
+                return ""
+            }
+
+            let tag: String
+            switch currentSlot {
+            case .leading:
+                tag = isManga ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
+                currentSlot = .trailing
+            case .trailing:
+                tag = isManga ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\""
+                currentSlot = .leading
+            }
+            return tag
+        }
+    }
 }

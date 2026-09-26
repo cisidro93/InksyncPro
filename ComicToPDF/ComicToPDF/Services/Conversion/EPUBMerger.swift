@@ -50,9 +50,11 @@ struct EPUBMerger: Sendable {
         manifestItems.append("<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
         
         var globalPageIndex = 1
-        // When cover is injected into the spine and linked as a spread (page-spread-left/right),
-        // the first content page must occupy the alternating slot (page 2) to prevent two consecutive identical spreads.
-        var globalPageCounter = (activeCoverData != nil && settings.linkCoverAsSpread) ? 2 : 1
+        var spreadTracker = EPUBManifestBuilder.SpreadTagTracker(
+            isManga: settings.mangaMode,
+            linkCoverAsSpread: settings.linkCoverAsSpread,
+            hasCover: activeCoverData != nil
+        )
         var hasLandscapeSpreads = false
         // Tracks the actual pixel dimensions of the first content page so we can
         // emit a truthful original-resolution OPF meta for the Amazon ingestor.
@@ -75,13 +77,7 @@ struct EPUBMerger: Sendable {
             let coverXHTML = EPUBManifestBuilder.buildCoverXHTML(coverFilename: coverFilename, isManga: settings.mangaMode)
             try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
             manifestItems.append("<item id=\"cover_page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
-            let coverSpreadTag: String
-            if settings.linkCoverAsSpread {
-                coverSpreadTag = settings.mangaMode ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-            } else {
-                coverSpreadTag = ""
-            }
-            spineItems.append("<itemref idref=\"cover_page\"\(coverSpreadTag)/>")
+            spineItems.append("<itemref idref=\"cover_page\"\(spreadTracker.coverSpreadTag)/>")
         }
         
         // 3. Process Each EPUB
@@ -148,37 +144,10 @@ struct EPUBMerger: Sendable {
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
                     manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
                     
-                    // rendition:page-spread-center tells Kindle to expand this single landscape
-                    // page across both columns in landscape orientation — no spread-none, which
-                    // would cancel the expansion.
-                    let spreadTag: String
-                    if isLandscape {
-                        spreadTag = " properties=\"rendition:page-spread-center\""
-                    } else if settings.linkCoverAsSpread {
-                        spreadTag = settings.mangaMode
-                            ? (globalPageCounter % 2 == 1 ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\"")
-                            : (globalPageCounter % 2 == 1 ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\"")
-                    } else {
-                        if globalPageCounter == 1 && activeCoverData == nil {
-                            spreadTag = ""
-                        } else {
-                            spreadTag = settings.mangaMode
-                                ? (globalPageCounter % 2 == 1 ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\"")
-                                : (globalPageCounter % 2 == 1 ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\"")
-                        }
-                    }
+                    let spreadTag = spreadTracker.tagForPage(isLandscape: isLandscape)
                     spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
                     globalPageIndex += 1
-                    if isLandscape {
-                        if settings.linkCoverAsSpread {
-                            globalPageCounter += (globalPageCounter % 2 == 0) ? 1 : 2
-                        } else {
-                            globalPageCounter += (globalPageCounter % 2 != 0) ? 1 : 2
-                        }
-                    } else {
-                        globalPageCounter += 1
-                    }
                 }
             }
         }
@@ -367,6 +336,12 @@ struct EPUBMerger: Sendable {
             return finalURL
         }
         
+        var genericSpreadTracker = EPUBManifestBuilder.SpreadTagTracker(
+            isManga: settings.mangaMode,
+            linkCoverAsSpread: settings.linkCoverAsSpread,
+            hasCover: activeCoverData != nil
+        )
+        
         let injectCover = { (targetImagesDir: URL, targetOESPSDir: URL, partNumber: Int, destManifest: inout [String], destSpine: inout [String]) throws -> Int in
             if let baseCover = activeCoverData {
                 let badgedData = self.createBadgedCover(from: baseCover, partNumber: partNumber, placement: settings.omnibusBadgePlacement) ?? baseCover
@@ -382,13 +357,7 @@ struct EPUBMerger: Sendable {
                 let textDir = targetOESPSDir.appendingPathComponent("text")
                 try coverXHTML.write(to: textDir.appendingPathComponent("cover.xhtml"), atomically: true, encoding: .utf8)
                 destManifest.append("<item id=\"cover_page\" href=\"text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>")
-                let coverSpreadTag: String
-                if settings.linkCoverAsSpread {
-                    coverSpreadTag = settings.mangaMode ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\""
-                } else {
-                    coverSpreadTag = ""
-                }
-                destSpine.append("<itemref idref=\"cover_page\"\(coverSpreadTag)/>")
+                destSpine.append("<itemref idref=\"cover_page\"\(genericSpreadTracker.coverSpreadTag)/>")
                 return 0 // cover.xhtml is the first spine entry; regular pages follow at globalPageIndex 1+
             }
             return 0
@@ -417,7 +386,11 @@ struct EPUBMerger: Sendable {
                 currentVolumeIndex += 1
                 currentBundleBytes = 0
                 globalPageIndex = 1
-                globalPageCounter = (activeCoverData != nil && settings.linkCoverAsSpread) ? 2 : 1
+                genericSpreadTracker = EPUBManifestBuilder.SpreadTagTracker(
+                    isManga: settings.mangaMode,
+                    linkCoverAsSpread: settings.linkCoverAsSpread,
+                    hasCover: activeCoverData != nil
+                )
                 hasLandscapeSpreads = false
                 firstContentW = 1980; firstContentH = 2640  // Reset for new volume
                 currentEpubDir = try initializeBlankEPUBDir(volumeOffset: currentVolumeIndex)
@@ -487,37 +460,10 @@ struct EPUBMerger: Sendable {
                     manifestItems.append("<item id=\"page_\(globalPageIndex)\" href=\"text/\(htmlName)\" media-type=\"application/xhtml+xml\"/>")
                     manifestItems.append("<item id=\"img_\(globalPageIndex)\" href=\"images/\(newName)\" media-type=\"image/\(safeExt)\"\(coverImageProp)/>")
                     
-                    // rendition:page-spread-center tells Kindle to expand this single landscape
-                    // page across both columns in landscape orientation — no spread-none, which
-                    // would cancel the expansion.
-                    let spreadTag: String
-                    if isLandscape {
-                        spreadTag = " properties=\"rendition:page-spread-center\""
-                    } else if settings.linkCoverAsSpread {
-                        spreadTag = settings.mangaMode
-                            ? (globalPageCounter % 2 == 1 ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\"")
-                            : (globalPageCounter % 2 == 1 ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\"")
-                    } else {
-                        if globalPageCounter == 1 && activeCoverData == nil {
-                            spreadTag = ""
-                        } else {
-                            spreadTag = settings.mangaMode
-                                ? (globalPageCounter % 2 == 1 ? " properties=\"page-spread-left\"" : " properties=\"page-spread-right\"")
-                                : (globalPageCounter % 2 == 1 ? " properties=\"page-spread-right\"" : " properties=\"page-spread-left\"")
-                        }
-                    }
+                    let spreadTag = genericSpreadTracker.tagForPage(isLandscape: isLandscape)
                     spineItems.append("<itemref idref=\"page_\(globalPageIndex)\"\(spreadTag)/>")
                     
                     globalPageIndex += 1
-                    if isLandscape {
-                        if settings.linkCoverAsSpread {
-                            globalPageCounter += (globalPageCounter % 2 == 0) ? 1 : 2
-                        } else {
-                            globalPageCounter += (globalPageCounter % 2 != 0) ? 1 : 2
-                        }
-                    } else {
-                        globalPageCounter += 1
-                    }
                 }
             }
             
