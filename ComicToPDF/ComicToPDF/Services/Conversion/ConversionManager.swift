@@ -112,18 +112,18 @@ class ConversionManager: ObservableObject {
         // Grid cells now observe thumbnailReadySubject locally for their specific PDF ID.
         
         NotificationCenter.default.addObserver(forName: .libraryNeedsRescan, object: nil, queue: .main) { [weak self] notification in
-            guard let self = self, self.isLibraryLoaded else { return }
             let modeRaw = notification.userInfo?["mode"] as? String
             let mode: AppUIMode = (modeRaw == AppUIMode.go.rawValue) ? .go : .pro
             Task { @MainActor [weak self] in
-                self?.scanLibrary(addedByMode: mode)
+                guard let self = self, self.isLibraryLoaded else { return }
+                self.scanLibrary(addedByMode: mode)
             }
         }
         
         NotificationCenter.default.addObserver(forName: .libraryUpdated, object: nil, queue: .main) { [weak self] _ in
-            guard let self = self, self.isLibraryLoaded else { return }
             Task { @MainActor [weak self] in
-                self?.scanLibrary(addedByMode: .pro)
+                guard let self = self, self.isLibraryLoaded else { return }
+                self.scanLibrary(addedByMode: .pro)
             }
         }
         

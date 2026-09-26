@@ -115,10 +115,18 @@ struct ZettelkastenBoardView: View {
 
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
+    private var isTablet: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
+    private var canShowSideDrawers: Bool {
+        isTablet && hSizeClass == .regular
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // ── Left Side: Collapsible Highlight Inbox Drawer (iPad / Regular only) ────────────────
-            if isShowingInbox && hSizeClass == .regular {
+            if isShowingInbox && canShowSideDrawers {
                 inboxDrawer
                     .frame(width: 300)
                     .transition(.move(edge: .leading))
@@ -138,7 +146,7 @@ struct ZettelkastenBoardView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             
             // ── Right Side: Card Inspector & Linker (iPad / Regular only) ──────────────────────────
-            if let selected = selectedAnnotation, hSizeClass == .regular {
+            if let selected = selectedAnnotation, canShowSideDrawers {
                 Divider()
                 CardInspectorView(
                     annotation: Binding(
@@ -177,7 +185,7 @@ struct ZettelkastenBoardView: View {
         }
         // iPhone Highlight Inbox Sheet
         .sheet(isPresented: Binding(
-            get: { isShowingInbox && hSizeClass == .compact },
+            get: { isShowingInbox && !canShowSideDrawers },
             set: { isShowingInbox = $0 }
         )) {
             NavigationStack {
@@ -195,7 +203,7 @@ struct ZettelkastenBoardView: View {
         }
         // iPhone Card Inspector Sheet
         .sheet(item: Binding(
-            get: { (hSizeClass == .compact) ? selectedAnnotation : nil },
+            get: { (!canShowSideDrawers) ? selectedAnnotation : nil },
             set: { selectedAnnotation = $0 }
         )) { ann in
             NavigationStack {

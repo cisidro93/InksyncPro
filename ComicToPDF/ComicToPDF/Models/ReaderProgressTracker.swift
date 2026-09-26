@@ -388,7 +388,7 @@ class ReaderProgressTracker: ObservableObject {
             userInfo: ["pdfID": pdfID]
         )
         
-        HapticEngine.shared.play(.light)
+        HapticEngine.light()
     }
     
     // MARK: - Stats

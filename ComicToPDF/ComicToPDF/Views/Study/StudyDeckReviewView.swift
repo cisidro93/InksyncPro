@@ -168,22 +168,40 @@ public struct StudyDeckReviewView: View {
                 
                 Spacer()
                 
-                // Citation Footer
-                HStack(spacing: 6) {
-                    Image(systemName: "book.pages.fill")
-                        .font(.system(size: 11))
-                        .foregroundColor(.inkViolet)
-                    
-                    Text("\(card.citation.documentTitle) • p. \(card.citation.pageNumber)")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundColor(.inkTextSecondary)
-                        .lineLimit(1)
-                    
-                    Spacer()
+                // Citation Footer (Deep-link to source document passage)
+                Button {
+                    HapticEngine.selection()
+                    NotificationCenter.default.post(
+                        name: .readerJumpToPage,
+                        object: nil,
+                        userInfo: [
+                            "pageIndex": max(0, card.citation.pageNumber - 1),
+                            "page": max(0, card.citation.pageNumber - 1),
+                            "selectedText": card.citation.highlightedText
+                        ]
+                    )
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "book.pages.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(.inkViolet)
+                        
+                        Text("\(card.citation.documentTitle) • p. \(card.citation.pageNumber)")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundColor(.inkTextSecondary)
+                            .lineLimit(1)
+                        
+                        Spacer()
+
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(.inkViolet.opacity(0.8))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(Color.inkViolet.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .buttonStyle(.plain)
             }
             .padding(22)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

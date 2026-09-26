@@ -953,10 +953,8 @@ struct EBookReaderView: View {
                             curTransform = Math.abs(matrix.m41);
                         }
                         var absoluteLeft = rect.left + curTransform;
-                        var isMulti = (typeof _isMultiCol !== 'undefined') ? _isMultiCol : false;
-                        var colWidth = isMulti ? (pageStep / 2) : pageStep;
-                        if (colWidth > 0) {
-                            return Math.floor(absoluteLeft / colWidth);
+                        if (pageStep > 0) {
+                            return Math.floor(absoluteLeft / pageStep);
                         }
                     }
                     return -1;
@@ -968,6 +966,8 @@ struct EBookReaderView: View {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 self.chapterPage = col
                             }
+                            let activeWV = self.resolveActiveWebView() ?? self.webViewReference
+                            activeWV?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(col), true);")
                             self.saveProgress()
                         }
                     }
@@ -990,7 +990,10 @@ struct EBookReaderView: View {
         showSearch = false
         showAnnotations = false
 
+        let selectedText = (notification.userInfo?["selectedText"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+
         // 1. If chapterTitle is specified, locate and jump to that chapter
+        var targetChapterIdx: Int? = nil
         if let targetChapter = notification.userInfo?["chapterTitle"] as? String,
            let meta = metadata,
            let chapterIdx = meta.spineItems.firstIndex(where: {
@@ -999,6 +1002,7 @@ struct EBookReaderView: View {
                ($0.tocTitle ?? "").localizedCaseInsensitiveContains(targetChapter) ||
                targetChapter.localizedCaseInsensitiveContains($0.tocTitle ?? "")
            }) {
+            targetChapterIdx = chapterIdx
             if chapterIdx != currentIndex {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                     isGoingForward = chapterIdx >= currentIndex
@@ -1006,6 +1010,13 @@ struct EBookReaderView: View {
                     currentIndex = chapterIdx
                 }
             }
+        }
+
+        // If selectedText is specified, locate it within the active or target chapter
+        if let text = selectedText, !text.isEmpty {
+            let chap = targetChapterIdx ?? (notification.userInfo?["chapterIndex"] as? Int) ?? currentIndex
+            handleSearchNavigation(chapterIdx: chap, matchText: text)
+            return
         }
 
         // 2. Navigate to specific page within chapter or whole chapter
@@ -1468,7 +1479,7 @@ struct EBookReaderView: View {
                             HapticEngine.success()
                         }
                     )
-                    .padding(.bottom, showHUD ? (bottomInset + 80) : max(bottomInset + 20, 30))
+                    .padding(.bottom, showHUD ? (bottomInset + 95) : max(bottomInset + 20, 34))
                     .padding(.horizontal, 20)
                 }
             }

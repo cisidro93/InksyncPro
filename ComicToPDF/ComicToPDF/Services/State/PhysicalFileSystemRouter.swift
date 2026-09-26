@@ -565,11 +565,11 @@ class PhysicalFileSystemRouter {
         }
         
         // 2. Direct EPUB archive image search fallback
-        if let archiveCover = await Task.detached(priority: .userInitiated, operation: { () -> UIImage? in
+        let archiveCoverTask = Task.detached(priority: .userInitiated) { () -> UIImage? in
             guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
             
             let imageExts: Set<String> = ["jpg", "jpeg", "png", "webp"]
-            var candidateEntries: [(path: String, entry: Entry, size: UInt32)] = []
+            var candidateEntries: [(path: String, entry: ZIPFoundation.Entry, size: UInt32)] = []
             
             for entry in archive {
                 if entry.type == .directory { continue }
@@ -616,7 +616,8 @@ class PhysicalFileSystemRouter {
                 }
             }
             return nil
-        }).value {
+        }
+        if let archiveCover = await archiveCoverTask.value {
             return archiveCover
         }
         

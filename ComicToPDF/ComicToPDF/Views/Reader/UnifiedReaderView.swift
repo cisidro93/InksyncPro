@@ -200,10 +200,18 @@ struct UnifiedReaderView: View {
         }
     }
 
+    private var isTablet: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
+    private var canShowSplitSidebar: Bool {
+        isTablet && sizeClass == .regular
+    }
+
     var body: some View {
         GeometryReader { geo in
             HStack(spacing: 0) {
-                if notebookPlacement == .left && showNotebookPanel && sizeClass == .regular {
+                if notebookPlacement == .left && showNotebookPanel && canShowSplitSidebar {
                     StudyNotebookView(
                         bookID: pdf.id.uuidString,
                         bookTitle: pdf.name,
@@ -239,7 +247,7 @@ struct UnifiedReaderView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
                 
-                if notebookPlacement == .right && showNotebookPanel && sizeClass == .regular {
+                if notebookPlacement == .right && showNotebookPanel && canShowSplitSidebar {
                     draggableDivider(geo: geo, placement: .right)
                     
                     StudyNotebookView(
@@ -251,6 +259,12 @@ struct UnifiedReaderView: View {
                     .clipped()
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .id("sidebar_notebook_\(pdf.id)")
+                }
+            }
+            .onChange(of: geo.size.width) { _, newWidth in
+                let maxW = max(280, min(newWidth * 0.70, newWidth - 280))
+                if notebookWidth > maxW {
+                    notebookWidth = maxW
                 }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showNotebookPanel)
@@ -282,7 +296,7 @@ struct UnifiedReaderView: View {
             }
         }
         .sheet(isPresented: Binding(
-            get: { showNotebookPanel && sizeClass == .compact },
+            get: { showNotebookPanel && !canShowSplitSidebar },
             set: { if !$0 { showNotebookPanel = false } }
         )) {
             StudyNotebookView(
@@ -428,9 +442,9 @@ struct UnifiedReaderView: View {
     @ViewBuilder
     private func draggableDivider(geo: GeometryProxy, placement: SidebarPlacement) -> some View {
         ZStack {
-            // Expanded invisible touch padding (36pt) so user's finger never slips off the bar
+            // Expanded invisible touch padding (44pt) so user's finger or Pencil never slips off the bar
             Color.clear
-                .frame(width: 36)
+                .frame(width: 44)
                 .contentShape(Rectangle())
             
             Rectangle()
@@ -442,7 +456,7 @@ struct UnifiedReaderView: View {
                 .frame(width: isDraggingDivider ? 5 : 4, height: isDraggingDivider ? 48 : 40)
                 .shadow(color: .orange.opacity(isDraggingDivider ? 0.6 : 0.3), radius: isDraggingDivider ? 5 : 3)
         }
-        .frame(width: 36)
+        .frame(width: 44)
         .gesture(
             DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { value in

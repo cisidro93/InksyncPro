@@ -7,6 +7,7 @@ struct ProDocumentInspectorView: View {
     let pdfDocument: PDFDocument?
     let currentPageIndex: Int
     var onJumpToPage: (Int) -> Void
+    var onJumpToAnnotation: ((Annotation) -> Void)? = nil
     var onDeleteAnnotation: ((Annotation) -> Void)? = nil
     var onDismiss: () -> Void
 
@@ -17,6 +18,10 @@ struct ProDocumentInspectorView: View {
     @State private var isSearching = false
     @State private var annotationPendingDeletion: Annotation? = nil
     @State private var showingDeleteConfirmation = false
+    @State private var shareExportItem: String? = nil
+    @State private var showShareSheet: Bool = false
+    @State private var exportPDFURL: URL? = nil
+    @State private var showPDFShareSheet: Bool = false
 
     enum InspectorTab: String, CaseIterable, Identifiable {
         case outline = "Outline"
@@ -95,6 +100,48 @@ struct ProDocumentInspectorView: View {
                     }
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(.inkGreen)
+                }
+
+                if selectedTab == .annotations {
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            Button {
+                                exportHighlightsMarkdown()
+                            } label: {
+                                Label("Share as Markdown", systemImage: "square.and.arrow.up")
+                            }
+
+                            Button {
+                                copyReadwiseCSV()
+                            } label: {
+                                Label("Copy Readwise CSV", systemImage: "tablecells")
+                            }
+
+                            if let doc = pdfDocument {
+                                Divider()
+
+                                Button {
+                                    exportFlattenedPDF(doc: doc)
+                                } label: {
+                                    Label("Export Flattened PDF", systemImage: "doc.badge.gearshape")
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.inkGreen)
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showShareSheet) {
+                if let text = shareExportItem {
+                    ShareSheet(items: [text])
+                }
+            }
+            .sheet(isPresented: $showPDFShareSheet) {
+                if let url = exportPDFURL {
+                    ShareSheet(items: [url])
                 }
             }
             .background(Color.inkBackground)
@@ -218,7 +265,12 @@ struct ProDocumentInspectorView: View {
                             }
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                onJumpToPage(ann.pageIndex)
+                                HapticEngine.selection()
+                                if let onJumpToAnnotation = onJumpToAnnotation {
+                                    onJumpToAnnotation(ann)
+                                } else {
+                                    onJumpToPage(ann.pageIndex)
+                                }
                                 onDismiss()
                             }
 
@@ -400,6 +452,38 @@ struct ProDocumentInspectorView: View {
             }
         }
     }
+
+    // MARK: - Export Helpers
+    private func exportHighlightsMarkdown() {
+        let annotations = AnnotationStore.shared.annotations(for: pdf.id)
+        guard !annotations.isEmpty else { return }
+        let md = HighlightExportService.shared.exportToMarkdown(bookTitle: pdf.name, author: nil, storeAnnotations: annotations)
+        shareExportItem = md
+        showShareSheet = true
+        HapticEngine.selection()
+    }
+    
+    private func copyReadwiseCSV() {
+        let annotations = AnnotationStore.shared.annotations(for: pdf.id)
+        guard !annotations.isEmpty else { return }
+        let csv = HighlightExportService.shared.exportToReadwiseCSV(bookTitle: pdf.name, author: nil, storeAnnotations: annotations)
+        UIPasteboard.general.string = csv
+        HapticEngine.success()
+    }
+    
+    private func exportFlattenedPDF(doc: PDFDocument) {
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(pdf.name) (Flattened).pdf")
+        do {
+            _ = try PDFAnnotationSyncBridge.shared.generateFlattenedPDF(from: doc, for: pdf.id, saveTo: tempURL)
+            exportPDFURL = tempURL
+            showPDFShareSheet = true
+            HapticEngine.success()
+        } catch {
+            Logger.shared.log("Failed to generate flattened PDF: \(error.localizedDescription)", category: "PDF", type: .error)
+            HapticEngine.error()
+        }
+    }
 }
 
 /// Unified search result item covering PDF vector text, OCR handwriting, and margin notes
@@ -471,4 +555,15 @@ private struct OutlineNodeRow: View {
             }
         }
     }
+}
+
+// MARK: - ShareSheet UIKit Bridge
+private struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

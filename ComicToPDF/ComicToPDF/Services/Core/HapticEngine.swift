@@ -29,6 +29,25 @@ enum HapticEngine {
         return _cachedIsEnabled
     }
 
+    // MARK: - Compatibility & Ergonomics
+    static let shared = HapticEngine.self
+
+    enum FeedbackType: Sendable {
+        case light, medium, heavy, success, error, warning, selection
+    }
+
+    static func play(_ type: FeedbackType) {
+        switch type {
+        case .light: light()
+        case .medium: medium()
+        case .heavy: heavy()
+        case .success: success()
+        case .error: error()
+        case .warning: warning()
+        case .selection: selection()
+        }
+    }
+
     // MARK: - Impact
 
     /// Light tap — tabs, toggles, minor selections.

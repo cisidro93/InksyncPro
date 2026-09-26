@@ -183,32 +183,31 @@ final class PDFAnnotationSyncBridge {
             case .ink:
                 if let drawingData = annotation.drawingData,
                    let drawing = try? PKDrawing(data: drawingData) {
-                    let nativeInk = PDFAnnotation(bounds: pageBounds, forType: .ink, withProperties: nil)
-                    nativeInk.userName = annotation.id.uuidString
-                    nativeInk.contents = annotation.drawingOCRText ?? "Handwritten Note"
-                    if let hex = annotation.colorHex, let c = UIColor(hexString: hex) {
-                        nativeInk.color = c
-                    } else if let firstStroke = drawing.strokes.first {
-                        nativeInk.color = firstStroke.ink.color
-                    } else {
-                        nativeInk.color = UIColor.systemBlue
+                    let groupedStrokes = Dictionary(grouping: drawing.strokes) { stroke in
+                        stroke.ink.color
                     }
-                    for stroke in drawing.strokes {
-                        let bezier = UIBezierPath()
-                        var first = true
-                        for point in stroke.path {
-                            let pt = point.location
-                            let pdfPt = CGPoint(x: pt.x, y: pageBounds.height - pt.y)
-                            if first {
-                                bezier.move(to: pdfPt)
-                                first = false
-                            } else {
-                                bezier.addLine(to: pdfPt)
+                    for (strokeColor, strokes) in groupedStrokes {
+                        let nativeInk = PDFAnnotation(bounds: pageBounds, forType: .ink, withProperties: nil)
+                        nativeInk.userName = annotation.id.uuidString
+                        nativeInk.contents = annotation.drawingOCRText ?? "Handwritten Note"
+                        nativeInk.color = strokeColor
+                        for stroke in strokes {
+                            let bezier = UIBezierPath()
+                            var first = true
+                            for point in stroke.path {
+                                let pt = point.location
+                                let pdfPt = CGPoint(x: pt.x, y: pageBounds.height - pt.y)
+                                if first {
+                                    bezier.move(to: pdfPt)
+                                    first = false
+                                } else {
+                                    bezier.addLine(to: pdfPt)
+                                }
                             }
+                            nativeInk.add(bezier)
                         }
-                        nativeInk.add(bezier)
+                        page.addAnnotation(nativeInk)
                     }
-                    page.addAnnotation(nativeInk)
                 }
                 
             case .bookmark:
@@ -404,33 +403,32 @@ final class PDFAnnotationSyncBridge {
                 // Convert PencilKit drawing data to native vector /Ink paths preserving stroke color and metadata
                 if let drawingData = annotation.drawingData,
                    let drawing = try? PKDrawing(data: drawingData) {
-                    let nativeInk = PDFAnnotation(bounds: pageBounds, forType: .ink, withProperties: nil)
-                    nativeInk.userName = annotation.id.uuidString
-                    nativeInk.contents = annotation.drawingOCRText ?? "Handwritten Note"
-                    if let hex = annotation.colorHex, let c = UIColor(hexString: hex) {
-                        nativeInk.color = c
-                    } else if let firstStroke = drawing.strokes.first {
-                        nativeInk.color = firstStroke.ink.color
-                    } else {
-                        nativeInk.color = UIColor.systemBlue
+                    let groupedStrokes = Dictionary(grouping: drawing.strokes) { stroke in
+                        stroke.ink.color
                     }
-                    
-                    for stroke in drawing.strokes {
-                        let bezier = UIBezierPath()
-                        var first = true
-                        for point in stroke.path {
-                            let pt = point.location
-                            let pdfPt = CGPoint(x: pt.x, y: pageBounds.height - pt.y)
-                            if first {
-                                bezier.move(to: pdfPt)
-                                first = false
-                            } else {
-                                bezier.addLine(to: pdfPt)
+                    for (strokeColor, strokes) in groupedStrokes {
+                        let nativeInk = PDFAnnotation(bounds: pageBounds, forType: .ink, withProperties: nil)
+                        nativeInk.userName = annotation.id.uuidString
+                        nativeInk.contents = annotation.drawingOCRText ?? "Handwritten Note"
+                        nativeInk.color = strokeColor
+                        
+                        for stroke in strokes {
+                            let bezier = UIBezierPath()
+                            var first = true
+                            for point in stroke.path {
+                                let pt = point.location
+                                let pdfPt = CGPoint(x: pt.x, y: pageBounds.height - pt.y)
+                                if first {
+                                    bezier.move(to: pdfPt)
+                                    first = false
+                                } else {
+                                    bezier.addLine(to: pdfPt)
+                                }
                             }
+                            nativeInk.add(bezier)
                         }
-                        nativeInk.add(bezier)
+                        page.addAnnotation(nativeInk)
                     }
-                    page.addAnnotation(nativeInk)
 
                     // Lossless dual-layer metadata embedding in document attributes
                     if var attrs = document.documentAttributes {
@@ -606,6 +604,45 @@ final class PDFAnnotationSyncBridge {
         }
         
         Logger.shared.log("PDFAnnotationSync: Successfully wrote annotated PDF to \(destinationURL.path)", category: "PDF", type: .success)
+        return destinationURL
+    }
+
+    /// Generates a completely flattened PDF where all annotations and drawings are permanently burned
+    /// into the page graphics stream, preventing accidental alteration or stripping in third-party viewers (PDF Expert parity).
+    @MainActor
+    func generateFlattenedPDF(
+        from document: PDFDocument,
+        for pdfID: UUID,
+        saveTo destinationURL: URL
+    ) throws -> URL {
+        guard let data = document.dataRepresentation(),
+              let annotatedDoc = PDFDocument(data: data) else {
+            throw PDFSyncError.documentSerializationFailed
+        }
+        self.exportAnnotations(for: pdfID, to: annotatedDoc)
+        
+        let renderer = UIGraphicsPDFRenderer(bounds: .zero)
+        let flattenedData = renderer.pdfData { context in
+            for i in 0..<annotatedDoc.pageCount {
+                guard let page = annotatedDoc.page(at: i) else { continue }
+                let pageBounds = page.bounds(for: .cropBox)
+                context.beginPage(withBounds: pageBounds, pageInfo: [:])
+                
+                guard let cgContext = UIGraphicsGetCurrentContext() else { continue }
+                
+                cgContext.saveGState()
+                // Transform UIKit coordinates to PDF coordinates
+                cgContext.translateBy(x: -pageBounds.minX, y: pageBounds.height + pageBounds.minY)
+                cgContext.scaleBy(x: 1.0, y: -1.0)
+                
+                // Draw page raster & native vector annotations permanently into stream
+                page.draw(with: .cropBox, to: cgContext)
+                cgContext.restoreGState()
+            }
+        }
+        
+        try flattenedData.write(to: destinationURL, options: .atomic)
+        Logger.shared.log("PDFAnnotationSync: Successfully wrote flattened PDF to \(destinationURL.path)", category: "PDF", type: .success)
         return destinationURL
     }
 }

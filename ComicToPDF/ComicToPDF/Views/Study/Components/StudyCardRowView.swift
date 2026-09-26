@@ -69,25 +69,43 @@ public struct StudyCardRowView: View {
                 .lineLimit(4)
             
             // MARK: - Passage Citation Deep Link
-            HStack(alignment: .center, spacing: 6) {
-                Image(systemName: "quote.opening")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(.inkViolet)
-                
-                Text(card.citation.documentTitle)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(.inkTextPrimary)
-                    .lineLimit(1)
-                
-                Text("•  p. \(card.citation.pageNumber)")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(.inkTextSecondary)
-                
-                Spacer()
+            Button {
+                HapticEngine.selection()
+                NotificationCenter.default.post(
+                    name: .readerJumpToPage,
+                    object: nil,
+                    userInfo: [
+                        "pageIndex": max(0, card.citation.pageNumber - 1),
+                        "page": max(0, card.citation.pageNumber - 1),
+                        "selectedText": card.citation.highlightedText
+                    ]
+                )
+            } label: {
+                HStack(alignment: .center, spacing: 6) {
+                    Image(systemName: "quote.opening")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.inkViolet)
+                    
+                    Text(card.citation.documentTitle)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(.inkTextPrimary)
+                        .lineLimit(1)
+                    
+                    Text("•  p. \(card.citation.pageNumber)")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(.inkTextSecondary)
+                    
+                    Spacer()
+
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.inkViolet.opacity(0.8))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.inkViolet.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .buttonStyle(.plain)
             
             // MARK: - Tags & SRS Metadata
             HStack(spacing: 6) {

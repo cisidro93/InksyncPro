@@ -604,6 +604,9 @@ struct ProPDFReaderEngine: View {
                     onJumpToPage: { pageIdx in
                         jumpToPage(pageIdx)
                     },
+                    onJumpToAnnotation: { ann in
+                        jumpToAnnotationAndPulse(ann)
+                    },
                     onDeleteAnnotation: { ann in
                         removeAnnotation(id: ann.id, pageIndex: ann.pageIndex)
                     },
@@ -711,6 +714,26 @@ struct ProPDFReaderEngine: View {
             .onReceive(NotificationCenter.default.publisher(for: .readerJumpToPage)) { notification in
                 if let pageIndex = notification.userInfo?["pageIndex"] as? Int, pageIndex >= 0, pageIndex < totalPages {
                     jumpToPage(pageIndex)
+                    
+                    if let text = notification.userInfo?["selectedText"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 250_000_000)
+                            guard let pdfView = pdfViewReference,
+                                  let doc = pdfView.document,
+                                  let targetPage = doc.page(at: pageIndex) else { return }
+                            let matches = doc.findString(text, withOptions: .caseInsensitive)
+                            if let match = matches.first(where: { $0.pages.contains(targetPage) }) ?? matches.first {
+                                pdfView.go(to: match)
+                                pdfView.setCurrentSelection(match, animate: true)
+                                HapticEngine.light()
+                                
+                                try? await Task.sleep(nanoseconds: 1_800_000_000)
+                                if pdfView.currentSelection == match {
+                                    pdfView.setCurrentSelection(nil, animate: true)
+                                }
+                            }
+                        }
+                    }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .openManualCropEditor)) { _ in
@@ -1285,8 +1308,15 @@ struct ProPDFReaderEngine: View {
 
     @ViewBuilder private var textSelectionHUDOverlay: some View {
         if let selectedText = selectedTextForHUD, !selectedText.isEmpty {
-            VStack {
-                Spacer()
+            GeometryReader { geo in
+                let bottomInset = geo.safeAreaInsets.bottom
+                let isPhone = UIDevice.current.userInterfaceIdiom == .phone
+                let bottomPadding: CGFloat = chromeVisible
+                    ? (bottomInset + (isPhone ? 98.0 : 86.0))
+                    : max(bottomInset + (isPhone ? 24.0 : 16.0), 36.0)
+
+                VStack {
+                    Spacer()
                 ProPDFTextSelectionHUD(
                     selectedText: selectedText,
                     pageIndex: currentPageIndex,
@@ -1435,13 +1465,15 @@ struct ProPDFReaderEngine: View {
                         HapticEngine.success()
                     }
                 )
-                .padding(.bottom, chromeVisible ? 80 : 30)
-                .padding(.horizontal, 20)
+                .padding(.bottom, bottomPadding)
+                .padding(.horizontal, isPhone ? 16 : 24)
             }
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .zIndex(60)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .zIndex(60)
     }
+}
 
     @ViewBuilder private var filterHUDOverlay: some View {
         if showingFilterHUD {
@@ -1995,6 +2027,46 @@ struct ProPDFReaderEngine: View {
         // race that manifests as every-other-page skipping.
         currentPageIndex = clamped
         saveReadingProgress()
+    }
+
+    private func jumpToAnnotationAndPulse(_ annotation: Annotation) {
+        jumpToPage(annotation.pageIndex)
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard let pdfView = pdfViewReference,
+                  let doc = pdfView.document,
+                  let targetPage = doc.page(at: annotation.pageIndex) else { return }
+
+            // 1. If we have selected text, find exact text selection and pulse
+            if let text = annotation.selectedText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let matches = doc.findString(text, withOptions: .caseInsensitive)
+                if let match = matches.first(where: { $0.pages.contains(targetPage) }) ?? matches.first {
+                    pdfView.go(to: match)
+                    pdfView.setCurrentSelection(match, animate: true)
+                    HapticEngine.light()
+
+                    try? await Task.sleep(nanoseconds: 1_800_000_000)
+                    if pdfView.currentSelection == match {
+                        pdfView.setCurrentSelection(nil, animate: true)
+                    }
+                    return
+                }
+            }
+
+            // 2. If bounds are present, scroll to the annotation bounds
+            if let b = annotation.bounds {
+                let pageBounds = targetPage.bounds(for: .cropBox)
+                let rectInPage = CGRect(
+                    x: pageBounds.minX + (b.x * pageBounds.width),
+                    y: pageBounds.minY + (b.y * pageBounds.height),
+                    width: b.width * pageBounds.width,
+                    height: b.height * pageBounds.height
+                )
+                pdfView.go(to: rectInPage, on: targetPage)
+                HapticEngine.light()
+            }
+        }
     }
 
     private func handleDocumentModified() {

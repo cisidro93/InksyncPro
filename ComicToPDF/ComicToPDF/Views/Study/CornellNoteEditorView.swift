@@ -26,23 +26,24 @@ public struct CornellNoteEditorView: View {
     }
     
     public var body: some View {
-        ZStack {
-            // MARK: - Mathematical Vector Paper Background
-            VectorPaperCanvasView(template: note.paperTemplate)
-            
-            // MARK: - Note Layout Zones
-            VStack(spacing: 0) {
-                // Header Bar (Title, Adler Marker, Recitation Toggle)
-                editorHeaderBar
+        GeometryReader { geo in
+            let availableWidth = geo.size.width
+            let isCompact = availableWidth < 520
+            let cueWidth = min(150.0, availableWidth * (isCompact ? 0.28 : 0.32))
+
+            ZStack {
+                // MARK: - Mathematical Vector Paper Background
+                VectorPaperCanvasView(template: note.paperTemplate)
                 
-                Divider()
-                    .background(Color.primary.opacity(0.08))
-                
-                // 3-Zone Split Body
-                GeometryReader { geo in
-                    let availableWidth = geo.size.width
-                    let cueWidth = min(150.0, availableWidth * 0.32)
+                // MARK: - Note Layout Zones
+                VStack(spacing: 0) {
+                    // Header Bar (Title, Adler Marker, Recitation Toggle)
+                    editorHeaderBar(isCompact: isCompact)
                     
+                    Divider()
+                        .background(Color.primary.opacity(0.08))
+                    
+                    // 3-Zone Split Body
                     VStack(spacing: 0) {
                         // Upper Split: Cue Column | Main Notes Field
                         HStack(spacing: 0) {
@@ -56,7 +57,7 @@ public struct CornellNoteEditorView: View {
                                 .frame(width: 1)
                             
                             // Zone 2: Main Notes Field (with Recitation Cover)
-                            mainNotesSection
+                            mainNotesSection(isCompact: isCompact)
                                 .frame(maxWidth: .infinity)
                         }
                         .frame(maxHeight: .infinity)
@@ -68,7 +69,7 @@ public struct CornellNoteEditorView: View {
                         
                         // Zone 3: Bottom Summary / Synthesis Block
                         summarySection
-                            .frame(height: 130)
+                            .frame(height: isCompact ? 110 : 130)
                     }
                 }
             }
@@ -77,13 +78,14 @@ public struct CornellNoteEditorView: View {
     
     // MARK: - Editor Header Bar
     
-    private var editorHeaderBar: some View {
-        HStack(spacing: 12) {
+    private func editorHeaderBar(isCompact: Bool) -> some View {
+        HStack(spacing: isCompact ? 8 : 12) {
             // Note Title Field
             TextField("Note Title...", text: $note.title)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(.system(size: isCompact ? 15 : 16, weight: .bold, design: .rounded))
                 .foregroundColor(.inkTextPrimary)
                 .focused($focusedField, equals: .title)
+                .frame(minWidth: 80)
             
             Spacer()
             
@@ -107,25 +109,29 @@ public struct CornellNoteEditorView: View {
                 }
             } label: {
                 if let marker = note.adlerMarker {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 3) {
                         Text(marker.symbol)
                             .font(.system(size: 12, weight: .black))
-                        Text(marker.title)
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                        if !isCompact {
+                            Text(marker.title)
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                        }
                     }
                     .foregroundColor(marker.accentColor)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, isCompact ? 6 : 8)
                     .padding(.vertical, 4)
                     .background(marker.accentColor.opacity(0.15), in: Capsule())
                 } else {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 3) {
                         Image(systemName: "tag")
                             .font(.system(size: 10, weight: .bold))
-                        Text("Marker")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                        if !isCompact {
+                            Text("Marker")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                        }
                     }
                     .foregroundColor(.inkTextSecondary)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, isCompact ? 6 : 8)
                     .padding(.vertical, 4)
                     .background(Color.primary.opacity(0.06), in: Capsule())
                 }
@@ -147,7 +153,7 @@ public struct CornellNoteEditorView: View {
                 Image(systemName: note.paperTemplate.iconName)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.inkTextPrimary)
-                    .padding(7)
+                    .padding(6)
                     .background(Color.primary.opacity(0.08), in: Circle())
             }
             
@@ -161,11 +167,13 @@ public struct CornellNoteEditorView: View {
                 HStack(spacing: 4) {
                     Image(systemName: note.isRecitationCoverActive ? "eye.slash.fill" : "eye")
                         .font(.system(size: 12, weight: .bold))
-                    Text(note.isRecitationCoverActive ? "Covered" : "Recite")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                    if !isCompact {
+                        Text(note.isRecitationCoverActive ? "Covered" : "Recite")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                    }
                 }
                 .foregroundColor(note.isRecitationCoverActive ? .white : .inkViolet)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, isCompact ? 8 : 10)
                 .padding(.vertical, 5)
                 .background(
                     note.isRecitationCoverActive
@@ -177,8 +185,8 @@ public struct CornellNoteEditorView: View {
             .buttonStyle(.plain)
             .help("Obscure main notes to test active recall using only the cue column.")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, isCompact ? 10 : 16)
+        .padding(.vertical, 8)
         .background(Color.inkSurface.opacity(0.85).background(.ultraThinMaterial))
     }
     
@@ -206,13 +214,14 @@ public struct CornellNoteEditorView: View {
     
     // MARK: - Zone 2: Main Notes Field
     
-    private var mainNotesSection: some View {
+    private func mainNotesSection(isCompact: Bool) -> some View {
         ZStack(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text("MAIN NOTES & CLOZE (==syntax==)")
+                HStack(spacing: 6) {
+                    Text(isCompact ? "NOTES" : "MAIN NOTES & CLOZE (==syntax==)")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .foregroundColor(.inkTextTertiary)
+                        .lineLimit(1)
                     
                     Spacer()
                     
@@ -247,15 +256,22 @@ public struct CornellNoteEditorView: View {
                         } label: {
                             HStack(spacing: 3) {
                                 Image(systemName: "plus.rectangle.on.rectangle")
-                                Text("Make Flashcard")
+                                if !isCompact {
+                                    Text("Make Flashcard")
+                                } else {
+                                    Text("Card")
+                                }
                             }
                             .font(.system(size: 10, weight: .bold, design: .rounded))
                             .foregroundColor(.inkViolet)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.inkViolet.opacity(0.12), in: Capsule())
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, isCompact ? 8 : 12)
                 .padding(.top, 8)
                 
                 TextEditor(text: $note.mainNotesMarkdown)

@@ -35,7 +35,7 @@ public struct StudyNotebookContainerView: View {
     
     // View Mode & Sidebar
     @State private var activeMode: StudyWorkspaceMode = .cornellNotes
-    @State private var showSidebar: Bool = true
+    @State private var showSidebar: Bool = (UIDevice.current.userInterfaceIdiom == .pad)
     
     // Sheets & Overlays
     @State private var isReviewingDeck: Bool = false
@@ -66,22 +66,47 @@ public struct StudyNotebookContainerView: View {
                         .background(Color.primary.opacity(0.08))
                     
                     // MARK: - Split Layout: Sidebar + Canvas
-                    HStack(spacing: 0) {
-                        // Left Sidebar (Bear-Style Nested Tag & Adler Marker Navigator)
-                        if showSidebar {
-                            leftSidebarView
-                                .frame(width: min(280, geo.size.width * 0.35))
-                                .background(Color.inkSurface.opacity(0.95))
-                                .transition(.move(edge: .leading).combined(with: .opacity))
+                    if isWideScreen {
+                        // iPad: Side-by-side split layout
+                        HStack(spacing: 0) {
+                            if showSidebar {
+                                leftSidebarView
+                                    .frame(width: min(300, geo.size.width * 0.32))
+                                    .background(Color.inkSurface.opacity(0.95))
+                                    .transition(.move(edge: .leading).combined(with: .opacity))
+                                
+                                Rectangle()
+                                    .fill(Color.primary.opacity(0.1))
+                                    .frame(width: 1)
+                            }
                             
-                            Rectangle()
-                                .fill(Color.primary.opacity(0.1))
-                                .frame(width: 1)
+                            mainWorkspaceView
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
-                        
-                        // Main Content Workspace
-                        mainWorkspaceView
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        // iPhone: Full width canvas with slide-over drawer and backdrop
+                        ZStack(alignment: .leading) {
+                            mainWorkspaceView
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                            if showSidebar {
+                                Color.black.opacity(0.4)
+                                    .ignoresSafeArea()
+                                    .onTapGesture {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                            showSidebar = false
+                                        }
+                                    }
+                                    .transition(.opacity)
+
+                                leftSidebarView
+                                    .frame(width: min(320, geo.size.width * 0.82))
+                                    .background(Color.inkSurface.opacity(0.98).background(.ultraThinMaterial))
+                                    .shadow(color: .black.opacity(0.35), radius: 16, x: 5, y: 0)
+                                    .transition(.move(edge: .leading).combined(with: .opacity))
+                                    .zIndex(10)
+                            }
+                        }
                     }
                 }
             }
@@ -118,187 +143,214 @@ public struct StudyNotebookContainerView: View {
     
     // MARK: - Header Toolbar
     
+    // MARK: - Header Toolbar
+    
     private func headerToolbar(isWideScreen: Bool) -> some View {
-        HStack(spacing: 12) {
-            // Sidebar Toggle
-            Button {
-                HapticEngine.light()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    showSidebar.toggle()
-                }
-            } label: {
-                Image(systemName: showSidebar ? "sidebar.left" : "sidebar.leading")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.inkTextPrimary)
-                    .padding(8)
-                    .background(Color.primary.opacity(0.06), in: Circle())
-            }
-            .buttonStyle(.plain)
-            
-            // App Title / Branding
-            HStack(spacing: 6) {
-                Image(systemName: "graduationcap.fill")
-                    .foregroundColor(.inkViolet)
-                    .font(.system(size: 16, weight: .bold))
-                
-                Text(isWideScreen ? "Study Notebook & Active Learning" : "Study Suite")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundColor(.inkTextPrimary)
-            }
-            
-            Spacer()
-            
-            // Center Mode Switcher (Cornell Notes vs Flashcards)
-            HStack(spacing: 2) {
-                ForEach(StudyWorkspaceMode.allCases) { mode in
-                    Button {
-                        HapticEngine.selection()
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
-                            activeMode = mode
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: mode.iconName)
-                                .font(.system(size: 11, weight: .bold))
-                            Text(mode.rawValue)
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(activeMode == mode ? .white : .inkTextSecondary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            activeMode == mode
-                                ? AnyShapeStyle(Color.inkViolet)
-                                : AnyShapeStyle(Color.clear)
-                        )
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(2)
-            .background(Color.primary.opacity(0.06), in: Capsule())
-            
-            Spacer()
-            
-            // Review Due Deck Button
-            Button {
-                HapticEngine.light()
-                isReviewingDeck = true
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 10, weight: .bold))
-                    Text("Study Deck")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                    
-                    if !store.dueCards.isEmpty {
-                        Text("\(store.dueCards.count)")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Color.inkRed, in: Capsule())
-                    }
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(
-                    LinearGradient(
-                        colors: [.inkViolet, .inkBlue],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: Capsule()
-                )
-                .shadow(color: Color.inkViolet.opacity(0.3), radius: 4, x: 0, y: 2)
-            }
-            .buttonStyle(.plain)
-            
-            // Action Menu (+)
-            Menu {
+        VStack(spacing: isWideScreen ? 0 : 8) {
+            // Main Top Row
+            HStack(spacing: 10) {
+                // Sidebar Toggle
                 Button {
-                    isComposingCard = true
-                } label: {
-                    Label("New Flashcard (==Cloze==)", systemImage: "plus.rectangle.on.rectangle")
-                }
-                
-                Button {
-                    let newNote = StudyNote(
-                        title: "New Cornell Note",
-                        paperTemplate: store.activePaperTemplate
-                    )
-                    store.addNote(newNote)
-                    activeMode = .cornellNotes
-                } label: {
-                    Label("New Cornell Note", systemImage: "doc.badge.plus")
-                }
-                
-                Button {
-                    createNoteFromClipboard()
-                } label: {
-                    Label("New Note from Clipboard", systemImage: "doc.on.clipboard")
-                }
-                
-                Section("Export Knowledge Base") {
-                    Button {
-                        if let currentNote = store.activeNote {
-                            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                               let rootVC = windowScene.windows.first?.rootViewController {
-                                let md = (currentNote.cueColumnText.isEmpty ? "" : "### Cues\n" + currentNote.cueColumnText + "\n\n")
-                                    + currentNote.mainNotesMarkdown
-                                    + (currentNote.summaryText.isEmpty ? "" : "\n\n### Summary\n" + currentNote.summaryText)
-                                NotebookDocumentExporter.shared.presentKindleExport(
-                                    title: currentNote.title,
-                                    content: md,
-                                    from: rootVC
-                                )
-                            }
-                        }
-                    } label: {
-                        Label("Send Note to E-Reader (PDF)", systemImage: "paperplane")
+                    HapticEngine.light()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        showSidebar.toggle()
                     }
-
-                    Button {
-                        let md = exportEngine.exportToMarkdown(cards: store.cards, notes: store.notes)
-                        shareExportItem = ExportSharePayload(text: md, title: "Markdown Notes")
-                    } label: {
-                        Label("Export Bear / Markdown (.md)", systemImage: "arrow.down.doc")
-                    }
-                    
-                    Button {
-                        let tsv = exportEngine.exportToAnkiTSV(cards: store.cards)
-                        shareExportItem = ExportSharePayload(text: tsv, title: "Anki TSV Deck")
-                    } label: {
-                        Label("Export Anki Deck (.tsv)", systemImage: "square.and.arrow.up")
-                    }
-                }
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.inkTextPrimary)
-                    .padding(8)
-                    .background(Color.primary.opacity(0.06), in: Circle())
-            }
-            
-            // Dismiss Button (if presented modally)
-            if showDismissButton {
-                Button {
-                    dismiss()
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.inkTextSecondary)
+                    Image(systemName: showSidebar ? "sidebar.left" : "sidebar.leading")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.inkTextPrimary)
                         .padding(8)
                         .background(Color.primary.opacity(0.06), in: Circle())
                 }
                 .buttonStyle(.plain)
+                
+                // App Title / Branding
+                HStack(spacing: 6) {
+                    Image(systemName: "graduationcap.fill")
+                        .foregroundColor(.inkViolet)
+                        .font(.system(size: 16, weight: .bold))
+                    
+                    Text(isWideScreen ? "Study Notebook & Active Learning" : "Study Suite")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(.inkTextPrimary)
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                if isWideScreen {
+                    modeSwitcher
+                    Spacer()
+                    studyDeckButton
+                }
+                
+                // Action Menu (+)
+                headerActionMenu
+                
+                // Dismiss Button (if presented modally)
+                if showDismissButton {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.inkTextSecondary)
+                            .padding(8)
+                            .background(Color.primary.opacity(0.06), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            
+            // Sub-row for iPhone / Compact Screens
+            if !isWideScreen {
+                HStack(spacing: 8) {
+                    modeSwitcher
+                    Spacer()
+                    studyDeckButton
+                }
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, isWideScreen ? 10 : 8)
         .background(Color.inkSurface.opacity(0.85).background(.ultraThinMaterial))
+    }
+
+    // MARK: - Extracted Header Toolbar Sub-Components
+
+    private var modeSwitcher: some View {
+        HStack(spacing: 2) {
+            ForEach(StudyWorkspaceMode.allCases) { mode in
+                Button {
+                    HapticEngine.selection()
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                        activeMode = mode
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: mode.iconName)
+                            .font(.system(size: 11, weight: .bold))
+                        Text(mode.rawValue)
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(activeMode == mode ? .white : .inkTextSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        activeMode == mode
+                            ? AnyShapeStyle(Color.inkViolet)
+                            : AnyShapeStyle(Color.clear)
+                    )
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(Color.primary.opacity(0.06), in: Capsule())
+    }
+
+    private var studyDeckButton: some View {
+        Button {
+            HapticEngine.light()
+            isReviewingDeck = true
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 10, weight: .bold))
+                Text("Study Deck")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                
+                if !store.dueCards.isEmpty {
+                    Text("\(store.dueCards.count)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.inkRed, in: Capsule())
+                }
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                LinearGradient(
+                    colors: [.inkViolet, .inkBlue],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: Capsule()
+            )
+            .shadow(color: Color.inkViolet.opacity(0.3), radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var headerActionMenu: some View {
+        Menu {
+            Button {
+                isComposingCard = true
+            } label: {
+                Label("New Flashcard (==Cloze==)", systemImage: "plus.rectangle.on.rectangle")
+            }
+            
+            Button {
+                let newNote = StudyNote(
+                    title: "New Cornell Note",
+                    paperTemplate: store.activePaperTemplate
+                )
+                store.addNote(newNote)
+                activeMode = .cornellNotes
+            } label: {
+                Label("New Cornell Note", systemImage: "doc.badge.plus")
+            }
+            
+            Button {
+                createNoteFromClipboard()
+            } label: {
+                Label("New Note from Clipboard", systemImage: "doc.on.clipboard")
+            }
+            
+            Section("Export Knowledge Base") {
+                Button {
+                    if let currentNote = store.activeNote {
+                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                           let rootVC = windowScene.windows.first?.rootViewController {
+                            let md = (currentNote.cueColumnText.isEmpty ? "" : "### Cues\n" + currentNote.cueColumnText + "\n\n")
+                                + currentNote.mainNotesMarkdown
+                                + (currentNote.summaryText.isEmpty ? "" : "\n\n### Summary\n" + currentNote.summaryText)
+                            NotebookDocumentExporter.shared.presentKindleExport(
+                                title: currentNote.title,
+                                content: md,
+                                from: rootVC
+                            )
+                        }
+                    }
+                } label: {
+                    Label("Send Note to E-Reader (PDF)", systemImage: "paperplane")
+                }
+
+                Button {
+                    let md = exportEngine.exportToMarkdown(cards: store.cards, notes: store.notes)
+                    shareExportItem = ExportSharePayload(text: md, title: "Markdown Notes")
+                } label: {
+                    Label("Export Bear / Markdown (.md)", systemImage: "arrow.down.doc")
+                }
+                
+                Button {
+                    let tsv = exportEngine.exportToAnkiTSV(cards: store.cards)
+                    shareExportItem = ExportSharePayload(text: tsv, title: "Anki TSV Deck")
+                } label: {
+                    Label("Export Anki Deck (.tsv)", systemImage: "square.and.arrow.up")
+                }
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundColor(.inkTextPrimary)
+                .padding(8)
+                .background(Color.primary.opacity(0.06), in: Circle())
+        }
     }
     
     private func createNoteFromClipboard() {

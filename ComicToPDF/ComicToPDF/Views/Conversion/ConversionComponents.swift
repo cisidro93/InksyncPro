@@ -151,20 +151,18 @@ struct BatchRenameView: View {
                 }
                 
                 Section(header: Text("Select Files")) {
-                    List {
-                        ForEach(conversionManager.convertedPDFs) { pdf in
-                            HStack {
-                                Image(systemName: selectedFiles.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
-                                    .foregroundColor(selectedFiles.contains(pdf.id) ? .blue : .gray)
-                                Text(pdf.name)
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if selectedFiles.contains(pdf.id) {
-                                    selectedFiles.remove(pdf.id)
-                                } else {
-                                    selectedFiles.insert(pdf.id)
-                                }
+                    ForEach(conversionManager.convertedPDFs) { pdf in
+                        HStack {
+                            Image(systemName: selectedFiles.contains(pdf.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(selectedFiles.contains(pdf.id) ? .blue : .gray)
+                            Text(pdf.name)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if selectedFiles.contains(pdf.id) {
+                                selectedFiles.remove(pdf.id)
+                            } else {
+                                selectedFiles.insert(pdf.id)
                             }
                         }
                     }

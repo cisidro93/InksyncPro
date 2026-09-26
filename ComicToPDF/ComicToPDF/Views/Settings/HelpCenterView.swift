@@ -129,7 +129,7 @@ struct HelpCenterView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.clear)
+        .background(Color.inkBackground.ignoresSafeArea())
         .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Help Center")
     }
@@ -217,7 +217,10 @@ struct QuickStartGuideView: View {
                 Spacer(minLength: 40)
             }
             .padding()
+            .frame(maxWidth: 720)
+            .frame(maxWidth: .infinity)
         }
+        .background(Color.inkBackground.ignoresSafeArea())
         .navigationTitle("Quick Start")
         .navigationBarTitleDisplayMode(.large)
     }
@@ -338,7 +341,10 @@ struct FeatureGuideView: View {
                 }
             }
             .padding()
+            .frame(maxWidth: 720)
+            .frame(maxWidth: .infinity)
         }
+        .background(Color.inkBackground.ignoresSafeArea())
         .navigationTitle(feature.title)
         .navigationBarTitleDisplayMode(.large)
     }
@@ -480,7 +486,7 @@ struct TroubleshootingView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.clear)
+        .background(Color.inkBackground.ignoresSafeArea())
         .listRowBackground(Color.inkSurface.opacity(0.4))
         .navigationTitle("Troubleshooting")
         .navigationBarTitleDisplayMode(.large)
