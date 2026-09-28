@@ -9,7 +9,8 @@ import PDFKit
 /// and proactive defense against visual fake-redaction vulnerabilities.
 public struct InksyncSecureExportSheet: View {
 
-    let pdf: PDF
+    let pdfID: UUID
+    let pdfName: String
     let document: PDFDocument
     let currentPageIndex: Int
     var onDismiss: () -> Void
@@ -26,12 +27,27 @@ public struct InksyncSecureExportSheet: View {
     @Environment(\.colorScheme) private var colorScheme
 
     public init(
-        pdf: PDF,
+        pdf: ConvertedPDF,
         document: PDFDocument,
         currentPageIndex: Int,
         onDismiss: @escaping () -> Void
     ) {
-        self.pdf = pdf
+        self.pdfID = pdf.id
+        self.pdfName = pdf.name
+        self.document = document
+        self.currentPageIndex = currentPageIndex
+        self.onDismiss = onDismiss
+    }
+
+    public init(
+        pdfID: UUID,
+        pdfName: String,
+        document: PDFDocument,
+        currentPageIndex: Int,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.pdfID = pdfID
+        self.pdfName = pdfName
         self.document = document
         self.currentPageIndex = currentPageIndex
         self.onDismiss = onDismiss
@@ -103,7 +119,7 @@ public struct InksyncSecureExportSheet: View {
                     .foregroundStyle(Color.inkGreen)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(pdf.name)
+                    Text(pdfName)
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.primary)
                         .lineLimit(1)
@@ -449,9 +465,9 @@ public struct InksyncSecureExportSheet: View {
         Task {
             do {
                 let url = try await PDFSecureExportService.shared.exportPDF(
-                    for: pdf.id,
+                    for: pdfID,
                     document: document,
-                    title: pdf.name,
+                    title: pdfName,
                     config: exportConfig
                 )
 

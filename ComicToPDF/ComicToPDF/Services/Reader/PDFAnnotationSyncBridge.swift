@@ -627,7 +627,7 @@ final class PDFAnnotationSyncBridge {
         }
         
         // Enforce hardware-level sandbox encryption
-        try? (FileManager.default as NSFileManager).setAttributes(
+        try? FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.complete],
             ofItemAtPath: destinationURL.path
         )
@@ -720,7 +720,7 @@ final class PDFAnnotationSyncBridge {
         }
         
         // Enforce hardware-level sandbox encryption
-        try? (FileManager.default as NSFileManager).setAttributes(
+        try? FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.complete],
             ofItemAtPath: destinationURL.path
         )

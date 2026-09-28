@@ -206,7 +206,7 @@ public final class PDFSecureExportService: Sendable {
         }
 
         // 5. Ensure final file permissions are locked with NSFileProtectionComplete
-        try? (FileManager.default as NSFileManager).setAttributes(
+        try? FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.complete],
             ofItemAtPath: outputURL.path
         )
