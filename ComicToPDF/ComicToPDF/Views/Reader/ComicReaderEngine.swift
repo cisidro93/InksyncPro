@@ -115,7 +115,7 @@ final class ComicImageCache: ObservableObject {
     let sourceMode: SourceMode
     var activelyAccessedURL: URL?
     
-    init(pdf: ConvertedPDF, prefetchLimit: Int = 2) {
+    init(pdf: ConvertedPDF, prefetchLimit: Int = 4) {
         self.pdfID = pdf.id
         self.isManga = (pdf.contentType == .manga || pdf.metadata.isManga == true)
         self.prefetchLimit = prefetchLimit
@@ -1329,11 +1329,11 @@ final class ComicImageCache: ObservableObject {
         }
         
         // Base prefetch sizes based on memory capacity
-        let baseAhead = cacheCap >= 7 ? 4 : (cacheCap >= 5 ? 3 : 2)
+        let baseAhead = cacheCap >= 7 ? 6 : (cacheCap >= 5 ? 4 : 3)
         let baseBehind = cacheCap >= 7 ? 2 : (cacheCap >= 5 ? 1 : 0)
         
         // Final bounds clamped safely
-        let targetAhead = max(2, min(8, baseAhead + velocityAheadFactor))
+        let targetAhead = max(3, min(10, baseAhead + velocityAheadFactor))
         let targetBehind = max(0, baseBehind)
         
         var prefetchIndices: Set<Int> = []
@@ -3445,7 +3445,7 @@ struct ComicPageView: View {
     }
 
     var body: some View {
-        let currentImage = image ?? cache.getImage(at: index)
+        let currentImage = image ?? cache.cachedImage(at: index)
         Group {
             if let img = displayImage ?? currentImage {
                 GeometryReader { geo in

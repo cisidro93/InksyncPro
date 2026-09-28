@@ -686,7 +686,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var trimMargins: Bool = false
     var linkCoverAsSpread: Bool = false // Standalone cover preserves natural (1+2, 3+4) spread pairing
     var customAliases: [String: String] = [:]
-    var pencilOnlyDrawing: Bool = false
+    var pencilOnlyDrawing: Bool = true
     var skipDisclaimerPages: Bool = false
 
 
@@ -713,7 +713,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
     var bindingMarginSide: BindingMarginSide = .none // ✅ NEW: Asymmetric Margin Side
     
     // ✅ NEW: Read-Ahead Buffer
-    var readingPrefetchLimit: Int = 2
+    var readingPrefetchLimit: Int = 4
     
     // âœ… NEW: Omnibus Settings
     var omnibusSplitThresholdMB: Int = 200
@@ -870,7 +870,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         bindingMarginOffset = try container.decodeIfPresent(Int.self, forKey: .bindingMarginOffset) ?? 0
         bindingMarginSide = try container.decodeIfPresent(BindingMarginSide.self, forKey: .bindingMarginSide) ?? .none
         showEditorDebug = try container.decodeIfPresent(Bool.self, forKey: .showEditorDebug) ?? false
-        readingPrefetchLimit = try container.decodeIfPresent(Int.self, forKey: .readingPrefetchLimit) ?? 2
+        readingPrefetchLimit = try container.decodeIfPresent(Int.self, forKey: .readingPrefetchLimit) ?? 4
         omnibusSplitThresholdMB = try container.decodeIfPresent(Int.self, forKey: .omnibusSplitThresholdMB) ?? 200
         omnibusBadgePlacement = try container.decodeIfPresent(CoverBadgePlacement.self, forKey: .omnibusBadgePlacement) ?? .bottomRight
         deepFetchComicVineIssues = try container.decodeIfPresent(Bool.self, forKey: .deepFetchComicVineIssues) ?? false
@@ -887,7 +887,7 @@ struct ConversionSettings: Codable, Equatable, Sendable {
         }
         
         customAliases = (try? container.decodeIfPresent([String: String].self, forKey: .customAliases)) ?? [:]
-        pencilOnlyDrawing = (try? container.decodeIfPresent(Bool.self, forKey: .pencilOnlyDrawing)) ?? false
+        pencilOnlyDrawing = (try? container.decodeIfPresent(Bool.self, forKey: .pencilOnlyDrawing)) ?? true
         skipDisclaimerPages = (try? container.decodeIfPresent(Bool.self, forKey: .skipDisclaimerPages)) ?? false
     }
     

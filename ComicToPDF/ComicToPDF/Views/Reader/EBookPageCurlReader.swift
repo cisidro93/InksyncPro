@@ -45,8 +45,8 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIPageViewController {
-        let isInstant = (prefs.pageTurnStyle == .instant)
-        let transitionStyle: UIPageViewController.TransitionStyle = isInstant ? .scroll : .pageCurl
+        let isScroll = (prefs.pageTurnStyle == .instant || prefs.pageTurnStyle == .slide)
+        let transitionStyle: UIPageViewController.TransitionStyle = isScroll ? .scroll : .pageCurl
         let pvc = InksyncPageViewController(
             transitionStyle: transitionStyle,
             navigationOrientation: .horizontal,
@@ -1134,11 +1134,12 @@ extension EBookPageCurlReader {
             canvas.isMarkupActive = shouldBeActive
             
             // Finger drawing policy:
-            // In normal reading mode (!isExplicitDrawingMode), finger drawing MUST NEVER be allowed!
-            // When in explicit drawing mode: allow finger only if not isPad, or pencilOnlySetting is off, or eraser.
+            // On iPad: ONLY allow finger drawing if pencilOnlySetting is explicitly false AND in explicit drawing mode (or eraser).
+            // Otherwise, iPad STRICTLY uses .pencilOnly so fingers navigate, swipe, turn pages, and toggle UI without leaving stray marks.
+            // On iPhone: allow finger drawing when in explicit drawing mode.
             let allowFinger: Bool
             if isExplicitDrawingMode {
-                allowFinger = !isPad || !pencilOnlySetting || isEraser
+                allowFinger = isPad ? (!pencilOnlySetting || isEraser) : true
             } else {
                 // In normal reading mode with auto-pencil active: STRICTLY Apple Pencil only!
                 allowFinger = false

@@ -542,8 +542,35 @@ struct BookPager: View {
     var onChromeTap: () -> Void
     var onFlipPastEnd: (() -> Void)? = nil
 
+    @ObservedObject private var prefs = EBookPreferences.shared
+
     var body: some View {
-        curlPager
+        switch prefs.pageTurnStyle {
+        case .instant:
+            instantPager
+        case .slide:
+            slidePager
+        case .fade:
+            fadePager
+        case .pageCurl:
+            curlPager
+        }
+    }
+
+    // ── Instant (UIPageViewController .scroll zero-latency) ────────────
+    private var instantPager: some View {
+        PageCurlReader(
+            currentIndex: $currentIndex,
+            totalPages: totalPages,
+            cache: cache,
+            isTwoUp: false,
+            isMangaRTL: isMangaRTL || readingMode == .mangaRTL,
+            activeFilterPreset: activeFilterPreset,
+            transitionStyle: .scroll,
+            onChromeTap: onChromeTap,
+            onFlipPastEnd: onFlipPastEnd
+        )
+        .id("comic_instant_\(readingMode.rawValue)")
     }
 
     // ── Slide (UIPageViewController .scroll) ───────────────────────────
@@ -1174,18 +1201,21 @@ struct TwoUpBookPager: View {
     var onChromeTap: () -> Void
     var onFlipPastEnd: (() -> Void)? = nil
 
+    @ObservedObject private var prefs = EBookPreferences.shared
+
     var body: some View {
+        let isScroll = (prefs.pageTurnStyle == .instant || prefs.pageTurnStyle == .slide)
         SmartMidSpineCurlReader(
             currentIndex: $currentIndex,
             totalPages: cache.pageCount,
             cache: cache,
             isMangaRTL: isMangaRTL,
             activeFilterPreset: activeFilterPreset,
-            transitionStyle: .pageCurl,
+            transitionStyle: isScroll ? .scroll : .pageCurl,
             onChromeTap: onChromeTap,
             onFlipPastEnd: onFlipPastEnd
         )
-        .id("twoup_\(readingMode.rawValue)")
+        .id("twoup_\(readingMode.rawValue)_\(prefs.pageTurnStyle.rawValue)")
     }
 }
 
@@ -1198,8 +1228,12 @@ struct TwoUpPageCell: View {
     
     @State private var image: UIImage? = nil
     @State private var croppedImage: UIImage? = nil
+    @State private var cropTask: Task<Void, Never>? = nil
     
     private func updateCroppedImage(from source: UIImage?) {
+        cropTask?.cancel()
+        cropTask = nil
+
         guard let source = source else {
             croppedImage = nil
             return
@@ -1218,14 +1252,25 @@ struct TwoUpPageCell: View {
         } else if let insets = manualInsets, insets.modeRaw == "none" {
             self.croppedImage = source
             return
-        } else if (manualInsets?.modeRaw == "smartAuto") || (manualInsets == nil && (UserDefaults.standard.bool(forKey: "isAutoCropEnabled") || EBookPreferences.shared.isSmartCropEnabled || EBookPreferences.shared.comicPageFitMode == .smartFit)) {
-            if let cropRect = SmartCropper.suggestCrop(for: source),
-               let cropped = ImageProcessor.crop(image: source, to: cropRect) {
-                self.croppedImage = cropped
-                return
-            }
         }
-        self.croppedImage = source
+        
+        let shouldAutoCrop = (manualInsets?.modeRaw == "smartAuto") || (manualInsets == nil && (UserDefaults.standard.bool(forKey: "isAutoCropEnabled") || EBookPreferences.shared.isSmartCropEnabled || EBookPreferences.shared.comicPageFitMode == .smartFit))
+        if shouldAutoCrop {
+            if croppedImage == nil {
+                croppedImage = source
+            }
+            cropTask = Task.detached(priority: .userInitiated) {
+                let cropRect = SmartCropper.suggestCrop(for: source)
+                guard !Task.isCancelled, let rect = cropRect else { return }
+                let cropped = ImageProcessor.crop(image: source, to: rect)
+                guard !Task.isCancelled, let final = cropped else { return }
+                await MainActor.run {
+                    self.croppedImage = final
+                }
+            }
+        } else {
+            self.croppedImage = source
+        }
     }
     
     var body: some View {

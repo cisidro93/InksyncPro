@@ -2159,15 +2159,23 @@ struct ProPDFReaderEngine: View {
         }
 
         let remaining = max(0, totalPages - (currentPageIndex + 1))
+        let isInstant = (prefs.pageTurnStyle == .instant)
+
         if effectiveForward {
             if pdfView.canGoToNextPage {
-                // Smooth directional CoreAnimation slide eliminates abrupt white/page flashes
-                let transition = CATransition()
-                transition.duration = 0.22
-                transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                transition.type = .push
-                transition.subtype = .fromRight
-                pdfView.layer.add(transition, forKey: "pageFlipAnimation")
+                if !isInstant {
+                    // Smooth, 120Hz ProMotion CoreAnimation slide eliminates abrupt flashes without sluggish drag
+                    let transition = CATransition()
+                    transition.duration = 0.11
+                    transition.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    if prefs.pageTurnStyle == .fade {
+                        transition.type = .fade
+                    } else {
+                        transition.type = .push
+                        transition.subtype = .fromRight
+                    }
+                    pdfView.layer.add(transition, forKey: "pageFlipAnimation")
+                }
 
                 // goToNextPage handles twoUp spread boundaries natively —
                 // we never need to manually compute +1 or +2; PDFKit knows.
@@ -2178,12 +2186,18 @@ struct ProPDFReaderEngine: View {
             }
         } else {
             if pdfView.canGoToPreviousPage {
-                let transition = CATransition()
-                transition.duration = 0.22
-                transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                transition.type = .push
-                transition.subtype = .fromLeft
-                pdfView.layer.add(transition, forKey: "pageFlipAnimation")
+                if !isInstant {
+                    let transition = CATransition()
+                    transition.duration = 0.11
+                    transition.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    if prefs.pageTurnStyle == .fade {
+                        transition.type = .fade
+                    } else {
+                        transition.type = .push
+                        transition.subtype = .fromLeft
+                    }
+                    pdfView.layer.add(transition, forKey: "pageFlipAnimation")
+                }
 
                 pdfView.goToPreviousPage(nil)
                 velocityEngine.recordPageTurn(remainingPages: remaining, pdfID: pdf.id)
@@ -2212,12 +2226,14 @@ struct ProPDFReaderEngine: View {
             }
         }
 
-        // Live Reading Pace Tracking
+        // Live Reading Pace Tracking — offloaded to background utility thread to guarantee 0ms main thread hitch
         let elapsed = Date().timeIntervalSince(pageEntryTime)
         pageEntryTime = Date()
-        Task {
-            let pageWords = pdfView.currentPage?.string?.components(separatedBy: .whitespacesAndNewlines).filter({ !$0.isEmpty }).count ?? 250
-            await ReadingPaceTracker.shared.recordPageTurn(wordsOnPage: max(50, pageWords), timeSpentSeconds: max(2.0, min(180.0, elapsed)))
+        if let currentPage = pdfView.currentPage {
+            Task.detached(priority: .utility) {
+                let pageWords = currentPage.string?.components(separatedBy: .whitespacesAndNewlines).filter({ !$0.isEmpty }).count ?? 250
+                await ReadingPaceTracker.shared.recordPageTurn(wordsOnPage: max(50, pageWords), timeSpentSeconds: max(2.0, min(180.0, elapsed)))
+            }
         }
         HapticEngine.selection()
 
@@ -3543,6 +3559,8 @@ struct PDFSelectionSnapshot: Sendable {
 @MainActor
 class ProPDFHighlightableView: PDFView {
     var onHighlightRequested: (() -> Void)?
+    var onLayoutSubviews: ((CGRect) -> Void)?
+    private var lastReportedBounds: CGSize = .zero
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -3572,6 +3590,10 @@ class ProPDFHighlightableView: PDFView {
     override func layoutSubviews() {
         super.layoutSubviews()
         disableEditMenuInteractions(in: self)
+        if bounds.width > 1 && bounds.height > 1 && bounds.size != lastReportedBounds {
+            lastReportedBounds = bounds.size
+            onLayoutSubviews?(bounds)
+        }
     }
 
     override func didAddSubview(_ subview: UIView) {
@@ -3631,6 +3653,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.onHighlightRequested = { [weak coordinator = context.coordinator] in
             coordinator?.handleNativeHighlightAction()
         }
+        pdfView.onLayoutSubviews = { [weak coordinator = context.coordinator, weak pdfView] bounds in
+            guard let coordinator = coordinator, let pv = pdfView else { return }
+            coordinator.handleBoundsUpdated(bounds, pdfView: pv)
+        }
         pdfView.delegate = context.coordinator
         pdfView.pageOverlayViewProvider = context.coordinator.canvasProvider
         if UIDevice.current.userInterfaceIdiom == .pad {
@@ -3648,7 +3674,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.isOpaque = false
 
         let prefs = EBookPreferences.shared
-        let isDual = !prefs.isPDFSmartTiersActive && prefs.shouldDisplayDualPage(for: UIScreen.main.bounds.size)
+        let viewBounds = pdfView.bounds.size.width > 0 ? pdfView.bounds.size : UIScreen.main.bounds.size
+        let isDual = !prefs.isPDFSmartTiersActive && prefs.shouldDisplayDualPage(for: viewBounds)
 
         let inkingState = InksyncInkingState.shared
         let currentToolMode = inkingState.activeToolMode
@@ -3867,18 +3894,35 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             context.coordinator.fingerGlide?.minimumPressDuration = targetPressDuration
         }
         let isPhone = UIDevice.current.userInterfaceIdiom == .phone
-        let isDual = !prefs.isPDFSmartTiersActive && prefs.shouldDisplayDualPage(for: uiView.bounds.size)
+        let viewBounds = uiView.bounds.size.width > 0 ? uiView.bounds.size : UIScreen.main.bounds.size
+        let isDual = !prefs.isPDFSmartTiersActive && prefs.shouldDisplayDualPage(for: viewBounds)
         let isManga = prefs.pdfRTL || pdf.isMangaBook || UserDefaults.standard.bool(forKey: "isMangaMode")
         if uiView.displaysRTL != isManga {
             uiView.displaysRTL = isManga
         }
         let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
+        let margin = isPhone ? 0 : max(0, prefs.textMargin)
+        let targetMargins = isDual ? UIEdgeInsets(top: 0, left: 1, bottom: 0, right: 1) : UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)
 
-        if uiView.displayMode != targetDisplayMode {
+        if uiView.displayMode != targetDisplayMode || uiView.pageBreakMargins != targetMargins {
             let activePage = uiView.currentPage
+            uiView.minScaleFactor = 0.05
+            uiView.maxScaleFactor = 12.0
             uiView.displayMode = targetDisplayMode
+            uiView.pageBreakMargins = targetMargins
+            uiView.layoutDocumentView()
             if let activePage = activePage {
                 uiView.go(to: activePage)
+            }
+            if context.coordinator.userCustomZoomScale == nil && !prefs.isPDFSmartTiersActive {
+                let fitScale = max(0.05, uiView.scaleFactorForSizeToFit)
+                uiView.scaleFactor = fitScale
+                uiView.minScaleFactor = fitScale
+                uiView.maxScaleFactor = fitScale * 3.5
+                if let sv = uiView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                    sv.minimumZoomScale = fitScale
+                    sv.maximumZoomScale = fitScale * 3.5
+                }
             }
         }
 
@@ -3903,11 +3947,6 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         if uiView.pageShadowsEnabled != !isPhone {
             uiView.pageShadowsEnabled = !isPhone
-        }
-        let margin = isPhone ? 0 : max(0, prefs.textMargin)
-        let targetMargins = isDual ? UIEdgeInsets(top: 0, left: 1, bottom: 0, right: 1) : UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)
-        if uiView.pageBreakMargins != targetMargins {
-            uiView.pageBreakMargins = targetMargins
         }
 
         let targetBg = UIColor(themeBgColor)
@@ -4484,8 +4523,8 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     let loc = touch.location(in: view)
                     let width = view.bounds.width
                     let zones = prefs.tapZoneStyle.zones
-                    let leftGutter = width * max(0.12, zones.leftEdge)
-                    let rightGutter = width * min(0.88, zones.rightEdge)
+                    let leftGutter = width * zones.leftEdge
+                    let rightGutter = width * zones.rightEdge
                     let isInGutter = loc.x < leftGutter || loc.x > rightGutter
                     if isInGutter {
                         // Allow tapGesture to fire the margin page turn smoothly!
@@ -4494,7 +4533,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 }
 
                 let pencilOnlyDrawingSetting = AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
-                let allowFinger = !isPad || !pencilOnlyDrawingSetting || currentToolMode == .eraser
+                let allowFinger = isPad ? (!pencilOnlyDrawingSetting || currentToolMode == .eraser) : true
                 if allowFinger && parent.isPencilMode {
                     return false
                 }
@@ -4544,10 +4583,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let isManga = prefs.pdfRTL || UserDefaults.standard.bool(forKey: "isMangaMode")
 
             if isExplicitDrawingMode {
-                // When actively in drawing/markup mode, only finger taps in outer margin gutters turn the page.
-                // Center taps are ignored so hand resting / inadvertent touches never toggle chrome or disrupt inking.
-                let leftGutter = width * max(0.12, zones.leftEdge)
-                let rightGutter = width * min(0.88, zones.rightEdge)
+                // When actively in drawing/markup mode:
+                // Finger taps in outer margin gutters turn the page.
+                // Finger taps in the center cleanly toggle reader chrome / navigation HUD.
+                let leftGutter = width * zones.leftEdge
+                let rightGutter = width * zones.rightEdge
 
                 if tapLocation.x < leftGutter {
                     HapticEngine.selection()
@@ -4563,6 +4603,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     } else {
                         parent.onNextPage()
                     }
+                } else {
+                    // Center tap: cleanly toggle reader chrome & navigation UI
+                    parent.onTapCenter()
                 }
                 return
             }
@@ -4737,6 +4780,42 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 EBookPreferences.shared.lockedZoomScale = pdfView.scaleFactor
             }
             parent.onScaleChanged?(effectiveScale)
+        }
+
+        @MainActor func handleBoundsUpdated(_ bounds: CGRect, pdfView: PDFView) {
+            guard bounds.width > 1 && bounds.height > 1 else { return }
+            let prefs = EBookPreferences.shared
+            let isDual = !prefs.isPDFSmartTiersActive && prefs.shouldDisplayDualPage(for: bounds.size)
+            let targetDisplayMode: PDFDisplayMode = isDual ? .twoUp : .singlePage
+            let isPhone = UIDevice.current.userInterfaceIdiom == .phone
+            let margin = isPhone ? 0 : max(0, prefs.textMargin)
+            let targetMargins = isDual ? UIEdgeInsets(top: 0, left: 1, bottom: 0, right: 1) : UIEdgeInsets(top: 0, left: margin, bottom: 0, right: margin)
+
+            let modeChanged = pdfView.displayMode != targetDisplayMode
+            let marginChanged = pdfView.pageBreakMargins != targetMargins
+
+            if modeChanged || marginChanged {
+                let activePage = pdfView.currentPage
+                pdfView.minScaleFactor = 0.05
+                pdfView.maxScaleFactor = 12.0
+                if modeChanged { pdfView.displayMode = targetDisplayMode }
+                if marginChanged { pdfView.pageBreakMargins = targetMargins }
+                pdfView.layoutDocumentView()
+                if let activePage = activePage {
+                    pdfView.go(to: activePage)
+                }
+            }
+
+            if userCustomZoomScale == nil && !prefs.isPDFSmartTiersActive {
+                let fitScale = max(0.05, pdfView.scaleFactorForSizeToFit)
+                pdfView.scaleFactor = fitScale
+                pdfView.minScaleFactor = fitScale
+                pdfView.maxScaleFactor = fitScale * 3.5
+                if let sv = pdfView.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+                    sv.minimumZoomScale = fitScale
+                    sv.maximumZoomScale = fitScale * 3.5
+                }
+            }
         }
 
         @MainActor @objc func pageChanged(_ notification: Notification) {

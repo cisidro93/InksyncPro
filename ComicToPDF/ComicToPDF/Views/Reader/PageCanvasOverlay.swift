@@ -150,12 +150,16 @@ final class PassthroughPKCanvasView: PKCanvasView {
                 return nil
             }
 
-            // 2. Left and Right Page-Turn Gutters (outer 14% of window or bounds):
+            // 2. Left and Right Page-Turn Gutters:
+            // Synchronized with user's configured tapZoneStyle (classic: 30%/70%, wide: 20%/80%, etc.).
             // Finger touches in margins are reserved for turning pages without leaving stray ink dots.
             // Returning nil passes the touch through to PDFView / ReaderView gesture recognizers.
             let windowWidth = self.window?.bounds.width ?? bounds.width
             let pointXInWindow = self.window != nil ? self.convert(point, to: self.window).x : point.x
-            if pointXInWindow < windowWidth * 0.14 || pointXInWindow > windowWidth * 0.86 {
+            let zones = EBookPreferences.shared.tapZoneStyle.zones
+            let leftEdge = windowWidth * zones.leftEdge
+            let rightEdge = windowWidth * zones.rightEdge
+            if pointXInWindow < leftEdge || pointXInWindow > rightEdge {
                 return nil
             }
         }

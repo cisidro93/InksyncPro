@@ -62,6 +62,13 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
             }
             .store(in: &cancellables)
 
+        NotificationCenter.default.publisher(for: NSNotification.Name("InksyncUpdateCanvasPolicy"))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateCanvasInteractivity()
+            }
+            .store(in: &cancellables)
+
         InksyncInkingState.shared.$isInkLayerVisible
             .receive(on: RunLoop.main)
             .sink { [weak self] isVisible in
@@ -257,11 +264,12 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         canvas.isInkLayerVisible = inkingState.isInkLayerVisible
         
         // Finger drawing policy:
-        // On iPad in normal reading mode (!isExplicitDrawingMode), finger drawing MUST NEVER be allowed!
-        // When in explicit drawing mode: allow finger only if not isPad, or pencilOnlyDrawingSetting is off, or eraser.
+        // On iPad: ONLY allow finger drawing if pencilOnlyDrawingSetting is explicitly false AND user is in explicit drawing mode (or eraser).
+        // Otherwise, iPad STRICTLY uses .pencilOnly so fingers navigate, swipe, turn pages, and toggle UI without leaving stray marks.
+        // On iPhone: allow finger drawing when in explicit drawing mode.
         let allowFinger: Bool
         if isExplicitDrawingMode {
-            allowFinger = !isPad || !pencilOnlyDrawingSetting || isEraser
+            allowFinger = isPad ? (!pencilOnlyDrawingSetting || isEraser) : true
         } else {
             // In normal reading mode with auto-pencil active: STRICTLY Apple Pencil only!
             allowFinger = false

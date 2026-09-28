@@ -716,6 +716,41 @@ public struct InksyncPenDockView: View {
             .padding(.vertical, 6)
             .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
 
+            // Apple Pencil Only Mode (Palm & Finger Navigation Protection)
+            if !isCompact {
+                HStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: "applepencil.and.scribble")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.inkBlue)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Apple Pencil Only")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            Text("Fingers navigate & turn; Pencil inks")
+                                .font(.system(size: 9, weight: .regular))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: Binding(
+                        get: { AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing },
+                        set: { newValue in
+                            AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing = newValue
+                            AppSettingsManager.shared.save()
+                            NotificationCenter.default.post(name: NSNotification.Name("InksyncUpdateCanvasPolicy"), object: nil)
+                            HapticEngine.selection()
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(SwitchToggleStyle(tint: Color.inkGreen))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+            }
+
             if let onExport = onExport {
                 Divider()
                     .background(Color.primary.opacity(0.08))

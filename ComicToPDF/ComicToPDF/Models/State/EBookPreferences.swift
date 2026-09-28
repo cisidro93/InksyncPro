@@ -229,10 +229,8 @@ class EBookPreferences: ObservableObject {
         }
 
         // In Landscape:
+        // Always 2-page spread unless the user has explicitly selected 1 column
         if columnCount == 1 {
-            return 1
-        }
-        if !autoLandscapeDualPage && columnCount == 0 && !pdfDualPage {
             return 1
         }
         return 2
