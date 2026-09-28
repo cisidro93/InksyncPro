@@ -595,7 +595,6 @@ struct EPUBWebView: View {
         let renderWidth = size.width > 0 ? size.width : UIScreen.main.bounds.width
         let renderHeight = size.height > 0 ? size.height : UIScreen.main.bounds.height
         
-        let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let isPhone = UIDevice.current.userInterfaceIdiom == .phone
         let cols = prefs.effectiveColumnCount(for: CGSize(width: renderWidth, height: renderHeight))
         

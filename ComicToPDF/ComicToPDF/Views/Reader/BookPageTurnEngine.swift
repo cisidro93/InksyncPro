@@ -552,7 +552,7 @@ struct BookPager: View {
             slidePager
         case .fade:
             fadePager
-        case .pageCurl:
+        case .flip3D:
             curlPager
         }
     }
@@ -1204,7 +1204,7 @@ struct TwoUpBookPager: View {
     @ObservedObject private var prefs = EBookPreferences.shared
 
     var body: some View {
-        let isScroll = (prefs.pageTurnStyle == .instant || prefs.pageTurnStyle == .slide)
+        let isScroll = (prefs.pageTurnStyle != .flip3D)
         SmartMidSpineCurlReader(
             currentIndex: $currentIndex,
             totalPages: cache.pageCount,

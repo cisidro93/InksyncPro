@@ -7,6 +7,12 @@ import Accelerate
 /// falling back to high-performance vImage pixel analysis if Vision doesn't find clear boundaries.
 struct SmartCropper {
     
+    private static let cropRectCache: NSCache<NSString, NSValue> = {
+        let cache = NSCache<NSString, NSValue>()
+        cache.countLimit = 200
+        return cache
+    }()
+
     /// Suggests a crop rectangle to remove margins using aggressive luminance detection.
     /// - Parameters:
     ///   - image: The source UIImage.
@@ -15,10 +21,19 @@ struct SmartCropper {
     static func suggestCrop(for image: UIImage, safetyPadding: CGFloat = 0.0) -> CGRect? {
         guard let cgImage = image.cgImage else { return nil }
         
+        let cacheKey = "\(cgImage.width)x\(cgImage.height)_\(cgImage.bytesPerRow)_\(Int(safetyPadding * 100))" as NSString
+        if let cached = cropRectCache.object(forKey: cacheKey) {
+            return cached.cgRectValue
+        }
+
         // 1. Primary Engine: High-Performance vImage Inward Scan
         // Targets pixels with < 8% luminance deviation to bypass scanner texture and artifacts
         // effectively stripping all external whitespace.
-        return performVImageInwardScan(cgImage: cgImage, safetyPadding: safetyPadding, sensitivity: 0.08)
+        guard let result = performVImageInwardScan(cgImage: cgImage, safetyPadding: safetyPadding, sensitivity: 0.08) else {
+            return nil
+        }
+        cropRectCache.setObject(NSValue(cgRect: result), forKey: cacheKey)
+        return result
     }
     
     // MARK: - Core High-Performance Inward Scan

@@ -45,7 +45,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIPageViewController {
-        let isScroll = (prefs.pageTurnStyle == .instant || prefs.pageTurnStyle == .slide)
+        let isScroll = (prefs.pageTurnStyle != .flip3D)
         let transitionStyle: UIPageViewController.TransitionStyle = isScroll ? .scroll : .pageCurl
         let pvc = InksyncPageViewController(
             transitionStyle: transitionStyle,
@@ -1430,13 +1430,20 @@ extension EBookPageCurlReader {
             if nextIndex < computedTotalPages {
                 hasLoadedInitialPage = true
                 HapticEngine.light()
-                let animate = (parent.prefs.pageTurnStyle != .instant)
+                if parent.prefs.pageTurnStyle == .fade {
+                    let transition = CATransition()
+                    transition.duration = 0.14
+                    transition.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    transition.type = .fade
+                    primaryWebView?.layer.add(transition, forKey: "pageTurnFade")
+                }
+                let animate = (parent.prefs.pageTurnStyle == .slide)
                 lastCompletedControllerIndex = nextIndex
                 currentPageIndex = nextIndex
                 parent.currentPage = nextIndex
                 reportScrollFraction()
                 
-                // Smooth 120Hz CSS hardware-accelerated slide within the active chapter
+                // Smooth 120Hz CSS hardware-accelerated slide or instant cut within the active chapter
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex), \(animate ? "true" : "false"));")
                 
                 // Keep UIPageViewController underlying view controllers synchronized without tearing down the webview
@@ -1459,13 +1466,20 @@ extension EBookPageCurlReader {
             if prevIndex >= 0 {
                 hasLoadedInitialPage = true
                 HapticEngine.light()
-                let animate = (parent.prefs.pageTurnStyle != .instant)
+                if parent.prefs.pageTurnStyle == .fade {
+                    let transition = CATransition()
+                    transition.duration = 0.14
+                    transition.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    transition.type = .fade
+                    primaryWebView?.layer.add(transition, forKey: "pageTurnFade")
+                }
+                let animate = (parent.prefs.pageTurnStyle == .slide)
                 lastCompletedControllerIndex = prevIndex
                 currentPageIndex = prevIndex
                 parent.currentPage = prevIndex
                 reportScrollFraction()
                 
-                // Smooth 120Hz CSS hardware-accelerated slide within the active chapter
+                // Smooth 120Hz CSS hardware-accelerated slide or instant cut within the active chapter
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex), \(animate ? "true" : "false"));")
                 
                 // Keep UIPageViewController underlying view controllers synchronized without tearing down the webview

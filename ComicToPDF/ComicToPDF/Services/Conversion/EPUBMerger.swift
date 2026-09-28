@@ -293,7 +293,6 @@ struct EPUBMerger: Sendable {
         var globalPageIndex = 1
         // Content pages always start at counter 1. The cover's spread position is set
         // independently via coverSpreadTag — it does not consume a globalPageCounter slot.
-        var globalPageCounter = 1
         var hasLandscapeSpreads = false
         // Tracks the actual pixel dimensions of the first content page in the current volume
         // so we can emit a truthful original-resolution OPF meta for the Amazon ingestor.

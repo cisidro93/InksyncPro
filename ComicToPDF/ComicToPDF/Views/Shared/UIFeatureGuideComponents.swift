@@ -494,7 +494,7 @@ public struct UIExplanationRegistry {
     private static let neoFlowStudioItems: [UIIconExplanation] = [
         UIIconExplanation(
             iconName: "rectangle.split.3x3",
-            iconColor: Color(hex: "#00C853") ?? .green,
+            iconColor: Color(hex: "#00C853"),
             title: "M×N Matrix Grid Presets",
             category: "Grid Layout",
             explanation: "Quick presets: 1×1 (Full Page), 2×1 (2 Rows), 1×2 (2 Columns), 2×2 (4 Quadrants), 3×2 (6 Panels), 2×3, and 3×3 (9 Panels).",

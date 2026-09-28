@@ -43,15 +43,19 @@ enum TapZoneStyle: String, CaseIterable, Codable {
 /// Page turn visual style for all readers (EPUB, Comic, PDF).
 enum PageTurnStyle: String, CaseIterable, Codable {
     case flip3D   = "flip3D"   // 3-D book-page curl using native UIPageViewController(.pageCurl)
+    case slide    = "slide"    // Smooth horizontal slide transition
+    case fade     = "fade"     // Crossfade transition
     case instant  = "instant"  // Instant cut (no animation)
 
     static var displayCases: [PageTurnStyle] {
-        [.flip3D, .instant]
+        [.flip3D, .slide, .fade, .instant]
     }
 
     var label: String {
         switch self {
         case .flip3D:  return "Curl (3D)"
+        case .slide:   return "Slide"
+        case .fade:    return "Fade"
         case .instant: return "Instant"
         }
     }
@@ -59,7 +63,10 @@ enum PageTurnStyle: String, CaseIterable, Codable {
     var icon: String {
         switch self {
         case .flip3D:  return "book.closed"
+        case .slide:   return "arrow.left.and.right"
+        case .fade:    return "sparkles"
         case .instant: return "bolt.fill"
         }
     }
 }
+

@@ -1660,7 +1660,7 @@ struct ProPDFReaderEngine: View {
             ),
             getPageThumbnail: { index in
                 guard let doc = pdfDocument, let page = doc.page(at: index) else { return nil }
-                return page.thumbnail(of: CGSize(width: 140, height: 190), for: .cropBox)
+                return PDFThumbnailCache.shared.getThumbnail(for: page, pdfID: pdf.id, pageIndex: index, size: CGSize(width: 140, height: 190))
             },
             timeRemainingText: velocityEngine.estimatedTimeRemaining,
             onJumpToPage: {
@@ -3508,7 +3508,8 @@ struct VisualPDFScrubber: View {
                     .frame(width: 72, height: 104)
 
                 if let doc = document, let page = doc.page(at: index) {
-                    Image(uiImage: page.thumbnail(of: CGSize(width: 140, height: 200), for: .cropBox))
+                    let thumb = PDFThumbnailCache.shared.getThumbnail(for: page, pdfID: pdf.id, pageIndex: index, size: CGSize(width: 140, height: 200))
+                    Image(uiImage: thumb)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 68, height: 100)
@@ -4830,6 +4831,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             if self.parent.currentPageIndex != idx {
                 self.lastTargetPageIndex = idx
                 self.parent.currentPageIndex = idx
+                PDFThumbnailCache.shared.prefetchThumbnails(for: doc, pdfID: self.parent.pdf.id, around: idx, count: 4, size: CGSize(width: 140, height: 200))
             }
             // Panels / Boox Parity: If zoom is locked, reapply locked zoom scale across page turns
             let prefs = EBookPreferences.shared
