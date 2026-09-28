@@ -7,7 +7,6 @@ struct ReadingStatsHUDView: View {
     let currentPageIndex: Int
     
     @ObservedObject private var tracker = ReaderProgressTracker.shared
-    @AppStorage("dailyReadingGoal") private var dailyGoal: Int = 20
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
@@ -29,7 +28,7 @@ struct ReadingStatsHUDView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 4)
                     
-                    // Main Grid: Streak, Velocity, Time Left
+                    // Main Grid: Mindful Metrics (Time Read, Velocity, Progress, Time Left)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                         // Mindful Reading Time Box
                         let minutes = tracker.totalMinutesReadToday()
@@ -72,11 +71,11 @@ struct ReadingStatsHUDView: View {
                         )
                     }
                     
-                    // Weekly Progress Bar Chart
+                    // Weekly Activity Bar Chart
                     VStack(alignment: .leading, spacing: 14) {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Weekly Read Progress")
+                                Text("Weekly Reading Activity")
                                     .font(.subheadline.bold())
                                 Text("Total this week: \(tracker.totalPagesThisWeek()) pages")
                                     .font(.caption)
@@ -84,34 +83,27 @@ struct ReadingStatsHUDView: View {
                             }
                             Spacer()
                             
-                            // Daily Goal Config
-                            Menu {
-                                ForEach([10, 20, 30, 50, 100], id: \.self) { goal in
-                                    Button("\(goal) Pages") {
-                                        dailyGoal = goal
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Text("Goal: \(dailyGoal)p")
-                                        .font(.caption.bold())
-                                    Image(systemName: "pencil")
-                                        .font(.caption2)
-                                }
-                                .foregroundColor(Theme.blue)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Theme.blue.opacity(0.1), in: Capsule())
+                            // Mindful Reading Badge
+                            HStack(spacing: 4) {
+                                Image(systemName: "sparkles")
+                                    .font(.caption2)
+                                Text("Sanctuary")
+                                    .font(.caption.bold())
                             }
+                            .foregroundColor(Color(hex: "#B39DDB"))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color(hex: "#B39DDB").opacity(0.12), in: Capsule())
                         }
                         
                         // Bar Chart
+                        let maxVolume = max(15, (0..<7).map { tracker.pagesReadOn(dayOfWeekIndex: $0) }.max() ?? 15)
                         HStack(alignment: .bottom, spacing: 12) {
                             let days = ["M", "T", "W", "T", "F", "S", "S"]
                             ForEach(0..<7, id: \.self) { index in
                                 let count = tracker.pagesReadOn(dayOfWeekIndex: index)
-                                let pct = dailyGoal > 0 ? CGFloat(count) / CGFloat(dailyGoal) : 0
-                                let cappedPct = min(max(pct, 0.05), 1.2) // Give small height minimum so zero is visible
+                                let pct = CGFloat(count) / CGFloat(maxVolume)
+                                let cappedPct = count > 0 ? min(max(pct, 0.12), 1.0) : 0.04
                                 
                                 VStack(spacing: 8) {
                                     Spacer()
@@ -127,13 +119,19 @@ struct ReadingStatsHUDView: View {
                                     }
                                     
                                     // Bar
-                                    RoundedRectangle(cornerRadius: 4)
+                                    RoundedRectangle(cornerRadius: 6)
                                         .fill(
-                                            LinearGradient(
-                                                colors: count >= dailyGoal ? [.green, .emerald] : [Theme.blue, Theme.blue.opacity(0.6)],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
+                                            count > 0
+                                                ? LinearGradient(
+                                                    colors: [Color(hex: "#7B5EA7"), Color(hex: "#B39DDB")],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                )
+                                                : LinearGradient(
+                                                    colors: [Color.secondary.opacity(0.15), Color.secondary.opacity(0.08)],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                )
                                         )
                                         .frame(height: cappedPct * 100)
                                     
@@ -165,23 +163,16 @@ struct ReadingStatsHUDView: View {
                 }
             }
             .onAppear {
-                let streak = tracker.readingStreak()
                 let velocity = pdfID != nil ? tracker.rollingVelocity(for: pdfID!) : 0
                 let pct = totalPages > 0 ? Int(Double(currentPageIndex + 1) / Double(totalPages) * 100) : 0
+                let minutes = tracker.totalMinutesReadToday()
                 Logger.shared.log(
-                    "ReadingStatsHUD opened for '\(bookTitle)': streak=\(streak)d, speed=\(String(format: "%.1f", velocity))ppm, progress=\(pct)%, goal=\(dailyGoal)p/day",
+                    "ReadingStatsHUD opened for '\(bookTitle)': speed=\(String(format: "%.1f", velocity))ppm, progress=\(pct)%, timeToday=\(minutes)m",
                     category: "Reader",
                     type: .info
                 )
             }
         }
-    }
-}
-
-// Daily goal change logger (in parent body for Menu buttons)
-extension ReadingStatsHUDView {
-    func logGoalChange(to newGoal: Int) {
-        Logger.shared.log("Daily reading goal updated to \(newGoal) pages/day for '\(bookTitle)'", category: "Reader", type: .info)
     }
 }
 

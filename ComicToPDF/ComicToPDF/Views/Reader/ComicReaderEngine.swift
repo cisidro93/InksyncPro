@@ -3212,6 +3212,11 @@ struct ComicPageView: View {
         return isPortrait && (imageAspect > 1.15)
     }
 
+    private func shouldAutoSplitSpread(image: UIImage, container: CGSize) -> Bool {
+        guard isWideSpreadInPortrait(image: image, container: container) else { return false }
+        return prefs.comicPageFitMode == .fillScreen || prefs.autoSplitWideSpreadsInPortrait
+    }
+
     private func targetOffset(for side: SpreadSide, containerSize: CGSize, renderedSize: CGSize) -> CGFloat {
         let maxW = max(0, (renderedSize.width * currentScale - containerSize.width) / 2)
         guard maxW > 0 else { return 0 }
@@ -3449,7 +3454,8 @@ struct ComicPageView: View {
         Group {
             if let img = displayImage ?? currentImage {
                 GeometryReader { geo in
-                    let fitMode = prefs.comicPageFitMode
+                    let autoSplit = shouldAutoSplitSpread(image: img, container: geo.size)
+                    let fitMode: ComicPageFitMode = autoSplit ? .fillScreen : prefs.comicPageFitMode
                     let rendered = renderSize(for: img, in: geo.size, fitMode: fitMode)
                     let isPannable = (currentScale > 1.01) || (rendered.height > geo.size.height + 2) || (rendered.width > geo.size.width + 2)
 
@@ -3486,7 +3492,7 @@ struct ComicPageView: View {
                                     )
                                 },
                                 onEnded: { val in
-                                    if isWideSpreadInPortrait(image: img, container: geo.size) && fitMode == .fillScreen && currentScale < 1.05 {
+                                    if autoSplit && currentScale < 1.05 {
                                         handleSpreadDragEnded(translation: val.translation, velocity: val.predictedEndTranslation, containerSize: geo.size, renderedSize: rendered)
                                     } else {
                                         lastOffset = offset
@@ -3496,12 +3502,12 @@ struct ComicPageView: View {
                             )
                             .onTapGesture(count: 2) { loc in
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                    if isWideSpreadInPortrait(image: img, container: geo.size) && fitMode == .fillScreen && currentScale < 1.05 {
+                                    if autoSplit && currentScale < 1.05 {
                                         toggleSpreadSide(containerSize: geo.size, renderedSize: rendered)
                                     } else if currentScale > 1.05 {
                                         currentScale = 1.0
                                         lastScale = 1.0
-                                        if isWideSpreadInPortrait(image: img, container: geo.size) && fitMode == .fillScreen {
+                                        if autoSplit {
                                             let targetX = targetOffset(for: activeSpreadSide, containerSize: geo.size, renderedSize: rendered)
                                             offset = CGSize(width: targetX, height: 0)
                                         } else {
@@ -3509,7 +3515,7 @@ struct ComicPageView: View {
                                         }
                                         lastOffset = offset
                                     } else {
-                                        if prefs.comicPageFitMode == .fitPage {
+                                        if prefs.comicPageFitMode == .fitPage && !autoSplit {
                                             prefs.comicPageFitMode = .fillScreen
                                         } else {
                                             currentScale = 2.0
@@ -3531,16 +3537,18 @@ struct ComicPageView: View {
                                 }
                             }
 
-                        // Wide double-page spread navigation HUD pill in portrait Fill Screen mode
-                        if isWideSpreadInPortrait(image: img, container: geo.size) && fitMode == .fillScreen && currentScale < 1.05 {
+                        // Wide double-page spread navigation HUD pill in portrait auto-split / Fill Screen mode
+                        if autoSplit && currentScale < 1.05 {
                             spreadNavigationHUD(containerSize: geo.size, renderedSize: rendered)
                                 .padding(.bottom, 52)
                                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         }
                     }
                     .onChange(of: geo.size) { _, newSize in
-                        let newRendered = renderSize(for: img, in: newSize, fitMode: fitMode)
-                        if isWideSpreadInPortrait(image: img, container: newSize) && fitMode == .fillScreen {
+                        let newAutoSplit = shouldAutoSplitSpread(image: img, container: newSize)
+                        let newFit = newAutoSplit ? .fillScreen : prefs.comicPageFitMode
+                        let newRendered = renderSize(for: img, in: newSize, fitMode: newFit)
+                        if newAutoSplit {
                             let targetX = targetOffset(for: activeSpreadSide, containerSize: newSize, renderedSize: newRendered)
                             offset = CGSize(width: targetX, height: 0)
                             lastOffset = offset
@@ -3549,7 +3557,7 @@ struct ComicPageView: View {
                         }
                     }
                     .onAppear {
-                        if isWideSpreadInPortrait(image: img, container: geo.size) && fitMode == .fillScreen && offset == .zero {
+                        if autoSplit && offset == .zero {
                             let targetX = targetOffset(for: activeSpreadSide, containerSize: geo.size, renderedSize: rendered)
                             offset = CGSize(width: targetX, height: 0)
                             lastOffset = offset
@@ -3557,8 +3565,10 @@ struct ComicPageView: View {
                     }
                     .onChange(of: displayImage) { _, newImg in
                         guard let newImg else { return }
-                        if isWideSpreadInPortrait(image: newImg, container: geo.size) && fitMode == .fillScreen && offset == .zero {
-                            let newRendered = renderSize(for: newImg, in: geo.size, fitMode: fitMode)
+                        let newAutoSplit = shouldAutoSplitSpread(image: newImg, container: geo.size)
+                        if newAutoSplit && offset == .zero {
+                            let newFit = newAutoSplit ? .fillScreen : prefs.comicPageFitMode
+                            let newRendered = renderSize(for: newImg, in: geo.size, fitMode: newFit)
                             let targetX = targetOffset(for: activeSpreadSide, containerSize: geo.size, renderedSize: newRendered)
                             offset = CGSize(width: targetX, height: 0)
                             lastOffset = offset
@@ -3569,8 +3579,10 @@ struct ComicPageView: View {
                             currentScale = 1.0
                             lastScale = 1.0
                             activeSpreadSide = .side1
-                            if isWideSpreadInPortrait(image: img, container: geo.size) && newFitMode == .fillScreen {
-                                let newRendered = renderSize(for: img, in: geo.size, fitMode: newFitMode)
+                            let newAutoSplit = shouldAutoSplitSpread(image: img, container: geo.size)
+                            let effFit: ComicPageFitMode = newAutoSplit ? .fillScreen : newFitMode
+                            if newAutoSplit {
+                                let newRendered = renderSize(for: img, in: geo.size, fitMode: effFit)
                                 let targetX = targetOffset(for: .side1, containerSize: geo.size, renderedSize: newRendered)
                                 offset = CGSize(width: targetX, height: 0)
                                 lastOffset = offset
@@ -3581,13 +3593,28 @@ struct ComicPageView: View {
                         }
                         updateDisplayImage()
                     }
+                    .onChange(of: prefs.autoSplitWideSpreadsInPortrait) { _, _ in
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            let newAutoSplit = shouldAutoSplitSpread(image: img, container: geo.size)
+                            let effFit: ComicPageFitMode = newAutoSplit ? .fillScreen : prefs.comicPageFitMode
+                            let newRendered = renderSize(for: img, in: geo.size, fitMode: effFit)
+                            if newAutoSplit {
+                                let targetX = targetOffset(for: activeSpreadSide, containerSize: geo.size, renderedSize: newRendered)
+                                offset = CGSize(width: targetX, height: 0)
+                                lastOffset = offset
+                            } else {
+                                offset = .zero
+                                lastOffset = .zero
+                            }
+                        }
+                    }
                     .onChange(of: index) { _, newIndex in
                         image = cache.getImage(at: newIndex)
                         activeSpreadSide = .side1
                         currentScale = 1.0
                         lastScale = 1.0
                         updateDisplayImage()
-                        if isWideSpreadInPortrait(image: img, container: geo.size) && fitMode == .fillScreen {
+                        if autoSplit {
                             let targetX = targetOffset(for: .side1, containerSize: geo.size, renderedSize: rendered)
                             offset = CGSize(width: targetX, height: 0)
                             lastOffset = offset

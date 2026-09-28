@@ -2162,11 +2162,17 @@ extension EBookPageCurlReader {
                 word-spacing: \(wordSpacing) !important;
                 -webkit-hyphens: \(hyphenCSS) !important;
                 hyphens: \(hyphenCSS) !important;
+                hanging-punctuation: first last !important;
+                -webkit-hanging-punctuation: first last !important;
                 text-rendering: optimizeLegibility !important;
-                -webkit-font-variant-ligatures: common-ligatures !important;
-                font-variant-ligatures: common-ligatures !important;
-                -webkit-font-feature-settings: "kern", "liga" 1 !important;
-                font-feature-settings: "kern", "liga" 1 !important;
+                -webkit-font-smoothing: antialiased !important;
+                -moz-osx-font-smoothing: grayscale !important;
+                -webkit-font-variant-ligatures: common-ligatures contextual !important;
+                font-variant-ligatures: common-ligatures contextual !important;
+                -webkit-font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "onum" 1 !important;
+                font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "onum" 1 !important;
+                text-justify: inter-word !important;
+                text-wrap: pretty !important;
             }
             #inksync-viewport {
                 margin: 0 !important;
@@ -2208,6 +2214,9 @@ extension EBookPageCurlReader {
                 widows: 2 !important;
                 margin-bottom: \(paraSpace)em !important;
                 text-indent: \(paraIndent)em !important;
+                text-wrap: pretty !important;
+                hanging-punctuation: first last !important;
+                -webkit-hanging-punctuation: first last !important;
             }
             img, svg, figure, video {
                 max-width: 100% !important;
@@ -2239,6 +2248,9 @@ extension EBookPageCurlReader {
                 page-break-inside: avoid !important;
                 line-height: 1.25 !important;
                 color: \(textColor) !important;
+                text-wrap: balance !important;
+                hanging-punctuation: first last !important;
+                -webkit-hanging-punctuation: first last !important;
             }
             body, p, span, li, td, th, div, a { font-family: \(fontFamily) !important; }
             body, p, li, td, th, a { font-size: \(fontSize)px !important; }

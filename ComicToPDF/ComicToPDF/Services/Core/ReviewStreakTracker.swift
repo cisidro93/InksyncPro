@@ -1,37 +1,32 @@
 import Foundation
 
-// MARK: - ReviewStreakTracker
+// MARK: - ReviewActivityTracker
 // Lightweight UserDefaults-backed singleton.
-// Tracks the user's consecutive daily review streak independently of SwiftData.
-// This is session metadata, not content — keeping it out of the model layer is intentional.
+// Tracks the user's review activity and card retention statistics purely for learning insights.
+// Free of streak fatigue and gamification — reading and reviewing should be a joyful sanctuary,
+// never a late-night chore driven by fear of breaking a consecutive-day counter.
 
-final class ReviewStreakTracker: Sendable {
-    static let shared = ReviewStreakTracker()
+final class ReviewActivityTracker: Sendable {
+    static let shared = ReviewActivityTracker()
     private init() {}
 
-    private let streakKey      = "ink_review_streak_count"
-    private let lastDateKey    = "ink_review_last_date"
     private let totalReviewKey = "ink_review_total_cards"
     private let historyKey     = "ink_review_history_volume"
+    private let lastDateKey    = "ink_review_last_date"
 
     // MARK: - Public API
-
-    /// Current consecutive-day streak. Updates automatically when `recordSessionCompleted()` is called.
-    var currentStreak: Int {
-        UserDefaults.standard.integer(forKey: streakKey)
-    }
 
     /// Total cards ever reviewed across all sessions.
     var totalCardsReviewed: Int {
         UserDefaults.standard.integer(forKey: totalReviewKey)
     }
 
-    /// Retrieve the history of daily review volumes.
+    /// Retrieve the history of daily review volumes (for the Mind Palace ink droplets visualization).
     var reviewHistory: [String: Int] {
         UserDefaults.standard.dictionary(forKey: historyKey) as? [String: Int] ?? [:]
     }
 
-    /// True if the user has already completed a review session today.
+    /// True if the user has completed a review session today.
     var hasReviewedToday: Bool {
         guard let last = UserDefaults.standard.object(forKey: lastDateKey) as? Date else { return false }
         return Calendar.current.isDateInToday(last)
@@ -39,48 +34,30 @@ final class ReviewStreakTracker: Sendable {
 
     /// Call once when the user finishes a review session.
     /// - Parameter cardCount: number of cards reviewed in this session.
-    /// - Returns: the updated streak count.
+    /// - Returns: updated total cards reviewed.
     @discardableResult
     func recordSessionCompleted(cardCount: Int) -> Int {
         let defaults = UserDefaults.standard
         let now = Date()
-        let calendar = Calendar.current
 
         // Increment total cards
         let previousTotal = defaults.integer(forKey: totalReviewKey)
-        defaults.set(previousTotal + cardCount, forKey: totalReviewKey)
+        let newTotal = previousTotal + cardCount
+        defaults.set(newTotal, forKey: totalReviewKey)
 
-        // Record history log
+        // Record history log for visual heatmap
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
         let dateString = df.string(from: now)
         var history = defaults.dictionary(forKey: historyKey) as? [String: Int] ?? [:]
         history[dateString, default: 0] += cardCount
         defaults.set(history, forKey: historyKey)
-
-        // Already reviewed today — don't double-count streak
-        if hasReviewedToday {
-            return currentStreak
-        }
-
-        let previousStreak = defaults.integer(forKey: streakKey)
-        let newStreak: Int
-
-        if let lastDate = defaults.object(forKey: lastDateKey) as? Date {
-            // If yesterday → extend streak; if older → reset to 1
-            let daysSinceLast = calendar.dateComponents([.day], from: lastDate, to: now).day ?? 0
-            newStreak = (daysSinceLast == 1) ? previousStreak + 1 : 1
-        } else {
-            // First ever session
-            newStreak = 1
-        }
-
-        defaults.set(newStreak, forKey: streakKey)
         defaults.set(now, forKey: lastDateKey)
-        return newStreak
+
+        return newTotal
     }
 
-    /// Call if the user closes the session without rating any cards (streak should not advance).
+    /// Call if the user closes the session without rating any cards.
     func cancelSession() {
         // No-op: we only record on completion.
     }
@@ -94,3 +71,6 @@ final class ReviewStreakTracker: Sendable {
         return "in \(weeks) \(weeks == 1 ? "week" : "weeks")"
     }
 }
+
+/// Backwards compatibility alias ensuring zero call-site breakage.
+typealias ReviewStreakTracker = ReviewActivityTracker

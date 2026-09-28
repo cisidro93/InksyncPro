@@ -160,12 +160,33 @@ extension ReadingProgress {
     }
 }
 
+public struct WhisperSyncProposal: Sendable, Equatable, Identifiable {
+    public var id: UUID { pdfID }
+    public let pdfID: UUID
+    public let bookTitle: String
+    public let remotePageIndex: Int
+    public let localPageIndex: Int
+    public let timestamp: Date
+}
+
 @MainActor
 class ReaderProgressTracker: ObservableObject {
     static let shared = ReaderProgressTracker()
     
     @Published private var progressMap: [UUID: ReadingProgress] = [:]
+    @Published public var whisperSyncProposal: WhisperSyncProposal? = nil
     private var saveTasks: [UUID: Task<Void, Never>] = [:]
+    
+    public func dismissWhisperSync() {
+        whisperSyncProposal = nil
+    }
+    
+    public func acceptWhisperSync(for pdfID: UUID) -> Int? {
+        guard let proposal = whisperSyncProposal, proposal.pdfID == pdfID else { return nil }
+        let targetPage = proposal.remotePageIndex
+        whisperSyncProposal = nil
+        return targetPage
+    }
     
     /// Save per-document crop insets permanently to disk & iCloud
     func saveCropInsets(_ crop: CodableCropInsets, for pdfID: UUID) {
@@ -396,39 +417,6 @@ class ReaderProgressTracker: ObservableObject {
     
     // MARK: - Stats
     
-    func readingStreak() -> Int {
-        // Calculate consecutive days reading
-        let allDates = progressMap.values.flatMap { $0.readingSessionDates }
-        guard !allDates.isEmpty else { return 0 }
-        
-        // Normalize to start of day
-        let calendar = Calendar.current
-        let uniqueDays = Set(allDates.map { calendar.startOfDay(for: $0) }).sorted(by: >)
-        
-        var streak = 0
-        var expectedDate = calendar.startOfDay(for: Date())
-        
-        // If they haven't read today, check if they read yesterday (streak is still alive)
-        if uniqueDays.first != expectedDate {
-            if let yesterday = calendar.date(byAdding: .day, value: -1, to: expectedDate),
-               uniqueDays.first == yesterday {
-                expectedDate = yesterday
-            } else {
-                return 0 // Didn't read today or yesterday
-            }
-        }
-        
-        for date in uniqueDays {
-            if date == expectedDate {
-                streak += 1
-                expectedDate = calendar.date(byAdding: .day, value: -1, to: expectedDate) ?? expectedDate
-            } else {
-                break
-            }
-        }
-        return streak
-    }
-    
     func totalMinutesReadToday() -> Int {
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: Date())
@@ -561,6 +549,17 @@ class ReaderProgressTracker: ObservableObject {
             guard let data = iCloudStore.data(forKey: key),
                   let remote = try? JSONDecoder().decode(ReadingProgress.self, from: data) else { continue }
             if let local = progressMap[remote.pdfID] {
+                // If remote device read further, propose non-disruptive WhisperSync jump
+                if remote.currentPageIndex > local.currentPageIndex {
+                    let bookTitle = ConversionManager.shared.convertedPDFs.first(where: { $0.id == remote.pdfID })?.name ?? "Book"
+                    self.whisperSyncProposal = WhisperSyncProposal(
+                        pdfID: remote.pdfID,
+                        bookTitle: bookTitle,
+                        remotePageIndex: remote.currentPageIndex,
+                        localPageIndex: local.currentPageIndex,
+                        timestamp: remote.lastOpenedAt
+                    )
+                }
                 let merged = ReadingProgress.merge(local: local, remote: remote)
                 let hasProgressChanged = merged.completionFraction != local.completionFraction ||
                                          merged.currentPageIndex != local.currentPageIndex ||

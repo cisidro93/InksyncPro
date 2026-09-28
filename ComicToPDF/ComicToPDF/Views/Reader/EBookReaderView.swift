@@ -246,6 +246,17 @@ struct EBookReaderView: View {
             footnotePopover(for: item)
         }
         .task { await loadBook() }
+        .userActivity("com.inksync.read", isActive: true) { activity in
+            activity.title = "Reading \(title)"
+            activity.isEligibleForHandoff = true
+            if let p = pdf {
+                activity.addUserInfoEntries(from: [
+                    "pdfID": p.id.uuidString,
+                    "pageIndex": currentIndex
+                ])
+            }
+            activity.becomeCurrent()
+        }
         .onDisappear {
             hudIdleTask?.cancel()
             shouldAutoResumeNarrationOnChapterLoad = false
@@ -1536,6 +1547,27 @@ struct EBookReaderView: View {
                         .transition(.opacity)
                     }
                     .ignoresSafeArea(edges: .bottom)
+                }
+
+                if let p = pdf, let proposal = ReaderProgressTracker.shared.whisperSyncProposal, proposal.pdfID == p.id {
+                    VStack {
+                        WhisperSyncJumpPill(
+                            proposal: proposal,
+                            onJump: { targetPage in
+                                NotificationCenter.default.post(
+                                    name: .readerJumpToPage,
+                                    object: nil,
+                                    userInfo: ["pageIndex": targetPage]
+                                )
+                            },
+                            onDismiss: {
+                                ReaderProgressTracker.shared.dismissWhisperSync()
+                            }
+                        )
+                        .padding(.top, topInset + 20)
+                        Spacer()
+                    }
+                    .zIndex(150)
                 }
 
                 if isPencilMode {

@@ -184,9 +184,19 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
 
     // MARK: - PKCanvasViewDelegate
 
+    private var isSnapping = false
+
     public func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
         guard let canvas = canvasView as? PassthroughPKCanvasView,
               let page = canvas.associatedPage else { return }
+
+        // Pillar 5: Smart Draw-and-Hold Shape Recognition
+        if !isSnapping, let snappedDrawing = SmartShapeRecognizer.snapLastStroke(in: canvasView.drawing) {
+            isSnapping = true
+            canvasView.drawing = snappedDrawing
+            isSnapping = false
+            HapticEngine.medium()
+        }
 
         let key = ObjectIdentifier(page)
         debounceSaveTasks[key]?.cancel()

@@ -72,6 +72,11 @@ class EBookPreferences: ObservableObject {
         didSet { objectWillChange.send() }
     }
     
+    // MARK: - Smart Splash-Spread Splitting (P4)
+    @AppStorage("comic_autoSplitWideSpreadsInPortrait") var autoSplitWideSpreadsInPortrait: Bool = true {
+        didSet { objectWillChange.send() }
+    }
+    
     // MARK: - Reading Goals & Habits (P0 / P2 / P3)
     @AppStorage("ebook_dailyReadingGoalMinutes") var dailyReadingGoalMinutes: Int = 30 {
         didSet { objectWillChange.send() }

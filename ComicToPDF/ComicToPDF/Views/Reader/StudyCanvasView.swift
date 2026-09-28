@@ -62,7 +62,7 @@ struct StudyCanvasView: UIViewRepresentable {
             }
             
             if parent.isSmartShapesEnabled {
-                if let updatedDrawing = snapLastStroke(in: canvasView.drawing) {
+                if let updatedDrawing = SmartShapeRecognizer.snapLastStroke(in: canvasView.drawing) {
                     isSnapping = true
                     canvasView.drawing = updatedDrawing
                     isSnapping = false

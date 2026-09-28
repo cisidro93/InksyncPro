@@ -62,6 +62,16 @@ struct InksyncProgressFooterView: View {
         return max(0, totalPages - max(1, currentPage))
     }
 
+    private var estimatedMinutesLeftInChapter: Int {
+        guard isBookSection && chapterTotalPages > 1 else { return 1 }
+        let pagesLeft = pagesLeftInChapter
+        if pagesLeft <= 0 { return 1 }
+        
+        let wpm = prefs.readingSpeedWPM.isFinite && prefs.readingSpeedWPM > 50 ? prefs.readingSpeedWPM : 220.0
+        let estimated = Int(ceil(Double(pagesLeft * 260) / wpm))
+        return max(1, min(estimated, 999))
+    }
+
     private var condensedText: String {
         let tierSuffix = (tierText != nil && !tierText!.isEmpty) ? " · \(tierText!)" : ""
         switch prefs.progressMode {
@@ -71,7 +81,10 @@ struct InksyncProgressFooterView: View {
             return "\(base)\(tierSuffix)"
         case 2:
             let base: String
-            if let mins = estimatedMinutesLeft, mins > 0 {
+            if isBookSection && chapterTotalPages > 1 {
+                let chapMins = estimatedMinutesLeftInChapter
+                base = "~\(chapMins)m chapter"
+            } else if let mins = estimatedMinutesLeft, mins > 0 {
                 let safeMins = min(mins, 99_999)
                 if safeMins < 60 {
                     base = "~\(safeMins)m"
@@ -124,7 +137,15 @@ struct InksyncProgressFooterView: View {
         case 2:
             // Mode 2: Estimated time remaining
             let base: String
-            if let mins = estimatedMinutesLeft, mins > 0 {
+            if isBookSection && chapterTotalPages > 1 {
+                let chapMins = estimatedMinutesLeftInChapter
+                let chapUnit = chapMins == 1 ? "min" : "mins"
+                if let title = trimmedTitle, !title.isEmpty {
+                    base = "~\(chapMins) \(chapUnit) left in \(title)"
+                } else {
+                    base = "~\(chapMins) \(chapUnit) left in chapter"
+                }
+            } else if let mins = estimatedMinutesLeft, mins > 0 {
                 let safeMins = min(mins, 99_999)
                 if safeMins < 60 {
                     base = "~\(safeMins) min\(safeMins == 1 ? "" : "s") left in book"

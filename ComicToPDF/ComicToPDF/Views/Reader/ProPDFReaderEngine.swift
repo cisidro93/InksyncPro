@@ -450,6 +450,23 @@ struct ProPDFReaderEngine: View {
             ReadingJumpToastOverlay()
             lockedPasswordOverlay
 
+            if let proposal = ReaderProgressTracker.shared.whisperSyncProposal, proposal.pdfID == pdf.id {
+                VStack {
+                    WhisperSyncJumpPill(
+                        proposal: proposal,
+                        onJump: { targetPage in
+                            jumpToPage(targetPage)
+                        },
+                        onDismiss: {
+                            ReaderProgressTracker.shared.dismissWhisperSync()
+                        }
+                    )
+                    .padding(.top, 64)
+                    Spacer()
+                }
+                .zIndex(250)
+            }
+
             if prefs.showReadingRuler {
                 ReadingRulerOverlay()
             }
@@ -814,6 +831,15 @@ struct ProPDFReaderEngine: View {
             }
             .onDisappear {
                 handleDisappear()
+            }
+            .userActivity("com.inksync.read", isActive: true) { activity in
+                activity.title = "Reading \(pdf.name)"
+                activity.isEligibleForHandoff = true
+                activity.addUserInfoEntries(from: [
+                    "pdfID": pdf.id.uuidString,
+                    "pageIndex": currentPageIndex
+                ])
+                activity.becomeCurrent()
             }
         let withKeys = applyKeyboardShortcuts(to: configured)
         let withCrop = applyCropObservers(to: withKeys)

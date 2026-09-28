@@ -69,6 +69,66 @@ final class PassthroughPKCanvasView: PKCanvasView {
         setupMultiTouchGestures()
     }
 
+    private let hoverReticleView: UIView = {
+        let v = UIView()
+        v.isUserInteractionEnabled = false
+        v.layer.borderWidth = 1.2
+        v.layer.borderColor = UIColor.systemBlue.withAlphaComponent(0.8).cgColor
+        v.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.15)
+        v.alpha = 0
+        v.layer.zPosition = 1000
+        return v
+    }()
+
+    private func setupHoverReticle() {
+        if hoverReticleView.superview == nil {
+            addSubview(hoverReticleView)
+        }
+    }
+
+    @MainActor @objc private func handlePencilHover(_ gesture: UIHoverGestureRecognizer) {
+        guard isMarkupActive && isInkLayerVisible else {
+            hoverReticleView.alpha = 0
+            return
+        }
+
+        switch gesture.state {
+        case .began, .changed:
+            let loc = gesture.location(in: self)
+            let toolWidth: CGFloat
+            let toolColor: UIColor
+
+            if let inking = self.tool as? PKInkingTool {
+                toolWidth = max(6.0, inking.width)
+                toolColor = inking.color
+            } else if self.tool is PKEraserTool {
+                toolWidth = 20.0
+                toolColor = .systemGray
+            } else {
+                toolWidth = 8.0
+                toolColor = .systemOrange
+            }
+
+            hoverReticleView.bounds = CGRect(x: 0, y: 0, width: toolWidth, height: toolWidth)
+            hoverReticleView.layer.cornerRadius = toolWidth / 2.0
+            hoverReticleView.layer.borderColor = toolColor.withAlphaComponent(0.85).cgColor
+            hoverReticleView.backgroundColor = toolColor.withAlphaComponent(0.20)
+            hoverReticleView.center = loc
+
+            if hoverReticleView.alpha < 0.9 {
+                UIView.animate(withDuration: 0.12) {
+                    self.hoverReticleView.alpha = 1.0
+                }
+            }
+        case .ended, .cancelled:
+            UIView.animate(withDuration: 0.15) {
+                self.hoverReticleView.alpha = 0
+            }
+        default:
+            break
+        }
+    }
+
     private func setupMultiTouchGestures() {
         let threeFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleThreeFingerTap(_:)))
         threeFingerTap.numberOfTouchesRequired = 3
@@ -83,6 +143,12 @@ final class PassthroughPKCanvasView: PKCanvasView {
         twoFingerTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         twoFingerTap.cancelsTouchesInView = true
         addGestureRecognizer(twoFingerTap)
+
+        // Apple Pencil Hover (Pillar 5): Visual reticle tracks pencil tip on iPad Pro M2/M4
+        let hoverRecognizer = UIHoverGestureRecognizer(target: self, action: #selector(handlePencilHover(_:)))
+        hoverRecognizer.cancelsTouchesInView = false
+        addGestureRecognizer(hoverRecognizer)
+        setupHoverReticle()
     }
 
     @MainActor @objc private func handleTwoFingerTap(_ gesture: UITapGestureRecognizer) {
@@ -349,6 +415,8 @@ struct PKCanvasRepresentation: UIViewRepresentable {
             canvasView.addInteraction(pencilInteraction)
         }
         
+        canvasView.delegate = context.coordinator
+        
         let picker = PKToolPicker()
         picker.setVisible(isMarkupEnabled, forFirstResponder: canvasView)
         picker.selectedTool = preferredTool
@@ -421,10 +489,21 @@ struct PKCanvasRepresentation: UIViewRepresentable {
         coordinator.canvasView = nil
     }
     
-    class Coordinator: NSObject, UIPencilInteractionDelegate {
+    class Coordinator: NSObject, UIPencilInteractionDelegate, PKCanvasViewDelegate {
         var toolPicker: PKToolPicker?
         weak var canvasView: PassthroughPKCanvasView?
         private var previousInkingTool: PKTool?
+        private var isSnapping = false
+        
+        func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+            guard !isSnapping else { return }
+            if let snappedDrawing = SmartShapeRecognizer.snapLastStroke(in: canvasView.drawing) {
+                isSnapping = true
+                canvasView.drawing = snappedDrawing
+                isSnapping = false
+                HapticEngine.medium()
+            }
+        }
         
         func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
             guard let canvas = canvasView else { return }

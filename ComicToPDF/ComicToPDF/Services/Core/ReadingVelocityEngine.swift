@@ -63,7 +63,6 @@ struct VelocityReport: Sendable {
         let pagesPerDay: Double          // rolling 14-day across all books
         let pagesPerSession: Double      // rolling 10-session average
         let totalDaysOfReading: Int      // distinct days with any session
-        let longestStreak: Int
         let fastestBook: String?         // name of book with highest velocity
         let slowestActiveBook: String?   // most-pages-remaining / lowest velocity
         let projectedLibraryFinishDays: Int? // days to finish all in-progress books
@@ -96,7 +95,6 @@ enum ReadingVelocityEngine {
         let globalPPD = globalPagesPerDay(from: allProgress)
         let globalPPS = globalPagesPerSession(from: allProgress)
         let totalDays = totalDistinctReadingDays(from: allProgress)
-        let streak    = longestHistoricStreak(from: allProgress)
 
         // Per-book forecasts — only for books with some progress
         var forecasts: [VelocityReport.BookForecast] = []
@@ -131,7 +129,6 @@ enum ReadingVelocityEngine {
             pagesPerDay: globalPPD,
             pagesPerSession: globalPPS,
             totalDaysOfReading: totalDays,
-            longestStreak: streak,
             fastestBook: fastestBook,
             slowestActiveBook: slowestBook,
             projectedLibraryFinishDays: projectedDays
@@ -271,36 +268,6 @@ enum ReadingVelocityEngine {
             }
         }
         return days.count
-    }
-
-    private static func longestHistoricStreak(from items: [(pdf: ConvertedPDF, progress: ReadingProgress?)]) -> Int {
-        let calendar = Calendar.current
-        var days = Set<Date>()
-        for item in items {
-            for event in item.progress?.sessionEvents ?? [] {
-                days.insert(calendar.startOfDay(for: event.date))
-            }
-            // Also count session dates (coarser fallback)
-            for date in item.progress?.readingSessionDates ?? [] {
-                days.insert(calendar.startOfDay(for: date))
-            }
-        }
-        let sorted = days.sorted(by: >)
-        var longest = 0
-        var current = 0
-        var prev: Date? = nil
-        for day in sorted {
-            if let p = prev,
-               let expectedPrev = calendar.date(byAdding: .day, value: 1, to: day),
-               calendar.isDate(expectedPrev, inSameDayAs: p) {
-                current += 1
-            } else {
-                current = 1
-            }
-            longest = max(longest, current)
-            prev = day
-        }
-        return longest
     }
 }
 

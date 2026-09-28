@@ -322,7 +322,7 @@ public struct UIExplanationRegistry {
             title: "Flashcard Decks (SRS)",
             category: "Workspace Modes",
             explanation: "Review flashcards generated from your book highlights and notes using the Leitner Spaced Repetition System.",
-            proTip: "Cards due today are automatically prioritized for your daily study streak."
+            proTip: "Cards due today are automatically prioritized for your spaced repetition review."
         ),
         UIIconExplanation(
             iconName: "pencil.and.scribble",

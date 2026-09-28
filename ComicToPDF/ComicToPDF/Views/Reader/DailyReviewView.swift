@@ -38,7 +38,6 @@ struct DailyReviewView: View {
     @State private var showFront: Bool = true
     @State private var showComplete: Bool = false
     @State private var sessionReviewedCount: Int = 0
-    @State private var earnedStreak: Int = 0
 
     // Tinder drag offset and flip tracking
     @State private var cardDragOffset: CGSize = .zero
@@ -94,7 +93,7 @@ struct DailyReviewView: View {
                         .foregroundStyle(Color.inkTextSecondary)
                 }
                 ToolbarItem(placement: .principal) {
-                    streakBadge
+                    reviewTitleBadge
                 }
             }
             .onAppear { buildQueue() }
@@ -103,7 +102,7 @@ struct DailyReviewView: View {
 
     // MARK: - Header Components
 
-    private var streakBadge: some View {
+    private var reviewTitleBadge: some View {
         Text("Daily Review")
             .font(.system(size: 16, weight: .bold, design: .rounded))
             .foregroundStyle(Color.inkTextPrimary)
@@ -566,8 +565,8 @@ struct DailyReviewView: View {
             currentIndex += 1
             showFront = true
             if currentIndex >= reviewQueue.count {
-                // Session complete — record streak
-                earnedStreak = ReviewStreakTracker.shared.recordSessionCompleted(cardCount: sessionReviewedCount)
+                // Session complete — record review activity volume
+                ReviewActivityTracker.shared.recordSessionCompleted(cardCount: sessionReviewedCount)
                 showComplete = true
             }
         }

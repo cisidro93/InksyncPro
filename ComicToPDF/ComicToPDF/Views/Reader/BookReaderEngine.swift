@@ -768,11 +768,17 @@ struct EPUBWebView: View {
             word-spacing: \(wordSpacing) !important;
             -webkit-hyphens: \(hyphenCSS) !important;
             hyphens: \(hyphenCSS) !important;
+            hanging-punctuation: first last !important;
+            -webkit-hanging-punctuation: first last !important;
             text-rendering: optimizeLegibility !important;
-            -webkit-font-variant-ligatures: common-ligatures !important;
-            font-variant-ligatures: common-ligatures !important;
-            -webkit-font-feature-settings: "kern", "liga" 1 !important;
-            font-feature-settings: "kern", "liga" 1 !important;
+            -webkit-font-smoothing: antialiased !important;
+            -moz-osx-font-smoothing: grayscale !important;
+            -webkit-font-variant-ligatures: common-ligatures contextual !important;
+            font-variant-ligatures: common-ligatures contextual !important;
+            -webkit-font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "onum" 1 !important;
+            font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "onum" 1 !important;
+            text-justify: inter-word !important;
+            text-wrap: pretty !important;
             \(isPaged ? """
             height: 100% !important;
             """ : """
@@ -828,6 +834,18 @@ struct EPUBWebView: View {
         p, h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol, dl, figure {
             padding-left: \(margin)px !important;
             padding-right: \(margin)px !important;
+        }
+        p, blockquote {
+            text-wrap: pretty !important;
+            hanging-punctuation: first last !important;
+            -webkit-hanging-punctuation: first last !important;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            text-wrap: balance !important;
+            hanging-punctuation: first last !important;
+            -webkit-hanging-punctuation: first last !important;
+            break-after: avoid !important;
+            page-break-after: avoid !important;
         }
         """ : """
         div, section, article, main {
