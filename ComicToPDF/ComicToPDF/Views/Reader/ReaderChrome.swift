@@ -58,6 +58,7 @@ struct ReaderChrome: View {
     var onManualCropToggle: (() -> Void)? = nil
     var onReflowToggle: (() -> Void)? = nil
     var onMarkupToggle: (() -> Void)? = nil
+    var onExportPDF: (() -> Void)? = nil
 
     // Enhancement
     var isEnhanced: Bool = false
@@ -122,6 +123,7 @@ struct ReaderChrome: View {
         onManualCropToggle: (() -> Void)? = nil,
         onReflowToggle: (() -> Void)? = nil,
         onMarkupToggle: (() -> Void)? = nil,
+        onExportPDF: (() -> Void)? = nil,
         isEnhanced: Bool = false,
         onEnhanceToggle: (() -> Void)? = nil,
         isSettingsActive: Bool = false,
@@ -167,6 +169,7 @@ struct ReaderChrome: View {
         self.onManualCropToggle = onManualCropToggle
         self.onReflowToggle = onReflowToggle
         self.onMarkupToggle = onMarkupToggle
+        self.onExportPDF = onExportPDF
         self.isEnhanced = isEnhanced
         self.onEnhanceToggle = onEnhanceToggle
         self.isSettingsActive = isSettingsActive
@@ -500,6 +503,11 @@ struct ReaderChrome: View {
                         if let onManual = onManualCropToggle {
                             Button(action: onManual) {
                                 Label("Manual Visual Crop Editor\u{2026}", systemImage: "viewfinder")
+                            }
+                        }
+                        if let onExport = onExportPDF {
+                            Button(action: onExport) {
+                                Label("Export Marked-Up PDF\u{2026}", systemImage: "square.and.arrow.up.shield")
                             }
                         }
                     }

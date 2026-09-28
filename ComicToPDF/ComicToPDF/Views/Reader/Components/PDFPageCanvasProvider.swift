@@ -61,6 +61,20 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
                 self?.updateColoringMode(isColoring)
             }
             .store(in: &cancellables)
+
+        InksyncInkingState.shared.$isInkLayerVisible
+            .receive(on: RunLoop.main)
+            .sink { [weak self] isVisible in
+                self?.updateInkLayerVisibility(isVisible)
+            }
+            .store(in: &cancellables)
+
+        InksyncInkingState.shared.$isLineartLayerVisible
+            .receive(on: RunLoop.main)
+            .sink { [weak self] isVisible in
+                self?.updateLineartLayerVisibility(isVisible)
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Lifecycle & State Management
@@ -201,6 +215,22 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         updateCanvasInteractivity()
     }
 
+    public func updateInkLayerVisibility(_ isVisible: Bool) {
+        for canvas in pageCanvases.values {
+            canvas.isInkLayerVisible = isVisible
+        }
+    }
+
+    public func updateLineartLayerVisibility(_ isVisible: Bool) {
+        for canvas in pageCanvases.values {
+            if isVisible && canvas.isColoringMode {
+                canvas.updateLineartVisibility()
+            } else {
+                canvas.setLineartMask(nil)
+            }
+        }
+    }
+
     public func updateAllCanvasTools() {
         let currentTool = InksyncInkingState.shared.makePKTool()
         for canvas in pageCanvases.values {
@@ -211,11 +241,12 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
     private func configureCanvasPolicy(_ canvas: PassthroughPKCanvasView) {
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let prefs = EBookPreferences.shared
+        let inkingState = InksyncInkingState.shared
         let pencilOnlyDrawingSetting = AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
-        let currentMode = InksyncInkingState.shared.activeToolMode
+        let currentMode = inkingState.activeToolMode
         let isWriting = currentMode == .write
         let isEraser = currentMode == .eraser
-        let isColoring = InksyncInkingState.shared.isColoringModeActive
+        let isColoring = inkingState.isColoringModeActive
         let autoPenActive = isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "pen"
         let isToolActive = isWriting || isEraser || isColoring
         let isExplicitDrawingMode = isMarkupActive && isToolActive
@@ -223,6 +254,7 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
 
         canvas.overrideUserInterfaceStyle = .light
         canvas.isMarkupActive = shouldBeActive
+        canvas.isInkLayerVisible = inkingState.isInkLayerVisible
         
         // Finger drawing policy:
         // On iPad in normal reading mode (!isExplicitDrawingMode), finger drawing MUST NEVER be allowed!
@@ -237,7 +269,7 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         
         canvas.allowFingerDrawing = allowFinger
         canvas.drawingPolicy = allowFinger ? .anyInput : .pencilOnly
-        canvas.isUserInteractionEnabled = shouldBeActive
+        canvas.isUserInteractionEnabled = shouldBeActive && inkingState.isInkLayerVisible
         canvas.drawingGestureRecognizer.cancelsTouchesInView = false
         canvas.isScrollEnabled = false
         canvas.bounces = false

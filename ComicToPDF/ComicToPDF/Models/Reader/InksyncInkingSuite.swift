@@ -216,6 +216,43 @@ public final class InksyncInkingState: ObservableObject {
         }
     }
 
+    // MARK: - Creative Art & Layer Management (Procreate / GoodNotes Parity)
+    
+    /// Background Document Opacity for Tracing Lightbox & Creative Sketching (0.15 ... 1.0)
+    @Published public var documentBackgroundOpacity: Double = 1.0 {
+        didSet {
+            saveSettings()
+            NotificationCenter.default.post(name: NSNotification.Name("InksyncDocumentOpacityChanged"), object: documentBackgroundOpacity)
+        }
+    }
+
+    /// Visibility toggle for the handwritten ink vector layer
+    @Published public var isInkLayerVisible: Bool = true {
+        didSet {
+            saveSettings()
+            NotificationCenter.default.post(name: NSNotification.Name("InksyncInkLayerVisibilityChanged"), object: isInkLayerVisible)
+        }
+    }
+
+    /// Visibility toggle for the transparent lineart contour overlay layer
+    @Published public var isLineartLayerVisible: Bool = true {
+        didSet {
+            saveSettings()
+            NotificationCenter.default.post(name: NSNotification.Name("InksyncLineartVisibilityChanged"), object: isLineartLayerVisible)
+        }
+    }
+
+    /// Visibility toggle for the text highlight annotations layer
+    @Published public var isTextHighlightLayerVisible: Bool = true {
+        didSet {
+            saveSettings()
+            NotificationCenter.default.post(name: NSNotification.Name("InksyncHighlightLayerVisibilityChanged"), object: isTextHighlightLayerVisible)
+        }
+    }
+
+    /// Controls visibility of the floating glassmorphic Layers Management HUD
+    @Published public var showLayersHUD: Bool = false
+
     public enum InksyncDockEdge: String, Codable, Sendable {
         case top, bottom, leading, trailing
     }
@@ -334,6 +371,10 @@ public final class InksyncInkingState: ObservableObject {
         }
         UserDefaults.standard.set(dockEdge.rawValue, forKey: "Inksync_DockEdge_v1")
         UserDefaults.standard.set(isColoringModeActive, forKey: "Inksync_ColoringMode_v1")
+        UserDefaults.standard.set(documentBackgroundOpacity, forKey: "Inksync_DocOpacity_v1")
+        UserDefaults.standard.set(isInkLayerVisible, forKey: "Inksync_InkVisible_v1")
+        UserDefaults.standard.set(isLineartLayerVisible, forKey: "Inksync_LineartVisible_v1")
+        UserDefaults.standard.set(isTextHighlightLayerVisible, forKey: "Inksync_HlVisible_v1")
     }
 
     private func loadSettings() {
@@ -360,5 +401,19 @@ public final class InksyncInkingState: ObservableObject {
             self.dockEdge = edge
         }
         self.isColoringModeActive = UserDefaults.standard.bool(forKey: "Inksync_ColoringMode_v1")
+
+        if UserDefaults.standard.object(forKey: "Inksync_DocOpacity_v1") != nil {
+            let opacity = UserDefaults.standard.double(forKey: "Inksync_DocOpacity_v1")
+            self.documentBackgroundOpacity = max(0.15, min(1.0, opacity))
+        }
+        if UserDefaults.standard.object(forKey: "Inksync_InkVisible_v1") != nil {
+            self.isInkLayerVisible = UserDefaults.standard.bool(forKey: "Inksync_InkVisible_v1")
+        }
+        if UserDefaults.standard.object(forKey: "Inksync_LineartVisible_v1") != nil {
+            self.isLineartLayerVisible = UserDefaults.standard.bool(forKey: "Inksync_LineartVisible_v1")
+        }
+        if UserDefaults.standard.object(forKey: "Inksync_HlVisible_v1") != nil {
+            self.isTextHighlightLayerVisible = UserDefaults.standard.bool(forKey: "Inksync_HlVisible_v1")
+        }
     }
 }

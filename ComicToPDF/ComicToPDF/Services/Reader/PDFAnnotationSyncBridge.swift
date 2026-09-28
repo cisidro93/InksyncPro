@@ -181,34 +181,13 @@ final class PDFAnnotationSyncBridge {
                 page.addAnnotation(nativeText)
                 
             case .ink:
-                if let drawingData = annotation.drawingData,
-                   let drawing = try? PKDrawing(data: drawingData) {
-                    let groupedStrokes = Dictionary(grouping: drawing.strokes) { stroke in
-                        stroke.ink.color
-                    }
-                    for (strokeColor, strokes) in groupedStrokes {
-                        let nativeInk = PDFAnnotation(bounds: pageBounds, forType: .ink, withProperties: nil)
-                        nativeInk.userName = annotation.id.uuidString
-                        nativeInk.contents = annotation.drawingOCRText ?? "Handwritten Note"
-                        nativeInk.color = strokeColor
-                        for stroke in strokes {
-                            let bezier = UIBezierPath()
-                            var first = true
-                            for point in stroke.path {
-                                let pt = point.location
-                                let pdfPt = CGPoint(x: pt.x, y: pageBounds.height - pt.y)
-                                if first {
-                                    bezier.move(to: pdfPt)
-                                    first = false
-                                } else {
-                                    bezier.addLine(to: pdfPt)
-                                }
-                            }
-                            nativeInk.add(bezier)
-                        }
-                        page.addAnnotation(nativeInk)
-                    }
-                }
+                // CRITICAL ARCHITECTURAL SAFEGUARD (Zero-Ghosting & No Duplicate Ink):
+                // During live reader sessions, PDFPageCanvasProvider is the sole high-performance 120Hz
+                // vector owner for Apple Pencil and finger inking via PencilKit (PassthroughPKCanvasView).
+                // We intentionally do NOT stamp redundant native /Ink annotations onto live pages during reading.
+                // Doing so would cause double-stroke rendering artifacts, altered opacity, and un-erasable ghost strokes.
+                // Full vector /Ink annotation serialization is strictly performed during export via exportAnnotations(for:to:).
+                break
                 
             case .bookmark:
                 break
@@ -345,7 +324,11 @@ final class PDFAnnotationSyncBridge {
     
     /// Writes all InkSync Pro highlights, Pencil drawings, and Adler notes into the `PDFDocument` as native ISO annotations.
     @MainActor
-    func exportAnnotations(for pdfID: UUID, to document: PDFDocument) {
+    func exportAnnotations(
+        for pdfID: UUID,
+        to document: PDFDocument,
+        config: PDFExportConfiguration = PDFExportConfiguration()
+    ) {
         let storeAnnotations = AnnotationStore.shared.annotations(for: pdfID)
         
         for annotation in storeAnnotations {
@@ -356,6 +339,8 @@ final class PDFAnnotationSyncBridge {
             
             switch annotation.kind {
             case .highlight, .underline, .strikeOut:
+                guard config.includeTextHighlights else { continue }
+
                 let nativeType: PDFAnnotationSubtype
                 switch annotation.kind {
                 case .underline: nativeType = .underline
@@ -390,6 +375,8 @@ final class PDFAnnotationSyncBridge {
                 page.addAnnotation(nativeHighlight)
                 
             case .note:
+                guard config.includeTextHighlights else { continue }
+
                 // Create native /Text sticky note popup annotation
                 let noteOrigin = CGPoint(x: pageBounds.minX + 30, y: pageBounds.maxY - 80)
                 let noteRect = CGRect(origin: noteOrigin, size: CGSize(width: 24, height: 24))
@@ -400,6 +387,8 @@ final class PDFAnnotationSyncBridge {
                 page.addAnnotation(nativeText)
                 
             case .ink:
+                guard config.includeHandwrittenInk else { continue }
+
                 // Convert PencilKit drawing data to native vector /Ink paths preserving stroke color and metadata
                 if let drawingData = annotation.drawingData,
                    let drawing = try? PKDrawing(data: drawingData) {
@@ -408,7 +397,7 @@ final class PDFAnnotationSyncBridge {
                     }
                     for (strokeColor, strokes) in groupedStrokes {
                         let nativeInk = PDFAnnotation(bounds: pageBounds, forType: .ink, withProperties: nil)
-                        nativeInk.userName = annotation.id.uuidString
+                        nativeInk.userName = config.stripInternalMetadata ? "Inksync" : annotation.id.uuidString
                         nativeInk.contents = annotation.drawingOCRText ?? "Handwritten Note"
                         nativeInk.color = strokeColor
                         
@@ -430,10 +419,12 @@ final class PDFAnnotationSyncBridge {
                         page.addAnnotation(nativeInk)
                     }
 
-                    // Lossless dual-layer metadata embedding in document attributes
-                    if var attrs = document.documentAttributes {
-                        attrs["Inksync_Drawing_P\(annotation.pageIndex)"] = drawingData.base64EncodedString()
-                        document.documentAttributes = attrs
+                    // Lossless dual-layer metadata embedding only when not sanitized
+                    if !config.stripInternalMetadata {
+                        if var attrs = document.documentAttributes {
+                            attrs["Inksync_Drawing_P\(annotation.pageIndex)"] = drawingData.base64EncodedString()
+                            document.documentAttributes = attrs
+                        }
                     }
                 }
                 
@@ -443,7 +434,7 @@ final class PDFAnnotationSyncBridge {
             }
         }
         
-        Logger.shared.log("PDFAnnotationSync: Exported \(storeAnnotations.count) annotations into native PDF document", category: "PDF")
+        Logger.shared.log("PDFAnnotationSync: Exported \(storeAnnotations.count) annotations into native PDF document (ink: \(config.includeHandwrittenInk), highlights: \(config.includeTextHighlights))", category: "PDF")
     }
 
     // MARK: - Coordinate Helpers (intentionally removed quadrilateralPoints — PDFKit derives them from bounds)
@@ -589,7 +580,8 @@ final class PDFAnnotationSyncBridge {
     func generateAnnotatedPDF(
         from document: PDFDocument,
         for pdfID: UUID,
-        saveTo destinationURL: URL
+        saveTo destinationURL: URL,
+        config: PDFExportConfiguration = PDFExportConfiguration(format: .editableAnnotations)
     ) throws -> URL {
         // Create an in-memory duplicate of the document to avoid mutating the active reader
         guard let data = document.dataRepresentation(),
@@ -597,13 +589,50 @@ final class PDFAnnotationSyncBridge {
             throw PDFSyncError.documentSerializationFailed
         }
         
-        self.exportAnnotations(for: pdfID, to: exportedDoc)
+        self.exportAnnotations(for: pdfID, to: exportedDoc, config: config)
         
-        guard exportedDoc.write(to: destinationURL) else {
+        // Strip sensitive internal attributes and file metadata if requested
+        if config.stripInternalMetadata {
+            var cleanAttrs: [AnyHashable: Any] = [:]
+            cleanAttrs[PDFDocumentAttribute.creatorAttribute] = "Inksync Pro"
+            if let existing = document.documentAttributes {
+                if let title = existing[PDFDocumentAttribute.titleAttribute] {
+                    cleanAttrs[PDFDocumentAttribute.titleAttribute] = title
+                }
+                if let author = existing[PDFDocumentAttribute.authorAttribute] {
+                    cleanAttrs[PDFDocumentAttribute.authorAttribute] = author
+                }
+            }
+            exportedDoc.documentAttributes = cleanAttrs
+        }
+        
+        let trimmedPwd = config.userPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isProtected = config.isPasswordProtected && !trimmedPwd.isEmpty
+        
+        let writeSuccess: Bool
+        if isProtected {
+            let trimmedOwner = config.ownerPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+            let ownerPwd = trimmedOwner.isEmpty ? trimmedPwd : trimmedOwner
+            let writeOptions: [PDFDocumentWriteOption: Any] = [
+                .userPasswordOption: trimmedPwd,
+                .ownerPasswordOption: ownerPwd
+            ]
+            writeSuccess = exportedDoc.write(to: destinationURL, withOptions: writeOptions)
+        } else {
+            writeSuccess = exportedDoc.write(to: destinationURL)
+        }
+        
+        guard writeSuccess else {
             throw PDFSyncError.fileWriteFailed
         }
         
-        Logger.shared.log("PDFAnnotationSync: Successfully wrote annotated PDF to \(destinationURL.path)", category: "PDF", type: .success)
+        // Enforce hardware-level sandbox encryption
+        try? (FileManager.default as NSFileManager).setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: destinationURL.path
+        )
+        
+        Logger.shared.log("PDFAnnotationSync: Successfully wrote annotated PDF to \(destinationURL.path) (protected: \(isProtected))", category: "PDF", type: .success)
         return destinationURL
     }
 
@@ -613,15 +642,45 @@ final class PDFAnnotationSyncBridge {
     func generateFlattenedPDF(
         from document: PDFDocument,
         for pdfID: UUID,
-        saveTo destinationURL: URL
+        saveTo destinationURL: URL,
+        config: PDFExportConfiguration = PDFExportConfiguration(format: .flattened)
     ) throws -> URL {
         guard let data = document.dataRepresentation(),
               let annotatedDoc = PDFDocument(data: data) else {
             throw PDFSyncError.documentSerializationFailed
         }
-        self.exportAnnotations(for: pdfID, to: annotatedDoc)
+        self.exportAnnotations(for: pdfID, to: annotatedDoc, config: config)
         
-        let renderer = UIGraphicsPDFRenderer(bounds: .zero)
+        let format = UIGraphicsPDFRendererFormat()
+        var docInfo: [String: Any] = [:]
+        
+        if config.stripInternalMetadata {
+            docInfo[kCGPDFContextCreator as String] = "Inksync Pro"
+            if let existingAttrs = document.documentAttributes {
+                if let title = existingAttrs[PDFDocumentAttribute.titleAttribute] as? String {
+                    docInfo[kCGPDFContextTitle as String] = title
+                }
+                if let author = existingAttrs[PDFDocumentAttribute.authorAttribute] as? String {
+                    docInfo[kCGPDFContextAuthor as String] = author
+                }
+            }
+        }
+        
+        let trimmedPwd = config.userPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isProtected = config.isPasswordProtected && !trimmedPwd.isEmpty
+        
+        if isProtected {
+            docInfo[kCGPDFContextUserPassword as String] = trimmedPwd
+            let trimmedOwner = config.ownerPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+            let ownerPwd = trimmedOwner.isEmpty ? trimmedPwd : trimmedOwner
+            docInfo[kCGPDFContextOwnerPassword as String] = ownerPwd
+            docInfo[kCGPDFContextAllowsPrinting as String] = config.allowPrinting ? kCFBooleanTrue : kCFBooleanFalse
+            docInfo[kCGPDFContextAllowsCopying as String] = config.allowCopying ? kCFBooleanTrue : kCFBooleanFalse
+            docInfo[kCGPDFContextEncryptionKeyLength as String] = 256
+        }
+        
+        format.documentInfo = docInfo
+        let renderer = UIGraphicsPDFRenderer(bounds: .zero, format: format)
         let flattenedData = renderer.pdfData { context in
             for i in 0..<annotatedDoc.pageCount {
                 guard let page = annotatedDoc.page(at: i) else { continue }
@@ -641,8 +700,32 @@ final class PDFAnnotationSyncBridge {
             }
         }
         
-        try flattenedData.write(to: destinationURL, options: .atomic)
-        Logger.shared.log("PDFAnnotationSync: Successfully wrote flattened PDF to \(destinationURL.path)", category: "PDF", type: .success)
+        // If password protected, also pass through PDFKit to ensure 100% compatibility across all PDF viewers
+        if isProtected {
+            if let securedDoc = PDFDocument(data: flattenedData) {
+                let trimmedOwner = config.ownerPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+                let ownerPwd = trimmedOwner.isEmpty ? trimmedPwd : trimmedOwner
+                let writeOptions: [PDFDocumentWriteOption: Any] = [
+                    .userPasswordOption: trimmedPwd,
+                    .ownerPasswordOption: ownerPwd
+                ]
+                guard securedDoc.write(to: destinationURL, withOptions: writeOptions) else {
+                    throw PDFSyncError.fileWriteFailed
+                }
+            } else {
+                try flattenedData.write(to: destinationURL, options: .atomic)
+            }
+        } else {
+            try flattenedData.write(to: destinationURL, options: .atomic)
+        }
+        
+        // Enforce hardware-level sandbox encryption
+        try? (FileManager.default as NSFileManager).setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: destinationURL.path
+        )
+        
+        Logger.shared.log("PDFAnnotationSync: Successfully wrote flattened PDF to \(destinationURL.path) (protected: \(isProtected))", category: "PDF", type: .success)
         return destinationURL
     }
 }

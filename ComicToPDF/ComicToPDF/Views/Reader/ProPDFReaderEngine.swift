@@ -29,6 +29,7 @@ struct ProPDFReaderEngine: View {
     @State private var isReflowMode = false
     @State private var showingFilterHUD = false
     @State private var shareAnnotatedPDFURL: URL? = nil
+    @State private var showingSecureExportSheet: Bool = false
 
     // Text Selection & Markup HUD
     @State private var selectedTextForHUD: String? = nil
@@ -634,6 +635,18 @@ struct ProPDFReaderEngine: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
+            .sheet(isPresented: $showingSecureExportSheet) {
+                if let doc = pdfDocument {
+                    InksyncSecureExportSheet(
+                        pdf: pdf,
+                        document: doc,
+                        currentPageIndex: currentPageIndex,
+                        onDismiss: {
+                            showingSecureExportSheet = false
+                        }
+                    )
+                }
+            }
             .sheet(isPresented: $showingSettings) {
                 EBookSettingsPanel(bookID: pdf.id.uuidString, isPDF: true)
                     .presentationDetents([.medium, .large])
@@ -998,6 +1011,9 @@ struct ProPDFReaderEngine: View {
                         },
                         onClearPage: {
                             clearCurrentPageMarkup()
+                        },
+                        onExport: {
+                            showingSecureExportSheet = true
                         },
                         onClose: {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
@@ -1718,6 +1734,9 @@ struct ProPDFReaderEngine: View {
                 if isPencilMode {
                     showToastMessage("Pencil Markup Active")
                 }
+            },
+            onExportPDF: {
+                showingSecureExportSheet = true
             },
             isEnhanced: activeFilterPreset != .original,
             onEnhanceToggle: {
@@ -3863,6 +3882,21 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                 uiView.go(to: activePage)
             }
         }
+
+        // Tracing Lightbox: Creative document background opacity (0.15 - 1.0)
+        let targetDocOpacity = CGFloat(inkingState.documentBackgroundOpacity)
+        if let docView = uiView.documentView, abs(docView.alpha - targetDocOpacity) > 0.01 {
+            UIView.animate(withDuration: 0.25) {
+                docView.alpha = targetDocOpacity
+            }
+        }
+
+        // Text Highlights Annotation Layer Visibility
+        if let curPage = uiView.currentPage {
+            if curPage.displaysAnnotations != inkingState.isTextHighlightLayerVisible {
+                curPage.displaysAnnotations = inkingState.isTextHighlightLayerVisible
+            }
+        }
         let targetDisplaysAsBook = !prefs.linkCoverAsSpread
         if uiView.displaysAsBook != targetDisplaysAsBook {
             uiView.displaysAsBook = targetDisplaysAsBook
@@ -4437,13 +4471,32 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
             let isDrawingActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || autoPencilActive
 
-            // When in markup/drawing mode or auto-pencil is active, NEVER allow tap gesture to receive Apple Pencil touches
-            // or finger inking touches (on iPhone or when finger drawing is allowed)
-            // so stippling, dotting 'i', punctuation, and quick taps draw with 100% fidelity without turning pages.
+            // When in markup/drawing mode or auto-pencil is active:
+            // 1. Apple Pencil touches strictly draw with 100% fidelity (never trigger tap gestures).
+            // 2. Direct finger touches in outer gutters (left/right margins) ALWAYS trigger page turn taps!
+            // 3. Direct finger touches in the center drawing area ink when finger drawing is permitted,
+            //    or pass through to zoom/pan when in pencil-only mode.
             if isDrawingActive && gestureRecognizer == tapGesture {
+                if touch.type == .pencil {
+                    return false
+                }
+
+                if let view = gestureRecognizer.view {
+                    let loc = touch.location(in: view)
+                    let width = view.bounds.width
+                    let zones = prefs.tapZoneStyle.zones
+                    let leftGutter = width * max(0.12, zones.leftEdge)
+                    let rightGutter = width * min(0.88, zones.rightEdge)
+                    let isInGutter = loc.x < leftGutter || loc.x > rightGutter
+                    if isInGutter {
+                        // Allow tapGesture to fire the margin page turn smoothly!
+                        return true
+                    }
+                }
+
                 let pencilOnlyDrawingSetting = AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
                 let allowFinger = !isPad || !pencilOnlyDrawingSetting || currentToolMode == .eraser
-                if touch.type == .pencil || (allowFinger && parent.isPencilMode) {
+                if allowFinger && parent.isPencilMode {
                     return false
                 }
             }

@@ -15,11 +15,13 @@ public struct InksyncPenDockView: View {
     var onUndo: (() -> Void)? = nil
     var onRedo: (() -> Void)? = nil
     var onClearPage: (() -> Void)? = nil
+    var onExport: (() -> Void)? = nil
     var onClose: (() -> Void)? = nil
 
     @State private var isExpanded: Bool = false
     @State private var showColorPalette: Bool = false
     @State private var showWidthSlider: Bool = false
+    @State private var showLayersHUD: Bool = false
     @State private var showClearConfirmation: Bool = false
     @State private var isMinimized: Bool = false
     @GestureState private var dragOffset: CGSize = .zero
@@ -29,11 +31,13 @@ public struct InksyncPenDockView: View {
         onUndo: (() -> Void)? = nil,
         onRedo: (() -> Void)? = nil,
         onClearPage: (() -> Void)? = nil,
+        onExport: (() -> Void)? = nil,
         onClose: (() -> Void)? = nil
     ) {
         self.onUndo = onUndo
         self.onRedo = onRedo
         self.onClearPage = onClearPage
+        self.onExport = onExport
         self.onClose = onClose
     }
 
@@ -50,6 +54,14 @@ public struct InksyncPenDockView: View {
 
                 if showWidthSlider {
                     widthSliderBar
+                        .transition(.asymmetric(
+                            insertion: .scale(scale: 0.9).combined(with: .opacity),
+                            removal: .scale(scale: 0.9).combined(with: .opacity)
+                        ))
+                }
+
+                if showLayersHUD {
+                    layersHUDCard
                         .transition(.asymmetric(
                             insertion: .scale(scale: 0.9).combined(with: .opacity),
                             removal: .scale(scale: 0.9).combined(with: .opacity)
@@ -183,6 +195,29 @@ public struct InksyncPenDockView: View {
             }
             .buttonStyle(.plain)
             .help("Digital Coloring Studio (Preserve Lineart)")
+
+            // Creative Art & Tracing Lightbox Layers Button
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                    showLayersHUD.toggle()
+                    if showLayersHUD {
+                        showColorPalette = false
+                        showWidthSlider = false
+                    }
+                }
+                HapticEngine.selection()
+            } label: {
+                Image(systemName: "square.3.layers.3d.down.right")
+                    .font(.system(size: 13, weight: showLayersHUD ? .bold : .medium))
+                    .foregroundStyle(showLayersHUD ? Color.white : Color.secondary)
+                    .padding(isCompact ? 4 : 6)
+                    .background(
+                        showLayersHUD ? Color.inkViolet : Color.clear,
+                        in: Circle()
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("Creative Layers & Tracing Lightbox")
 
             Divider()
                 .frame(height: 24)
@@ -500,6 +535,226 @@ public struct InksyncPenDockView: View {
                 .fill(.ultraThinMaterial)
                 .shadow(color: Color.black.opacity(0.15), radius: 10, y: 4)
                 .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        )
+    }
+
+    // MARK: - Creative Art & Layers Management Card
+
+    private var layersHUDCard: some View {
+        VStack(spacing: 10) {
+            // Header
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.3.layers.3d.down.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.inkViolet)
+                    Text("Document Layers")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.primary)
+                }
+
+                Spacer()
+
+                Button {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                        showLayersHUD = false
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .padding(5)
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            Divider()
+                .background(Color.primary.opacity(0.08))
+
+            // Layer 1: Document Base & Tracing Lightbox
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Image(systemName: "doc.text.image")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text("Tracing Lightbox")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    Spacer()
+                    Text("\(Int(inkingState.documentBackgroundOpacity * 100))%")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.inkBlue)
+                }
+
+                HStack(spacing: 8) {
+                    Text("Faint")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Slider(
+                        value: Binding(
+                            get: { inkingState.documentBackgroundOpacity },
+                            set: { inkingState.documentBackgroundOpacity = $0 }
+                        ),
+                        in: 0.15...1.0,
+                        step: 0.05
+                    )
+                    .tint(Color.inkBlue)
+                    Text("Solid")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(8)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+
+            // Layer 2: Handwritten Ink Layer
+            HStack {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(inkingState.activePreset.color.color)
+                        .frame(width: 9, height: 9)
+                    Text("Handwritten Ink")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                }
+
+                Spacer()
+
+                // Visibility Toggle
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        inkingState.isInkLayerVisible.toggle()
+                    }
+                    HapticEngine.selection()
+                } label: {
+                    Image(systemName: inkingState.isInkLayerVisible ? "eye.fill" : "eye.slash.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(inkingState.isInkLayerVisible ? Color.primary : Color.secondary.opacity(0.6))
+                        .frame(width: 28, height: 28)
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Toggle Ink Visibility")
+
+                // Clear Page Ink Button
+                Button {
+                    showClearConfirmation = true
+                    HapticEngine.light()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.inkRed)
+                        .frame(width: 28, height: 28)
+                        .background(Color.inkRed.opacity(0.12), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Clear Page Ink")
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+
+            // Layer 3: Lineart Overlay (if Coloring Studio is active)
+            if inkingState.isColoringModeActive {
+                HStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles.rectangle.stack")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.inkOrange)
+                        Text("Contour Lineart")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    }
+
+                    Spacer()
+
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            inkingState.isLineartLayerVisible.toggle()
+                        }
+                        HapticEngine.selection()
+                    } label: {
+                        Image(systemName: inkingState.isLineartLayerVisible ? "eye.fill" : "eye.slash.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(inkingState.isLineartLayerVisible ? Color.primary : Color.secondary.opacity(0.6))
+                            .frame(width: 28, height: 28)
+                            .background(Color.primary.opacity(0.06), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Toggle Lineart Overlay")
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+            }
+
+            // Layer 4: Text Highlights Layer
+            HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "highlighter")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.inkAmber)
+                    Text("Text Highlights")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                }
+
+                Spacer()
+
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        inkingState.isTextHighlightLayerVisible.toggle()
+                    }
+                    HapticEngine.selection()
+                } label: {
+                    Image(systemName: inkingState.isTextHighlightLayerVisible ? "eye.fill" : "eye.slash.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(inkingState.isTextHighlightLayerVisible ? Color.primary : Color.secondary.opacity(0.6))
+                        .frame(width: 28, height: 28)
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Toggle Text Highlights")
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+
+            Divider()
+                .background(Color.primary.opacity(0.08))
+
+            // Export & Secure Share Action
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                    showLayersHUD = false
+                }
+                onExport?()
+                HapticEngine.medium()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.and.arrow.up.shield")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.inkGreen)
+                    Text("Export & Secure Share\u{2026}")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.inkGreen.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.inkGreen.opacity(0.25), lineWidth: 0.8))
+            }
+            .buttonStyle(.plain)
+            .help("Export marked-up PDF with tamper-proof flattening or editable annotations")
+        }
+        .padding(12)
+        .frame(maxWidth: isCompact ? 300 : 340)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial)
+                .shadow(color: Color.black.opacity(0.18), radius: 12, y: 4)
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         )
     }
 

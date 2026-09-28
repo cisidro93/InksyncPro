@@ -22,6 +22,7 @@ struct ProDocumentInspectorView: View {
     @State private var showShareSheet: Bool = false
     @State private var exportPDFURL: URL? = nil
     @State private var showPDFShareSheet: Bool = false
+    @State private var showSecureExportSheet: Bool = false
 
     enum InspectorTab: String, CaseIterable, Identifiable {
         case outline = "Outline"
@@ -117,13 +118,14 @@ struct ProDocumentInspectorView: View {
                                 Label("Copy Readwise CSV", systemImage: "tablecells")
                             }
 
-                            if let doc = pdfDocument {
+                            if let _ = pdfDocument {
                                 Divider()
 
                                 Button {
-                                    exportFlattenedPDF(doc: doc)
+                                    showSecureExportSheet = true
+                                    HapticEngine.selection()
                                 } label: {
-                                    Label("Export Flattened PDF", systemImage: "doc.badge.gearshape")
+                                    Label("Export Marked-Up PDF\u{2026}", systemImage: "square.and.arrow.up.shield")
                                 }
                             }
                         } label: {
@@ -142,6 +144,18 @@ struct ProDocumentInspectorView: View {
             .sheet(isPresented: $showPDFShareSheet) {
                 if let url = exportPDFURL {
                     ShareSheet(activityItems: [url])
+                }
+            }
+            .sheet(isPresented: $showSecureExportSheet) {
+                if let doc = pdfDocument {
+                    InksyncSecureExportSheet(
+                        pdf: pdf,
+                        document: doc,
+                        currentPageIndex: currentPageIndex,
+                        onDismiss: {
+                            showSecureExportSheet = false
+                        }
+                    )
                 }
             }
             .background(Color.inkBackground)

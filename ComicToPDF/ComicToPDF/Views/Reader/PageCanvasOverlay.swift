@@ -109,8 +109,16 @@ final class PassthroughPKCanvasView: PKCanvasView {
         }
     }
     
+    var isInkLayerVisible: Bool = true {
+        didSet {
+            alpha = isInkLayerVisible ? 1.0 : 0.0
+            isUserInteractionEnabled = isInkLayerVisible && isMarkupActive
+        }
+    }
+
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard isMarkupActive else { return nil }
+        guard isInkLayerVisible else { return nil }
         guard bounds.contains(point) else { return nil }
 
         // Top navigation corridor: Never capture touches in the top safe area / header zone (top 54pt of window).
@@ -133,27 +141,21 @@ final class PassthroughPKCanvasView: PKCanvasView {
         }
 
         let hasPencilTouch = event?.allTouches?.contains(where: { $0.type == .pencil }) ?? false
-        let isActivelyDrawing = (currentMode == .write || currentMode == .eraser)
 
-        // ── Page Turn & Navigation Corridors (Zero-Stray-Ink Defense) ──
-        // If the user touches with a finger (not an Apple Pencil) and is NOT actively drawing:
-        if !hasPencilTouch && !isActivelyDrawing {
-            // 1. Smart Tiers Mode: When reading in Smart Tiers / Guided Column mode,
-            // finger taps are strictly reserved for advancing/rewinding tiers, never drawing ink!
+        // ── Smart Navigation & Page-Turn Gutters (Zero-Stray-Ink Defense) ──
+        // If the touch is from a finger (not Apple Pencil):
+        if !hasPencilTouch {
+            // 1. Smart Tiers Mode: finger taps are strictly reserved for advancing tiers
             if EBookPreferences.shared.isPDFSmartTiersActive {
                 return nil
             }
 
-            // 2. Left and Right Page-Turn Gutters:
-            // Tapping within the outer 16% margins is a universal reader gesture for turning pages.
-            // Finger touches here must pass straight down to PDFView / ReaderChrome and never mark the page!
-            if let window = self.window {
-                let windowPoint = self.convert(point, to: window)
-                let windowWidth = window.bounds.width
-                if windowPoint.x < windowWidth * 0.16 || windowPoint.x > windowWidth * 0.84 {
-                    return nil
-                }
-            } else if point.x < bounds.width * 0.16 || point.x > bounds.width * 0.84 {
+            // 2. Left and Right Page-Turn Gutters (outer 14% of window or bounds):
+            // Finger touches in margins are reserved for turning pages without leaving stray ink dots.
+            // Returning nil passes the touch through to PDFView / ReaderView gesture recognizers.
+            let windowWidth = self.window?.bounds.width ?? bounds.width
+            let pointXInWindow = self.window != nil ? self.convert(point, to: self.window).x : point.x
+            if pointXInWindow < windowWidth * 0.14 || pointXInWindow > windowWidth * 0.86 {
                 return nil
             }
         }
@@ -365,11 +367,13 @@ struct PKCanvasRepresentation: UIViewRepresentable {
     func updateUIView(_ uiView: PassthroughPKCanvasView, context: Context) {
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         let prefs = EBookPreferences.shared
+        let inkingState = InksyncInkingState.shared
         let pencilOnly = isPad && (pencilOnlyDrawing || prefs.applePencilAutoDraw)
         uiView.isMarkupActive = isMarkupEnabled
+        uiView.isInkLayerVisible = inkingState.isInkLayerVisible
         uiView.allowFingerDrawing = isMarkupEnabled && !pencilOnly
         uiView.drawingPolicy = pencilOnly ? .pencilOnly : .anyInput
-        uiView.isUserInteractionEnabled = isMarkupEnabled
+        uiView.isUserInteractionEnabled = isMarkupEnabled && inkingState.isInkLayerVisible
         uiView.drawingGestureRecognizer.cancelsTouchesInView = false
         uiView.isScrollEnabled = !pencilOnly
         uiView.bounces = false
