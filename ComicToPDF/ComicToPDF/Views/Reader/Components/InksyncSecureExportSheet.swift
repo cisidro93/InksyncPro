@@ -7,7 +7,7 @@ import PDFKit
 /// Provides dual export personas ("Flattened Tamper-Proof" vs "Editable ISO 32000 Annotations"),
 /// air-gapped on-device processing, AES-256 password encryption, metadata sanitization,
 /// and proactive defense against visual fake-redaction vulnerabilities.
-public struct InksyncSecureExportSheet: View {
+struct InksyncSecureExportSheet: View {
 
     let pdfID: UUID
     let pdfName: String
@@ -26,7 +26,7 @@ public struct InksyncSecureExportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
 
-    public init(
+    init(
         pdf: ConvertedPDF,
         document: PDFDocument,
         currentPageIndex: Int,
@@ -39,7 +39,7 @@ public struct InksyncSecureExportSheet: View {
         self.onDismiss = onDismiss
     }
 
-    public init(
+    init(
         pdfID: UUID,
         pdfName: String,
         document: PDFDocument,
