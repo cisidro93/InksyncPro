@@ -28,7 +28,6 @@ struct ProPDFReaderEngine: View {
     @State private var isExpandedView = false
     @State private var isReflowMode = false
     @State private var showingFilterHUD = false
-    @State private var shareAnnotatedPDFURL: URL? = nil
     @State private var showingSecureExportSheet: Bool = false
 
     // Text Selection & Markup HUD

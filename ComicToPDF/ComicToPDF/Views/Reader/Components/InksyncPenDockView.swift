@@ -18,7 +18,6 @@ public struct InksyncPenDockView: View {
     var onExport: (() -> Void)? = nil
     var onClose: (() -> Void)? = nil
 
-    @State private var isExpanded: Bool = false
     @State private var showColorPalette: Bool = false
     @State private var showWidthSlider: Bool = false
     @State private var showLayersHUD: Bool = false
@@ -717,36 +716,38 @@ public struct InksyncPenDockView: View {
             .padding(.vertical, 6)
             .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
 
-            Divider()
-                .background(Color.primary.opacity(0.08))
+            if let onExport = onExport {
+                Divider()
+                    .background(Color.primary.opacity(0.08))
 
-            // Export & Secure Share Action
-            Button {
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
-                    showLayersHUD = false
+                // Export & Secure Share Action
+                Button {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                        showLayersHUD = false
+                    }
+                    onExport()
+                    HapticEngine.medium()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.and.arrow.up.shield")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color.inkGreen)
+                        Text("Export & Secure Share\u{2026}")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Color.inkGreen.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.inkGreen.opacity(0.25), lineWidth: 0.8))
                 }
-                onExport?()
-                HapticEngine.medium()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "square.and.arrow.up.shield")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Color.inkGreen)
-                    Text("Export & Secure Share\u{2026}")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.primary)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(Color.inkGreen.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.inkGreen.opacity(0.25), lineWidth: 0.8))
+                .buttonStyle(.plain)
+                .help("Export marked-up PDF with tamper-proof flattening or editable annotations")
             }
-            .buttonStyle(.plain)
-            .help("Export marked-up PDF with tamper-proof flattening or editable annotations")
         }
         .padding(12)
         .frame(maxWidth: isCompact ? 300 : 340)

@@ -250,9 +250,6 @@ public final class InksyncInkingState: ObservableObject {
         }
     }
 
-    /// Controls visibility of the floating glassmorphic Layers Management HUD
-    @Published public var showLayersHUD: Bool = false
-
     public enum InksyncDockEdge: String, Codable, Sendable {
         case top, bottom, leading, trailing
     }

@@ -20,8 +20,6 @@ struct ProDocumentInspectorView: View {
     @State private var showingDeleteConfirmation = false
     @State private var shareExportItem: String? = nil
     @State private var showShareSheet: Bool = false
-    @State private var exportPDFURL: URL? = nil
-    @State private var showPDFShareSheet: Bool = false
     @State private var showSecureExportSheet: Bool = false
 
     enum InspectorTab: String, CaseIterable, Identifiable {
@@ -139,11 +137,6 @@ struct ProDocumentInspectorView: View {
             .sheet(isPresented: $showShareSheet) {
                 if let text = shareExportItem {
                     ShareSheet(activityItems: [text])
-                }
-            }
-            .sheet(isPresented: $showPDFShareSheet) {
-                if let url = exportPDFURL {
-                    ShareSheet(activityItems: [url])
                 }
             }
             .sheet(isPresented: $showSecureExportSheet) {
@@ -483,20 +476,6 @@ struct ProDocumentInspectorView: View {
         let csv = HighlightExportService.shared.exportToReadwiseCSV(bookTitle: pdf.name, author: nil, storeAnnotations: annotations)
         UIPasteboard.general.string = csv
         HapticEngine.success()
-    }
-    
-    private func exportFlattenedPDF(doc: PDFDocument) {
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("\(pdf.name) (Flattened).pdf")
-        do {
-            _ = try PDFAnnotationSyncBridge.shared.generateFlattenedPDF(from: doc, for: pdf.id, saveTo: tempURL)
-            exportPDFURL = tempURL
-            showPDFShareSheet = true
-            HapticEngine.success()
-        } catch {
-            Logger.shared.log("Failed to generate flattened PDF: \(error.localizedDescription)", category: "PDF", type: .error)
-            HapticEngine.error()
-        }
     }
 }
 
