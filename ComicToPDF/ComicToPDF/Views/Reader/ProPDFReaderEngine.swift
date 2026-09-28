@@ -1655,7 +1655,8 @@ struct ProPDFReaderEngine: View {
                     currentIndex: $currentPageIndex,
                     totalPages: max(1, totalPages),
                     document: pdfDocument,
-                    isMangaMode: isMangaMode
+                    isMangaMode: isMangaMode,
+                    pdfID: pdf.id
                 )
             ),
             getPageThumbnail: { index in
@@ -3415,6 +3416,7 @@ struct VisualPDFScrubber: View {
     let totalPages: Int
     let document: PDFDocument?
     var isMangaMode: Bool = false
+    var pdfID: UUID? = nil
 
     @State private var dragIndex: Int? = nil
     @State private var thumbXOffset: CGFloat = 0
@@ -3508,7 +3510,7 @@ struct VisualPDFScrubber: View {
                     .frame(width: 72, height: 104)
 
                 if let doc = document, let page = doc.page(at: index) {
-                    let thumb = PDFThumbnailCache.shared.getThumbnail(for: page, pdfID: pdf.id, pageIndex: index, size: CGSize(width: 140, height: 200))
+                    let thumb = PDFThumbnailCache.shared.getThumbnail(for: page, pdfID: pdfID, pageIndex: index, size: CGSize(width: 140, height: 200))
                     Image(uiImage: thumb)
                         .resizable()
                         .aspectRatio(contentMode: .fit)

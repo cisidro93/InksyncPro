@@ -7,7 +7,7 @@ import Accelerate
 /// falling back to high-performance vImage pixel analysis if Vision doesn't find clear boundaries.
 struct SmartCropper {
     
-    private static let cropRectCache: NSCache<NSString, NSValue> = {
+    nonisolated(unsafe) private static let cropRectCache: NSCache<NSString, NSValue> = {
         let cache = NSCache<NSString, NSValue>()
         cache.countLimit = 200
         return cache
