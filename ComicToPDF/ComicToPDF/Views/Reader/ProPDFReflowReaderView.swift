@@ -88,7 +88,7 @@ struct ProPDFReflowReaderView: View {
                     }
                     .onChange(of: webViewRef) { _, newWebView in
                         if newWebView != nil && !hasAnchoredInitialPage {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                                 scrollToTargetPDFPage(pageIndex: targetPDFPageIndex)
                             }
                         }
@@ -96,8 +96,10 @@ struct ProPDFReflowReaderView: View {
                     .onAppear {
                         targetPDFPageIndex = currentPageIndex
                         lastSyncedPDFPageIndex = currentPageIndex
-                        if webViewRef != nil && !hasAnchoredInitialPage {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                        hasAnchoredInitialPage = false
+                        isAnchoringInProgress = false
+                        if webViewRef != nil {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                                 scrollToTargetPDFPage(pageIndex: targetPDFPageIndex)
                             }
                         }
@@ -155,8 +157,8 @@ struct ProPDFReflowReaderView: View {
 
     private func scrollToTargetPDFPage(pageIndex: Int, attempt: Int = 1, isOrientationChange: Bool = false) {
         guard let webView = webViewRef else {
-            if attempt < 8 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
+            if attempt < 15 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                     self.scrollToTargetPDFPage(pageIndex: pageIndex, attempt: attempt + 1, isOrientationChange: isOrientationChange)
                 }
             }
@@ -169,47 +171,57 @@ struct ProPDFReflowReaderView: View {
         let js = """
         (function() {
             var targetNum = \(targetPageNumber);
+            var vp = document.getElementById('inksync-viewport') || document.body;
+            var pageStep = (typeof getPageStep === 'function') ? getPageStep() : (window.innerWidth || 390);
+            var isMulti = (typeof _isMultiCol !== 'undefined') ? _isMultiCol : false;
+            var colStride = isMulti ? (pageStep / 2) : pageStep;
+            if (pageStep <= 0 || colStride <= 0) return -2;
+
             if (typeof computeMetrics === 'function' && (typeof _totalPages === 'undefined' || _totalPages <= 1)) {
                 computeMetrics();
             }
-            if (typeof _totalPages === 'undefined' || _totalPages <= 0) {
-                return -2; // Metrics not ready yet, retry
-            }
 
-            var el = document.getElementById('page-' + targetNum);
+            var el = document.getElementById('page-anchor-' + targetNum) ||
+                     document.getElementById('page-' + targetNum) ||
+                     document.querySelector('[data-pdf-page="' + targetNum + '"]') ||
+                     document.querySelector('[data-page="' + targetNum + '"]');
+
             if (!el) {
-                el = document.querySelector('[data-page="' + targetNum + '"]') ||
-                     document.querySelector('[data-pdf-page="' + targetNum + '"]');
-            }
-            if (!el) {
-                var markers = document.querySelectorAll('.pdf-page-marker');
+                // If DOM is still parsing or early attempts remain, retry without falling back
+                if (document.readyState !== 'complete' || \(attempt) < 8) {
+                    return -2;
+                }
+                var markers = document.querySelectorAll('.pdf-page-marker, .page-marker-anchor');
                 for (var i = markers.length - 1; i >= 0; i--) {
-                    var p = parseInt(markers[i].getAttribute('data-page') || '0', 10);
-                    if (p <= targetNum) {
+                    var p = parseInt(markers[i].getAttribute('data-pdf-page') || markers[i].getAttribute('data-page') || '0', 10);
+                    if (p > 0 && p <= targetNum) {
                         el = markers[i];
                         break;
                     }
                 }
-                if (!el && markers.length > 0) {
-                    el = markers[0];
-                }
+                if (!el && markers.length > 0) el = markers[0];
             }
             if (!el) return -1;
 
-            var rect = el.getBoundingClientRect();
-            var vp = document.getElementById('inksync-viewport') || document.body;
+            var targetNode = (el.querySelector && el.querySelector('.page-marker-anchor')) ? el.querySelector('.page-marker-anchor') : (el.firstElementChild || el);
+            var rect = targetNode.getBoundingClientRect();
             var currentShift = (typeof _currentShift !== 'undefined') ? _currentShift : 0;
             var absLeft = vp ? (rect.left - vp.getBoundingClientRect().left) : (rect.left + currentShift);
-            var pageStep = (typeof getPageStep === 'function') ? getPageStep() : (window.innerWidth || 390);
-            var isMulti = (typeof _isMultiCol !== 'undefined') ? _isMultiCol : false;
-            var colStride = isMulti ? (pageStep / 2) : pageStep;
 
-            if (colStride > 0 && typeof goToPage === 'function') {
-                var targetPage = Math.max(0, Math.min(Math.floor(absLeft / colStride), _totalPages - 1));
-                goToPage(targetPage, false);
-                return targetPage;
+            if (absLeft < 0 && \(attempt) < 8) {
+                return -2;
             }
-            return -1;
+
+            var targetCol = Math.max(0, Math.floor(absLeft / colStride));
+
+            if (typeof _totalPages !== 'undefined' && targetCol >= _totalPages) {
+                _totalPages = targetCol + 1;
+            }
+
+            if (typeof goToPage === 'function') {
+                goToPage(targetCol, false);
+            }
+            return targetCol;
         })();
         """
 
@@ -226,8 +238,8 @@ struct ProPDFReflowReaderView: View {
                         self.syncCurrentPDFPageFromReflow()
                     }
                 }
-            } else if (code == -2 || code == -1) && attempt < 8 {
-                let delay = attempt < 3 ? 0.06 : 0.14
+            } else if (code == -2 || code == -1) && attempt < 15 {
+                let delay = attempt < 4 ? 0.06 : (attempt < 8 ? 0.10 : 0.15)
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                     self.scrollToTargetPDFPage(pageIndex: pageIndex, attempt: attempt + 1, isOrientationChange: isOrientationChange)
                 }
@@ -280,8 +292,8 @@ struct ProPDFReflowReaderView: View {
                 }
             }
 
-            // Strategy 2: Scan elements with data-pdf-page for intersection with screen viewport
-            var pageElements = document.querySelectorAll('[data-pdf-page]');
+            // Strategy 2: Scan leaf elements with data-pdf-page for intersection with screen viewport
+            var pageElements = document.querySelectorAll('p[data-pdf-page], h1[data-pdf-page], h2[data-pdf-page], h3[data-pdf-page], h4[data-pdf-page], li[data-pdf-page], figure[data-pdf-page], .page-marker-anchor[data-pdf-page]');
             for (var i = 0; i < pageElements.length; i++) {
                 var el = pageElements[i];
                 var r = el.getBoundingClientRect();
@@ -366,7 +378,7 @@ struct ProPDFReflowReaderView: View {
             label: pdf.name
         )
         let unzipDir = htmlURL.deletingLastPathComponent()
-        let targetAnchor = "page-\(targetPDFPageIndex + 1)"
+        let targetAnchor = "page-anchor-\(targetPDFPageIndex + 1)"
 
         EBookPageCurlReader(
             spineItem: spineItem,
@@ -374,7 +386,7 @@ struct ProPDFReflowReaderView: View {
             prefs: prefs,
             colorScheme: colorScheme,
             currentPage: $chapterPage,
-            initialPage: 0,
+            initialPage: targetPDFPageIndex,
             totalPages: $chapterTotalPages,
             onNext: { debouncedSyncCurrentPDFPage() },
             onPrev: { debouncedSyncCurrentPDFPage() },

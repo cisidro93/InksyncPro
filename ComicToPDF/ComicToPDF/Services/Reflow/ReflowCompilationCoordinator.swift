@@ -20,7 +20,7 @@ public final class ReflowCompilationCoordinator {
         guard let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
             return nil
         }
-        let cacheFileName = "reflow_v5_\(isClutterFiltered ? "clean" : "raw").html"
+        let cacheFileName = "reflow_v6_\(isClutterFiltered ? "clean" : "raw").html"
         return cacheDir.appendingPathComponent("ReflowPDF/\(pdfUUID)/\(cacheFileName)")
     }
 

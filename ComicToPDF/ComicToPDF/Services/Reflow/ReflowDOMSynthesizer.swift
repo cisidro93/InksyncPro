@@ -34,7 +34,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
             return nil
         }
 
-        let cacheFileName = "reflow_v5_\(isClutterFiltered ? "clean" : "raw").html"
+        let cacheFileName = "reflow_v6_\(isClutterFiltered ? "clean" : "raw").html"
         let htmlFileURL = targetDir.appendingPathComponent(cacheFileName)
 
         var bodyHTML = ""
@@ -55,9 +55,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                 if pageBlocks.isEmpty && pageImages.isEmpty { continue }
 
                 bodyHTML += "\n<section class=\"pdf-page-marker\" id=\"page-\(p + 1)\" data-page=\"\(p + 1)\" data-pdf-page=\"\(p + 1)\">\n"
-                if p > 0 {
-                    bodyHTML += "  <div class=\"page-marker-anchor\" aria-hidden=\"true\" data-page-indicator=\"p. \(p + 1)\" data-pdf-page=\"\(p + 1)\"></div>\n"
-                }
+                bodyHTML += "  <div class=\"page-marker-anchor\" id=\"page-anchor-\(p + 1)\" aria-hidden=\"true\" data-page-indicator=\"p. \(p + 1)\" data-pdf-page=\"\(p + 1)\"></div>\n"
 
                 var i = 0
                 while i < pageBlocks.count {
@@ -220,6 +218,8 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                     margin: 28px 0 20px 0;
                     position: relative;
                     border-top: 1px dashed rgba(128, 128, 128, 0.18);
+                    break-inside: avoid !important;
+                    -webkit-column-break-inside: avoid !important;
                 }
                 .page-marker-anchor::after {
                     content: attr(data-page-indicator);

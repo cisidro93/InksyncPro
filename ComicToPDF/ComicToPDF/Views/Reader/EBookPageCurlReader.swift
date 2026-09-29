@@ -2418,16 +2418,29 @@ extension EBookPageCurlReader {
                 var totalSpreads = Math.max(1, Math.ceil((scrollW - 10) / pageStep));
                 _totalPages = _isMultiCol ? (totalSpreads * 2) : totalSpreads;
                 if (_targetAnchor && _targetAnchor.length > 0) {
-                    var anchorEl = document.getElementById(_targetAnchor) || document.getElementsByName(_targetAnchor)[0];
+                    var rawAnchor = _targetAnchor;
+                    var anchorNum = rawAnchor.replace('page-anchor-', '').replace('page-', '');
+                    var anchorEl = document.getElementById('page-anchor-' + anchorNum) ||
+                                   document.getElementById('page-' + anchorNum) ||
+                                   document.getElementById(rawAnchor) ||
+                                   document.getElementsByName(rawAnchor)[0] ||
+                                   document.querySelector('[data-pdf-page="' + anchorNum + '"]');
                     if (anchorEl) {
-                        var aRect = anchorEl.getBoundingClientRect();
+                        var targetNode = (anchorEl.querySelector && anchorEl.querySelector('.page-marker-anchor')) ? anchorEl.querySelector('.page-marker-anchor') : (anchorEl.firstElementChild || anchorEl);
+                        var aRect = targetNode.getBoundingClientRect();
                         var absLeft = vp ? (aRect.left - vp.getBoundingClientRect().left) : (aRect.left + (_currentShift || 0));
                         var colStride = _isMultiCol ? (pageStep / 2) : pageStep;
-                        if (colStride > 0) {
-                            _targetPage = Math.max(0, Math.min(Math.floor(absLeft / colStride), _totalPages - 1));
+                        if (colStride > 0 && absLeft >= 0) {
+                            var computedCol = Math.max(0, Math.floor(absLeft / colStride));
+                            _targetPage = computedCol;
+                            if (_targetPage >= _totalPages) {
+                                _totalPages = _targetPage + 1;
+                            }
                         }
                     }
-                    _targetAnchor = "";
+                    if (anchorEl && document.readyState === 'complete') {
+                        _targetAnchor = "";
+                    }
                 } else if (_targetPage >= 99999) {
                     _targetPage = Math.max(0, _totalPages - 1);
                 }

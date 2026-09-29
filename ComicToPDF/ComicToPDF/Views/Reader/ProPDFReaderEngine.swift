@@ -584,6 +584,12 @@ struct ProPDFReaderEngine: View {
                 }
             }
             .onChange(of: prefs.pdfReflowMode) { _, enabled in
+                if enabled, let pv = pdfViewReference, let curPage = pv.currentPage, let doc = pv.document {
+                    let activeIdx = doc.index(for: curPage)
+                    if activeIdx >= 0 && activeIdx < doc.pageCount {
+                        currentPageIndex = activeIdx
+                    }
+                }
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                     isReflowMode = enabled
                 }
