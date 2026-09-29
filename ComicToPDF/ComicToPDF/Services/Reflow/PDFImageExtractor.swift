@@ -1,5 +1,5 @@
 import Foundation
-import PDFKit
+@preconcurrency import PDFKit
 import UIKit
 
 public struct ExtractedPDFImage: Identifiable, Sendable {
@@ -16,7 +16,8 @@ public struct ExtractedPDFImage: Identifiable, Sendable {
     }
 }
 
-public final class PDFImageExtractor: @unchecked Sendable {
+@MainActor
+public final class PDFImageExtractor {
     public static let shared = PDFImageExtractor()
     private init() {}
 

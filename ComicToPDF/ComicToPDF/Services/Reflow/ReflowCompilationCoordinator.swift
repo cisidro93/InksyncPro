@@ -1,9 +1,10 @@
 import Foundation
-import PDFKit
+@preconcurrency import PDFKit
 
 /// Coordinates asynchronous reflow layout generation, disk caching, single-flight task deduplication,
-/// and low-priority background pre-warming to ensure instant, zero-delay presentation when entering reflow mode.
-public actor ReflowCompilationCoordinator {
+/// and background pre-warming to ensure instant, zero-delay presentation when entering reflow mode.
+@MainActor
+public final class ReflowCompilationCoordinator {
     public static let shared = ReflowCompilationCoordinator()
 
     private var activeCompilations: [String: Task<URL?, Never>] = [:]
@@ -15,7 +16,7 @@ public actor ReflowCompilationCoordinator {
     }
 
     /// Resolves the file URL for the cached reflow HTML file.
-    public nonisolated func cachedReflowURL(pdfUUID: String, isClutterFiltered: Bool) -> URL? {
+    public func cachedReflowURL(pdfUUID: String, isClutterFiltered: Bool) -> URL? {
         guard let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
             return nil
         }
@@ -24,15 +25,15 @@ public actor ReflowCompilationCoordinator {
     }
 
     /// Checks if the synthesized reflow HTML file already exists on disk.
-    public nonisolated func hasCachedReflow(pdfUUID: String, isClutterFiltered: Bool) -> Bool {
+    public func hasCachedReflow(pdfUUID: String, isClutterFiltered: Bool) -> Bool {
         guard let url = cachedReflowURL(pdfUUID: pdfUUID, isClutterFiltered: isClutterFiltered) else {
             return false
         }
         return FileManager.default.fileExists(atPath: url.path)
     }
 
-    /// Pre-warms the reflow layout in a detached background utility task so it is ready before the user requests it.
-    public nonisolated func prewarm(
+    /// Pre-warms the reflow layout in an asynchronous background task so it is ready before the user requests it.
+    public func prewarm(
         document: PDFDocument,
         pdfUUID: String,
         documentTitle: String,
@@ -40,8 +41,8 @@ public actor ReflowCompilationCoordinator {
     ) {
         guard !hasCachedReflow(pdfUUID: pdfUUID, isClutterFiltered: isClutterFiltered) else { return }
 
-        Task.detached(priority: .utility) {
-            _ = await ReflowCompilationCoordinator.shared.compileOrFetchReflow(
+        Task {
+            _ = await self.compileOrFetchReflow(
                 document: document,
                 pdfUUID: pdfUUID,
                 documentTitle: documentTitle,
@@ -70,7 +71,7 @@ public actor ReflowCompilationCoordinator {
             return await ongoing.value
         }
 
-        let task = Task<URL?, Never>.detached(priority: .userInitiated) {
+        let task = Task<URL?, Never> {
             let blocks = await PDFSpatialParser.shared.parseDocument(document, skipClutter: isClutterFiltered)
 
             // Only extract images for pages that lack digital text blocks

@@ -1,5 +1,5 @@
 import Foundation
-import PDFKit
+@preconcurrency import PDFKit
 import UIKit
 import Vision
 
@@ -50,7 +50,8 @@ public struct SpatialTextBlock: Identifiable, Sendable {
     }
 }
 
-public final class PDFSpatialParser: @unchecked Sendable {
+@MainActor
+public final class PDFSpatialParser {
     public static let shared = PDFSpatialParser()
     private init() {}
 

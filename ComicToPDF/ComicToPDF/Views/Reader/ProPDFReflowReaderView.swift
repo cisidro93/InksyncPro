@@ -1,5 +1,5 @@
 import SwiftUI
-import PDFKit
+@preconcurrency import PDFKit
 import WebKit
 
 struct ProPDFReflowReaderView: View {
