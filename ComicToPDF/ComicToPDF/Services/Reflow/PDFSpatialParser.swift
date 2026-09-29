@@ -316,7 +316,7 @@ public final class PDFSpatialParser {
         return blocks
     }
 
-    private static let listMarkerRegex = try? NSRegularExpression(
+    private nonisolated static let listMarkerRegex = try? NSRegularExpression(
         pattern: #"^\s*(?:\(?\d{1,3}[\.\)]|\(?[a-zA-Z][\.\)]|\(?[ivxlcdmIVXLCDM]{1,6}[\.\)])\s+"#,
         options: []
     )

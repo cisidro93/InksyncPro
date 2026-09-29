@@ -308,7 +308,6 @@ struct ProPDFReflowReaderView: View {
             currentPage: $chapterPage,
             initialPage: 0,
             totalPages: $chapterTotalPages,
-            targetAnchor: targetAnchor,
             onNext: { syncCurrentPDFPageFromReflow() },
             onPrev: { syncCurrentPDFPageFromReflow() },
             onCenterTap: { onCenterTap?() },
@@ -316,7 +315,8 @@ struct ProPDFReflowReaderView: View {
             pdfID: pdf.id,
             initialScrollFraction: initialFraction,
             onScrollFractionChanged: { _ in syncCurrentPDFPageFromReflow() },
-            webViewRef: $webViewRef
+            webViewRef: $webViewRef,
+            targetAnchor: targetAnchor
         )
         .opacity(hasAnchoredInitialPage ? 1.0 : 0.0)
         .animation(.easeInOut(duration: 0.18), value: hasAnchoredInitialPage)

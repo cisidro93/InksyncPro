@@ -579,40 +579,9 @@ struct StudyNotebookView: View {
                                         .disabled(currentNotebookPageIndex <= 0)
 
                                         Menu {
-                                            Section("Notebook Pages") {
-                                                ForEach(0..<max(1, notebookPages.count), id: \.self) { pIdx in
-                                                    Button {
-                                                        switchToPage(index: pIdx)
-                                                    } label: {
-                                                        HStack {
-                                                            Text("Page \(pIdx + 1)")
-                                                            if pIdx == currentNotebookPageIndex {
-                                                                Image(systemName: "checkmark")
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            if notebookPages.count > 1 {
-                                                Divider()
-                                                Button(role: .destructive) {
-                                                    deleteCurrentPage()
-                                                } label: {
-                                                    Label("Delete Page \(currentNotebookPageIndex + 1)", systemImage: "trash")
-                                                }
-                                            }
+                                            notebookPageMenuContent
                                         } label: {
-                                            HStack(spacing: 3) {
-                                                Text("p. \(currentNotebookPageIndex + 1)/\(max(1, notebookPages.count))")
-                                                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                                                    .foregroundColor(.primary)
-                                                Image(systemName: "chevron.down")
-                                                    .font(.system(size: 8, weight: .bold))
-                                                    .foregroundColor(.secondary)
-                                            }
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 3)
-                                            .background(Color.primary.opacity(0.06), in: Capsule())
+                                            notebookPageMenuLabel
                                         }
 
                                         Button {
@@ -753,17 +722,7 @@ struct StudyNotebookView: View {
                                     Menu {
                                         notebookPageMenuContent
                                     } label: {
-                                        HStack(spacing: 3) {
-                                            Text("p. \(currentNotebookPageIndex + 1)/\(max(1, notebookPages.count))")
-                                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                                .foregroundColor(.primary)
-                                            Image(systemName: "chevron.down")
-                                                .font(.system(size: 8, weight: .bold))
-                                                .foregroundColor(.secondary)
-                                        }
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 3)
-                                        .background(Color.primary.opacity(0.06), in: Capsule())
+                                        notebookPageMenuLabel
                                     }
 
                                     Button {
@@ -1366,6 +1325,23 @@ struct StudyNotebookView: View {
                 Label("Delete Page \(currentNotebookPageIndex + 1)", systemImage: "trash")
             }
         }
+    }
+
+    @ViewBuilder
+    private var notebookPageMenuLabel: some View {
+        let total = max(1, notebookPages.count)
+        let pageNum = currentNotebookPageIndex + 1
+        HStack(spacing: 3) {
+            Text("p. \(pageNum)/\(total)")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.primary)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.primary.opacity(0.06), in: Capsule())
     }
 
     // MARK: - Core Execution
