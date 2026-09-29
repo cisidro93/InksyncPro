@@ -6,6 +6,16 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
     public static let shared = ReflowDOMSynthesizer()
     private init() {}
 
+    private static let multiSpaceRegex = try? NSRegularExpression(pattern: #"\s{2,}"#, options: [])
+    private static let orderedMarkerRegex = try? NSRegularExpression(
+        pattern: #"^\s*(?:\(?\d{1,3}[\.\)]|\(?[a-zA-Z][\.\)]|\(?[ivxlcdmIVXLCDM]{1,6}[\.\)])\s+"#,
+        options: []
+    )
+    private static let unorderedMarkerRegex = try? NSRegularExpression(
+        pattern: #"^[\s*•▪▫–—\-]+\s*"#,
+        options: []
+    )
+
     /// Synthesizes spatial text blocks and extracted images into a cached HTML5 DOM file.
     public func synthesizeHTML(
         pdfUUID: String,
@@ -28,6 +38,11 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
         let htmlFileURL = targetDir.appendingPathComponent(cacheFileName)
 
         var bodyHTML = ""
+        bodyHTML.reserveCapacity(max(2048, blocks.count * 160))
+
+        let blocksByPage = Dictionary(grouping: blocks, by: \.pageIndex)
+        let imagesByPage = Dictionary(grouping: images, by: \.pageIndex)
+
         let maxPage = max(
             blocks.map { $0.pageIndex }.max() ?? -1,
             images.map { $0.pageIndex }.max() ?? -1
@@ -35,8 +50,8 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
 
         if maxPage >= 0 {
             for p in 0...maxPage {
-                let pageBlocks = blocks.filter { $0.pageIndex == p }
-                var pageImages = images.filter { $0.pageIndex == p }
+                let pageBlocks = blocksByPage[p] ?? []
+                var pageImages = imagesByPage[p] ?? []
                 if pageBlocks.isEmpty && pageImages.isEmpty { continue }
 
                 bodyHTML += "\n<section class=\"pdf-page-marker\" id=\"page-\(p + 1)\" data-page=\"\(p + 1)\" data-pdf-page=\"\(p + 1)\">\n"
@@ -76,12 +91,18 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                             let itemRect = "\(Int(itemBlock.rect.origin.x)),\(Int(itemBlock.rect.origin.y)),\(Int(itemBlock.rect.size.width)),\(Int(itemBlock.rect.size.height))"
                             var itemText = itemBlock.text
                             if isOrdered {
-                                if let stripped = itemText.range(of: #"^\s*(?:\(?\d{1,3}[\.\)]|\(?[a-zA-Z][\.\)]|\(?[ivxlcdmIVXLCDM]{1,6}[\.\)])\s+"#, options: .regularExpression) {
-                                    itemText.removeSubrange(stripped)
+                                if let regex = Self.orderedMarkerRegex {
+                                    let nsText = itemText as NSString
+                                    if let match = regex.firstMatch(in: itemText, options: [], range: NSRange(location: 0, length: min(nsText.length, 16))) {
+                                        itemText = nsText.replacingCharacters(in: match.range, with: "")
+                                    }
                                 }
                             } else {
-                                if let stripped = itemText.range(of: #"^[\s*•▪▫–—\-]+\s*"#, options: .regularExpression) {
-                                    itemText.removeSubrange(stripped)
+                                if let regex = Self.unorderedMarkerRegex {
+                                    let nsText = itemText as NSString
+                                    if let match = regex.firstMatch(in: itemText, options: [], range: NSRange(location: 0, length: min(nsText.length, 12))) {
+                                        itemText = nsText.replacingCharacters(in: match.range, with: "")
+                                    }
                                 }
                             }
                             bodyHTML += "    <li data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(itemRect)\">\(escapeHTML(itemText))</li>\n"
@@ -127,27 +148,24 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                                     cells = row.components(separatedBy: "\t")
                                 } else if row.contains("|") {
                                     cells = row.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                                } else {
-                                    let cellRegex = try? NSRegularExpression(pattern: #"\s{2,}"#, options: [])
-                                    if let regex = cellRegex {
-                                        let nsRow = row as NSString
-                                        let matches = regex.matches(in: row, options: [], range: NSRange(location: 0, length: nsRow.length))
-                                        if !matches.isEmpty {
-                                            var parsedCells: [String] = []
-                                            var lastEnd = 0
-                                            for m in matches {
-                                                let cellRange = NSRange(location: lastEnd, length: m.range.location - lastEnd)
-                                                parsedCells.append(nsRow.substring(with: cellRange).trimmingCharacters(in: .whitespaces))
-                                                lastEnd = m.range.location + m.range.length
-                                            }
-                                            parsedCells.append(nsRow.substring(from: lastEnd).trimmingCharacters(in: .whitespaces))
-                                            cells = parsedCells.filter { !$0.isEmpty }
-                                        } else {
-                                            cells = [row]
+                                } else if let regex = Self.multiSpaceRegex {
+                                    let nsRow = row as NSString
+                                    let matches = regex.matches(in: row, options: [], range: NSRange(location: 0, length: nsRow.length))
+                                    if !matches.isEmpty {
+                                        var parsedCells: [String] = []
+                                        var lastEnd = 0
+                                        for m in matches {
+                                            let cellRange = NSRange(location: lastEnd, length: m.range.location - lastEnd)
+                                            parsedCells.append(nsRow.substring(with: cellRange).trimmingCharacters(in: .whitespaces))
+                                            lastEnd = m.range.location + m.range.length
                                         }
+                                        parsedCells.append(nsRow.substring(from: lastEnd).trimmingCharacters(in: .whitespaces))
+                                        cells = parsedCells.filter { !$0.isEmpty }
                                     } else {
                                         cells = [row]
                                     }
+                                } else {
+                                    cells = [row]
                                 }
 
                                 let cellTag = (rIdx == 0 && rows.count > 1) ? "th" : "td"
@@ -346,11 +364,21 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
     }
 
     private func escapeHTML(_ string: String) -> String {
-        return string
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "'", with: "&#39;")
+        guard string.contains(where: { $0 == "&" || $0 == "<" || $0 == ">" || $0 == "\"" || $0 == "'" }) else {
+            return string
+        }
+        var result = ""
+        result.reserveCapacity(string.utf8.count + 16)
+        for char in string {
+            switch char {
+            case "&": result.append("&amp;")
+            case "<": result.append("&lt;")
+            case ">": result.append("&gt;")
+            case "\"": result.append("&quot;")
+            case "'": result.append("&#39;")
+            default: result.append(char)
+            }
+        }
+        return result
     }
 }

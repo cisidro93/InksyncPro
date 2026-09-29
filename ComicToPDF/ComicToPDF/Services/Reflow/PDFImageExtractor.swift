@@ -16,8 +16,7 @@ public struct ExtractedPDFImage: Identifiable, Sendable {
     }
 }
 
-@MainActor
-public final class PDFImageExtractor {
+public final class PDFImageExtractor: @unchecked Sendable {
     public static let shared = PDFImageExtractor()
     private init() {}
 
@@ -100,9 +99,6 @@ public final class PDFImageExtractor {
             cgCtx.scaleBy(x: targetSize.width / pageBounds.width, y: -targetSize.height / pageBounds.height)
             page.draw(with: .mediaBox, to: cgCtx)
         }
-
-        let imageName = "fig_page_\(pageIndex + 1).jpg"
-        let imageURL = targetDir.appendingPathComponent(imageName)
 
         guard let jpegData = pageImage.jpegData(compressionQuality: 0.75) else { return nil }
 

@@ -50,19 +50,17 @@ public struct SpatialTextBlock: Identifiable, Sendable {
     }
 }
 
-@MainActor
-public final class PDFSpatialParser {
+public final class PDFSpatialParser: @unchecked Sendable {
     public static let shared = PDFSpatialParser()
     private init() {}
 
     /// Parses a PDFDocument page-by-page into spatial text blocks ordered by column reading flow.
-    public func parseDocument(_ document: PDFDocument) async -> [SpatialTextBlock] {
+    public func parseDocument(_ document: PDFDocument, skipClutter: Bool = true) async -> [SpatialTextBlock] {
         var blocks: [SpatialTextBlock] = []
         let pageCount = document.pageCount
         guard pageCount > 0 else { return [] }
 
         let medianFontSize = calculateMedianFontSize(document: document)
-        let skipClutter = EBookPreferences.shared.pdfReflowSmartClutterRemoval
 
         // Pre-scan first 10 pages to determine if document has digital text
         var hasDigitalText = false
@@ -295,8 +293,8 @@ public final class PDFSpatialParser {
                 fontSize = font.pointSize
                 fontName = font.fontName
                 let traits = font.fontDescriptor.symbolicTraits
-                isBold = traits.contains(.traitBold) || fontName.localizedCaseInsensitiveContains("bold")
-                isItalic = traits.contains(.traitItalic) || fontName.localizedCaseInsensitiveContains("italic")
+                isBold = traits.contains(.traitBold) || fontName.contains("Bold") || fontName.contains("bold")
+                isItalic = traits.contains(.traitItalic) || fontName.contains("Italic") || fontName.contains("italic") || fontName.contains("Oblique")
             }
 
             lines.append(LineInfo(rect: lineBounds, text: text, fontSize: fontSize, fontName: fontName, isBold: isBold, isItalic: isItalic))

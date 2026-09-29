@@ -1915,6 +1915,14 @@ struct ProPDFReaderEngine: View {
                     Task(priority: .background) {
                         _ = await PDFAnnotationSyncBridge.shared.importNativeAnnotations(from: doc, for: sourcePDF.id, preferredPageIndex: savedIndex)
                     }
+
+                    // Pre-warm reflow layout in background so entering reflow mode is instantaneous (<10ms)
+                    ReflowCompilationCoordinator.shared.prewarm(
+                        document: doc,
+                        pdfUUID: sourcePDF.id.uuidString,
+                        documentTitle: sourcePDF.name,
+                        isClutterFiltered: self.prefs.pdfReflowSmartClutterRemoval
+                    )
                 }
             } else {
                 accessedURL?.stopAccessingSecurityScopedResource()
@@ -1951,6 +1959,12 @@ struct ProPDFReaderEngine: View {
                     PDFAnnotationSyncBridge.shared.applyStoreAnnotations(for: self.pdf.id, to: doc)
                 }
             }
+            ReflowCompilationCoordinator.shared.prewarm(
+                document: doc,
+                pdfUUID: self.pdf.id.uuidString,
+                documentTitle: self.pdf.name,
+                isClutterFiltered: self.prefs.pdfReflowSmartClutterRemoval
+            )
         } else {
             HapticEngine.error()
             self.passwordErrorMessage = "Incorrect password. Please verify and try again."
