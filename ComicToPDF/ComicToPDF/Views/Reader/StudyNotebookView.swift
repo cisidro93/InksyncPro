@@ -567,52 +567,7 @@ struct StudyNotebookView: View {
                                     }
 
                                     // Notebook Multi-Page Navigation Pill
-                                    HStack(spacing: 3) {
-                                        Button {
-                                            goToPreviousPage()
-                                        } label: {
-                                            Image(systemName: "chevron.left")
-                                                .font(.system(size: 10, weight: .bold))
-                                                .foregroundColor(currentNotebookPageIndex > 0 ? .primary : .secondary.opacity(0.3))
-                                                .padding(5)
-                                        }
-                                        .disabled(currentNotebookPageIndex <= 0)
-
-                                        Menu {
-                                            notebookPageMenuContent
-                                        } label: {
-                                            notebookPageMenuLabel
-                                        }
-
-                                        Button {
-                                            goToNextPage()
-                                        } label: {
-                                            Image(systemName: "chevron.right")
-                                                .font(.system(size: 10, weight: .bold))
-                                                .foregroundColor(currentNotebookPageIndex < notebookPages.count - 1 ? .primary : .secondary.opacity(0.3))
-                                                .padding(5)
-                                        }
-                                        .disabled(currentNotebookPageIndex >= notebookPages.count - 1)
-
-                                        Rectangle()
-                                            .fill(Color.primary.opacity(0.12))
-                                            .frame(width: 1, height: 14)
-
-                                        Button {
-                                            addNewPage()
-                                        } label: {
-                                            Image(systemName: "plus.circle.fill")
-                                                .font(.system(size: 13, weight: .bold))
-                                                .foregroundStyle(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                                .padding(.horizontal, 4)
-                                                .padding(.vertical, 2)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help("Add new page to notebook")
-                                    }
-                                    .padding(2)
-                                    .background(Color.primary.opacity(0.05), in: Capsule())
-                                    .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.8))
+                                    notebookPageNavigationPill(showAddPageText: false)
 
                                     Spacer()
 
@@ -708,57 +663,7 @@ struct StudyNotebookView: View {
                                 }
 
                                 // Notebook Multi-Page Navigation Pill
-                                HStack(spacing: 3) {
-                                    Button {
-                                        goToPreviousPage()
-                                    } label: {
-                                        Image(systemName: "chevron.left")
-                                            .font(.system(size: 10, weight: .bold))
-                                            .foregroundColor(currentNotebookPageIndex > 0 ? .primary : .secondary.opacity(0.3))
-                                            .padding(5)
-                                    }
-                                    .disabled(currentNotebookPageIndex <= 0)
-
-                                    Menu {
-                                        notebookPageMenuContent
-                                    } label: {
-                                        notebookPageMenuLabel
-                                    }
-
-                                    Button {
-                                        goToNextPage()
-                                    } label: {
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 10, weight: .bold))
-                                            .foregroundColor(currentNotebookPageIndex < notebookPages.count - 1 ? .primary : .secondary.opacity(0.3))
-                                            .padding(5)
-                                    }
-                                    .disabled(currentNotebookPageIndex >= notebookPages.count - 1)
-
-                                    Rectangle()
-                                        .fill(Color.primary.opacity(0.12))
-                                        .frame(width: 1, height: 14)
-
-                                    Button {
-                                        HStack(spacing: 2) {
-                                            Image(systemName: "plus.circle.fill")
-                                                .font(.system(size: 13, weight: .bold))
-                                                .foregroundStyle(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                            if availableWidth > 580 {
-                                                Text("Add Page")
-                                                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                                                    .foregroundColor(.orange)
-                                            }
-                                        }
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 2)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .help("Add new page to notebook")
-                                }
-                                .padding(2)
-                                .background(Color.primary.opacity(0.05), in: Capsule())
-                                .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.8))
+                                notebookPageNavigationPill(showAddPageText: availableWidth > 580)
 
                                 Spacer()
 
@@ -1342,6 +1247,66 @@ struct StudyNotebookView: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
         .background(Color.primary.opacity(0.06), in: Capsule())
+    }
+
+    @ViewBuilder
+    private func notebookPageNavigationPill(showAddPageText: Bool = false) -> some View {
+        let hasPrev = currentNotebookPageIndex > 0
+        let hasNext = currentNotebookPageIndex < notebookPages.count - 1
+
+        HStack(spacing: 3) {
+            Button {
+                goToPreviousPage()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(hasPrev ? .primary : Color.secondary.opacity(0.3))
+                    .padding(5)
+            }
+            .disabled(!hasPrev)
+
+            Menu {
+                notebookPageMenuContent
+            } label: {
+                notebookPageMenuLabel
+            }
+
+            Button {
+                goToNextPage()
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(hasNext ? .primary : Color.secondary.opacity(0.3))
+                    .padding(5)
+            }
+            .disabled(!hasNext)
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.12))
+                .frame(width: 1, height: 14)
+
+            Button {
+                addNewPage()
+            } label: {
+                HStack(spacing: 2) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    if showAddPageText {
+                        Text("Add Page")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.orange)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+            }
+            .buttonStyle(.plain)
+            .help("Add new page to notebook")
+        }
+        .padding(2)
+        .background(Color.primary.opacity(0.05), in: Capsule())
+        .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.8))
     }
 
     // MARK: - Core Execution
