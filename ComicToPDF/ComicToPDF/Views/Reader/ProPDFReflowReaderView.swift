@@ -66,40 +66,7 @@ struct ProPDFReflowReaderView: View {
                     compilingOverlay
                 } else if let htmlURL = reflowHTMLURL {
                     ZStack {
-                        EBookPageCurlReader(
-                            spineItem: EBookMetadata.SpineItem(
-                                id: htmlURL.lastPathComponent,
-                                href: htmlURL.lastPathComponent,
-                                label: pdf.name
-                            ),
-                            unzipDir: htmlURL.deletingLastPathComponent(),
-                            prefs: prefs,
-                            colorScheme: colorScheme,
-                            currentPage: $chapterPage,
-                            initialPage: 0,
-                            totalPages: $chapterTotalPages,
-                            targetAnchor: "page-\(targetPDFPageIndex + 1)",
-                            onNext: {
-                                syncCurrentPDFPageFromReflow()
-                            },
-                            onPrev: {
-                                syncCurrentPDFPageFromReflow()
-                            },
-                            onCenterTap: {
-                                onCenterTap?()
-                            },
-                            onPageTurn: {
-                                syncCurrentPDFPageFromReflow()
-                            },
-                            pdfID: pdf.id,
-                            initialScrollFraction: initialFraction,
-                            onScrollFractionChanged: { _ in
-                                syncCurrentPDFPageFromReflow()
-                            },
-                            webViewRef: $webViewRef
-                        )
-                        .opacity(hasAnchoredInitialPage ? 1.0 : 0.0)
-                        .animation(.easeInOut(duration: 0.18), value: hasAnchoredInitialPage)
+                        pageCurlReaderView(htmlURL: htmlURL)
 
                         if !hasAnchoredInitialPage {
                             ProgressView()
@@ -321,6 +288,38 @@ struct ProPDFReflowReaderView: View {
 
             self.scrollToTargetPDFPage(pageIndex: currentTarget, isOrientationChange: true)
         }
+    }
+
+    @ViewBuilder
+    private func pageCurlReaderView(htmlURL: URL) -> some View {
+        let spineItem = EBookMetadata.SpineItem(
+            id: htmlURL.lastPathComponent,
+            href: htmlURL.lastPathComponent,
+            label: pdf.name
+        )
+        let unzipDir = htmlURL.deletingLastPathComponent()
+        let targetAnchor = "page-\(targetPDFPageIndex + 1)"
+
+        EBookPageCurlReader(
+            spineItem: spineItem,
+            unzipDir: unzipDir,
+            prefs: prefs,
+            colorScheme: colorScheme,
+            currentPage: $chapterPage,
+            initialPage: 0,
+            totalPages: $chapterTotalPages,
+            targetAnchor: targetAnchor,
+            onNext: { syncCurrentPDFPageFromReflow() },
+            onPrev: { syncCurrentPDFPageFromReflow() },
+            onCenterTap: { onCenterTap?() },
+            onPageTurn: { syncCurrentPDFPageFromReflow() },
+            pdfID: pdf.id,
+            initialScrollFraction: initialFraction,
+            onScrollFractionChanged: { _ in syncCurrentPDFPageFromReflow() },
+            webViewRef: $webViewRef
+        )
+        .opacity(hasAnchoredInitialPage ? 1.0 : 0.0)
+        .animation(.easeInOut(duration: 0.18), value: hasAnchoredInitialPage)
     }
 
     @ViewBuilder

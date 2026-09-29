@@ -322,7 +322,7 @@ public final class PDFSpatialParser {
     )
 
     /// Identifies whether a text string begins with a recognized list marker (bullet or numbered/lettered item).
-    public static func isListMarker(_ text: String) -> Bool {
+    public nonisolated static func isListMarker(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return false }
 
@@ -344,7 +344,7 @@ public final class PDFSpatialParser {
     }
 
     /// Identifies whether a list marker is numeric or alphabetic (ordered list).
-    public static func isOrderedListMarker(_ text: String) -> Bool {
+    public nonisolated static func isOrderedListMarker(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, let regex = listMarkerRegex else { return false }
         let range = NSRange(location: 0, length: min(trimmed.utf16.count, 12))

@@ -751,28 +751,7 @@ struct StudyNotebookView: View {
                                     .disabled(currentNotebookPageIndex <= 0)
 
                                     Menu {
-                                        Section("Notebook Pages") {
-                                            ForEach(0..<max(1, notebookPages.count), id: \.self) { pIdx in
-                                                Button {
-                                                    switchToPage(index: pIdx)
-                                                } label: {
-                                                    HStack {
-                                                        Text("Page \(pIdx + 1)")
-                                                        if pIdx == currentNotebookPageIndex {
-                                                            Image(systemName: "checkmark")
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        if notebookPages.count > 1 {
-                                            Divider()
-                                            Button(role: .destructive) {
-                                                deleteCurrentPage()
-                                            } label: {
-                                                Label("Delete Page \(currentNotebookPageIndex + 1)", systemImage: "trash")
-                                            }
-                                        }
+                                        notebookPageMenuContent
                                     } label: {
                                         HStack(spacing: 3) {
                                             Text("p. \(currentNotebookPageIndex + 1)/\(max(1, notebookPages.count))")
@@ -1359,6 +1338,32 @@ struct StudyNotebookView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var notebookPageMenuContent: some View {
+        Section("Notebook Pages") {
+            let total = max(1, notebookPages.count)
+            ForEach(0..<total, id: \.self) { (pIdx: Int) in
+                Button {
+                    switchToPage(index: pIdx)
+                } label: {
+                    if pIdx == currentNotebookPageIndex {
+                        Label("Page \(pIdx + 1)", systemImage: "checkmark")
+                    } else {
+                        Text("Page \(pIdx + 1)")
+                    }
+                }
+            }
+        }
+        if notebookPages.count > 1 {
+            Divider()
+            Button(role: .destructive) {
+                deleteCurrentPage()
+            } label: {
+                Label("Delete Page \(currentNotebookPageIndex + 1)", systemImage: "trash")
             }
         }
     }

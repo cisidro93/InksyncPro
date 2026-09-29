@@ -2467,7 +2467,7 @@ struct ComicReaderEngine: View {
                 showCropAdjustmentSheet = true
             },
             onReflowToggle: cache.isPDF ? {
-                ReaderProgressTracker.shared.update(id: cache.id, pageIndex: currentPage, totalPages: cache.totalPages)
+                saveCurrentProgress()
                 EBookPreferences.shared.pdfReflowMode = true
                 HapticEngine.medium()
                 NotificationCenter.default.post(
