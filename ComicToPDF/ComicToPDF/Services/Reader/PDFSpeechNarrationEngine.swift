@@ -113,6 +113,8 @@ final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechSynthe
         var blocks: [PDFSentenceBlock] = []
         let tokenizer = NLTokenizer(unit: .sentence)
         tokenizer.string = fullText
+        let pageSize = page.bounds(for: .mediaBox).size
+        let skipClutter = NaturalSpeechVoiceSelector.shared.isSkipPageNumbersAndHeadersEnabled
 
         tokenizer.enumerateTokens(in: fullText.startIndex..<fullText.endIndex) { tokenRange, _ in
             let sentenceString = String(fullText[tokenRange]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -120,6 +122,16 @@ final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechSynthe
                 let nsRange = NSRange(tokenRange, in: fullText)
                 if let selection = page.selection(for: nsRange) {
                     let pageBounds = selection.bounds(for: page)
+
+                    // Smart clutter filtering: skip standalone page numbers and running headers
+                    if skipClutter && SmartSpeechTextSanitizer.shared.isPageNumberOrClutter(
+                        text: sentenceString,
+                        boundsInPage: pageBounds,
+                        pageSize: pageSize
+                    ) {
+                        return true
+                    }
+
                     let lineSelections = selection.selectionsByLine()
                     let lineRects = lineSelections.map { $0.bounds(for: page) }
 
@@ -131,6 +143,10 @@ final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechSynthe
                     )
                     blocks.append(block)
                 } else {
+                    if skipClutter && SmartSpeechTextSanitizer.shared.isPageNumberOrClutter(text: sentenceString) {
+                        return true
+                    }
+
                     // Fallback if selection bounds could not be resolved
                     let block = PDFSentenceBlock(
                         text: sentenceString,
@@ -318,13 +334,27 @@ final class PDFSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechSynthe
             return
         }
 
+        let voiceSelector = NaturalSpeechVoiceSelector.shared
+        let sanitizedSpeechString = SmartSpeechTextSanitizer.shared.sanitizeForSpeech(
+            rawText,
+            skipCitations: voiceSelector.isSkipCitationsAndFootnotesEnabled,
+            silenceUrls: voiceSelector.isSilenceURLsEnabled,
+            expandAbbreviations: voiceSelector.isExpandAbbreviationsEnabled
+        )
+
+        // If block became empty after sanitization (e.g. was solely a citation like "[1]"), advance
+        guard !sanitizedSpeechString.isEmpty else {
+            nextBlock()
+            return
+        }
+
         self.activeSentence = block
         self.activeSentenceBoundsInPage = block.boundsInPage
         self.activeSentenceLineRectsInPage = block.lineRectsInPage
         onSentenceChanged?(block)
 
-        let utterance = AVSpeechUtterance(string: rawText)
-        NaturalSpeechVoiceSelector.shared.configureNaturalUtterance(
+        let utterance = AVSpeechUtterance(string: sanitizedSpeechString)
+        voiceSelector.configureNaturalUtterance(
             utterance,
             voice: selectedVoice ?? personalVoices.first,
             speechRate: speechRate,

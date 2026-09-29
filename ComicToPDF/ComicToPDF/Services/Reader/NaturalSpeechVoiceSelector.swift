@@ -53,6 +53,10 @@ public final class NaturalSpeechVoiceSelector: ObservableObject {
     private let voiceIdKey = "inksync_preferred_natural_voice_id"
     private let cadenceKey = "inksync_speech_cadence_mode"
     private let autoLangKey = "inksync_speech_auto_detect_language"
+    private let skipPageNumsKey = "inksync_speech_skip_page_numbers_headers"
+    private let skipCitationsKey = "inksync_speech_skip_citations_footnotes"
+    private let silenceUrlsKey = "inksync_speech_silence_urls"
+    private let expandAbbrevKey = "inksync_speech_expand_abbreviations"
 
     /// Persisted user-preferred voice identifier
     public var preferredVoiceIdentifier: String {
@@ -91,6 +95,62 @@ public final class NaturalSpeechVoiceSelector: ObservableObject {
         set {
             objectWillChange.send()
             UserDefaults.standard.set(newValue, forKey: autoLangKey)
+        }
+    }
+
+    /// Whether to skip standalone page numbers and recurring headers/footers during speech
+    public var isSkipPageNumbersAndHeadersEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: skipPageNumsKey) == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: skipPageNumsKey)
+        }
+        set {
+            objectWillChange.send()
+            UserDefaults.standard.set(newValue, forKey: skipPageNumsKey)
+        }
+    }
+
+    /// Whether to skip bracketed citations ([1], [2-4]) and footnote references during speech
+    public var isSkipCitationsAndFootnotesEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: skipCitationsKey) == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: skipCitationsKey)
+        }
+        set {
+            objectWillChange.send()
+            UserDefaults.standard.set(newValue, forKey: skipCitationsKey)
+        }
+    }
+
+    /// Whether to silence or humanize raw URLs and DOIs during speech
+    public var isSilenceURLsEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: silenceUrlsKey) == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: silenceUrlsKey)
+        }
+        set {
+            objectWillChange.send()
+            UserDefaults.standard.set(newValue, forKey: silenceUrlsKey)
+        }
+    }
+
+    /// Whether to expand common abbreviations (Dr., vs., e.g., i.e., Fig., pp.) for natural prosody
+    public var isExpandAbbreviationsEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: expandAbbrevKey) == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: expandAbbrevKey)
+        }
+        set {
+            objectWillChange.send()
+            UserDefaults.standard.set(newValue, forKey: expandAbbrevKey)
         }
     }
 

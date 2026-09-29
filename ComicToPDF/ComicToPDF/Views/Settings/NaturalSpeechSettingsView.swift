@@ -11,6 +11,10 @@ struct NaturalSpeechSettingsView: View {
     @State private var previewSpeechRate: Float = 1.0
     @State private var activeCadence: NaturalSpeechCadence = NaturalSpeechVoiceSelector.shared.cadenceMode
     @State private var autoDetectLang: Bool = NaturalSpeechVoiceSelector.shared.isAutoDetectLanguageEnabled
+    @State private var skipPageNumbers: Bool = NaturalSpeechVoiceSelector.shared.isSkipPageNumbersAndHeadersEnabled
+    @State private var skipCitations: Bool = NaturalSpeechVoiceSelector.shared.isSkipCitationsAndFootnotesEnabled
+    @State private var silenceUrls: Bool = NaturalSpeechVoiceSelector.shared.isSilenceURLsEnabled
+    @State private var expandAbbreviations: Bool = NaturalSpeechVoiceSelector.shared.isExpandAbbreviationsEnabled
     @State private var showDownloadGuide: Bool = false
 
     enum LanguageScope: String, CaseIterable, Identifiable {
@@ -140,7 +144,75 @@ struct NaturalSpeechSettingsView: View {
                     }
             }
 
-            // Section 4: Guide on Downloading Apple Neural Voices
+            // Section 4: Smart Narration & Clutter Filters (ElevenReader Parity)
+            Section(
+                header: Text("Smart Narration & Clutter Filters"),
+                footer: Text("Inspired by studio audiobook narration. InkSync Pro runs on-device Neural Engine intelligence to automatically skip filler elements and enhance prosody.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            ) {
+                Toggle(isOn: $skipPageNumbers) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Skip Page Numbers & Headers")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(Color.inkText)
+                        Text("Skips standalone numbers, running headers, and footers")
+                            .font(.caption2)
+                            .foregroundColor(Color.inkSecondary)
+                    }
+                }
+                .onChange(of: skipPageNumbers) { _, newValue in
+                    HapticEngine.selection()
+                    NaturalSpeechVoiceSelector.shared.isSkipPageNumbersAndHeadersEnabled = newValue
+                }
+
+                Toggle(isOn: $skipCitations) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Skip Bracketed Citations")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(Color.inkText)
+                        Text("Silences reference markers like [1], [2-4], and footnotes")
+                            .font(.caption2)
+                            .foregroundColor(Color.inkSecondary)
+                    }
+                }
+                .onChange(of: skipCitations) { _, newValue in
+                    HapticEngine.selection()
+                    NaturalSpeechVoiceSelector.shared.isSkipCitationsAndFootnotesEnabled = newValue
+                }
+
+                Toggle(isOn: $silenceUrls) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Clean Web Links & DOIs")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(Color.inkText)
+                        Text("Replaces robotic character-by-character URLs with clean speech")
+                            .font(.caption2)
+                            .foregroundColor(Color.inkSecondary)
+                    }
+                }
+                .onChange(of: silenceUrls) { _, newValue in
+                    HapticEngine.selection()
+                    NaturalSpeechVoiceSelector.shared.isSilenceURLsEnabled = newValue
+                }
+
+                Toggle(isOn: $expandAbbreviations) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Natural Abbreviation Expansion")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(Color.inkText)
+                        Text("Expands Dr., vs., e.g., i.e., Fig., pp. for human diction")
+                            .font(.caption2)
+                            .foregroundColor(Color.inkSecondary)
+                    }
+                }
+                .onChange(of: expandAbbreviations) { _, newValue in
+                    HapticEngine.selection()
+                    NaturalSpeechVoiceSelector.shared.isExpandAbbreviationsEnabled = newValue
+                }
+            }
+
+            // Section 5: Guide on Downloading Apple Neural Voices
             Section {
                 Button {
                     showDownloadGuide.toggle()

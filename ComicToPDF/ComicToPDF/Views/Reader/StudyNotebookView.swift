@@ -531,299 +531,428 @@ struct StudyNotebookView: View {
 
                 VStack(spacing: 0) {
                     // MARK: Glassmorphic Header
-                    HStack(spacing: availableWidth > 400 ? 12 : 8) {
-                        if showBackButton {
-                            Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                dismiss()
-                            } label: {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "chevron.left")
-                                    if availableWidth > 450 {
-                                        Text("Back")
+                    Group {
+                        if availableWidth < 520 {
+                            // iPhone / Compact Responsive 2-Row Layout
+                            VStack(spacing: 8) {
+                                // Row 1: Back, Title, Page Pill, Spacer, Keyboard, Help, Dismiss
+                                HStack(spacing: 8) {
+                                    if showBackButton {
+                                        Button {
+                                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                            dismiss()
+                                        } label: {
+                                            HStack(spacing: 2) {
+                                                Image(systemName: "chevron.left")
+                                                if availableWidth > 450 {
+                                                    Text("Back")
+                                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                                }
+                                            }
+                                            .foregroundColor(.orange)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "notebook.toptab.fill")
+                                            .foregroundStyle(LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                            .font(.system(size: 16, weight: .bold))
+
+                                        Text(availableWidth > 400 ? "Study Notebook" : "Notes")
                                             .font(.system(size: 15, weight: .bold, design: .rounded))
+                                            .foregroundColor(.primary)
+                                            .lineLimit(1)
+                                            .fixedSize(horizontal: true, vertical: false)
+                                    }
+
+                                    // Notebook Multi-Page Navigation Pill
+                                    HStack(spacing: 3) {
+                                        Button {
+                                            goToPreviousPage()
+                                        } label: {
+                                            Image(systemName: "chevron.left")
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundColor(currentNotebookPageIndex > 0 ? .primary : .secondary.opacity(0.3))
+                                                .padding(5)
+                                        }
+                                        .disabled(currentNotebookPageIndex <= 0)
+
+                                        Menu {
+                                            Section("Notebook Pages") {
+                                                ForEach(0..<max(1, notebookPages.count), id: \.self) { pIdx in
+                                                    Button {
+                                                        switchToPage(index: pIdx)
+                                                    } label: {
+                                                        HStack {
+                                                            Text("Page \(pIdx + 1)")
+                                                            if pIdx == currentNotebookPageIndex {
+                                                                Image(systemName: "checkmark")
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if notebookPages.count > 1 {
+                                                Divider()
+                                                Button(role: .destructive) {
+                                                    deleteCurrentPage()
+                                                } label: {
+                                                    Label("Delete Page \(currentNotebookPageIndex + 1)", systemImage: "trash")
+                                                }
+                                            }
+                                        } label: {
+                                            HStack(spacing: 3) {
+                                                Text("p. \(currentNotebookPageIndex + 1)/\(max(1, notebookPages.count))")
+                                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                    .foregroundColor(.primary)
+                                                Image(systemName: "chevron.down")
+                                                    .font(.system(size: 8, weight: .bold))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 3)
+                                            .background(Color.primary.opacity(0.06), in: Capsule())
+                                        }
+
+                                        Button {
+                                            goToNextPage()
+                                        } label: {
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundColor(currentNotebookPageIndex < notebookPages.count - 1 ? .primary : .secondary.opacity(0.3))
+                                                .padding(5)
+                                        }
+                                        .disabled(currentNotebookPageIndex >= notebookPages.count - 1)
+
+                                        Rectangle()
+                                            .fill(Color.primary.opacity(0.12))
+                                            .frame(width: 1, height: 14)
+
+                                        Button {
+                                            addNewPage()
+                                        } label: {
+                                            Image(systemName: "plus.circle.fill")
+                                                .font(.system(size: 13, weight: .bold))
+                                                .foregroundStyle(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                                .padding(.horizontal, 4)
+                                                .padding(.vertical, 2)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("Add new page to notebook")
+                                    }
+                                    .padding(2)
+                                    .background(Color.primary.opacity(0.05), in: Capsule())
+                                    .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.8))
+
+                                    Spacer()
+
+                                    if isFocused {
+                                        Image(systemName: "circle.fill")
+                                            .font(.system(size: 8))
+                                            .foregroundColor(Theme.blue)
+                                            .symbolEffect(.pulse)
+                                    } else {
+                                        Button {
+                                            isFocused = false
+                                        } label: {
+                                            Image(systemName: "keyboard.chevron.compact.down")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundColor(.primary)
+                                                .padding(6)
+                                                .background(Color.primary.opacity(0.08))
+                                                .clipShape(Circle())
+                                        }
+                                    }
+
+                                    // Contextual Visual Help Guide Pill
+                                    HelpPillButton(context: .studyNotebook)
+
+                                    Button {
+                                        NotificationCenter.default.post(name: .hideStudyNotebook, object: nil)
+                                    } label: {
+                                        Image(systemName: "xmark")
+                                            .font(.system(size: 13, weight: .bold))
+                                            .foregroundColor(.primary)
+                                            .padding(7)
+                                            .background(Color.primary.opacity(0.08))
+                                            .clipShape(Circle())
                                     }
                                 }
-                                .foregroundColor(.orange)
+
+                                // Row 2: Scrollable Study Toolbar (zero overflow, full touch target access)
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        inputPicker
+                                        pasteButton
+                                        if inputMode == .markdown {
+                                            micButton
+                                        }
+                                        readAloudButton
+                                        paperStyleMenu
+                                        summaryButton
+                                        writingAssistantButton
+                                        if !bookHighlights.isEmpty {
+                                            studyButton
+                                        }
+                                        exportMenu
+                                        if showBackButton {
+                                            linkBookButton
+                                        }
+                                        highlighterButton
+                                        statsMenu
+                                    }
+                                    .padding(.horizontal, 2)
+                                    .padding(.vertical, 1)
+                                }
                             }
-                            .buttonStyle(.plain)
-                        }
+                        } else {
+                            // iPad / Regular Width Single-Row Layout
+                            HStack(spacing: availableWidth > 600 ? 12 : 8) {
+                                if showBackButton {
+                                    Button {
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                        dismiss()
+                                    } label: {
+                                        HStack(spacing: 2) {
+                                            Image(systemName: "chevron.left")
+                                            if availableWidth > 450 {
+                                                Text("Back")
+                                                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                                            }
+                                        }
+                                        .foregroundColor(.orange)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
 
-                        HStack(spacing: 6) {
-                            Image(systemName: "notebook.toptab.fill")
-                                .foregroundStyle(LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                .font(.system(size: 17, weight: .bold))
+                                HStack(spacing: 6) {
+                                    Image(systemName: "notebook.toptab.fill")
+                                        .foregroundStyle(LinearGradient(colors: [Theme.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        .font(.system(size: 17, weight: .bold))
 
-                            Text(availableWidth > 500 ? "Study Notebook" : "Notes")
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
+                                    Text(availableWidth > 500 ? "Study Notebook" : "Notes")
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                }
 
-                        // Notebook Multi-Page Navigation Pill
-                        HStack(spacing: 3) {
-                            Button {
-                                goToPreviousPage()
-                            } label: {
-                                Image(systemName: "chevron.left")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(currentNotebookPageIndex > 0 ? .primary : .secondary.opacity(0.3))
-                                    .padding(5)
-                            }
-                            .disabled(currentNotebookPageIndex <= 0)
+                                // Notebook Multi-Page Navigation Pill
+                                HStack(spacing: 3) {
+                                    Button {
+                                        goToPreviousPage()
+                                    } label: {
+                                        Image(systemName: "chevron.left")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundColor(currentNotebookPageIndex > 0 ? .primary : .secondary.opacity(0.3))
+                                            .padding(5)
+                                    }
+                                    .disabled(currentNotebookPageIndex <= 0)
 
-                            Menu {
-                                Section("Notebook Pages") {
-                                    ForEach(0..<max(1, notebookPages.count), id: \.self) { pIdx in
-                                        Button {
-                                            switchToPage(index: pIdx)
-                                        } label: {
-                                            HStack {
-                                                Text("Page \(pIdx + 1)")
-                                                if pIdx == currentNotebookPageIndex {
-                                                    Image(systemName: "checkmark")
+                                    Menu {
+                                        Section("Notebook Pages") {
+                                            ForEach(0..<max(1, notebookPages.count), id: \.self) { pIdx in
+                                                Button {
+                                                    switchToPage(index: pIdx)
+                                                } label: {
+                                                    HStack {
+                                                        Text("Page \(pIdx + 1)")
+                                                        if pIdx == currentNotebookPageIndex {
+                                                            Image(systemName: "checkmark")
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                                }
-                                if notebookPages.count > 1 {
-                                    Divider()
-                                    Button(role: .destructive) {
-                                        deleteCurrentPage()
+                                        if notebookPages.count > 1 {
+                                            Divider()
+                                            Button(role: .destructive) {
+                                                deleteCurrentPage()
+                                            } label: {
+                                                Label("Delete Page \(currentNotebookPageIndex + 1)", systemImage: "trash")
+                                            }
+                                        }
                                     } label: {
-                                        Label("Delete Page \(currentNotebookPageIndex + 1)", systemImage: "trash")
+                                        HStack(spacing: 3) {
+                                            Text("p. \(currentNotebookPageIndex + 1)/\(max(1, notebookPages.count))")
+                                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                .foregroundColor(.primary)
+                                            Image(systemName: "chevron.down")
+                                                .font(.system(size: 8, weight: .bold))
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 3)
+                                        .background(Color.primary.opacity(0.06), in: Capsule())
                                     }
-                                }
-                            } label: {
-                                HStack(spacing: 3) {
-                                    Text("p. \(currentNotebookPageIndex + 1)/\(max(1, notebookPages.count))")
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                                        .foregroundColor(.primary)
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 8, weight: .bold))
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Color.primary.opacity(0.06), in: Capsule())
-                            }
 
-                            Button {
-                                goToNextPage()
-                            } label: {
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(currentNotebookPageIndex < notebookPages.count - 1 ? .primary : .secondary.opacity(0.3))
-                                    .padding(5)
-                            }
-                            .disabled(currentNotebookPageIndex >= notebookPages.count - 1)
-
-                            Rectangle()
-                                .fill(Color.primary.opacity(0.12))
-                                .frame(width: 1, height: 14)
-
-                            Button {
-                                addNewPage()
-                            } label: {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundStyle(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    if availableWidth > 580 {
-                                        Text("Add Page")
-                                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                                            .foregroundColor(.orange)
+                                    Button {
+                                        goToNextPage()
+                                    } label: {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundColor(currentNotebookPageIndex < notebookPages.count - 1 ? .primary : .secondary.opacity(0.3))
+                                            .padding(5)
                                     }
+                                    .disabled(currentNotebookPageIndex >= notebookPages.count - 1)
+
+                                    Rectangle()
+                                        .fill(Color.primary.opacity(0.12))
+                                        .frame(width: 1, height: 14)
+
+                                    Button {
+                                        HStack(spacing: 2) {
+                                            Image(systemName: "plus.circle.fill")
+                                                .font(.system(size: 13, weight: .bold))
+                                                .foregroundStyle(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                            if availableWidth > 580 {
+                                                Text("Add Page")
+                                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                    .foregroundColor(.orange)
+                                            }
+                                        }
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 2)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Add new page to notebook")
                                 }
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 2)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Add new page to notebook")
-                        }
-                        .padding(2)
-                        .background(Color.primary.opacity(0.05), in: Capsule())
-                        .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.8))
+                                .padding(2)
+                                .background(Color.primary.opacity(0.05), in: Capsule())
+                                .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.8))
 
-                        Spacer()
+                                Spacer()
 
-                        if availableWidth > 680 {
-                            // WIDE TOOLBAR
-                            inputPicker
-                            pasteButton
+                                if availableWidth > 680 {
+                                    // WIDE TOOLBAR
+                                    inputPicker
+                                    pasteButton
 
-                            if inputMode == .markdown {
-                                micButton
-                            }
-                            readAloudButton
+                                    if inputMode == .markdown {
+                                        micButton
+                                    }
+                                    readAloudButton
 
-                            paperStyleMenu
-                            summaryButton
-                            writingAssistantButton
+                                    paperStyleMenu
+                                    summaryButton
+                                    writingAssistantButton
 
-                            if !bookHighlights.isEmpty {
-                                studyButton
-                            }
-
-                            exportMenu
-
-                            if showBackButton {
-                                linkBookButton
-                            }
-
-                            highlighterButton
-                            statsMenu
-                        } else if availableWidth > 420 {
-                            // MEDIUM TOOLBAR
-                            inputPicker
-                            pasteButton
-                            highlighterButton
-
-                            Menu {
-                                Section("Tools") {
                                     if !bookHighlights.isEmpty {
-                                        Button {
-                                            studyCards = bookHighlights
-                                            currentCardIndex = 0
-                                            isAnswerRevealed = false
-                                            isStudyModeActive = true
-                                        } label: { Label("Study Flashcards", systemImage: "play.rectangle.on.rectangle") }
+                                        studyButton
                                     }
-                                    Button { generateAISummary() } label: { Label("Generate AI Summary", systemImage: "sparkles") }
-                                    Button { showWritingAssistant = true } label: { Label("Writing Assistant", systemImage: "checkmark.bubble") }
-                                    Button { toggleNotebookNarration() } label: { Label(speechEngine.isActive ? "Stop Read Aloud" : "Read Notes Aloud", systemImage: "speaker.wave.2") }
-                                    if inputMode == .markdown {
-                                        Button { toggleSpeechDictation() } label: { Label(speechManager.isRecording ? "Stop Dictation" : "Start Dictation", systemImage: "mic") }
-                                    }
-                                }
 
-                                Section("Settings & Export") {
-                                    Menu("Paper Style...") {
-                                        Picker("Style", selection: $paperStyle) {
-                                            ForEach(PaperStyle.allCases) { style in
-                                                Label(style.rawValue, systemImage: style.icon).tag(style)
+                                    exportMenu
+
+                                    if showBackButton {
+                                        linkBookButton
+                                    }
+
+                                    highlighterButton
+                                    statsMenu
+                                } else {
+                                    // MEDIUM TOOLBAR
+                                    inputPicker
+                                    pasteButton
+                                    highlighterButton
+
+                                    Menu {
+                                        Section("Tools") {
+                                            if !bookHighlights.isEmpty {
+                                                Button {
+                                                    studyCards = bookHighlights
+                                                    currentCardIndex = 0
+                                                    isAnswerRevealed = false
+                                                    isStudyModeActive = true
+                                                } label: { Label("Study Flashcards", systemImage: "play.rectangle.on.rectangle") }
+                                            }
+                                            Button { generateAISummary() } label: { Label("Generate AI Summary", systemImage: "sparkles") }
+                                            Button { showWritingAssistant = true } label: { Label("Writing Assistant", systemImage: "checkmark.bubble") }
+                                            Button { toggleNotebookNarration() } label: { Label(speechEngine.isActive ? "Stop Read Aloud" : "Read Notes Aloud", systemImage: "speaker.wave.2") }
+                                            if inputMode == .markdown {
+                                                Button { toggleSpeechDictation() } label: { Label(speechManager.isRecording ? "Stop Dictation" : "Start Dictation", systemImage: "mic") }
                                             }
                                         }
-                                    }
-                                    Menu("Export...") {
-                                        Button { exportNotes(as: .pdf) } label: { Label("Export as PDF (.pdf)", systemImage: "doc.richtext") }
-                                        Button { exportEPUB() } label: { Label("Export as EPUB (.epub)", systemImage: "book.pages") }
-                                        Button { sendToKindle(as: .pdf) } label: { Label("Send to Kindle (PDF)", systemImage: "paperplane") }
-                                        Button { sendToKindle(as: .epub) } label: { Label("Send to Kindle (EPUB)", systemImage: "paperplane.fill") }
-                                        Button { saveToLibraryAsBook(format: .pdf) } label: { Label("Save as PDF Book in Library", systemImage: "book.badge.plus") }
-                                        Button { saveToLibraryAsBook(format: .epub) } label: { Label("Save as EPUB Book in Library", systemImage: "books.vertical") }
-                                        Divider()
-                                        Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
-                                        Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
-                                        Button { exportZettelkastenZip() } label: { Label("Export Zettelkasten Zip", systemImage: "archivebox") }
-                                        Button { shareNotes() } label: { Label("Share Note...", systemImage: "square.and.arrow.up") }
-                                    }
-                                    Button { isShowingBookPicker = true } label: { Label("Link Backing Book", systemImage: "book.badge.plus") }
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                    .padding(8)
-                                    .background(Color.primary.opacity(0.08))
-                                    .clipShape(Circle())
-                            }
-                        } else {
-                            // COMPACT TOOLBAR
-                            Button {
-                                inputMode = (inputMode == .markdown) ? .handwriting : .markdown
-                            } label: {
-                                Image(systemName: inputMode == .markdown ? "keyboard" : "applepencil")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.orange)
-                                    .padding(6)
-                                    .background(Color.orange.opacity(0.12))
-                                    .clipShape(Circle())
-                            }
 
-                            pasteButton
-                            highlighterButton
-
-                            Menu {
-                                Section("Tools") {
-                                    Button { generateAISummary() } label: { Label("Generate AI Summary", systemImage: "sparkles") }
-                                    Button { showWritingAssistant = true } label: { Label("Writing Assistant", systemImage: "checkmark.bubble") }
-                                    Button { toggleNotebookNarration() } label: { Label(speechEngine.isActive ? "Stop Read Aloud" : "Read Notes Aloud", systemImage: "speaker.wave.2") }
-                                    if inputMode == .markdown {
-                                        Button { toggleSpeechDictation() } label: { Label(speechManager.isRecording ? "Stop Dictation" : "Start Dictation", systemImage: "mic") }
-                                    }
-                                }
-                                Section("Settings & Export") {
-                                    Menu("Paper Style...") {
-                                        Picker("Style", selection: $paperStyle) {
-                                            ForEach(PaperStyle.allCases) { style in
-                                                Label(style.rawValue, systemImage: style.icon).tag(style)
+                                        Section("Settings & Export") {
+                                            Menu("Paper Style...") {
+                                                Picker("Style", selection: $paperStyle) {
+                                                    ForEach(PaperStyle.allCases) { style in
+                                                        Label(style.rawValue, systemImage: style.icon).tag(style)
+                                                    }
+                                                }
                                             }
+                                            Menu("Export...") {
+                                                Button { exportNotes(as: .pdf) } label: { Label("Export as PDF (.pdf)", systemImage: "doc.richtext") }
+                                                Button { exportEPUB() } label: { Label("Export as EPUB (.epub)", systemImage: "book.pages") }
+                                                Button { sendToKindle(as: .pdf) } label: { Label("Send to Kindle (PDF)", systemImage: "paperplane") }
+                                                Button { sendToKindle(as: .epub) } label: { Label("Send to Kindle (EPUB)", systemImage: "paperplane.fill") }
+                                                Button { saveToLibraryAsBook(format: .pdf) } label: { Label("Save as PDF Book in Library", systemImage: "book.badge.plus") }
+                                                Button { saveToLibraryAsBook(format: .epub) } label: { Label("Save as EPUB Book in Library", systemImage: "books.vertical") }
+                                                Divider()
+                                                Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
+                                                Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
+                                                Button { exportZettelkastenZip() } label: { Label("Export Zettelkasten Zip", systemImage: "archivebox") }
+                                                Button { shareNotes() } label: { Label("Share Note...", systemImage: "square.and.arrow.up") }
+                                            }
+                                            Button { isShowingBookPicker = true } label: { Label("Link Backing Book", systemImage: "book.badge.plus") }
                                         }
-                                    }
-                                    Menu("Export...") {
-                                        Button { exportNotes(as: .markdown) } label: { Label("Export Markdown (.md)", systemImage: "arrow.down.doc") }
-                                        Button { exportNotes(as: .plainText) } label: { Label("Export Plain Text (.txt)", systemImage: "doc.text") }
-                                        Button { exportZettelkastenZip() } label: { Label("Export Zettelkasten Zip", systemImage: "archivebox") }
-                                        Button { shareNotes() } label: { Label("Share Note...", systemImage: "square.and.arrow.up") }
+                                    } label: {
+                                        Image(systemName: "ellipsis.circle")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(.primary)
+                                            .padding(8)
+                                            .background(Color.primary.opacity(0.08))
+                                            .clipShape(Circle())
                                     }
                                 }
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                    .padding(8)
-                                    .background(Color.primary.opacity(0.08))
-                                    .clipShape(Circle())
+
+                                if isFocused {
+                                    Image(systemName: "circle.fill")
+                                        .font(.system(size: 8))
+                                        .foregroundColor(Theme.blue)
+                                        .symbolEffect(.pulse)
+                                } else {
+                                    Button {
+                                        isFocused = false
+                                    } label: {
+                                        Image(systemName: "keyboard.chevron.compact.down")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(.primary)
+                                            .padding(8)
+                                            .background(Color.primary.opacity(0.08))
+                                            .clipShape(Circle())
+                                    }
+                                }
+
+                                // Quick Flip side button
+                                Button {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                        notebookPlacement = (notebookPlacement == .right) ? .left : .right
+                                    }
+                                } label: {
+                                    Image(systemName: notebookPlacement == .right ? "sidebar.left" : "sidebar.right")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(.primary)
+                                        .padding(8)
+                                        .background(Color.primary.opacity(0.08))
+                                        .clipShape(Circle())
+                                }
+
+                                // Contextual Visual Help Guide Pill
+                                HelpPillButton(context: .studyNotebook)
+
+                                Button {
+                                    NotificationCenter.default.post(name: .hideStudyNotebook, object: nil)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.primary)
+                                        .padding(8)
+                                        .background(Color.primary.opacity(0.08))
+                                        .clipShape(Circle())
+                                }
                             }
-                        }
-
-                        if isFocused {
-                            Image(systemName: "circle.fill")
-                                .font(.system(size: 8))
-                                .foregroundColor(Theme.blue)
-                                .symbolEffect(.pulse)
-                        } else {
-                            Button {
-                                isFocused = false
-                            } label: {
-                                Image(systemName: "keyboard.chevron.compact.down")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                    .padding(8)
-                                    .background(Color.primary.opacity(0.08))
-                                    .clipShape(Circle())
-                            }
-                        }
-
-                        // Quick Flip side button
-                        Button {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                notebookPlacement = (notebookPlacement == .right) ? .left : .right
-                            }
-                        } label: {
-                            Image(systemName: notebookPlacement == .right ? "sidebar.left" : "sidebar.right")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .padding(8)
-                                .background(Color.primary.opacity(0.08))
-                                .clipShape(Circle())
-                        }
-
-                        // Contextual Visual Help Guide Pill
-                        HelpPillButton(context: .studyNotebook)
-
-                        Button {
-                            NotificationCenter.default.post(name: .hideStudyNotebook, object: nil)
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.primary)
-                                .padding(8)
-                                .background(Color.primary.opacity(0.08))
-                                .clipShape(Circle())
                         }
                     }
                     .padding(.horizontal, 12)
@@ -2492,160 +2621,164 @@ extension StudyNotebookView {
     // MARK: - PencilKit Custom Drawing Toolbar
     @ViewBuilder
     private var canvasToolbar: some View {
-        HStack(spacing: 12) {
-            // Undo / Redo
-            Button {
-                HapticEngine.light()
-                canvasView.undoManager?.undo()
-            } label: {
-                Image(systemName: "arrow.uturn.backward")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(canvasView.undoManager?.canUndo == true ? .primary : .secondary.opacity(0.4))
-                    .padding(8)
-                    .background(Color.primary.opacity(0.06), in: Circle())
-            }
-            .disabled(canvasView.undoManager?.canUndo == false)
-
-            Button {
-                HapticEngine.light()
-                canvasView.undoManager?.redo()
-            } label: {
-                Image(systemName: "arrow.uturn.forward")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(canvasView.undoManager?.canRedo == true ? .primary : .secondary.opacity(0.4))
-                    .padding(8)
-                    .background(Color.primary.opacity(0.06), in: Circle())
-            }
-            .disabled(canvasView.undoManager?.canRedo == false)
-
-            Divider()
-                .frame(height: 20)
-                .background(Color.primary.opacity(0.1))
-
-            // Tools Segment
-            ForEach(DrawingTool.allCases) { tool in
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                // Undo / Redo
                 Button {
                     HapticEngine.light()
-                    activeDrawingTool = tool
+                    canvasView.undoManager?.undo()
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(canvasView.undoManager?.canUndo == true ? .primary : .secondary.opacity(0.4))
+                        .padding(8)
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                }
+                .disabled(canvasView.undoManager?.canUndo == false)
+
+                Button {
+                    HapticEngine.light()
+                    canvasView.undoManager?.redo()
+                } label: {
+                    Image(systemName: "arrow.uturn.forward")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(canvasView.undoManager?.canRedo == true ? .primary : .secondary.opacity(0.4))
+                        .padding(8)
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                }
+                .disabled(canvasView.undoManager?.canRedo == false)
+
+                Divider()
+                    .frame(height: 20)
+                    .background(Color.primary.opacity(0.1))
+
+                // Tools Segment
+                ForEach(DrawingTool.allCases) { tool in
+                    Button {
+                        HapticEngine.light()
+                        activeDrawingTool = tool
+                        updateCanvasTool()
+                    } label: {
+                        Image(systemName: tool.icon)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(activeDrawingTool == tool ? .white : .primary)
+                            .padding(8)
+                            .background(activeDrawingTool == tool ? Color.orange : Color.primary.opacity(0.06), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Divider()
+                    .frame(height: 20)
+                    .background(Color.primary.opacity(0.1))
+
+                // Colors (only relevant for writing tools)
+                if activeDrawingTool == .pen || activeDrawingTool == .pencil || activeDrawingTool == .highlighter {
+                    HStack(spacing: 8) {
+                        ForEach(drawingColors, id: \.self) { color in
+                            Button {
+                                HapticEngine.light()
+                                strokeColor = color
+                                updateCanvasTool()
+                            } label: {
+                                Circle()
+                                    .fill(color)
+                                    .frame(width: 18, height: 18)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.primary.opacity(strokeColor == color ? 0.8 : 0.15), lineWidth: strokeColor == color ? 2 : 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                // Thickness Picker
+                if activeDrawingTool == .pen || activeDrawingTool == .pencil || activeDrawingTool == .highlighter {
+                    Menu {
+                        Picker("Width", selection: $strokeWidth) {
+                            Text("Fine (2pt)").tag(CGFloat(2.0))
+                            Text("Medium (4pt)").tag(CGFloat(4.0))
+                            Text("Thick (8pt)").tag(CGFloat(8.0))
+                            Text("Extra (16pt)").tag(CGFloat(16.0))
+                        }
+                    } label: {
+                        Image(systemName: "line.horizontal.3.decrease.circle")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .padding(8)
+                            .background(Color.primary.opacity(0.06), in: Circle())
+                    }
+                    .onChange(of: strokeWidth) { _, _ in updateCanvasTool() }
+                }
+
+                // Eraser Mode Picker
+                if activeDrawingTool == .eraser {
+                    Menu {
+                        Picker("Eraser Type", selection: $eraserType) {
+                            Label("Object Eraser", systemImage: "eraser.line.dashed").tag(PKEraserTool.EraserType.vector)
+                            Label("Pixel Eraser", systemImage: "eraser").tag(PKEraserTool.EraserType.bitmap)
+                        }
+                    } label: {
+                        Image(systemName: eraserType == .vector ? "eraser.line.dashed.fill" : "eraser.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .padding(8)
+                            .background(Color.primary.opacity(0.06), in: Circle())
+                    }
+                    .onChange(of: eraserType) { _, _ in updateCanvasTool() }
+                }
+
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: 4)
+
+                // Ruler Button
+                Button {
+                    HapticEngine.light()
+                    isRulerActive.toggle()
                     updateCanvasTool()
                 } label: {
-                    Image(systemName: tool.icon)
+                    Image(systemName: "ruler")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(activeDrawingTool == tool ? .white : .primary)
+                        .foregroundColor(isRulerActive ? .white : .primary)
                         .padding(8)
-                        .background(activeDrawingTool == tool ? Color.orange : Color.primary.opacity(0.06), in: Circle())
+                        .background(isRulerActive ? Color.orange : Color.primary.opacity(0.06), in: Circle())
                 }
                 .buttonStyle(.plain)
-            }
 
-            Divider()
-                .frame(height: 20)
-                .background(Color.primary.opacity(0.1))
-
-            // Colors (only relevant for writing tools)
-            if activeDrawingTool == .pen || activeDrawingTool == .pencil || activeDrawingTool == .highlighter {
-                HStack(spacing: 8) {
-                    ForEach(drawingColors, id: \.self) { color in
-                        Button {
-                            HapticEngine.light()
-                            strokeColor = color
-                            updateCanvasTool()
-                        } label: {
-                            Circle()
-                                .fill(color)
-                                .frame(width: 18, height: 18)
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.primary.opacity(strokeColor == color ? 0.8 : 0.15), lineWidth: strokeColor == color ? 2 : 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            // Thickness Picker
-            if activeDrawingTool == .pen || activeDrawingTool == .pencil || activeDrawingTool == .highlighter {
-                Menu {
-                    Picker("Width", selection: $strokeWidth) {
-                        Text("Fine (2pt)").tag(CGFloat(2.0))
-                        Text("Medium (4pt)").tag(CGFloat(4.0))
-                        Text("Thick (8pt)").tag(CGFloat(8.0))
-                        Text("Extra (16pt)").tag(CGFloat(16.0))
-                    }
+                // Smart Shapes Toggle
+                Button {
+                    HapticEngine.light()
+                    isSmartShapesEnabled.toggle()
                 } label: {
-                    Image(systemName: "line.horizontal.3.decrease.circle")
+                    Image(systemName: isSmartShapesEnabled ? "skew" : "pencil.and.outline")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(isSmartShapesEnabled ? .white : .primary)
+                        .padding(8)
+                        .background(isSmartShapesEnabled ? Color.purple : Color.primary.opacity(0.06), in: Circle())
+                }
+                .buttonStyle(.plain)
+
+                // Ink-to-Text OCR Action
+                Button {
+                    HapticEngine.selection()
+                    recognizeInkToText()
+                } label: {
+                    Image(systemName: isPerformingOCR ? "arrow.triangle.2.circlepath" : "text.viewfinder")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(isPerformingOCR ? .orange : .primary)
                         .padding(8)
                         .background(Color.primary.opacity(0.06), in: Circle())
                 }
-                .onChange(of: strokeWidth) { _, _ in updateCanvasTool() }
+                .buttonStyle(.plain)
+                .disabled(isPerformingOCR)
+                .accessibilityLabel("Convert handwriting to text")
             }
-
-            // Eraser Mode Picker
-            if activeDrawingTool == .eraser {
-                Menu {
-                    Picker("Eraser Type", selection: $eraserType) {
-                        Label("Object Eraser", systemImage: "eraser.line.dashed").tag(PKEraserTool.EraserType.vector)
-                        Label("Pixel Eraser", systemImage: "eraser").tag(PKEraserTool.EraserType.bitmap)
-                    }
-                } label: {
-                    Image(systemName: eraserType == .vector ? "eraser.line.dashed.fill" : "eraser.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .padding(8)
-                        .background(Color.primary.opacity(0.06), in: Circle())
-                }
-                .onChange(of: eraserType) { _, _ in updateCanvasTool() }
-            }
-
-            Spacer()
-
-            // Ruler Button
-            Button {
-                HapticEngine.light()
-                isRulerActive.toggle()
-                updateCanvasTool()
-            } label: {
-                Image(systemName: "ruler")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(isRulerActive ? .white : .primary)
-                    .padding(8)
-                    .background(isRulerActive ? Color.orange : Color.primary.opacity(0.06), in: Circle())
-            }
-            .buttonStyle(.plain)
-
-            // Smart Shapes Toggle
-            Button {
-                HapticEngine.light()
-                isSmartShapesEnabled.toggle()
-            } label: {
-                Image(systemName: isSmartShapesEnabled ? "skew" : "pencil.and.outline")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(isSmartShapesEnabled ? .white : .primary)
-                    .padding(8)
-                    .background(isSmartShapesEnabled ? Color.purple : Color.primary.opacity(0.06), in: Circle())
-            }
-            .buttonStyle(.plain)
-
-            // Ink-to-Text OCR Action
-            Button {
-                HapticEngine.selection()
-                recognizeInkToText()
-            } label: {
-                Image(systemName: isPerformingOCR ? "arrow.triangle.2.circlepath" : "text.viewfinder")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(isPerformingOCR ? .orange : .primary)
-                    .padding(8)
-                    .background(Color.primary.opacity(0.06), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isPerformingOCR)
-            .accessibilityLabel("Convert handwriting to text")
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
         .background(Color.inkSurfaceRaised.opacity(0.4).background(.thinMaterial))
         .overlay(
             VStack {

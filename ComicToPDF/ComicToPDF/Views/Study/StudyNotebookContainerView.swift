@@ -174,7 +174,7 @@ public struct StudyNotebookContainerView: View {
                 Spacer()
                 
                 if isWideScreen {
-                    modeSwitcher
+                    modeSwitcher(isWideScreen: true)
                     Spacer()
                     studyDeckButton
                 }
@@ -203,7 +203,7 @@ public struct StudyNotebookContainerView: View {
             // Sub-row for iPhone / Compact Screens
             if !isWideScreen {
                 HStack(spacing: 8) {
-                    modeSwitcher
+                    modeSwitcher(isWideScreen: false)
                     Spacer()
                     studyDeckButton
                 }
@@ -216,7 +216,7 @@ public struct StudyNotebookContainerView: View {
 
     // MARK: - Extracted Header Toolbar Sub-Components
 
-    private var modeSwitcher: some View {
+    private func modeSwitcher(isWideScreen: Bool) -> some View {
         HStack(spacing: 2) {
             ForEach(StudyWorkspaceMode.allCases) { mode in
                 Button {
@@ -225,14 +225,14 @@ public struct StudyNotebookContainerView: View {
                         activeMode = mode
                     }
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: isWideScreen ? 5 : 4) {
                         Image(systemName: mode.iconName)
                             .font(.system(size: 11, weight: .bold))
-                        Text(mode.rawValue)
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                        Text(isWideScreen ? mode.rawValue : (mode == .cornellNotes ? "Notes" : "Cards"))
+                            .font(.system(size: isWideScreen ? 12 : 11, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(activeMode == mode ? .white : .inkTextSecondary)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, isWideScreen ? 12 : 8)
                     .padding(.vertical, 6)
                     .background(
                         activeMode == mode

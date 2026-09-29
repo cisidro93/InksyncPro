@@ -121,7 +121,7 @@ public struct InksyncPenDockView: View {
 
     // MARK: - Main Dock Capsule
 
-    private var mainDockCapsule: some View {
+    private var mainDockContent: some View {
         HStack(spacing: isCompact ? 6 : 10) {
             // Minimize button
             Button {
@@ -395,8 +395,23 @@ public struct InksyncPenDockView: View {
                 .help("Close Pen Toolbar")
             }
         }
-        .padding(.horizontal, isCompact ? 10 : 14)
-        .padding(.vertical, isCompact ? 6 : 8)
+    }
+
+    private var mainDockCapsule: some View {
+        Group {
+            if isCompact {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    mainDockContent
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                }
+                .frame(maxWidth: min(UIScreen.main.bounds.width - 24, 480))
+            } else {
+                mainDockContent
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+            }
+        }
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
@@ -486,7 +501,7 @@ public struct InksyncPenDockView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
-        .frame(maxWidth: isCompact ? 340 : 420)
+        .frame(maxWidth: isCompact ? min(UIScreen.main.bounds.width - 24, 340) : 420)
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
@@ -785,7 +800,7 @@ public struct InksyncPenDockView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: isCompact ? 300 : 340)
+        .frame(maxWidth: isCompact ? min(UIScreen.main.bounds.width - 24, 300) : 340)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)

@@ -24,6 +24,7 @@ public struct SpatialTextBlock: Identifiable, Sendable {
         case code
         case listItem
         case figureCaption
+        case table
     }
 
     public init(
@@ -61,6 +62,7 @@ public final class PDFSpatialParser {
         guard pageCount > 0 else { return [] }
 
         let medianFontSize = calculateMedianFontSize(document: document)
+        let skipClutter = EBookPreferences.shared.pdfReflowSmartClutterRemoval
 
         // Pre-scan first 10 pages to determine if document has digital text
         var hasDigitalText = false
@@ -82,7 +84,7 @@ public final class PDFSpatialParser {
             var pageBlocks: [SpatialTextBlock] = autoreleasepool {
                 if hasDigitalText {
                     if !pageString.isEmpty {
-                        var parsed = parsePage(page, pageIndex: i, medianFontSize: medianFontSize)
+                        var parsed = parsePage(page, pageIndex: i, medianFontSize: medianFontSize, skipClutter: skipClutter)
                         // If all lines were filtered as headers/footers but text actually exists, create fallback block
                         if parsed.isEmpty {
                             let pageBounds = page.bounds(for: .mediaBox)
@@ -110,7 +112,7 @@ public final class PDFSpatialParser {
 
             // For fully scanned documents (no digital text anywhere), run throttled fast Vision OCR
             if !hasDigitalText && pageBlocks.isEmpty {
-                pageBlocks = await parsePageWithVisionOCR(page, pageIndex: i, medianFontSize: medianFontSize)
+                pageBlocks = await parsePageWithVisionOCR(page, pageIndex: i, medianFontSize: medianFontSize, skipClutter: skipClutter)
             }
 
             blocks.append(contentsOf: pageBlocks)
@@ -123,7 +125,7 @@ public final class PDFSpatialParser {
         return blocks
     }
 
-    private func parsePageWithVisionOCR(_ page: PDFPage, pageIndex: Int, medianFontSize: CGFloat) async -> [SpatialTextBlock] {
+    private func parsePageWithVisionOCR(_ page: PDFPage, pageIndex: Int, medianFontSize: CGFloat, skipClutter: Bool = true) async -> [SpatialTextBlock] {
         let pageBounds = page.bounds(for: .mediaBox)
         guard pageBounds.width > 0 && pageBounds.height > 0 else { return [] }
 
@@ -179,6 +181,14 @@ public final class PDFSpatialParser {
                     let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { continue }
 
+                    if skipClutter && SmartSpeechTextSanitizer.shared.isPageNumberOrClutter(
+                        text: text,
+                        boundsInPage: rect,
+                        pageSize: pageBounds.size
+                    ) {
+                        continue
+                    }
+
                     let isTitle = rect.height > medianFontSize * 1.5 || (text.count < 60 && text.allSatisfy { $0.isUppercase || $0.isWhitespace || $0.isPunctuation })
                     let kind: SpatialTextBlock.BlockKind = isTitle ? .heading2 : .paragraph
 
@@ -233,11 +243,8 @@ public final class PDFSpatialParser {
         return sorted[sorted.count / 2]
     }
 
-    private func parsePage(_ page: PDFPage, pageIndex: Int, medianFontSize: CGFloat) -> [SpatialTextBlock] {
+    private func parsePage(_ page: PDFPage, pageIndex: Int, medianFontSize: CGFloat, skipClutter: Bool = true) -> [SpatialTextBlock] {
         let pageBounds = page.bounds(for: .mediaBox)
-        let headerThreshold = pageBounds.height * 0.93 // Ignore top 7%
-        let footerThreshold = pageBounds.height * 0.05 // Ignore bottom 5%
-
         guard let pageSelection = page.selection(for: pageBounds) else { return [] }
         let lineSelections = pageSelection.selectionsByLine()
 
@@ -248,6 +255,12 @@ public final class PDFSpatialParser {
             let fontName: String
             let isBold: Bool
             let isItalic: Bool
+
+            var isMonospace: Bool {
+                let name = fontName.lowercased()
+                return name.contains("courier") || name.contains("menlo") || name.contains("monaco") ||
+                       name.contains("consolas") || name.contains("sourcecodepro") || name.contains("mono")
+            }
         }
 
         var lines: [LineInfo] = []
@@ -257,11 +270,13 @@ public final class PDFSpatialParser {
             let text = lineSel.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard !text.isEmpty else { continue }
 
-            // Filter header running titles & footer page numbers
-            if lineBounds.maxY > headerThreshold || lineBounds.minY < footerThreshold {
-                if text.count < 6 || CharacterSet.decimalDigits.isSuperset(of: CharacterSet(charactersIn: text)) {
-                    continue
-                }
+            // Intelligent clutter filter: strip running headers, footers, standalone page numbers, and separator artifacts
+            if skipClutter && SmartSpeechTextSanitizer.shared.isPageNumberOrClutter(
+                text: text,
+                boundsInPage: lineBounds,
+                pageSize: pageBounds.size
+            ) {
+                continue
             }
 
             var fontSize: CGFloat = medianFontSize
@@ -281,118 +296,361 @@ public final class PDFSpatialParser {
             lines.append(LineInfo(rect: lineBounds, text: text, fontSize: fontSize, fontName: fontName, isBold: isBold, isItalic: isItalic))
         }
 
-        // XY-Cut Column Segmentation: Cluster lines into columns
-        let sortedColumns = clusterLinesIntoColumns(lines: lines, pageWidth: pageBounds.width)
+        // Multi-Band XY-Cut Segmentation: Spanned headers first, followed by multi-column clusters
+        let sortedBandsAndColumns = clusterLinesIntoBandsAndColumns(lines: lines, pageWidth: pageBounds.width)
 
         var blocks: [SpatialTextBlock] = []
 
-        for columnLines in sortedColumns {
-            var currentText = ""
-            var currentRect: CGRect = .null
-            var maxFontSize: CGFloat = medianFontSize
-            var blockIsBold = false
-            var blockIsItalic = false
-            var lastLineMaxY: CGFloat = -1
-
-            for line in columnLines {
-                let isNewParagraph: Bool
-                if lastLineMaxY < 0 {
-                    isNewParagraph = false
-                } else {
-                    let verticalGap = abs(lastLineMaxY - line.rect.maxY)
-                    isNewParagraph = verticalGap > (line.fontSize * 1.6)
-                }
-
-                if isNewParagraph && !currentText.isEmpty {
-                    let kind = classifyBlockKind(fontSize: maxFontSize, medianSize: medianFontSize, text: currentText, isBold: blockIsBold)
-                    blocks.append(SpatialTextBlock(
-                        pageIndex: pageIndex,
-                        rect: currentRect,
-                        text: currentText,
-                        kind: kind,
-                        fontName: "system",
-                        fontSize: maxFontSize,
-                        isBold: blockIsBold,
-                        isItalic: blockIsItalic
-                    ))
-                    currentText = line.text
-                    currentRect = line.rect
-                    maxFontSize = line.fontSize
-                    blockIsBold = line.isBold
-                    blockIsItalic = line.isItalic
-                } else {
-                    if currentText.isEmpty {
-                        currentText = line.text
-                        currentRect = line.rect
-                    } else {
-                        if currentText.hasSuffix("-") {
-                            currentText = String(currentText.dropLast()) + line.text
-                        } else {
-                            currentText += " " + line.text
-                        }
-                        currentRect = currentRect.union(line.rect)
-                    }
-                    maxFontSize = max(maxFontSize, line.fontSize)
-                    blockIsBold = blockIsBold || line.isBold
-                    blockIsItalic = blockIsItalic || line.isItalic
-                }
-                lastLineMaxY = line.rect.minY
-            }
-
-            if !currentText.isEmpty {
-                let kind = classifyBlockKind(fontSize: maxFontSize, medianSize: medianFontSize, text: currentText, isBold: blockIsBold)
-                blocks.append(SpatialTextBlock(
-                    pageIndex: pageIndex,
-                    rect: currentRect,
-                    text: currentText,
-                    kind: kind,
-                    fontName: "system",
-                    fontSize: maxFontSize,
-                    isBold: blockIsBold,
-                    isItalic: blockIsItalic
-                ))
-            }
+        for columnLines in sortedBandsAndColumns {
+            guard !columnLines.isEmpty else { continue }
+            let columnMinX = columnLines.map { $0.rect.minX }.min() ?? 0
+            let stitchedBlocks = stitchLinesIntoBlocks(
+                lines: columnLines,
+                pageIndex: pageIndex,
+                medianFontSize: medianFontSize,
+                columnMinX: columnMinX
+            )
+            blocks.append(contentsOf: stitchedBlocks)
         }
 
         return blocks
     }
 
-    private func clusterLinesIntoColumns<T: LineInfoProtocol>(lines: [T], pageWidth: CGFloat) -> [[T]] {
-        guard !lines.isEmpty else { return [] }
+    private static let listMarkerRegex = try? NSRegularExpression(
+        pattern: #"^\s*(?:\(?\d{1,3}[\.\)]|\(?[a-zA-Z][\.\)]|\(?[ivxlcdmIVXLCDM]{1,6}[\.\)])\s+"#,
+        options: []
+    )
 
-        let midX = pageWidth / 2.0
-        let leftLines = lines.filter { $0.rect.midX < midX }.sorted(by: { $0.rect.maxY > $1.rect.maxY })
-        let rightLines = lines.filter { $0.rect.midX >= midX }.sorted(by: { $0.rect.maxY > $1.rect.maxY })
+    /// Identifies whether a text string begins with a recognized list marker (bullet or numbered/lettered item).
+    public static func isListMarker(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
 
-        let total = lines.count
-        if leftLines.count > Int(Double(total) * 0.25) && rightLines.count > Int(Double(total) * 0.25) {
-            return [leftLines, rightLines]
-        } else {
-            let sorted = lines.sorted(by: { $0.rect.maxY > $1.rect.maxY })
-            return [sorted]
+        let bulletChars: Set<Character> = ["•", "▪", "▫", "◦", "⁃", "‣", "–", "—"]
+        if let first = trimmed.first, bulletChars.contains(first) {
+            return true
         }
+
+        if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
+            return true
+        }
+
+        if let regex = listMarkerRegex {
+            let range = NSRange(location: 0, length: min(trimmed.utf16.count, 12))
+            return regex.firstMatch(in: trimmed, options: [], range: range) != nil
+        }
+
+        return false
     }
 
-    private func classifyBlockKind(fontSize: CGFloat, medianSize: CGFloat, text: String, isBold: Bool) -> SpatialTextBlock.BlockKind {
-        let ratio = fontSize / max(1.0, medianSize)
-        if ratio >= 1.8 {
-            return .title
-        } else if ratio >= 1.4 {
-            return .heading1
-        } else if ratio >= 1.2 || (isBold && ratio >= 1.1) {
-            return .heading2
-        } else if isBold && text.count < 80 {
-            return .heading3
-        } else if text.hasPrefix("•") || text.hasPrefix("-") || text.hasPrefix("1.") {
-            return .listItem
-        } else if text.hasPrefix("Figure ") || text.hasPrefix("Fig. ") || text.hasPrefix("Table ") {
-            return .figureCaption
-        } else {
-            return .paragraph
+    /// Identifies whether a list marker is numeric or alphabetic (ordered list).
+    public static func isOrderedListMarker(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, let regex = listMarkerRegex else { return false }
+        let range = NSRange(location: 0, length: min(trimmed.utf16.count, 12))
+        return regex.firstMatch(in: trimmed, options: [], range: range) != nil
+    }
+
+    /// Segments lines into bands: Spanned full-width blocks (Title, Abstract, wide Figures/Tables)
+    /// and Multi-Column clusters (Column 1, Column 2, Column 3), preserving true reading flow.
+    private func clusterLinesIntoBandsAndColumns<T: LineInfoProtocol>(lines: [T], pageWidth: CGFloat) -> [[T]] {
+        guard !lines.isEmpty else { return [] }
+
+        // Sort all lines primarily by maxY descending (top of page to bottom of page in PDF coordinates)
+        let sorted = lines.sorted { $0.rect.maxY > $1.rect.maxY }
+
+        let leftThreshold = pageWidth * 0.46
+        let rightThreshold = pageWidth * 0.54
+
+        let leftColCount = lines.filter { $0.rect.maxX < rightThreshold && $0.rect.width < (pageWidth * 0.52) }.count
+        let rightColCount = lines.filter { $0.rect.minX > leftThreshold && $0.rect.width < (pageWidth * 0.52) }.count
+
+        let isMultiColumnDocument = leftColCount >= max(3, Int(Double(lines.count) * 0.18)) &&
+                                    rightColCount >= max(3, Int(Double(lines.count) * 0.18))
+
+        // If single-column document, preserve strict top-to-bottom reading order with zero fragmentation
+        guard isMultiColumnDocument else {
+            return [sorted]
         }
+
+        // Helper: Determine if a line spans horizontally across columns
+        func isLineSpanned(_ line: T) -> Bool {
+            let widthRatio = line.rect.width / max(1.0, pageWidth)
+            let isWide = widthRatio > 0.55
+            let isCenteredWide = abs(line.rect.midX - (pageWidth / 2.0)) < (pageWidth * 0.14) && widthRatio > 0.38
+            return isWide || isCenteredWide
+        }
+
+        // Multi-Band XY-Cut: Segment sorted lines into alternating Spanned and Columnar bands
+        var bands: [(isSpanned: Bool, lines: [T])] = []
+        var currentIsSpanned: Bool? = nil
+        var currentBandLines: [T] = []
+
+        for line in sorted {
+            let lineSpanned = isLineSpanned(line)
+            if let current = currentIsSpanned {
+                if current == lineSpanned {
+                    currentBandLines.append(line)
+                } else {
+                    bands.append((isSpanned: current, lines: currentBandLines))
+                    currentIsSpanned = lineSpanned
+                    currentBandLines = [line]
+                }
+            } else {
+                currentIsSpanned = lineSpanned
+                currentBandLines = [line]
+            }
+        }
+
+        if let current = currentIsSpanned, !currentBandLines.isEmpty {
+            bands.append((isSpanned: current, lines: currentBandLines))
+        }
+
+        var result: [[T]] = []
+
+        for band in bands {
+            if band.isSpanned {
+                result.append(band.lines)
+            } else {
+                let bandLines = band.lines
+                let total = bandLines.count
+
+                let midX = pageWidth / 2.0
+                let leftLines = bandLines.filter { $0.rect.midX < midX }.sorted { $0.rect.maxY > $1.rect.maxY }
+                let rightLines = bandLines.filter { $0.rect.midX >= midX }.sorted { $0.rect.maxY > $1.rect.maxY }
+
+                let minPerCol = max(2, Int(Double(total) * 0.18))
+                if leftLines.count >= minPerCol && rightLines.count >= minPerCol {
+                    // 3-Column sub-detection
+                    let col1Boundary = pageWidth * 0.38
+                    let col2Boundary = pageWidth * 0.65
+                    let col1 = bandLines.filter { $0.rect.midX < col1Boundary }.sorted { $0.rect.maxY > $1.rect.maxY }
+                    let col2 = bandLines.filter { $0.rect.midX >= col1Boundary && $0.rect.midX < col2Boundary }.sorted { $0.rect.maxY > $1.rect.maxY }
+                    let col3 = bandLines.filter { $0.rect.midX >= col2Boundary }.sorted { $0.rect.maxY > $1.rect.maxY }
+
+                    let min3Col = max(2, Int(Double(total) * 0.15))
+                    if col1.count >= min3Col && col2.count >= min3Col && col3.count >= min3Col {
+                        result.append(col1)
+                        result.append(col2)
+                        result.append(col3)
+                    } else {
+                        result.append(leftLines)
+                        result.append(rightLines)
+                    }
+                } else {
+                    result.append(bandLines)
+                }
+            }
+        }
+
+        return result
+    }
+
+    /// Stitches sequential lines in a column into cohesive paragraphs, code blocks, lists, and headings.
+    /// Incorporates K2pdfopt's proven rules for hyphen de-duplication, indentation, and punctuation-aware paragraph continuation.
+    private func stitchLinesIntoBlocks(
+        lines: [some LineInfoProtocol],
+        pageIndex: Int,
+        medianFontSize: CGFloat,
+        columnMinX: CGFloat
+    ) -> [SpatialTextBlock] {
+        var blocks: [SpatialTextBlock] = []
+        guard !lines.isEmpty else { return [] }
+
+        var currentText = ""
+        var currentRect: CGRect = .null
+        var maxFontSize: CGFloat = medianFontSize
+        var blockIsBold = false
+        var blockIsItalic = false
+        var blockIsMonospace = false
+        var lastLine: (any LineInfoProtocol)? = nil
+
+        let terminalPunctuation: Set<Character> = [".", "!", "?", "…", "”", "’", "\""]
+
+        for line in lines {
+            let isNewParagraph: Bool
+
+            if let prev = lastLine {
+                let verticalGap = abs(prev.rect.minY - line.rect.maxY)
+                let trimmedPrev = prev.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let lastChar = trimmedPrev.last ?? " "
+                let prevEndsWithPunctuation = terminalPunctuation.contains(lastChar) ||
+                                              trimmedPrev.hasSuffix(".\"") ||
+                                              trimmedPrev.hasSuffix("?\"") ||
+                                              trimmedPrev.hasSuffix("!\"")
+
+                let hasIndent = (line.rect.minX - columnMinX) >= 12.0
+                let isLargeGap = verticalGap > (line.fontSize * 1.55)
+                let isBullet = Self.isListMarker(line.text)
+                let isHeaderSize = line.fontSize >= medianFontSize * 1.25 || (line.isBold && line.text.count < 70)
+                let isMonospaceChange = line.isMonospace != blockIsMonospace
+
+                if isBullet || isHeaderSize || isMonospaceChange {
+                    isNewParagraph = true
+                } else if prevEndsWithPunctuation && (hasIndent || isLargeGap || line.text.first?.isUppercase == true) {
+                    isNewParagraph = true
+                } else if isLargeGap && verticalGap > (line.fontSize * 2.2) {
+                    isNewParagraph = true
+                } else {
+                    isNewParagraph = false
+                }
+            } else {
+                isNewParagraph = false
+            }
+
+            if isNewParagraph && !currentText.isEmpty {
+                let kind = classifyBlockKind(
+                    fontSize: maxFontSize,
+                    medianSize: medianFontSize,
+                    text: currentText,
+                    isBold: blockIsBold,
+                    isMonospace: blockIsMonospace,
+                    isIndented: (currentRect.minX - columnMinX) >= 20.0
+                )
+                blocks.append(SpatialTextBlock(
+                    pageIndex: pageIndex,
+                    rect: currentRect,
+                    text: currentText,
+                    kind: kind,
+                    fontName: blockIsMonospace ? "Menlo" : "system",
+                    fontSize: maxFontSize,
+                    isBold: blockIsBold,
+                    isItalic: blockIsItalic
+                ))
+
+                currentText = line.text
+                currentRect = line.rect
+                maxFontSize = line.fontSize
+                blockIsBold = line.isBold
+                blockIsItalic = line.isItalic
+                blockIsMonospace = line.isMonospace
+            } else {
+                if currentText.isEmpty {
+                    currentText = line.text
+                    currentRect = line.rect
+                    maxFontSize = line.fontSize
+                    blockIsBold = line.isBold
+                    blockIsItalic = line.isItalic
+                    blockIsMonospace = line.isMonospace
+                } else {
+                    // Hyphenation rejoining (K2pdfopt standard)
+                    if currentText.hasSuffix("-") {
+                        let withoutHyphen = String(currentText.dropLast())
+                        if let firstChar = line.text.first, firstChar.isLowercase, let lastChar = withoutHyphen.last, lastChar.isLetter {
+                            currentText = withoutHyphen + line.text
+                        } else {
+                            currentText = currentText + " " + line.text
+                        }
+                    } else {
+                        currentText += " " + line.text
+                    }
+                    currentRect = currentRect.union(line.rect)
+                    maxFontSize = max(maxFontSize, line.fontSize)
+                    blockIsBold = blockIsBold || line.isBold
+                    blockIsItalic = blockIsItalic || line.isItalic
+                    blockIsMonospace = blockIsMonospace || line.isMonospace
+                }
+            }
+
+            lastLine = line
+        }
+
+        if !currentText.isEmpty {
+            let kind = classifyBlockKind(
+                fontSize: maxFontSize,
+                medianSize: medianFontSize,
+                text: currentText,
+                isBold: blockIsBold,
+                isMonospace: blockIsMonospace,
+                isIndented: (currentRect.minX - columnMinX) >= 20.0
+            )
+            blocks.append(SpatialTextBlock(
+                pageIndex: pageIndex,
+                rect: currentRect,
+                text: currentText,
+                kind: kind,
+                fontName: blockIsMonospace ? "Menlo" : "system",
+                fontSize: maxFontSize,
+                isBold: blockIsBold,
+                isItalic: blockIsItalic
+            ))
+        }
+
+        return blocks
+    }
+
+    private func classifyBlockKind(
+        fontSize: CGFloat,
+        medianSize: CGFloat,
+        text: String,
+        isBold: Bool,
+        isMonospace: Bool = false,
+        isIndented: Bool = false
+    ) -> SpatialTextBlock.BlockKind {
+        if isMonospace {
+            return .code
+        }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ratio = fontSize / max(1.0, medianSize)
+
+        // Check for tables
+        if trimmed.hasPrefix("Table ") || trimmed.hasPrefix("TABLE ") {
+            let lines = trimmed.components(separatedBy: .newlines)
+            if lines.count >= 2 {
+                return .table
+            } else {
+                return .figureCaption
+            }
+        } else if trimmed.contains("\n") {
+            let lines = trimmed.components(separatedBy: .newlines)
+            let columnarLines = lines.filter { $0.contains("\t") || $0.contains("|") }
+            if columnarLines.count >= 2 {
+                return .table
+            }
+        }
+
+        // Check for list items
+        if Self.isListMarker(trimmed) {
+            return .listItem
+        }
+
+        // Check for figure captions
+        if trimmed.hasPrefix("Figure ") || trimmed.hasPrefix("Fig. ") || trimmed.hasPrefix("Plate ") {
+            return .figureCaption
+        }
+
+        // Check for blockquotes (indented paragraphs)
+        if isIndented && trimmed.count > 40 {
+            return .blockquote
+        }
+
+        // Headings: Guard against normal bold sentences being classified as headings
+        let endsWithTerminalPunctuation = trimmed.hasSuffix(".") || trimmed.hasSuffix("?") || trimmed.hasSuffix("!")
+        let isLikelyBodySentence = endsWithTerminalPunctuation && trimmed.count > 40 && ratio < 1.30
+
+        if !isLikelyBodySentence {
+            if ratio >= 1.7 {
+                return .title
+            } else if ratio >= 1.35 {
+                return .heading1
+            } else if ratio >= 1.18 || (isBold && ratio >= 1.08 && trimmed.count < 90) {
+                return .heading2
+            } else if isBold && trimmed.count < 80 {
+                return .heading3
+            }
+        }
+
+        return .paragraph
     }
 }
 
-private protocol LineInfoProtocol {
+private protocol LineInfoProtocol: Sendable {
     var rect: CGRect { get }
+    var text: String { get }
+    var fontSize: CGFloat { get }
+    var fontName: String { get }
+    var isBold: Bool { get }
+    var isItalic: Bool { get }
+    var isMonospace: Bool { get }
 }

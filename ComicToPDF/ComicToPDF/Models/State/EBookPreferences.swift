@@ -167,6 +167,9 @@ class EBookPreferences: ObservableObject {
     @AppStorage("pdf_reflowMode")       var pdfReflowMode: Bool     = false {
         didSet { objectWillChange.send() }
     }
+    @AppStorage("pdf_reflowSmartClutterRemoval") var pdfReflowSmartClutterRemoval: Bool = true {
+        didSet { objectWillChange.send() }
+    }
 
     // Progress display mode (cycles on tap: 0=page, 1=remaining, 2=timeLeft, 3=WPM, 4=hidden)
     @AppStorage("ebook_progressMode")   var progressMode: Int = 0 {

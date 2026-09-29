@@ -78,6 +78,7 @@ struct ProPDFReflowReaderView: View {
                             currentPage: $chapterPage,
                             initialPage: 0,
                             totalPages: $chapterTotalPages,
+                            targetAnchor: "page-\(targetPDFPageIndex + 1)",
                             onNext: {
                                 syncCurrentPDFPageFromReflow()
                             },
@@ -114,6 +115,7 @@ struct ProPDFReflowReaderView: View {
                         }
                     }
                     .onAppear {
+                        targetPDFPageIndex = currentPageIndex
                         if webViewRef != nil && !hasAnchoredInitialPage {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                                 scrollToTargetPDFPage(pageIndex: targetPDFPageIndex)
@@ -138,6 +140,13 @@ struct ProPDFReflowReaderView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
                 handleOrientationOrBoundsChange(newSize: size)
+            }
+            .onChange(of: prefs.pdfReflowSmartClutterRemoval) { _, _ in
+                Task { @MainActor in
+                    self.isCompilingReflow = true
+                    self.hasAnchoredInitialPage = false
+                    await compileReflowLayout()
+                }
             }
         }
         .task {
@@ -195,12 +204,13 @@ struct ProPDFReflowReaderView: View {
             var rect = el.getBoundingClientRect();
             var vp = document.getElementById('inksync-viewport') || document.body;
             var vpRect = vp ? vp.getBoundingClientRect() : { left: 0 };
-            var offsetLeft = (rect.left - vpRect.left);
+            var currentShift = (typeof _currentShift !== 'undefined') ? _currentShift : 0;
+            var absLeft = (rect.left - vpRect.left) + currentShift;
             var pageStep = (typeof getPageStep === 'function') ? getPageStep() : (window.innerWidth || 390);
             var colWidth = (typeof _isMultiCol !== 'undefined' && _isMultiCol) ? (pageStep / 2) : pageStep;
 
             if (colWidth > 0 && typeof goToPage === 'function') {
-                var targetPage = Math.max(0, Math.min(Math.floor(offsetLeft / colWidth), _totalPages - 1));
+                var targetPage = Math.max(0, Math.min(Math.floor(absLeft / colWidth), _totalPages - 1));
                 goToPage(targetPage, false);
                 return targetPage;
             }
@@ -402,10 +412,12 @@ struct ProPDFReflowReaderView: View {
         }
 
         let pdfUUID = pdf.id.uuidString
+        let isClutterFiltered = prefs.pdfReflowSmartClutterRemoval
+        let cacheFileName = "reflow_v3_\(isClutterFiltered ? "clean" : "raw").html"
 
         let fileManager = FileManager.default
         if let cacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first {
-            let cachedURL = cacheDir.appendingPathComponent("ReflowPDF/\(pdfUUID)/reflow.html")
+            let cachedURL = cacheDir.appendingPathComponent("ReflowPDF/\(pdfUUID)/\(cacheFileName)")
             if fileManager.fileExists(atPath: cachedURL.path) {
                 self.reflowHTMLURL = cachedURL
                 self.isCompilingReflow = false
@@ -424,7 +436,8 @@ struct ProPDFReflowReaderView: View {
             pdfUUID: pdfUUID,
             documentTitle: pdf.name,
             blocks: blocks,
-            images: images
+            images: images,
+            isClutterFiltered: isClutterFiltered
         )
 
         self.reflowHTMLURL = compiledURL

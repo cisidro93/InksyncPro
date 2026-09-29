@@ -219,11 +219,24 @@ final class NotebookSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechS
             return
         }
 
+        let voiceSelector = NaturalSpeechVoiceSelector.shared
+        let sanitizedSpeechString = SmartSpeechTextSanitizer.shared.sanitizeForSpeech(
+            text,
+            skipCitations: voiceSelector.isSkipCitationsAndFootnotesEnabled,
+            silenceUrls: voiceSelector.isSilenceURLsEnabled,
+            expandAbbreviations: voiceSelector.isExpandAbbreviationsEnabled
+        )
+
+        guard !sanitizedSpeechString.isEmpty else {
+            nextBlock()
+            return
+        }
+
         self.activeSentenceText = text
         onSentenceChanged?(index, text)
 
-        let utterance = AVSpeechUtterance(string: text)
-        NaturalSpeechVoiceSelector.shared.configureNaturalUtterance(
+        let utterance = AVSpeechUtterance(string: sanitizedSpeechString)
+        voiceSelector.configureNaturalUtterance(
             utterance,
             voice: selectedVoice ?? personalVoices.first,
             speechRate: speechRate,
@@ -334,10 +347,14 @@ final class NotebookSpeechNarrationEngine: NSObject, ObservableObject, AVSpeechS
         var results: [String] = []
         let tokenizer = NLTokenizer(unit: .sentence)
         tokenizer.string = text
+        let skipClutter = NaturalSpeechVoiceSelector.shared.isSkipPageNumbersAndHeadersEnabled
 
         tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { tokenRange, _ in
             let sentence = String(text[tokenRange]).trimmingCharacters(in: .whitespacesAndNewlines)
             if !sentence.isEmpty {
+                if skipClutter && SmartSpeechTextSanitizer.shared.isPageNumberOrClutter(text: sentence) {
+                    return true
+                }
                 results.append(sentence)
             }
             return true

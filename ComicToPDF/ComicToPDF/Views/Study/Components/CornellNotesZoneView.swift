@@ -58,74 +58,76 @@ struct CornellNotesZoneView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Top Bar Controls for Cornell
-            HStack {
-                Label("Cornell 3-Zone Layout", systemImage: "doc.text.fill")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.inkAccentKnowledge)
-                Spacer()
-                
-                // Cover to Recite Toggle
-                Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
-                        isCoveredForRecitation.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: isCoveredForRecitation ? "eye.slash.fill" : "eye.fill")
-                        Text(isCoveredForRecitation ? "Reciting (Notes Hidden)" : "Cover to Recite")
-                    }
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(isCoveredForRecitation ? Color.orange : Color.primary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(isCoveredForRecitation ? Color.orange.opacity(0.15) : Color.primary.opacity(0.08), in: Capsule())
-                }
-                .buttonStyle(.plain)
-                
-                // AI Cue Generator
-                Button {
-                    onGenerateCues()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "sparkles")
-                        Text("Auto-Cues")
-                    }
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.purple)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.purple.opacity(0.12), in: Capsule())
-                }
-                .buttonStyle(.plain)
-                
-                // 1-Tap Paste Button
-                Button {
-                    if let string = UIPasteboard.general.string, !string.isEmpty {
-                        HapticEngine.success()
-                        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if localNotes.isEmpty {
-                            localNotes = trimmed
-                        } else {
-                            localNotes += "\n\n" + trimmed
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Label("Cornell 3-Zone Layout", systemImage: "doc.text.fill")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.inkAccentKnowledge)
+                        .fixedSize(horizontal: true, vertical: false)
+                    
+                    // Cover to Recite Toggle
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                            isCoveredForRecitation.toggle()
                         }
-                    } else {
-                        HapticEngine.warning()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: isCoveredForRecitation ? "eye.slash.fill" : "eye.fill")
+                            Text(isCoveredForRecitation ? "Reciting (Notes Hidden)" : "Cover to Recite")
+                        }
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(isCoveredForRecitation ? Color.orange : Color.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(isCoveredForRecitation ? Color.orange.opacity(0.15) : Color.primary.opacity(0.08), in: Capsule())
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "doc.on.clipboard")
-                        Text("Paste")
+                    .buttonStyle(.plain)
+                    
+                    // AI Cue Generator
+                    Button {
+                        onGenerateCues()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                            Text("Auto-Cues")
+                        }
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.purple)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.purple.opacity(0.12), in: Capsule())
                     }
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.orange)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.orange.opacity(0.12), in: Capsule())
+                    .buttonStyle(.plain)
+                    
+                    // 1-Tap Paste Button
+                    Button {
+                        if let string = UIPasteboard.general.string, !string.isEmpty {
+                            HapticEngine.success()
+                            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if localNotes.isEmpty {
+                                localNotes = trimmed
+                            } else {
+                                localNotes += "\n\n" + trimmed
+                            }
+                        } else {
+                            HapticEngine.warning()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.on.clipboard")
+                            Text("Paste")
+                        }
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.12), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
             .background(Color.primary.opacity(0.03))
             
             Divider()
@@ -145,7 +147,7 @@ struct CornellNotesZoneView: View {
                         .scrollContentBackground(.hidden)
                         .padding(6)
                 }
-                .frame(width: max(110, notebookWidth * 0.28))
+                .frame(width: max(85, min(140, notebookWidth * 0.28)))
                 .background(Color.primary.opacity(0.02))
                 
                 Divider()
@@ -203,7 +205,7 @@ struct CornellNotesZoneView: View {
                 TextEditor(text: $cornellSummaryText)
                     .font(.system(size: 12, design: .serif))
                     .scrollContentBackground(.hidden)
-                    .frame(height: 70)
+                    .frame(height: max(50, min(70, notebookWidth * 0.18)))
                     .padding(.horizontal, 6)
             }
             .background(Color.inkAccentKnowledge.opacity(0.04))

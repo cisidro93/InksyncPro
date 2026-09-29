@@ -873,6 +873,7 @@ struct ProPDFReaderEngine: View {
                     toggleChrome()
                 }
             )
+            .id("reflow_\(pdf.id)_\(currentPageIndex)")
         } else if let doc = pdfDocument {
             pdfCanvasView(document: doc)
         } else {
@@ -1739,6 +1740,12 @@ struct ProPDFReaderEngine: View {
                 showCropAdjustmentSheet = true
             },
             onReflowToggle: {
+                if let pv = pdfViewReference, let curPage = pv.currentPage, let doc = pv.document {
+                    let activeIdx = doc.index(for: curPage)
+                    if activeIdx >= 0 && activeIdx < doc.pageCount {
+                        currentPageIndex = activeIdx
+                    }
+                }
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                     isReflowMode.toggle()
                     prefs.pdfReflowMode = isReflowMode

@@ -18,6 +18,7 @@ struct ReaderChrome: View {
     let pageText: String
     @Binding var isVisible: Bool
     @Environment(\.horizontalSizeClass) private var hSizeClass
+    @Environment(\.verticalSizeClass) private var vSizeClass
     @Environment(\.colorScheme) private var colorScheme
 
     // Actions
@@ -222,6 +223,10 @@ struct ReaderChrome: View {
         hSizeClass == .compact
     }
 
+    private var isLandscapePhone: Bool {
+        vSizeClass == .compact
+    }
+
     private var topBar: some View {
         HStack(spacing: isPhone ? 8 : 10) {
             // ── Back button ────────────────────────────────────────────────────
@@ -242,7 +247,7 @@ struct ReaderChrome: View {
                 .foregroundStyle(Color.inkText)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .frame(maxWidth: isPhone ? 150 : 360, alignment: .leading)
+                .frame(maxWidth: isPhone ? (isLandscapePhone ? 220 : 120) : 360, alignment: .leading)
                 .shadow(color: colorScheme == .dark ? .black.opacity(0.6) : .clear, radius: 3)
                 .accessibilityAddTraits(.isHeader)
 
@@ -333,19 +338,28 @@ struct ReaderChrome: View {
                         }
                         HapticEngine.selection()
                     } label: {
-                        HStack(spacing: 4) {
+                        if isPhone {
                             Image(systemName: "slider.horizontal.2.square")
-                                .font(.system(size: 12, weight: .bold))
-                            Text("Adjust")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color.inkGreen)
+                                .frame(width: 34, height: 34)
+                                .background(Color.inkGreen.opacity(0.12), in: Circle())
+                                .overlay(Circle().stroke(Color.inkGreen.opacity(0.4), lineWidth: 0.8))
+                        } else {
+                            HStack(spacing: 4) {
+                                Image(systemName: "slider.horizontal.2.square")
+                                    .font(.system(size: 12, weight: .bold))
+                                Text("Adjust")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                            .foregroundStyle(Color.inkGreen)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .background(Color.inkGreen.opacity(0.12), in: Capsule())
+                            .overlay(Capsule().stroke(Color.inkGreen.opacity(0.4), lineWidth: 0.8))
                         }
-                        .foregroundStyle(Color.inkGreen)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 6)
-                        .background(Color.inkGreen.opacity(0.12), in: Capsule())
-                        .overlay(Capsule().stroke(Color.inkGreen.opacity(0.4), lineWidth: 0.8))
                     }
                     .buttonStyle(.plain)
                 }
@@ -533,7 +547,7 @@ struct ReaderChrome: View {
             .accessibilityLabel("More reader options and tools")
         }
         .padding(.horizontal, 14)
-        .padding(.top, 50)
+        .padding(.top, isLandscapePhone ? 12 : 50)
         .padding(.bottom, 10)
         .background(
             LinearGradient(
@@ -729,8 +743,8 @@ struct ReaderChrome: View {
                 .accessibilityLabel("Next page")
                 .disabled(currentProgress >= 0.999)
             }
-            .padding(.top, 14)
-            .padding(.bottom, 28)
+            .padding(.top, isLandscapePhone ? 6 : 14)
+            .padding(.bottom, isLandscapePhone ? 14 : 28)
             .padding(.horizontal, 24)
         }
         .background(

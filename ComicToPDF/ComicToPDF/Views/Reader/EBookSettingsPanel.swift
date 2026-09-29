@@ -684,6 +684,11 @@ struct EBookSettingsPanel: View {
                         icon: "doc.text.magnifyingglass",
                         isOn: $prefs.pdfReflowMode
                     )
+                    ReaderSettingsToggleRow(
+                        label: "Smart Clutter Removal",
+                        icon: "sparkles",
+                        isOn: $prefs.pdfReflowSmartClutterRemoval
+                    )
                 }
 
                 // Reader Engine Mode (Switch to Comic/Manga reading engine)

@@ -214,10 +214,30 @@ final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizer
         }
 
         let sentence = sentences[currentSentenceIndex]
+        let voiceSelector = NaturalSpeechVoiceSelector.shared
+        let sanitizedSpeechString = SmartSpeechTextSanitizer.shared.sanitizeForSpeech(
+            sentence,
+            skipCitations: voiceSelector.isSkipCitationsAndFootnotesEnabled,
+            silenceUrls: voiceSelector.isSilenceURLsEnabled,
+            expandAbbreviations: voiceSelector.isExpandAbbreviationsEnabled
+        )
+
+        guard !sanitizedSpeechString.isEmpty else {
+            if currentSentenceIndex < sentences.count - 1 {
+                currentSentenceIndex += 1
+                speakCurrentSentence()
+            } else {
+                let completion = onChapterFinished
+                prepareForChapterAdvance()
+                completion?()
+            }
+            return
+        }
+
         onSentenceHighlight?(currentSentenceIndex, sentence)
 
-        let utterance = AVSpeechUtterance(string: sentence)
-        NaturalSpeechVoiceSelector.shared.configureNaturalUtterance(
+        let utterance = AVSpeechUtterance(string: sanitizedSpeechString)
+        voiceSelector.configureNaturalUtterance(
             utterance,
             voice: selectedVoice ?? personalVoices.first,
             speechRate: speechRate,
@@ -327,10 +347,14 @@ final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizer
         var results: [String] = []
         let tokenizer = NLTokenizer(unit: .sentence)
         tokenizer.string = text
+        let skipClutter = NaturalSpeechVoiceSelector.shared.isSkipPageNumbersAndHeadersEnabled
 
         tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { tokenRange, _ in
             let sentence = String(text[tokenRange]).trimmingCharacters(in: .whitespacesAndNewlines)
             if !sentence.isEmpty {
+                if skipClutter && SmartSpeechTextSanitizer.shared.isPageNumberOrClutter(text: sentence) {
+                    return true
+                }
                 results.append(sentence)
             }
             return true

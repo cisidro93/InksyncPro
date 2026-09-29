@@ -2467,6 +2467,8 @@ struct ComicReaderEngine: View {
                 showCropAdjustmentSheet = true
             },
             onReflowToggle: cache.isPDF ? {
+                ReaderProgressTracker.shared.update(id: cache.id, pageIndex: currentPage, totalPages: cache.totalPages)
+                EBookPreferences.shared.pdfReflowMode = true
                 HapticEngine.medium()
                 NotificationCenter.default.post(
                     name: NSNotification.Name("InksyncPro.switchReaderEngine"),

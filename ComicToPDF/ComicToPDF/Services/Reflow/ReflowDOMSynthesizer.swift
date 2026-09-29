@@ -11,7 +11,8 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
         pdfUUID: String,
         documentTitle: String,
         blocks: [SpatialTextBlock],
-        images: [ExtractedPDFImage]
+        images: [ExtractedPDFImage],
+        isClutterFiltered: Bool = true
     ) async -> URL? {
         let fileManager = FileManager.default
         guard let cacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
@@ -23,7 +24,8 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
             return nil
         }
 
-        let htmlFileURL = targetDir.appendingPathComponent("reflow.html")
+        let cacheFileName = "reflow_v3_\(isClutterFiltered ? "clean" : "raw").html"
+        let htmlFileURL = targetDir.appendingPathComponent(cacheFileName)
 
         var bodyHTML = ""
         let maxPage = max(
@@ -34,41 +36,140 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
         if maxPage >= 0 {
             for p in 0...maxPage {
                 let pageBlocks = blocks.filter { $0.pageIndex == p }
-                let pageImages = images.filter { $0.pageIndex == p }
+                var pageImages = images.filter { $0.pageIndex == p }
                 if pageBlocks.isEmpty && pageImages.isEmpty { continue }
 
                 bodyHTML += "\n<section class=\"pdf-page-marker\" id=\"page-\(p + 1)\" data-page=\"\(p + 1)\">\n"
-                bodyHTML += "  <div class=\"page-number-divider\">Page \(p + 1)</div>\n"
-
-                for img in pageImages {
-                    let relPath = (img.imagePath as NSString).lastPathComponent
-                    bodyHTML += "  <figure class=\"pdf-figure\"><img src=\"images/\(relPath)\" alt=\"Page \(p + 1)\" loading=\"lazy\" /></figure>\n"
+                if p > 0 {
+                    bodyHTML += "  <div class=\"page-marker-anchor\" aria-hidden=\"true\" data-page-indicator=\"p. \(p + 1)\"></div>\n"
                 }
 
-                for block in pageBlocks {
+                var i = 0
+                while i < pageBlocks.count {
+                    let block = pageBlocks[i]
                     let rectAttr = "\(Int(block.rect.origin.x)),\(Int(block.rect.origin.y)),\(Int(block.rect.size.width)),\(Int(block.rect.size.height))"
                     let escapedText = escapeHTML(block.text)
 
+                    // Figure & Caption Binding (Adobe Sensei standard)
+                    if block.kind == .figureCaption && !pageImages.isEmpty {
+                        let img = pageImages.removeFirst()
+                        let relPath = (img.imagePath as NSString).lastPathComponent
+                        bodyHTML += """
+                          <figure class=\"pdf-figure\" data-pdf-page=\"\(p + 1)\">
+                            <img src=\"images/\(relPath)\" alt=\"Figure\" loading=\"lazy\" />
+                            <figcaption data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</figcaption>
+                          </figure>\n
+                        """
+                        i += 1
+                        continue
+                    }
+
+                    // Grouped List Item Handling (KOReader standard: avoid individual <ul> per bullet)
+                    if block.kind == .listItem {
+                        let isOrdered = PDFSpatialParser.isOrderedListMarker(block.text)
+                        let tag = isOrdered ? "ol" : "ul"
+                        let listClass = isOrdered ? "pdf-list pdf-list-ordered" : "pdf-list"
+
+                        bodyHTML += "  <\(tag) class=\"\(listClass)\">\n"
+                        while i < pageBlocks.count && pageBlocks[i].kind == .listItem {
+                            let itemBlock = pageBlocks[i]
+                            let itemRect = "\(Int(itemBlock.rect.origin.x)),\(Int(itemBlock.rect.origin.y)),\(Int(itemBlock.rect.size.width)),\(Int(itemBlock.rect.size.height))"
+                            var itemText = itemBlock.text
+                            if isOrdered {
+                                if let stripped = itemText.range(of: #"^\s*(?:\(?\d{1,3}[\.\)]|\(?[a-zA-Z][\.\)]|\(?[ivxlcdmIVXLCDM]{1,6}[\.\)])\s+"#, options: .regularExpression) {
+                                    itemText.removeSubrange(stripped)
+                                }
+                            } else {
+                                if let stripped = itemText.range(of: #"^[\s*•▪▫–—\-]+\s*"#, options: .regularExpression) {
+                                    itemText.removeSubrange(stripped)
+                                }
+                            }
+                            bodyHTML += "    <li data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(itemRect)\">\(escapeHTML(itemText))</li>\n"
+                            i += 1
+                        }
+                        bodyHTML += "  </\(tag)>\n"
+                        continue
+                    }
+
                     switch block.kind {
                     case .title:
-                        bodyHTML += "  <h1 data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h1>\n"
+                        bodyHTML += "  <h1 id=\"sec-\(p + 1)-\(i)\" data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h1>\n"
                     case .heading1:
-                        bodyHTML += "  <h2 data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h2>\n"
+                        bodyHTML += "  <h2 id=\"sec-\(p + 1)-\(i)\" data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h2>\n"
                     case .heading2:
-                        bodyHTML += "  <h3 data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h3>\n"
+                        bodyHTML += "  <h3 id=\"sec-\(p + 1)-\(i)\" data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h3>\n"
                     case .heading3:
-                        bodyHTML += "  <h4 data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h4>\n"
+                        bodyHTML += "  <h4 id=\"sec-\(p + 1)-\(i)\" data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</h4>\n"
                     case .blockquote:
                         bodyHTML += "  <blockquote data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</blockquote>\n"
                     case .code:
                         bodyHTML += "  <pre><code data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</code></pre>\n"
                     case .listItem:
-                        bodyHTML += "  <ul><li data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</li></ul>\n"
+                        break // Handled above in grouped loop
                     case .figureCaption:
                         bodyHTML += "  <figcaption data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</figcaption>\n"
+                    case .table:
+                        let rows = block.text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                        if rows.isEmpty {
+                            bodyHTML += """
+                              <div class=\"pdf-table-container\">
+                                <table data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">
+                                  <tr><td>\(escapedText)</td></tr>
+                                </table>
+                              </div>\n
+                            """
+                        } else {
+                            bodyHTML += "  <div class=\"pdf-table-container\">\n"
+                            bodyHTML += "    <table data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\n"
+                            for (rIdx, row) in rows.enumerated() {
+                                let cells: [String]
+                                if row.contains("\t") {
+                                    cells = row.components(separatedBy: "\t")
+                                } else if row.contains("|") {
+                                    cells = row.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                                } else {
+                                    let cellRegex = try? NSRegularExpression(pattern: #"\s{2,}"#, options: [])
+                                    if let regex = cellRegex {
+                                        let nsRow = row as NSString
+                                        let matches = regex.matches(in: row, options: [], range: NSRange(location: 0, length: nsRow.length))
+                                        if !matches.isEmpty {
+                                            var parsedCells: [String] = []
+                                            var lastEnd = 0
+                                            for m in matches {
+                                                let cellRange = NSRange(location: lastEnd, length: m.range.location - lastEnd)
+                                                parsedCells.append(nsRow.substring(with: cellRange).trimmingCharacters(in: .whitespaces))
+                                                lastEnd = m.range.location + m.range.length
+                                            }
+                                            parsedCells.append(nsRow.substring(from: lastEnd).trimmingCharacters(in: .whitespaces))
+                                            cells = parsedCells.filter { !$0.isEmpty }
+                                        } else {
+                                            cells = [row]
+                                        }
+                                    } else {
+                                        cells = [row]
+                                    }
+                                }
+
+                                let cellTag = (rIdx == 0 && rows.count > 1) ? "th" : "td"
+                                bodyHTML += "      <tr>\n"
+                                for cell in cells {
+                                    bodyHTML += "        <\(cellTag)>\(escapeHTML(cell))</\(cellTag)>\n"
+                                }
+                                bodyHTML += "      </tr>\n"
+                            }
+                            bodyHTML += "    </table>\n"
+                            bodyHTML += "  </div>\n"
+                        }
                     case .paragraph:
                         bodyHTML += "  <p data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</p>\n"
                     }
+                    i += 1
+                }
+
+                // Render any remaining images not paired with captions
+                for img in pageImages {
+                    let relPath = (img.imagePath as NSString).lastPathComponent
+                    bodyHTML += "  <figure class=\"pdf-figure\"><img src=\"images/\(relPath)\" alt=\"Page \(p + 1)\" loading=\"lazy\" /></figure>\n"
                 }
 
                 bodyHTML += "</section>\n"
@@ -96,15 +197,25 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                     word-break: break-word;
                     -webkit-text-size-adjust: 100%;
                 }
-                .page-number-divider {
-                    font-size: 11px;
-                    font-weight: 700;
-                    text-transform: uppercase;
-                    letter-spacing: 0.08em;
-                    opacity: 0.4;
-                    margin: 32px 0 16px 0;
-                    border-bottom: 1px solid currentColor;
-                    padding-bottom: 4px;
+                .page-marker-anchor {
+                    height: 1px;
+                    margin: 28px 0 20px 0;
+                    position: relative;
+                    border-top: 1px dashed rgba(128, 128, 128, 0.18);
+                }
+                .page-marker-anchor::after {
+                    content: attr(data-page-indicator);
+                    position: absolute;
+                    right: 0;
+                    top: -8px;
+                    font-size: 10px;
+                    font-weight: 600;
+                    color: currentColor;
+                    opacity: 0.28;
+                    background: inherit;
+                    padding-left: 6px;
+                    letter-spacing: 0.05em;
+                    font-variant-numeric: tabular-nums;
                 }
                 h1, h2, h3, h4 {
                     line-height: 1.3;
@@ -124,7 +235,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                 }
                 blockquote {
                     margin: 1.2em 0;
-                    padding-left: 14px;
+                    padding: 4px 14px;
                     border-left: 3px solid currentColor;
                     opacity: 0.85;
                     font-style: italic;
@@ -132,18 +243,65 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                     -webkit-column-break-inside: avoid !important;
                 }
                 pre {
-                    background: rgba(128, 128, 128, 0.15);
-                    padding: 12px;
+                    background: rgba(128, 128, 128, 0.12);
+                    padding: 12px 14px;
                     border-radius: 8px;
                     overflow-x: auto;
+                    font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
+                    font-size: 0.88em;
+                    line-height: 1.45;
                     break-inside: avoid !important;
                     -webkit-column-break-inside: avoid !important;
+                }
+                code {
+                    font-family: inherit;
+                }
+                .pdf-list {
+                    margin: 0.8em 0 1.2em 0;
+                    padding-left: 24px;
+                }
+                .pdf-list li {
+                    margin-bottom: 0.4em;
+                    line-height: 1.5;
+                }
+                .pdf-list-ordered {
+                    list-style-type: decimal;
+                }
+                #inksync-viewport {
+                    box-sizing: border-box !important;
+                    width: 100% !important;
+                }
+                .pdf-table-container {
+                    width: 100%;
+                    overflow-x: auto;
+                    -webkit-overflow-scrolling: touch;
+                    margin: 1.4em 0;
+                    border-radius: 8px;
+                    background: rgba(128, 128, 128, 0.06);
+                    border: 1px solid rgba(128, 128, 128, 0.15);
+                    break-inside: avoid !important;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 0.9em;
+                }
+                th, td {
+                    padding: 8px 12px;
+                    border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+                    text-align: left;
+                }
+                th {
+                    font-weight: 700;
+                    background: rgba(128, 128, 128, 0.08);
                 }
                 figcaption {
                     font-size: 0.9em;
                     opacity: 0.75;
                     text-align: center;
+                    margin-top: 8px;
                     margin-bottom: 1.2em;
+                    font-style: italic;
                     break-inside: avoid !important;
                     -webkit-column-break-inside: avoid !important;
                 }
@@ -153,7 +311,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                     width: 100%;
                 }
                 .pdf-figure {
-                    margin: 16px 0;
+                    margin: 20px 0;
                     padding: 0;
                     text-align: center;
                     break-inside: avoid !important;
@@ -165,7 +323,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                     object-fit: contain;
                     border-radius: 8px;
                     display: block;
-                    margin: 16px auto;
+                    margin: 12px auto;
                     break-inside: avoid !important;
                     -webkit-column-break-inside: avoid !important;
                 }
