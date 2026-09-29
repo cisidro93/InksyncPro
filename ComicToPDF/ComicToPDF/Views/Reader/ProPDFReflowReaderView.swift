@@ -17,6 +17,7 @@ struct ProPDFReflowReaderView: View {
     @State private var isAnchoringInProgress = false
     @State private var lastSyncedPDFPageIndex: Int? = nil
     @State private var reanchorTask: Task<Void, Never>? = nil
+    @State private var syncDebounceTask: Task<Void, Never>? = nil
 
     // Reflow compilation & webview state
     @State private var reflowHTMLURL: URL? = nil
@@ -122,7 +123,20 @@ struct ProPDFReflowReaderView: View {
         .onDisappear {
             reanchorTask?.cancel()
             reanchorTask = nil
+            syncDebounceTask?.cancel()
+            syncDebounceTask = nil
         }
+        .readerKeyboardShortcuts(
+            onNextPage: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            },
+            onPreviousPage: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            },
+            onDismiss: {
+                onDismiss()
+            }
+        )
     }
 
     private func scrollToTargetPDFPage(pageIndex: Int, attempt: Int = 1, isOrientationChange: Bool = false) {
@@ -263,6 +277,15 @@ struct ProPDFReflowReaderView: View {
         }
     }
 
+    private func debouncedSyncCurrentPDFPage() {
+        syncDebounceTask?.cancel()
+        syncDebounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            self.syncCurrentPDFPageFromReflow()
+        }
+    }
+
     private func handleOrientationOrBoundsChange(newSize: CGSize) {
         guard hasAnchoredInitialPage && !isCompilingReflow else { return }
         guard let webView = webViewRef else { return }
@@ -308,13 +331,13 @@ struct ProPDFReflowReaderView: View {
             currentPage: $chapterPage,
             initialPage: 0,
             totalPages: $chapterTotalPages,
-            onNext: { syncCurrentPDFPageFromReflow() },
-            onPrev: { syncCurrentPDFPageFromReflow() },
+            onNext: { debouncedSyncCurrentPDFPage() },
+            onPrev: { debouncedSyncCurrentPDFPage() },
             onCenterTap: { onCenterTap?() },
-            onPageTurn: { syncCurrentPDFPageFromReflow() },
+            onPageTurn: { debouncedSyncCurrentPDFPage() },
             pdfID: pdf.id,
             initialScrollFraction: initialFraction,
-            onScrollFractionChanged: { _ in syncCurrentPDFPageFromReflow() },
+            onScrollFractionChanged: { _ in debouncedSyncCurrentPDFPage() },
             webViewRef: $webViewRef,
             targetAnchor: targetAnchor
         )
@@ -412,7 +435,7 @@ struct ProPDFReflowReaderView: View {
 
         let pdfUUID = pdf.id.uuidString
         let isClutterFiltered = prefs.pdfReflowSmartClutterRemoval
-        let cacheFileName = "reflow_v3_\(isClutterFiltered ? "clean" : "raw").html"
+        let cacheFileName = "reflow_v4_\(isClutterFiltered ? "clean" : "raw").html"
 
         let fileManager = FileManager.default
         if let cacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first {

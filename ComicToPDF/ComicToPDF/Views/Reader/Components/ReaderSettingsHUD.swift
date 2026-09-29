@@ -279,6 +279,14 @@ struct ReaderSettingsHUD: View {
                         icon: "speaker.wave.2",
                         isOn: $prefs.volumeButtonsTurnPages
                     )
+                    if prefs.volumeButtonsTurnPages {
+                        toggleRow(
+                            title: "Invert Volume Direction",
+                            description: "Volume Down advances to next page instead of Volume Up",
+                            icon: "arrow.up.arrow.down",
+                            isOn: $prefs.invertVolumeButtons
+                        )
+                    }
                     if UIDevice.current.userInterfaceIdiom == .pad {
                         toggleRow(
                             title: "Apple Pencil Double-Tap",

@@ -229,6 +229,36 @@ open class HighlightableWebView: WKWebView {
         onHighlightRequested?()
     }
     
+    open override var keyCommands: [UIKeyCommand]? {
+        return [
+            UIKeyCommand(input: UIKeyCommand.inputLeftArrow, modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
+            UIKeyCommand(input: UIKeyCommand.inputRightArrow, modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
+            UIKeyCommand(input: UIKeyCommand.inputUpArrow, modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
+            UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
+            UIKeyCommand(input: " ", modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
+            UIKeyCommand(input: " ", modifierFlags: .shift, action: #selector(handleForwardedKeyCommand(_:))),
+            UIKeyCommand(input: UIKeyCommand.inputPageUp, modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
+            UIKeyCommand(input: UIKeyCommand.inputPageDown, modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
+            UIKeyCommand(input: "j", modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
+            UIKeyCommand(input: "k", modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
+            UIKeyCommand(input: "h", modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
+            UIKeyCommand(input: "l", modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:)))
+        ]
+    }
+
+    @objc open func handleForwardedKeyCommand(_ sender: UIKeyCommand) {
+        let isForward = sender.input == UIKeyCommand.inputRightArrow
+            || sender.input == UIKeyCommand.inputDownArrow
+            || (sender.input == " " && !sender.modifierFlags.contains(.shift))
+            || sender.input == UIKeyCommand.inputPageDown
+            || sender.input == "j"
+            || sender.input == "l"
+        NotificationCenter.default.post(
+            name: NSNotification.Name(isForward ? "ReaderAdvancePageForward" : "ReaderAdvancePageBackward"),
+            object: nil
+        )
+    }
+
     open override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
         // Strip system menus so native popups never compete with Inksync HUD

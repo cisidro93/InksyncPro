@@ -1086,6 +1086,14 @@ struct EBookSettingsPanel: View {
                         icon: "speaker.wave.2",
                         isOn: $prefs.volumeButtonsTurnPages
                     )
+                    if prefs.volumeButtonsTurnPages {
+                        Divider().padding(.leading, 44)
+                        ReaderSettingsToggleRow(
+                            label: "Invert Volume Direction",
+                            icon: "arrow.up.arrow.down",
+                            isOn: $prefs.invertVolumeButtons
+                        )
+                    }
                 }
             }
 

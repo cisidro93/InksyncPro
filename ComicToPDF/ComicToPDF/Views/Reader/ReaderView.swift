@@ -310,11 +310,18 @@ struct ReaderView: View {
             .onAppear {
                 ReaderIdleTimerManager.shared.enterReader()
                 if EBookPreferences.shared.volumeButtonsTurnPages {
+                    let invert = EBookPreferences.shared.invertVolumeButtons
                     VolumeButtonPageTurnManager.shared.onVolumeUp = {
-                        NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name(invert ? "ReaderAdvancePageBackward" : "ReaderAdvancePageForward"),
+                            object: nil
+                        )
                     }
                     VolumeButtonPageTurnManager.shared.onVolumeDown = {
-                        NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name(invert ? "ReaderAdvancePageForward" : "ReaderAdvancePageBackward"),
+                            object: nil
+                        )
                     }
                     VolumeButtonPageTurnManager.shared.startListening()
                 }

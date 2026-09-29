@@ -63,6 +63,21 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
             coordinator?.handleContainerBoundsUpdated(bounds)
         }
 
+        pvc.onKeyCommand = { [weak coordinator = context.coordinator, weak pvc] sender in
+            guard let coordinator = coordinator, let pageVC = pvc else { return }
+            let isForward = sender.input == UIKeyCommand.inputRightArrow
+                || sender.input == UIKeyCommand.inputDownArrow
+                || (sender.input == " " && !sender.modifierFlags.contains(.shift))
+                || sender.input == UIKeyCommand.inputPageDown
+                || sender.input == "j"
+                || sender.input == "l"
+            if isForward {
+                coordinator.turnForward(pageVC)
+            } else {
+                coordinator.turnBackward(pageVC)
+            }
+        }
+
         let view = pvc.view!
         view.backgroundColor = UIColor(hex: prefs.activeTheme.cssBackground) ?? .black
 
@@ -390,6 +405,30 @@ extension EBookPageCurlReader {
                 }
             }
             observerTokens.append(backwardToken)
+
+            let readerForwardToken = NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("ReaderAdvancePageForward"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self = self, let pvc = self.pageViewController else { return }
+                    self.turnForward(pvc)
+                }
+            }
+            observerTokens.append(readerForwardToken)
+
+            let readerBackwardToken = NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("ReaderAdvancePageBackward"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self = self, let pvc = self.pageViewController else { return }
+                    self.turnBackward(pvc)
+                }
+            }
+            observerTokens.append(readerBackwardToken)
 
             // Memory & Battery Protection: Purge distant/offscreen page snapshots on system memory warning
             let memoryToken = NotificationCenter.default.addObserver(
@@ -1419,7 +1458,7 @@ extension EBookPageCurlReader {
             }
         }
 
-        private func turnForward(_ pvc: UIPageViewController) {
+        fileprivate func turnForward(_ pvc: UIPageViewController) {
             guard !isTransitioning else { return }
 
             let isDual = isDualPageMode
@@ -1455,7 +1494,7 @@ extension EBookPageCurlReader {
             }
         }
 
-        private func turnBackward(_ pvc: UIPageViewController) {
+        fileprivate func turnBackward(_ pvc: UIPageViewController) {
             guard !isTransitioning else { return }
 
             let isDual = isDualPageMode
@@ -2887,11 +2926,43 @@ extension EBookPageCurlReader {
 @MainActor
 final class InksyncPageViewController: UIPageViewController {
     var onLayoutSubviews: ((CGRect) -> Void)?
+    var onKeyCommand: ((UIKeyCommand) -> Void)?
+
+    override var canBecomeFirstResponder: Bool {
+        return true
+    }
+
+    override var keyCommands: [UIKeyCommand]? {
+        return [
+            UIKeyCommand(input: UIKeyCommand.inputLeftArrow, modifierFlags: [], action: #selector(handleKeyCommand(_:))),
+            UIKeyCommand(input: UIKeyCommand.inputRightArrow, modifierFlags: [], action: #selector(handleKeyCommand(_:))),
+            UIKeyCommand(input: UIKeyCommand.inputUpArrow, modifierFlags: [], action: #selector(handleKeyCommand(_:))),
+            UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(handleKeyCommand(_:))),
+            UIKeyCommand(input: " ", modifierFlags: [], action: #selector(handleKeyCommand(_:))),
+            UIKeyCommand(input: " ", modifierFlags: .shift, action: #selector(handleKeyCommand(_:))),
+            UIKeyCommand(input: UIKeyCommand.inputPageUp, modifierFlags: [], action: #selector(handleKeyCommand(_:))),
+            UIKeyCommand(input: UIKeyCommand.inputPageDown, modifierFlags: [], action: #selector(handleKeyCommand(_:))),
+            UIKeyCommand(input: "j", modifierFlags: [], action: #selector(handleKeyCommand(_:))),
+            UIKeyCommand(input: "k", modifierFlags: [], action: #selector(handleKeyCommand(_:))),
+            UIKeyCommand(input: "h", modifierFlags: [], action: #selector(handleKeyCommand(_:))),
+            UIKeyCommand(input: "l", modifierFlags: [], action: #selector(handleKeyCommand(_:)))
+        ]
+    }
+
+    @objc private func handleKeyCommand(_ sender: UIKeyCommand) {
+        onKeyCommand?(sender)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.clipsToBounds = true
         view.layer.masksToBounds = true
+        becomeFirstResponder()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        becomeFirstResponder()
     }
 
     override func viewDidLayoutSubviews() {

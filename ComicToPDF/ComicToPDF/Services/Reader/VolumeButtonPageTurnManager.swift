@@ -43,10 +43,10 @@ public final class VolumeButtonPageTurnManager: ObservableObject {
                 }
             }
 
-            if let window = UIApplication.shared.connectedScenes
+            let allWindows = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene })
                 .flatMap({ $0.windows })
-                .first(where: { $0.isKeyWindow }) {
+            if let window = allWindows.first(where: { $0.isKeyWindow }) ?? allWindows.first {
                 window.addSubview(volumeView)
                 self.hiddenVolumeView = volumeView
             }

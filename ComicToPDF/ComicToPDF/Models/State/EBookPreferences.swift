@@ -157,6 +157,9 @@ class EBookPreferences: ObservableObject {
     @AppStorage("volumeButtonsTurnPages") var volumeButtonsTurnPages: Bool = true {
         didSet { objectWillChange.send() }
     }
+    @AppStorage("invertVolumeButtons") var invertVolumeButtons: Bool = false {
+        didSet { objectWillChange.send() }
+    }
 
     // MARK: - Archive & Streaming Settings
     @AppStorage("useZeroCopyStreaming") var useZeroCopyStreaming: Bool = true {

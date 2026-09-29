@@ -24,7 +24,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
             return nil
         }
 
-        let cacheFileName = "reflow_v3_\(isClutterFiltered ? "clean" : "raw").html"
+        let cacheFileName = "reflow_v4_\(isClutterFiltered ? "clean" : "raw").html"
         let htmlFileURL = targetDir.appendingPathComponent(cacheFileName)
 
         var bodyHTML = ""
@@ -268,8 +268,8 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                     list-style-type: decimal;
                 }
                 #inksync-viewport {
-                    box-sizing: border-box !important;
-                    width: 100% !important;
+                    box-sizing: border-box;
+                    width: 100vw;
                 }
                 .pdf-table-container {
                     width: 100%;

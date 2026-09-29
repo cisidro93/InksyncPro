@@ -524,7 +524,23 @@ struct ProPDFReaderEngine: View {
                 advancePage(forward: true)
                 return .handled
             }
+            .onKeyPress(.upArrow) {
+                advancePage(forward: false)
+                return .handled
+            }
+            .onKeyPress(.downArrow) {
+                advancePage(forward: true)
+                return .handled
+            }
             .onKeyPress(.space) {
+                advancePage(forward: true)
+                return .handled
+            }
+            .onKeyPress(.pageUp) {
+                advancePage(forward: false)
+                return .handled
+            }
+            .onKeyPress(.pageDown) {
                 advancePage(forward: true)
                 return .handled
             }
@@ -769,9 +785,11 @@ struct ProPDFReaderEngine: View {
                 showCropAdjustmentSheet = true
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageForward"))) { _ in
+                guard !isReflowMode else { return }
                 advancePage(forward: true)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageBackward"))) { _ in
+                guard !isReflowMode else { return }
                 advancePage(forward: false)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("PDFReader_OpenSmartTiersWorkspace"))) { _ in
@@ -873,7 +891,7 @@ struct ProPDFReaderEngine: View {
                     toggleChrome()
                 }
             )
-            .id("reflow_\(pdf.id)_\(currentPageIndex)")
+            .id("reflow_\(pdf.id)")
         } else if let doc = pdfDocument {
             pdfCanvasView(document: doc)
         } else {
@@ -2132,6 +2150,13 @@ struct ProPDFReaderEngine: View {
     }
 
     private func advancePage(forward: Bool) {
+        if isReflowMode {
+            NotificationCenter.default.post(
+                name: NSNotification.Name(forward ? "ReaderAdvancePageForward" : "ReaderAdvancePageBackward"),
+                object: nil
+            )
+            return
+        }
         let isManga = isMangaMode || prefs.pdfRTL
         let effectiveForward = isManga ? !forward : forward
 

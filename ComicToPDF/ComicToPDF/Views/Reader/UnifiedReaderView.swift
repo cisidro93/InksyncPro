@@ -377,15 +377,7 @@ struct UnifiedReaderView: View {
             logReaderRouting(trigger: "onAppear")
 
             // Hardware volume buttons page turning (iPhone 1-handed & iPad hands-free)
-            if EBookPreferences.shared.volumeButtonsTurnPages {
-                VolumeButtonPageTurnManager.shared.onVolumeUp = {
-                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
-                }
-                VolumeButtonPageTurnManager.shared.onVolumeDown = {
-                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
-                }
-                VolumeButtonPageTurnManager.shared.startListening()
-            }
+            setupVolumeButtonHandlers()
         }
         .onDisappear {
             ReaderIdleTimerManager.shared.leaveReader()
@@ -394,18 +386,11 @@ struct UnifiedReaderView: View {
             EPUBNarrationEngine.shared.stop()
             ComicDialogueSpeechEngine.shared.stop()
         }
-        .onChange(of: prefs.volumeButtonsTurnPages) { _, enabled in
-            if enabled {
-                VolumeButtonPageTurnManager.shared.onVolumeUp = {
-                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
-                }
-                VolumeButtonPageTurnManager.shared.onVolumeDown = {
-                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
-                }
-                VolumeButtonPageTurnManager.shared.startListening()
-            } else {
-                VolumeButtonPageTurnManager.shared.stopListening()
-            }
+        .onChange(of: prefs.volumeButtonsTurnPages) { _, _ in
+            setupVolumeButtonHandlers()
+        }
+        .onChange(of: prefs.invertVolumeButtons) { _, _ in
+            setupVolumeButtonHandlers()
         }
         .readerKeyboardShortcuts(
             onNextPage: {
@@ -662,6 +647,27 @@ struct UnifiedReaderView: View {
         } catch {
             Logger.shared.log("isEPUBComic: Error checking ZIP structure: \(error.localizedDescription)", category: "Reader", type: .warning)
             return false
+        }
+    }
+
+    private func setupVolumeButtonHandlers() {
+        if prefs.volumeButtonsTurnPages {
+            let invert = prefs.invertVolumeButtons
+            VolumeButtonPageTurnManager.shared.onVolumeUp = {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name(invert ? "ReaderAdvancePageBackward" : "ReaderAdvancePageForward"),
+                    object: nil
+                )
+            }
+            VolumeButtonPageTurnManager.shared.onVolumeDown = {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name(invert ? "ReaderAdvancePageForward" : "ReaderAdvancePageBackward"),
+                    object: nil
+                )
+            }
+            VolumeButtonPageTurnManager.shared.startListening()
+        } else {
+            VolumeButtonPageTurnManager.shared.stopListening()
         }
     }
 }
