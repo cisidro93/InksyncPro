@@ -46,6 +46,7 @@ struct ProPDFReflowReaderView: View {
         self.onToggleReflow = onToggleReflow
         self.onCenterTap = onCenterTap
         self._targetPDFPageIndex = State(initialValue: currentPageIndex.wrappedValue)
+        self._lastSyncedPDFPageIndex = State(initialValue: currentPageIndex.wrappedValue)
     }
 
     private var totalPDFPages: Int {
@@ -84,6 +85,7 @@ struct ProPDFReflowReaderView: View {
                     }
                     .onAppear {
                         targetPDFPageIndex = currentPageIndex
+                        lastSyncedPDFPageIndex = currentPageIndex
                         if webViewRef != nil && !hasAnchoredInitialPage {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                                 scrollToTargetPDFPage(pageIndex: targetPDFPageIndex)
@@ -94,6 +96,8 @@ struct ProPDFReflowReaderView: View {
                         // If currentPageIndex changed from outside (e.g. Scrubber bar, TOC, Bookmarks),
                         // scroll to that new target. Avoid echoing when changed internally via syncCurrentPDFPageFromReflow.
                         if hasAnchoredInitialPage && !isAnchoringInProgress && newIndex != lastSyncedPDFPageIndex {
+                            targetPDFPageIndex = newIndex
+                            lastSyncedPDFPageIndex = newIndex
                             scrollToTargetPDFPage(pageIndex: newIndex)
                         }
                     }
@@ -184,14 +188,14 @@ struct ProPDFReflowReaderView: View {
 
             var rect = el.getBoundingClientRect();
             var vp = document.getElementById('inksync-viewport') || document.body;
-            var vpRect = vp ? vp.getBoundingClientRect() : { left: 0 };
             var currentShift = (typeof _currentShift !== 'undefined') ? _currentShift : 0;
-            var absLeft = (rect.left - vpRect.left) + currentShift;
+            var absLeft = vp ? (rect.left - vp.getBoundingClientRect().left) : (rect.left + currentShift);
             var pageStep = (typeof getPageStep === 'function') ? getPageStep() : (window.innerWidth || 390);
-            var colWidth = (typeof _isMultiCol !== 'undefined' && _isMultiCol) ? (pageStep / 2) : pageStep;
+            var isMulti = (typeof _isMultiCol !== 'undefined') ? _isMultiCol : false;
+            var colStride = isMulti ? (pageStep / 2) : pageStep;
 
-            if (colWidth > 0 && typeof goToPage === 'function') {
-                var targetPage = Math.max(0, Math.min(Math.floor(absLeft / colWidth), _totalPages - 1));
+            if (colStride > 0 && typeof goToPage === 'function') {
+                var targetPage = Math.max(0, Math.min(Math.floor(absLeft / colStride), _totalPages - 1));
                 goToPage(targetPage, false);
                 return targetPage;
             }
@@ -230,54 +234,85 @@ struct ProPDFReflowReaderView: View {
 
         let js = """
         (function() {
-            var markers = document.querySelectorAll('.pdf-page-marker');
-            if (!markers || markers.length === 0) return -1;
             var winW = window.innerWidth || 390;
-            var bestPage = -1;
-            var maxVisibleWidth = 0;
+            var winH = window.innerHeight || 844;
+            if (winW <= 0 || winH <= 0) return -1;
 
-            for (var i = 0; i < markers.length; i++) {
-                var m = markers[i];
-                var r = m.getBoundingClientRect();
-                var visibleLeft = Math.max(0, r.left);
-                var visibleRight = Math.min(winW, r.right);
-                var visibleWidth = visibleRight - visibleLeft;
-                if (visibleWidth > maxVisibleWidth) {
-                    var p = parseInt(m.getAttribute('data-page') || '0', 10);
-                    if (p > 0) {
-                        maxVisibleWidth = visibleWidth;
-                        bestPage = p - 1;
+            var isMulti = (typeof _isMultiCol !== 'undefined') ? _isMultiCol : false;
+
+            function extractPageNumber(node) {
+                if (!node) return -1;
+                var curr = node;
+                while (curr && curr !== document.body && curr !== document.documentElement) {
+                    var val = curr.getAttribute ? (curr.getAttribute('data-pdf-page') || curr.getAttribute('data-page')) : null;
+                    if (val) {
+                        var parsed = parseInt(val, 10);
+                        if (!isNaN(parsed) && parsed > 0) return parsed - 1;
                     }
+                    curr = curr.parentElement;
+                }
+                return -1;
+            }
+
+            // Strategy 1: Multi-point vertical sample along reading column center
+            // In single column: sample at x = 0.5 * winW.
+            // In dual column: sample left column first at x = 0.25 * winW, then right column at x = 0.75 * winW.
+            var sampleXCoordinates = isMulti ? [winW * 0.25, winW * 0.75] : [winW * 0.5];
+            var sampleYFractions = [0.25, 0.40, 0.55, 0.70, 0.15, 0.85];
+
+            for (var xIdx = 0; xIdx < sampleXCoordinates.length; xIdx++) {
+                var sx = sampleXCoordinates[xIdx];
+                for (var yIdx = 0; yIdx < sampleYFractions.length; yIdx++) {
+                    var sy = winH * sampleYFractions[yIdx];
+                    var el = document.elementFromPoint(sx, sy);
+                    var page = extractPageNumber(el);
+                    if (page >= 0) return page;
                 }
             }
 
-            if (bestPage < 0) {
-                for (var j = markers.length - 1; j >= 0; j--) {
-                    var mr = markers[j].getBoundingClientRect();
-                    if (mr.left <= winW) {
-                        var pj = parseInt(markers[j].getAttribute('data-page') || '0', 10);
-                        if (pj > 0) {
-                            bestPage = pj - 1;
-                            break;
-                        }
-                    }
+            // Strategy 2: Scan elements with data-pdf-page for intersection with screen viewport
+            var pageElements = document.querySelectorAll('[data-pdf-page]');
+            for (var i = 0; i < pageElements.length; i++) {
+                var el = pageElements[i];
+                var r = el.getBoundingClientRect();
+                if (r.right > 16 && r.left < (winW - 16) && r.bottom > 16 && r.top < (winH - 16)) {
+                    var val = el.getAttribute('data-pdf-page');
+                    var parsed = parseInt(val, 10);
+                    if (!isNaN(parsed) && parsed > 0) return parsed - 1;
                 }
             }
-            return bestPage;
+
+            // Strategy 3: Check for large element spanning across column
+            for (var j = 0; j < pageElements.length; j++) {
+                var el = pageElements[j];
+                var r = el.getBoundingClientRect();
+                if (r.left <= 16 && r.right >= (winW - 16) && r.bottom > 16 && r.top < (winH - 16)) {
+                    var val = el.getAttribute('data-pdf-page');
+                    var parsed = parseInt(val, 10);
+                    if (!isNaN(parsed) && parsed > 0) return parsed - 1;
+                }
+            }
+
+            // Fallback: Return -1 to safely preserve current page without wild jumps
+            return -1;
         })();
         """
 
-        webView.evaluateJavaScript(js) { result, _ in
+        webView.evaluateJavaScript(js) { [self] result, _ in
             if let pageIdx = result as? Int, pageIdx >= 0 {
                 Task { @MainActor in
-                    self.lastSyncedPDFPageIndex = pageIdx
-                    self.currentPageIndex = pageIdx
+                    guard self.hasAnchoredInitialPage && !self.isAnchoringInProgress else { return }
+                    if self.currentPageIndex != pageIdx {
+                        self.lastSyncedPDFPageIndex = pageIdx
+                        self.currentPageIndex = pageIdx
+                    }
                 }
             }
         }
     }
 
     private func debouncedSyncCurrentPDFPage() {
+        guard hasAnchoredInitialPage && !isAnchoringInProgress else { return }
         syncDebounceTask?.cancel()
         syncDebounceTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 120_000_000)
@@ -336,7 +371,7 @@ struct ProPDFReflowReaderView: View {
             onCenterTap: { onCenterTap?() },
             onPageTurn: { debouncedSyncCurrentPDFPage() },
             pdfID: pdf.id,
-            initialScrollFraction: initialFraction,
+            initialScrollFraction: 0.0,
             onScrollFractionChanged: { _ in debouncedSyncCurrentPDFPage() },
             webViewRef: $webViewRef,
             targetAnchor: targetAnchor
@@ -435,7 +470,7 @@ struct ProPDFReflowReaderView: View {
 
         let pdfUUID = pdf.id.uuidString
         let isClutterFiltered = prefs.pdfReflowSmartClutterRemoval
-        let cacheFileName = "reflow_v4_\(isClutterFiltered ? "clean" : "raw").html"
+        let cacheFileName = "reflow_v5_\(isClutterFiltered ? "clean" : "raw").html"
 
         let fileManager = FileManager.default
         if let cacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first {

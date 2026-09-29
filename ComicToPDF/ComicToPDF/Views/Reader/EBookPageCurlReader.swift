@@ -1596,13 +1596,13 @@ extension EBookPageCurlReader {
                             // Calculate column page of anchor element
                             var rect = el.getBoundingClientRect();
                             var vp = document.getElementById('inksync-viewport') || document.body;
-                            var vpRect = vp ? vp.getBoundingClientRect() : { left: 0 };
                             var currentShift = (typeof _currentShift !== 'undefined') ? _currentShift : 0;
-                            var absLeft = (rect.left - vpRect.left) + currentShift;
+                            var absLeft = vp ? (rect.left - vp.getBoundingClientRect().left) : (rect.left + currentShift);
                             var pageStep = (typeof getPageStep === 'function') ? getPageStep() : (window.innerWidth || 1);
-                            var colWidth = _isMultiCol ? (pageStep / 2) : pageStep;
-                            if (colWidth > 0) {
-                                var targetPage = Math.max(0, Math.min(Math.floor(absLeft / colWidth), _totalPages - 1));
+                            var isMulti = (typeof _isMultiCol !== 'undefined') ? _isMultiCol : false;
+                            var colStride = isMulti ? (pageStep / 2) : pageStep;
+                            if (colStride > 0) {
+                                var targetPage = Math.max(0, Math.min(Math.floor(absLeft / colStride), _totalPages - 1));
                                 if (typeof goToPage === 'function') {
                                     goToPage(targetPage, false);
                                 } else if (window.goToInksyncPage) {
@@ -1665,7 +1665,7 @@ extension EBookPageCurlReader {
                     targetPage = max(0, clampedTotal - 1)
                     needsJumpToEnd = false
                     parent.startAtEndOfChapter = false
-                } else if parent.initialPage == 0 && parent.initialScrollFraction > 0.01 && clampedTotal > 1 {
+                } else if (parent.targetAnchor == nil || parent.targetAnchor?.isEmpty == true) && parent.initialPage == 0 && parent.initialScrollFraction > 0.01 && clampedTotal > 1 {
                     targetPage = Int((parent.initialScrollFraction * Double(clampedTotal - 1)).rounded())
                 } else if parent.initialPage >= 99999 {
                     targetPage = max(0, clampedTotal - 1)
@@ -2421,10 +2421,10 @@ extension EBookPageCurlReader {
                     var anchorEl = document.getElementById(_targetAnchor) || document.getElementsByName(_targetAnchor)[0];
                     if (anchorEl) {
                         var aRect = anchorEl.getBoundingClientRect();
-                        var absLeft = (aRect.left - (vp ? vp.getBoundingClientRect().left : 0)) + _currentShift;
-                        var colWidth = _isMultiCol ? (pageStep / 2) : pageStep;
-                        if (colWidth > 0) {
-                            _targetPage = Math.max(0, Math.min(Math.floor(absLeft / colWidth), _totalPages - 1));
+                        var absLeft = vp ? (aRect.left - vp.getBoundingClientRect().left) : (aRect.left + (_currentShift || 0));
+                        var colStride = _isMultiCol ? (pageStep / 2) : pageStep;
+                        if (colStride > 0) {
+                            _targetPage = Math.max(0, Math.min(Math.floor(absLeft / colStride), _totalPages - 1));
                         }
                     }
                     _targetAnchor = "";

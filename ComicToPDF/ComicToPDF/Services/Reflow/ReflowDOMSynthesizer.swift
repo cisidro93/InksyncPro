@@ -24,7 +24,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
             return nil
         }
 
-        let cacheFileName = "reflow_v4_\(isClutterFiltered ? "clean" : "raw").html"
+        let cacheFileName = "reflow_v5_\(isClutterFiltered ? "clean" : "raw").html"
         let htmlFileURL = targetDir.appendingPathComponent(cacheFileName)
 
         var bodyHTML = ""
@@ -39,9 +39,9 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                 var pageImages = images.filter { $0.pageIndex == p }
                 if pageBlocks.isEmpty && pageImages.isEmpty { continue }
 
-                bodyHTML += "\n<section class=\"pdf-page-marker\" id=\"page-\(p + 1)\" data-page=\"\(p + 1)\">\n"
+                bodyHTML += "\n<section class=\"pdf-page-marker\" id=\"page-\(p + 1)\" data-page=\"\(p + 1)\" data-pdf-page=\"\(p + 1)\">\n"
                 if p > 0 {
-                    bodyHTML += "  <div class=\"page-marker-anchor\" aria-hidden=\"true\" data-page-indicator=\"p. \(p + 1)\"></div>\n"
+                    bodyHTML += "  <div class=\"page-marker-anchor\" aria-hidden=\"true\" data-page-indicator=\"p. \(p + 1)\" data-pdf-page=\"\(p + 1)\"></div>\n"
                 }
 
                 var i = 0
@@ -169,7 +169,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                 // Render any remaining images not paired with captions
                 for img in pageImages {
                     let relPath = (img.imagePath as NSString).lastPathComponent
-                    bodyHTML += "  <figure class=\"pdf-figure\"><img src=\"images/\(relPath)\" alt=\"Page \(p + 1)\" loading=\"lazy\" /></figure>\n"
+                    bodyHTML += "  <figure class=\"pdf-figure\" data-pdf-page=\"\(p + 1)\"><img src=\"images/\(relPath)\" alt=\"Page \(p + 1)\" data-pdf-page=\"\(p + 1)\" loading=\"lazy\" /></figure>\n"
                 }
 
                 bodyHTML += "</section>\n"
