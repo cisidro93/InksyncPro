@@ -66,6 +66,14 @@ public final class PDFImageExtractor {
         let pageBounds = page.bounds(for: .mediaBox)
         guard pageBounds.width > 0 && pageBounds.height > 0 else { return nil }
 
+        let imageName = "fig_page_\(pageIndex + 1).jpg"
+        let imageURL = targetDir.appendingPathComponent(imageName)
+
+        // Fast-path: Return cached image immediately if already rendered to eliminate redundant work
+        if FileManager.default.fileExists(atPath: imageURL.path) {
+            return ExtractedPDFImage(pageIndex: pageIndex, imagePath: imageURL.path, rect: pageBounds)
+        }
+
         // Downscale to max dimension 1024pt to preserve memory & prevent GPU texture crashes
         let maxDimension: CGFloat = 1024.0
         let aspect = pageBounds.width / pageBounds.height

@@ -217,7 +217,7 @@ struct ProPDFReflowReaderView: View {
                     }
                 }
             } else if (code == -2 || code == -1) && attempt < 8 {
-                let delay = attempt < 3 ? 0.12 : 0.25
+                let delay = attempt < 3 ? 0.06 : 0.14
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                     self.scrollToTargetPDFPage(pageIndex: pageIndex, attempt: attempt + 1, isOrientationChange: isOrientationChange)
                 }

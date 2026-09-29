@@ -117,7 +117,7 @@ public final class PDFSpatialParser {
 
             blocks.append(contentsOf: pageBlocks)
 
-            if i % 5 == 0 {
+            if i % 3 == 0 {
                 await Task.yield()
             }
         }
@@ -220,7 +220,7 @@ public final class PDFSpatialParser {
 
     private func calculateMedianFontSize(document: PDFDocument) -> CGFloat {
         var fontSizes: [CGFloat] = []
-        let samplePages = min(document.pageCount, 10)
+        let samplePages = min(document.pageCount, 6)
 
         for i in 0..<samplePages {
             guard let page = document.page(at: i) else { continue }
@@ -233,8 +233,14 @@ public final class PDFSpatialParser {
                     if let attrStr = sel.attributedString, attrStr.length > 0,
                        let font = attrStr.attribute(.font, at: 0, effectiveRange: nil) as? UIFont {
                         fontSizes.append(font.pointSize)
+                        if fontSizes.count >= 40 {
+                            break
+                        }
                     }
                 }
+            }
+            if fontSizes.count >= 40 {
+                break
             }
         }
 
