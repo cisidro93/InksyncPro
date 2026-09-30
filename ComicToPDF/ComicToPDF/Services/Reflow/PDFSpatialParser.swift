@@ -50,8 +50,7 @@ public struct SpatialTextBlock: Identifiable, Sendable {
     }
 }
 
-@MainActor
-public final class PDFSpatialParser {
+public final class PDFSpatialParser: Sendable {
     public static let shared = PDFSpatialParser()
     private init() {}
 
@@ -90,7 +89,7 @@ public final class PDFSpatialParser {
                             parsed.append(SpatialTextBlock(
                                 pageIndex: i,
                                 rect: pageBounds,
-                                text: pageString,
+                                text: Self.sanitizeExtractedText(pageString),
                                 kind: .paragraph,
                                 fontName: "System",
                                 fontSize: medianFontSize,
@@ -177,7 +176,7 @@ public final class PDFSpatialParser {
                         height: boundingBox.height * pageBounds.height
                     )
 
-                    let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let text = Self.sanitizeExtractedText(candidate.string.trimmingCharacters(in: .whitespacesAndNewlines))
                     guard !text.isEmpty else { continue }
 
                     if skipClutter && SmartSpeechTextSanitizer.shared.isPageNumberOrClutter(
@@ -272,7 +271,7 @@ public final class PDFSpatialParser {
 
         for lineSel in lineSelections {
             let lineBounds = lineSel.bounds(for: page)
-            let text = lineSel.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let text = Self.sanitizeExtractedText(lineSel.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
             guard !text.isEmpty else { continue }
 
             // Intelligent clutter filter: strip running headers, footers, standalone page numbers, and separator artifacts
@@ -319,6 +318,86 @@ public final class PDFSpatialParser {
         }
 
         return blocks
+    }
+
+    // MARK: - Font & CMap Glyph Sanitization
+
+    private nonisolated static let intraWordExclamationRegex = try? NSRegularExpression(
+        pattern: #"(\p{L})!(\p{L})"#,
+        options: []
+    )
+    private nonisolated static let isolatedExclamationRegex = try? NSRegularExpression(
+        pattern: #"(\p{Ll})\s+!\s*(\p{Ll})"#,
+        options: []
+    )
+    private nonisolated static let intraWordDollarRegex = try? NSRegularExpression(
+        pattern: #"(\p{L})\$(\p{L})"#,
+        options: []
+    )
+    private nonisolated static let leadingPercentRegex = try? NSRegularExpression(
+        pattern: #"\b%([a-z])"#,
+        options: []
+    )
+    private nonisolated static let multiWhitespaceRegex = try? NSRegularExpression(
+        pattern: #"[ \t]{2,}"#,
+        options: []
+    )
+
+    /// Sanitizes text extracted from PDF pages, eliminating publisher font subsetting glitches,
+    /// CMap encoding artifacts (e.g. thin spaces mapped to `!`, `fi` ligatures mapped to `$`),
+    /// exotic whitespace characters, and soft hyphens.
+    public nonisolated static func sanitizeExtractedText(_ text: String) -> String {
+        guard !text.isEmpty else { return "" }
+        var result = text
+
+        // 1. Strip invisible zero-width and soft-hyphen artifacts
+        result = result.replacingOccurrences(of: "\u{00AD}", with: "") // Soft hyphen
+        result = result.replacingOccurrences(of: "\u{200B}", with: "") // Zero-width space
+        result = result.replacingOccurrences(of: "\u{FEFF}", with: "") // Zero-width no-break space
+
+        // 2. Normalize exotic unicode spaces (thin, hair, non-breaking spaces) to standard ASCII space
+        let exoticSpaces: [String] = [
+            "\u{00A0}", "\u{2002}", "\u{2003}", "\u{2004}", "\u{2005}",
+            "\u{2006}", "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}", "\u{202F}"
+        ]
+        for spaceChar in exoticSpaces {
+            if result.contains(spaceChar) {
+                result = result.replacingOccurrences(of: spaceChar, with: " ")
+            }
+        }
+
+        // 3. Fix CMap font thin-space mapped to ASCII 33 ('!') between words: "our!personal" -> "our personal", "or!RNA" -> "or RNA"
+        if result.contains("!") {
+            if let regex = intraWordExclamationRegex {
+                let range = NSRange(location: 0, length: result.utf16.count)
+                result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "$1 $2")
+            }
+            if let regex = isolatedExclamationRegex {
+                let range = NSRange(location: 0, length: result.utf16.count)
+                result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "$1 $2")
+            }
+        }
+
+        // 4. Fix publisher font ligature artifacts: '$' mapped to 'fi' ligature: "de$nitions" -> "definitions"
+        if result.contains("$"), let regex = intraWordDollarRegex {
+            let range = NSRange(location: 0, length: result.utf16.count)
+            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "$1fi$2")
+        }
+
+        // 5. Fix publisher font ligature artifacts: '%' mapped to 'Th' ligature: "%e" -> "The"
+        if result.contains("%"), let regex = leadingPercentRegex {
+            let range = NSRange(location: 0, length: result.utf16.count)
+            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "Th$1")
+        }
+
+        // 6. Collapse multiple spaces
+        if let regex = multiWhitespaceRegex {
+            let range = NSRange(location: 0, length: result.utf16.count)
+            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: " ")
+        }
+
+        // 7. Unicode canonical normalization (NFC)
+        return result.precomposedStringWithCanonicalMapping
     }
 
     private nonisolated static let listMarkerRegex = try? NSRegularExpression(

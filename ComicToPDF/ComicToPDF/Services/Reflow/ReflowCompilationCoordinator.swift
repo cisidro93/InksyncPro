@@ -11,6 +11,8 @@ public final class ReflowCompilationCoordinator {
 
     private init() {}
 
+    public static let cacheVersion = "v8"
+
     private func cacheKey(pdfUUID: String, isClutterFiltered: Bool) -> String {
         return "\(pdfUUID)_\(isClutterFiltered ? "clean" : "raw")"
     }
@@ -20,7 +22,7 @@ public final class ReflowCompilationCoordinator {
         guard let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
             return nil
         }
-        let cacheFileName = "reflow_v7_\(isClutterFiltered ? "clean" : "raw").html"
+        let cacheFileName = "reflow_\(Self.cacheVersion)_\(isClutterFiltered ? "clean" : "raw").html"
         return cacheDir.appendingPathComponent("ReflowPDF/\(pdfUUID)/\(cacheFileName)")
     }
 
@@ -41,7 +43,7 @@ public final class ReflowCompilationCoordinator {
     ) {
         guard !hasCachedReflow(pdfUUID: pdfUUID, isClutterFiltered: isClutterFiltered) else { return }
 
-        Task {
+        Task.detached(priority: .utility) {
             _ = await self.compileOrFetchReflow(
                 document: document,
                 pdfUUID: pdfUUID,
@@ -71,7 +73,7 @@ public final class ReflowCompilationCoordinator {
             return await ongoing.value
         }
 
-        let task = Task<URL?, Never> {
+        let task = Task.detached(priority: .utility) {
             let blocks = await PDFSpatialParser.shared.parseDocument(document, skipClutter: isClutterFiltered)
 
             // Only extract images for pages that lack digital text blocks

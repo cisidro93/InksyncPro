@@ -199,6 +199,9 @@ public final class SmartSpeechTextSanitizer: Sendable {
         var processed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !processed.isEmpty else { return "" }
 
+        // 0. Sanitize publisher CMap font artifacts (e.g. thin-spaces mapped to '!', ligatures mapped to '$')
+        processed = PDFSpatialParser.sanitizeExtractedText(processed)
+
         // 1. Rejoin words split across line breaks: "trans- \nport" -> "transport"
         if let regex = Self.hyphenatedLineBreakRegex {
             let nsRange = NSRange(location: 0, length: processed.utf16.count)

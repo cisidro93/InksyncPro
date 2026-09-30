@@ -489,6 +489,8 @@ struct ProPDFReaderEngine: View {
         pdfViewReference = nil
         accessedSecurityScopedURL?.stopAccessingSecurityScopedResource()
         accessedSecurityScopedURL = nil
+        isReflowMode = false
+        prefs.pdfReflowMode = false
     }
 
     private func handleAnnotationsDidChange(_ notif: Notification) {
@@ -848,7 +850,10 @@ struct ProPDFReaderEngine: View {
                 prefs.applyBookTheme(bookID: pdf.id.uuidString)
                 // Reset quick filter override so saved document theme takes precedence
                 activeFilterPreset = .original
-                isReflowMode = prefs.pdfReflowMode
+                // Always start in standard vector PDF page mode on initial launch;
+                // the user can explicitly toggle Pro Reflow mode via the toolbar when desired.
+                isReflowMode = false
+                prefs.pdfReflowMode = false
                 smartTiersConfig = prefs.pdfTierConfiguration
                 AnnotationStore.shared.initialize(with: modelContext)
                 loadPDFDocument()

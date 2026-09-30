@@ -34,7 +34,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
             return nil
         }
 
-        let cacheFileName = "reflow_v6_\(isClutterFiltered ? "clean" : "raw").html"
+        let cacheFileName = "reflow_\(ReflowCompilationCoordinator.cacheVersion)_\(isClutterFiltered ? "clean" : "raw").html"
         let htmlFileURL = targetDir.appendingPathComponent(cacheFileName)
 
         var bodyHTML = ""
@@ -61,7 +61,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                 while i < pageBlocks.count {
                     let block = pageBlocks[i]
                     let rectAttr = "\(Int(block.rect.origin.x)),\(Int(block.rect.origin.y)),\(Int(block.rect.size.width)),\(Int(block.rect.size.height))"
-                    let escapedText = escapeHTML(block.text)
+                    let escapedText = escapeHTML(PDFSpatialParser.sanitizeExtractedText(block.text))
 
                     // Figure & Caption Binding (Adobe Sensei standard)
                     if block.kind == .figureCaption && !pageImages.isEmpty {
