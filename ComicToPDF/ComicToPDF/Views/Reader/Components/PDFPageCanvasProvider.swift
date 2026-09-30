@@ -182,6 +182,34 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         loadedPages.remove(key)
     }
 
+    // MARK: - Accidental Tap Purge (Zero-Stray-Ink Defense)
+    private var lastCenterTapTime: TimeInterval = 0
+    private var lastCenterTapLocation: CGPoint = .zero
+
+    public func notifyCenterTapOccurred(at location: CGPoint, in view: UIView) {
+        lastCenterTapTime = CACurrentMediaTime()
+        lastCenterTapLocation = location
+        purgeAccidentalTapStrokes()
+    }
+
+    public func purgeAccidentalTapStrokes() {
+        let now = CACurrentMediaTime()
+        guard now - lastCenterTapTime < 0.45 else { return }
+
+        for canvas in pageCanvases.values {
+            var strokes = canvas.drawing.strokes
+            guard let lastStroke = strokes.last else { continue }
+
+            let bounds = lastStroke.renderBounds
+            let isMicroDot = (bounds.width <= 18.0 && bounds.height <= 18.0) || lastStroke.path.count <= 3
+            if isMicroDot {
+                strokes.removeLast()
+                canvas.drawing = PKDrawing(strokes: strokes)
+                Logger.shared.log("Purged accidental tap dot on canvas page \(canvas.pageIndex)", category: "Markup", type: .info)
+            }
+        }
+    }
+
     // MARK: - PKCanvasViewDelegate
 
     private var isSnapping = false
@@ -189,6 +217,23 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
     public func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
         guard let canvas = canvasView as? PassthroughPKCanvasView,
               let page = canvas.associatedPage else { return }
+
+        // Zero-Stray-Ink Defense: If this drawing change fired within 450ms of a center-tap UI activation,
+        // and consists of a micro-dot tap stroke, purge it immediately before persisting.
+        let now = CACurrentMediaTime()
+        if now - lastCenterTapTime < 0.45 {
+            var strokes = canvasView.drawing.strokes
+            if let lastStroke = strokes.last {
+                let bounds = lastStroke.renderBounds
+                let isMicroDot = (bounds.width <= 18.0 && bounds.height <= 18.0) || lastStroke.path.count <= 3
+                if isMicroDot {
+                    strokes.removeLast()
+                    canvasView.drawing = PKDrawing(strokes: strokes)
+                    Logger.shared.log("Purged accidental tap dot during drawingDidChange on page \(canvas.pageIndex)", category: "Markup", type: .info)
+                    return
+                }
+            }
+        }
 
         // Pillar 5: Smart Draw-and-Hold Shape Recognition
         if !isSnapping, let snappedDrawing = SmartShapeRecognizer.snapLastStroke(in: canvasView.drawing) {

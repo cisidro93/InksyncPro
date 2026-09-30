@@ -3812,7 +3812,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             NSNumber(value: UITouch.TouchType.direct.rawValue),
             NSNumber(value: UITouch.TouchType.pencil.rawValue)
         ]
-        tapGesture.cancelsTouchesInView = false
+        tapGesture.cancelsTouchesInView = true
         tapGesture.delegate = context.coordinator
         tapGesture.isEnabled = true
         pdfView.addGestureRecognizer(tapGesture)
@@ -4577,6 +4577,13 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                gestureRecognizer === threeFingerTap || otherGestureRecognizer === threeFingerTap {
                 return true
             }
+            if gestureRecognizer === tapGesture || otherGestureRecognizer === tapGesture {
+                let other = gestureRecognizer === tapGesture ? otherGestureRecognizer : gestureRecognizer
+                let otherTypeName = String(describing: type(of: other))
+                if other is UIPanGestureRecognizer || otherTypeName.contains("Drawing") || otherTypeName.contains("Canvas") {
+                    return false
+                }
+            }
             if parent.isPencilMode && InksyncInkingState.shared.activeToolMode != .textHighlight {
                 if gestureRecognizer === pencilGlide || gestureRecognizer === fingerGlide ||
                    otherGestureRecognizer === pencilGlide || otherGestureRecognizer === fingerGlide {
@@ -4595,16 +4602,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
             let isDrawingActive = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || autoPencilActive
 
-            // When in markup/drawing mode or auto-pencil is active:
-            // 1. Apple Pencil touches strictly draw with 100% fidelity (never trigger tap gestures).
-            // 2. Direct finger touches in outer gutters (left/right margins) ALWAYS trigger page turn taps!
-            // 3. Direct finger touches in the center drawing area ink when finger drawing is permitted,
-            //    or pass through to zoom/pan when in pencil-only mode.
             if isDrawingActive && gestureRecognizer == tapGesture {
-                if touch.type == .pencil {
-                    return false
-                }
-
                 if let view = gestureRecognizer.view {
                     let loc = touch.location(in: view)
                     let width = view.bounds.width
@@ -4617,12 +4615,9 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                         return true
                     }
                 }
-
-                let pencilOnlyDrawingSetting = AppSettingsManager.shared.conversionSettings.pencilOnlyDrawing
-                let allowFinger = isPad ? (!pencilOnlyDrawingSetting || currentToolMode == .eraser) : true
-                if allowFinger && parent.isPencilMode {
-                    return false
-                }
+                // Center corridor: allow tapGesture to receive direct finger touches and pencil taps.
+                // cancelsTouchesInView = true and purgeAccidentalTapStrokes ensure zero stray ink!
+                return true
             }
 
             // In Pure Reading Mode (!parent.isPencilMode), if touch is in the outer margin page-turn zones,
@@ -4691,6 +4686,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     }
                 } else {
                     // Center tap: cleanly toggle reader chrome & navigation UI
+                    canvasProvider.notifyCenterTapOccurred(at: tapLocation, in: view)
                     parent.onTapCenter()
                 }
                 return
@@ -4743,6 +4739,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
                     parent.onNextPage()
                 }
             } else {
+                canvasProvider.notifyCenterTapOccurred(at: tapLocation, in: view)
                 parent.onTapCenter()
             }
         }

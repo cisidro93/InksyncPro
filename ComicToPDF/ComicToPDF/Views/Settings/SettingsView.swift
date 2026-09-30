@@ -1389,7 +1389,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var systemSection: some View {
         Section {
-            NavigationLink(destination: LinkedLibrarySettingsView()) {
+            NavigationLink(destination: LinkedLibrarySettingsView().environmentObject(conversionManager)) {
                 HStack {
                     settingsIcon("externaldrive.fill", color: .indigo)
                     Text("Linked External Drives")

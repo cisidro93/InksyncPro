@@ -23,29 +23,37 @@ final class SpotlightIndexer {
 
     private init() {}
 
+    private var debounceIndexTask: Task<Void, Never>?
+
     // MARK: - Library Indexing
 
-    /// Index the entire library — call after import or metadata changes.
+    /// Index the entire library — call after import or metadata changes (debounced by 2.5s).
     func indexLibrary(pdfs: [ConvertedPDF]) {
-        let localIndex = self.index
-        Task.detached(priority: .background) {
+        debounceIndexTask?.cancel()
+        debounceIndexTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled else { return }
+
+            let localIndex = self.index
             let tuples = pdfs.map { (id: $0.id, name: $0.name, series: $0.metadata.series, type: $0.contentType.rawValue) }
-            let items: [CSSearchableItem] = tuples.map { t in
-                let attrs = CSSearchableItemAttributeSet(contentType: .content)
-                attrs.title = t.name
-                attrs.contentDescription = t.series
-                attrs.keywords = [t.type]
-                attrs.identifier = t.id.uuidString
-                return CSSearchableItem(
-                    uniqueIdentifier: "book-\(t.id.uuidString)",
-                    domainIdentifier: "com.inksyncpro.library",
-                    attributeSet: attrs
-                )
-            }
-            do {
-                try await localIndex.indexSearchableItems(items)
-            } catch {
-                Logger.shared.log("Spotlight: failed to index library — \(error)", category: "Spotlight", type: .error)
+            Task.detached(priority: .background) {
+                let items: [CSSearchableItem] = tuples.map { t in
+                    let attrs = CSSearchableItemAttributeSet(contentType: .content)
+                    attrs.title = t.name
+                    attrs.contentDescription = t.series
+                    attrs.keywords = [t.type]
+                    attrs.identifier = t.id.uuidString
+                    return CSSearchableItem(
+                        uniqueIdentifier: "book-\(t.id.uuidString)",
+                        domainIdentifier: "com.inksyncpro.library",
+                        attributeSet: attrs
+                    )
+                }
+                do {
+                    try await localIndex.indexSearchableItems(items)
+                } catch {
+                    Logger.shared.log("Spotlight: failed to index library — \(error)", category: "Spotlight", type: .error)
+                }
             }
         }
     }

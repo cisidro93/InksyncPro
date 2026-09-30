@@ -2,7 +2,7 @@ import SwiftUI
 
 @MainActor
 struct LinkedLibrarySettingsView: View {
-    @EnvironmentObject var conversionManager: ConversionManager
+    @ObservedObject private var conversionManager = ConversionManager.shared
     @ObservedObject var appSettings = AppSettingsManager.shared
     @ObservedObject var driveMonitor = DriveMonitor.shared
     @ObservedObject private var scanner = LinkedLibraryScanner.shared

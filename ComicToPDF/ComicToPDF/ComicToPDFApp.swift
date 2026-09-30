@@ -124,6 +124,8 @@ struct InksyncProApp: App {
                 // ✅ SwiftData Engine Attachment (Injected globally)
                 .modelContainer(InksyncProApp.sharedModelContainer)
                 .preferredColorScheme(selectedTheme.colorScheme)
+                .environmentObject(ConversionManager.shared)
+                .environmentObject(AppSettingsManager.shared)
                 .onAppear {
                     // Inject ConversionManager into SharedImportCoordinator on app launch
                     SharedImportCoordinator.shared.conversionManager = ConversionManager.shared

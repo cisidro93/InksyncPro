@@ -71,6 +71,10 @@ actor ThumbnailDaemon {
                 } else {
                     missingPDFs.append(pdf)
                 }
+            } else if let coverData = pdf.coverImageData, let image = UIImage(data: coverData) {
+                // Deduplication: cover already extracted during file registration — cache directly without re-extracting
+                self.cacheInMemory(image, for: pdf.id)
+                try? coverData.write(to: cachedURL, options: .atomic)
             } else {
                 missingPDFs.append(pdf)
             }

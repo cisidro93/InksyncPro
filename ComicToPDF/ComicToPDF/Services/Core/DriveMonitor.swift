@@ -43,6 +43,7 @@ final class DriveMonitor: ObservableObject {
     func startMonitoring(drives: [AppSettingsManager.LinkedDriveEntry]) {
         self.drives = drives
         guard !drives.isEmpty else { stopPolling(); return }
+        Task { await probeAll() }
         startPolling()
     }
 
@@ -51,17 +52,21 @@ final class DriveMonitor: ObservableObject {
         stopPolling()
     }
 
+    func probeNow() {
+        Task { await probeAll() }
+    }
+
     // MARK: - Polling
 
     private func startPolling() {
         pollingTask?.cancel()
         pollingTask = Task { [weak self] in
             while !Task.isCancelled {
+                // Adaptive 45s poll prevents thermal throttling, bus saturation, and battery drain
+                // while idle. Foreground activation and explicit UI actions trigger immediate probeAll().
+                try? await Task.sleep(for: .seconds(45))
+                guard !Task.isCancelled else { break }
                 await self?.probeAll()
-                // 8s poll — fast enough to detect a freshly-plugged USB drive within one cycle,
-                // while remaining gentle on battery for idle iPads.
-                // Immediate foreground probe (in setupLifecycleObservers) handles reconnect snappiness.
-                try? await Task.sleep(for: .seconds(8))
             }
         }
     }

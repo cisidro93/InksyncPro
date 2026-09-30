@@ -135,7 +135,7 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         )
         singleTap.numberOfTapsRequired = 1
         singleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-        singleTap.cancelsTouchesInView = false
+        singleTap.cancelsTouchesInView = true
         singleTap.delegate = context.coordinator
         singleTap.require(toFail: twoFingerTap)
         singleTap.require(toFail: threeFingerTap)

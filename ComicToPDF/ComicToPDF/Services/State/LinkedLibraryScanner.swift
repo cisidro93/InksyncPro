@@ -557,13 +557,13 @@ final class LinkedLibraryScanner: ObservableObject {
 
         guard !newPDFs.isEmpty else { return }
 
-        // Parallelize cover thumbnail extraction (capped at 4 concurrent tasks)
+        // Parallelize cover thumbnail extraction with strict thermal throttling & autoreleasepool
+        let maxConcurrency = ProcessInfo.processInfo.activeProcessorCount <= 4 ? 2 : 3
         await withTaskGroup(of: (Int, Data?).self) { group in
             var inFlight = 0
-            let cap = 4
 
             for (index, pdf) in newPDFs.enumerated() {
-                if inFlight >= cap {
+                if inFlight >= maxConcurrency {
                     if let (idx, data) = await group.next() {
                         if let data { newPDFs[idx].coverImageData = data }
                         inFlight -= 1
@@ -572,24 +572,26 @@ final class LinkedLibraryScanner: ObservableObject {
                 let url = pdf.url
                 let bookmark = pdf.driveBookmarkData
                 group.addTask {
-                    let data = await Task.detached(priority: .background) {
-                        var img: UIImage? = nil
-                        if let bookmark {
-                            var isStale = false
-                            if let resolvedURL = try? URL(
-                                resolvingBookmarkData: bookmark,
-                                options: .withoutUI,
-                                relativeTo: nil,
-                                bookmarkDataIsStale: &isStale
-                            ) {
-                                let accessing = resolvedURL.startAccessingSecurityScopedResource()
-                                img = PhysicalFileSystemRouter.extractCoverImageStatic(from: resolvedURL)
-                                if accessing { resolvedURL.stopAccessingSecurityScopedResource() }
+                    let data = await Task.detached(priority: .background) { () -> Data? in
+                        autoreleasepool {
+                            var img: UIImage? = nil
+                            if let bookmark {
+                                var isStale = false
+                                if let resolvedURL = try? URL(
+                                    resolvingBookmarkData: bookmark,
+                                    options: .withoutUI,
+                                    relativeTo: nil,
+                                    bookmarkDataIsStale: &isStale
+                                ) {
+                                    let accessing = resolvedURL.startAccessingSecurityScopedResource()
+                                    img = PhysicalFileSystemRouter.extractCoverImageStatic(from: resolvedURL)
+                                    if accessing { resolvedURL.stopAccessingSecurityScopedResource() }
+                                }
+                            } else {
+                                img = PhysicalFileSystemRouter.extractCoverImageStatic(from: url)
                             }
-                        } else {
-                            img = PhysicalFileSystemRouter.extractCoverImageStatic(from: url)
+                            return img?.jpegData(compressionQuality: 0.7)
                         }
-                        return img?.jpegData(compressionQuality: 0.7)
                     }.value
                     return (index, data)
                 }
