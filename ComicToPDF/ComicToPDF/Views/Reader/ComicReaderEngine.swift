@@ -1825,6 +1825,25 @@ struct ComicReaderEngine: View {
             }
             
             KeyCommandHandler { command in
+                if command.modifierFlags.contains(.command) {
+                    switch command.input {
+                    case "]":
+                        if isMangaActive { prevPage() } else { nextPage() }
+                    case "[":
+                        if isMangaActive { nextPage() } else { prevPage() }
+                    case "d":
+                        NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSpeechMode"), object: nil)
+                    case "n":
+                        NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
+                    case "s":
+                        NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSidebar"), object: nil)
+                    case "/", "?":
+                        NotificationCenter.default.post(name: NSNotification.Name("ReaderShowShortcutsHelp"), object: nil)
+                    default:
+                        break
+                    }
+                    return
+                }
                 let input = command.input
                 if input == UIKeyCommand.inputLeftArrow {
                     if isMangaActive {
@@ -4805,11 +4824,23 @@ class UIKeyCommandViewController: UIViewController {
     }
     
     override var keyCommands: [UIKeyCommand]? {
-        [
-            UIKeyCommand(input: UIKeyCommand.inputLeftArrow, modifierFlags: [], action: #selector(keyTriggered)),
-            UIKeyCommand(input: UIKeyCommand.inputRightArrow, modifierFlags: [], action: #selector(keyTriggered)),
-            UIKeyCommand(input: " ", modifierFlags: [], action: #selector(keyTriggered)),
-            UIKeyCommand(input: "\u{1B}", modifierFlags: [], action: #selector(keyTriggered)) // Escape
+        let makeCmd: (String, UIKeyModifierFlags, String) -> UIKeyCommand = { input, flags, title in
+            let cmd = UIKeyCommand(input: input, modifierFlags: flags, action: #selector(self.keyTriggered(_:)))
+            cmd.discoverabilityTitle = title
+            return cmd
+        }
+
+        return [
+            makeCmd(UIKeyCommand.inputLeftArrow, [], "Previous Page"),
+            makeCmd(UIKeyCommand.inputRightArrow, [], "Next Page"),
+            makeCmd(" ", [], "Next Page"),
+            makeCmd("\u{1B}", [], "Close Reader"),
+            makeCmd("]", .command, "Next Page (Split-Notebook Safe)"),
+            makeCmd("[", .command, "Previous Page (Split-Notebook Safe)"),
+            makeCmd("d", .command, "Toggle Speech / Read Aloud"),
+            makeCmd("n", .command, "Toggle Study Notebook"),
+            makeCmd("s", .command, "Toggle Table of Contents / Sidebar"),
+            makeCmd("/", .command, "Keyboard Shortcuts Cheat Sheet")
         ]
     }
     

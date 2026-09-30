@@ -65,6 +65,27 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
         pvc.onKeyCommand = { [weak coordinator = context.coordinator, weak pvc] sender in
             guard let coordinator = coordinator, let pageVC = pvc else { return }
+            if sender.modifierFlags.contains(.command) {
+                switch sender.input {
+                case "]":
+                    coordinator.turnForward(pageVC)
+                case "[":
+                    coordinator.turnBackward(pageVC)
+                case "r":
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleReflowMode"), object: nil)
+                case "d":
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSpeechMode"), object: nil)
+                case "n":
+                    NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
+                case "s":
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSidebar"), object: nil)
+                case "/", "?":
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderShowShortcutsHelp"), object: nil)
+                default:
+                    break
+                }
+                return
+            }
             let isForward = sender.input == UIKeyCommand.inputRightArrow
                 || sender.input == UIKeyCommand.inputDownArrow
                 || (sender.input == " " && !sender.modifierFlags.contains(.shift))
@@ -2994,19 +3015,32 @@ final class InksyncPageViewController: UIPageViewController {
     }
 
     override var keyCommands: [UIKeyCommand]? {
+        let makeCmd: (String, UIKeyModifierFlags, String) -> UIKeyCommand = { input, flags, title in
+            let cmd = UIKeyCommand(input: input, modifierFlags: flags, action: #selector(self.handleKeyCommand(_:)))
+            cmd.discoverabilityTitle = title
+            return cmd
+        }
+
         return [
-            UIKeyCommand(input: UIKeyCommand.inputLeftArrow, modifierFlags: [], action: #selector(handleKeyCommand(_:))),
-            UIKeyCommand(input: UIKeyCommand.inputRightArrow, modifierFlags: [], action: #selector(handleKeyCommand(_:))),
-            UIKeyCommand(input: UIKeyCommand.inputUpArrow, modifierFlags: [], action: #selector(handleKeyCommand(_:))),
-            UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(handleKeyCommand(_:))),
-            UIKeyCommand(input: " ", modifierFlags: [], action: #selector(handleKeyCommand(_:))),
-            UIKeyCommand(input: " ", modifierFlags: .shift, action: #selector(handleKeyCommand(_:))),
-            UIKeyCommand(input: UIKeyCommand.inputPageUp, modifierFlags: [], action: #selector(handleKeyCommand(_:))),
-            UIKeyCommand(input: UIKeyCommand.inputPageDown, modifierFlags: [], action: #selector(handleKeyCommand(_:))),
-            UIKeyCommand(input: "j", modifierFlags: [], action: #selector(handleKeyCommand(_:))),
-            UIKeyCommand(input: "k", modifierFlags: [], action: #selector(handleKeyCommand(_:))),
-            UIKeyCommand(input: "h", modifierFlags: [], action: #selector(handleKeyCommand(_:))),
-            UIKeyCommand(input: "l", modifierFlags: [], action: #selector(handleKeyCommand(_:)))
+            makeCmd(UIKeyCommand.inputLeftArrow, [], "Previous Page"),
+            makeCmd(UIKeyCommand.inputRightArrow, [], "Next Page"),
+            makeCmd(UIKeyCommand.inputUpArrow, [], "Scroll Up / Previous"),
+            makeCmd(UIKeyCommand.inputDownArrow, [], "Scroll Down / Next"),
+            makeCmd(" ", [], "Next Page"),
+            makeCmd(" ", .shift, "Previous Page"),
+            makeCmd(UIKeyCommand.inputPageUp, [], "Previous Page"),
+            makeCmd(UIKeyCommand.inputPageDown, [], "Next Page"),
+            makeCmd("j", [], "Next Page (Vim)"),
+            makeCmd("k", [], "Previous Page (Vim)"),
+            makeCmd("h", [], "Previous Page (Vim)"),
+            makeCmd("l", [], "Next Page (Vim)"),
+            makeCmd("]", .command, "Next Page (Split-Notebook Safe)"),
+            makeCmd("[", .command, "Previous Page (Split-Notebook Safe)"),
+            makeCmd("r", .command, "Toggle Reflow Mode"),
+            makeCmd("d", .command, "Toggle Speech / Read Aloud"),
+            makeCmd("n", .command, "Toggle Study Notebook"),
+            makeCmd("s", .command, "Toggle Table of Contents / Sidebar"),
+            makeCmd("/", .command, "Keyboard Shortcuts Cheat Sheet")
         ]
     }
 

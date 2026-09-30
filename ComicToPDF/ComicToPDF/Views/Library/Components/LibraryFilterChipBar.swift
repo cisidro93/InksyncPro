@@ -11,6 +11,10 @@ import SwiftUI
 struct LibraryFilterChipBar: View {
     @Binding var selectedFilter: LibraryFilterState
     let counts: [LibraryFilterState: Int]
+    var onLinkDrive: (() -> Void)? = nil
+    var onManageDrives: (() -> Void)? = nil
+    var onBrowseCloud: (() -> Void)? = nil
+    var onManageCloud: (() -> Void)? = nil
 
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
@@ -21,7 +25,11 @@ struct LibraryFilterChipBar: View {
                     FilterChip(
                         filter: filter,
                         count: counts[filter] ?? 0,
-                        isSelected: selectedFilter == filter
+                        isSelected: selectedFilter == filter,
+                        onLinkDrive: onLinkDrive,
+                        onManageDrives: onManageDrives,
+                        onBrowseCloud: onBrowseCloud,
+                        onManageCloud: onManageCloud
                     ) {
                         HapticEngine.selection()
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
@@ -63,6 +71,10 @@ private struct FilterChip: View {
     let filter: LibraryFilterState
     let count: Int
     let isSelected: Bool
+    var onLinkDrive: (() -> Void)? = nil
+    var onManageDrives: (() -> Void)? = nil
+    var onBrowseCloud: (() -> Void)? = nil
+    var onManageCloud: (() -> Void)? = nil
     let onTap: () -> Void
 
     private var chipColor: Color {
@@ -125,6 +137,31 @@ private struct FilterChip: View {
             }
         }
         .buttonStyle(FilterChipButtonStyle(isSelected: isSelected))
+        .contextMenu {
+            if filter == .onDrive {
+                if let onLinkDrive {
+                    Button(action: onLinkDrive) {
+                        Label("Link New Drive / Folder...", systemImage: "externaldrive.badge.plus")
+                    }
+                }
+                if let onManageDrives {
+                    Button(action: onManageDrives) {
+                        Label("Manage Linked Drives...", systemImage: "externaldrive.badge.gearshape")
+                    }
+                }
+            } else if filter == .cloudLibrary {
+                if let onBrowseCloud {
+                    Button(action: onBrowseCloud) {
+                        Label("Browse Cloud Files...", systemImage: "icloud.and.arrow.down")
+                    }
+                }
+                if let onManageCloud {
+                    Button(action: onManageCloud) {
+                        Label("Cloud Sync Settings...", systemImage: "cloud.fill")
+                    }
+                }
+            }
+        }
     }
 }
 

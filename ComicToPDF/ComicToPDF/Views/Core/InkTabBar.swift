@@ -349,6 +349,18 @@ struct InkTabBar: View {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_DeleteAction"), object: nil)
             }
             .disabled(count == 0)
+
+            // Mark Unread
+            actionButton(title: "Unread", systemImage: "arrow.counterclockwise", color: count == 0 ? .gray : .blue) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_ClearProgressAction"), object: nil)
+            }
+            .disabled(count == 0)
+
+            // Mark Read
+            actionButton(title: "Read", systemImage: "checkmark.circle.fill", color: count == 0 ? .gray : .green) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MarkCompletedAction"), object: nil)
+            }
+            .disabled(count == 0)
             
             // Convert & Merge
             actionButton(title: "Merge", systemImage: "arrow.triangle.merge", color: count < 2 ? .gray : .blue) {
@@ -359,12 +371,6 @@ struct InkTabBar: View {
             // Group
             actionButton(title: "Group", systemImage: "rectangle.stack.badge.plus", color: count == 0 ? .gray : .orange) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_GroupAction"), object: nil)
-            }
-            .disabled(count == 0)
-            
-            // Transfer
-            actionButton(title: "Transfer", systemImage: "wifi", color: count == 0 ? .gray : .green) {
-                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_TransferAction"), object: nil)
             }
             .disabled(count == 0)
             
@@ -380,6 +386,18 @@ struct InkTabBar: View {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_DeleteAction"), object: nil)
             }
             .disabled(count == 0)
+
+            // Mark Unread
+            actionButton(title: "Unread", systemImage: "arrow.counterclockwise", color: count == 0 ? .gray : .blue) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_ClearProgressAction"), object: nil)
+            }
+            .disabled(count == 0)
+
+            // Mark Read
+            actionButton(title: "Read", systemImage: "checkmark.circle.fill", color: count == 0 ? .gray : .green) {
+                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_MarkCompletedAction"), object: nil)
+            }
+            .disabled(count == 0)
             
             // Intelligent Metadata
             actionButton(title: "Metadata", systemImage: "sparkles", color: count == 0 ? .gray : .blue) {
@@ -387,12 +405,6 @@ struct InkTabBar: View {
             }
             .disabled(count == 0)
             
-            // Assign Volume
-            actionButton(title: "Assign Vol", systemImage: "folder.badge.plus", color: count == 0 ? .gray : .orange) {
-                NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_AssignVolumeAction"), object: nil)
-            }
-            .disabled(count == 0)
-
             // Volumes (Unified Studio: Assign Volume Tag or Create Virtual Omnibus)
             actionButton(title: "Volumes", systemImage: "books.vertical.fill", color: count == 0 ? .gray : .purple) {
                 NotificationCenter.default.post(name: NSNotification.Name("InkTabBar_VolumeStudioAction"), object: nil)

@@ -45,6 +45,7 @@ struct ModernLibraryView: View {
     @State private var isSearchActive: Bool = false
     @State private var showingMoreActionsDialog: Bool = false
     @State private var showingBatchDeleteConfirmation: Bool = false
+    @State private var showingShortcutsSheet: Bool = false
     @State private var highlightedItemID: String? = nil
     @FocusState private var isLibraryFocused: Bool
 
@@ -171,6 +172,31 @@ struct ModernLibraryView: View {
                         handleSelectAll()
                         return .handled
                     }
+                    if press.key == "b" {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                            isBatchMode.toggle()
+                            if !isBatchMode { multiSelection.removeAll() }
+                        }
+                        HapticEngine.selection()
+                        return .handled
+                    }
+                    if press.key == "/" {
+                        showingShortcutsSheet = true
+                        return .handled
+                    }
+                }
+                
+                if press.key == "[" {
+                    cycleShelf(forward: false)
+                    return .handled
+                }
+                if press.key == "]" {
+                    cycleShelf(forward: true)
+                    return .handled
+                }
+                if press.key == "?" {
+                    showingShortcutsSheet = true
+                    return .handled
                 }
                 
                 if press.key == .escape {
@@ -370,7 +396,23 @@ struct ModernLibraryView: View {
                     showingMoreActionsDialog = true
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_ClearProgressAction"))) { _ in
+                if isBatchMode && !multiSelection.isEmpty {
+                    handleBatchClearProgress()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MarkCompletedAction"))) { _ in
+                if isBatchMode && !multiSelection.isEmpty {
+                    handleBatchMarkCompleted()
+                }
+            }
             .confirmationDialog("Batch Actions", isPresented: $showingMoreActionsDialog, titleVisibility: .visible) {
+                Button("Mark as Unread (Clear Progress)") {
+                    handleBatchClearProgress()
+                }
+                Button("Mark as Completed (100% Read)") {
+                    handleBatchMarkCompleted()
+                }
                 Button("Fast Convert") {
                     let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                     Task { await conversionManager.convertQueue(items) }
@@ -549,6 +591,14 @@ struct ModernLibraryView: View {
             .sheet(item: $router.activeSheet) { item in
                 destinationSheet(for: item)
                     .forceProMotion()
+            }
+            .sheet(isPresented: $showingShortcutsSheet) {
+                KeyboardShortcutsCheatSheetView()
+            }
+            .onChange(of: router.activeFullScreen) { _, newVal in
+                if newVal == nil {
+                    isLibraryFocused = true
+                }
             }
             .onReceive(conversionManager.objectWillChange.debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { _ in
                 syncAndRebuildLibraryCache()
@@ -1067,6 +1117,14 @@ struct ModernLibraryView: View {
                     }
                     
                     Button {
+                        showingShortcutsSheet = true
+                    } label: {
+                        Image(systemName: "questionmark.circle")
+                            .font(.system(size: hSizeClass == .regular ? 16 : 15, weight: .semibold))
+                            .foregroundColor(Color.inkTextPrimary)
+                    }
+
+                    Button {
                         AppRouter.shared.presentSheet(.controlCenter)
                     } label: {
                         Image(systemName: "slider.horizontal.3")
@@ -1092,7 +1150,11 @@ struct ModernLibraryView: View {
             // Dynamic Smart Filter Bar
             LibraryFilterChipBar(
                 selectedFilter: $viewModel.filterState,
-                counts: libraryFilterCounts
+                counts: libraryFilterCounts,
+                onLinkDrive: handleLinkDrive,
+                onManageDrives: { AppRouter.shared.presentSheet(.settings) },
+                onBrowseCloud: handleBrowseCloud,
+                onManageCloud: { AppRouter.shared.presentSheet(.settings) }
             )
             .padding(.bottom, 8)
 
@@ -1148,8 +1210,31 @@ struct ModernLibraryView: View {
                 breadcrumbRow(folder: folder)
             }
 
+            // MARK: - Connected Drives Header
+            if viewModel.filterState == .onDrive && !settingsManager.linkedDrives.isEmpty {
+                connectedDrivesHeader
+            }
+
             // MARK: - Discrete Layout Layers
-            if viewStyle == .list {
+            if viewModel.filterState == .onDrive && (settingsManager.linkedDrives.isEmpty || viewModel.cachedLibraryItems.isEmpty) {
+                DriveEmptyState(
+                    onLinkDrive: handleLinkDrive,
+                    onBackToAll: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            viewModel.filterState = .all
+                        }
+                    }
+                )
+            } else if viewModel.filterState == .cloudLibrary && viewModel.cachedLibraryItems.isEmpty {
+                CloudEmptyState(
+                    onBrowseCloud: handleBrowseCloud,
+                    onBackToAll: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            viewModel.filterState = .all
+                        }
+                    }
+                )
+            } else if viewStyle == .list {
                 LibraryListView(
                     items: viewModel.cachedLibraryItems,
                     isBatchMode: $isBatchMode,
@@ -1540,13 +1625,253 @@ struct ModernLibraryView: View {
     }
 
     @ViewBuilder private var batchBottomToolbar: some View {
-        EmptyView()
+        HStack(spacing: 12) {
+            // Count badge
+            HStack(spacing: 6) {
+                Text("\(multiSelection.count)")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Color.inkBlue, in: Capsule())
+                Text("Selected")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(Theme.text)
+            }
+
+            Spacer()
+
+            // Select All / Deselect All
+            Button {
+                handleSelectAll()
+            } label: {
+                Text(multiSelection.count >= viewModel.cachedLibraryItems.count && !multiSelection.isEmpty ? "Deselect" : "Select All")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(Theme.text)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.primary.opacity(0.08), in: Capsule())
+            }
+
+            // Mark Unread (Clear Progress)
+            Button {
+                handleBatchClearProgress()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("Unread")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(Color.blue, in: Capsule())
+            }
+            .disabled(multiSelection.isEmpty)
+            .opacity(multiSelection.isEmpty ? 0.5 : 1.0)
+
+            // Mark Read (Completed)
+            Button {
+                handleBatchMarkCompleted()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("Read")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(Color(hex: "#10b981"), in: Capsule())
+            }
+            .disabled(multiSelection.isEmpty)
+            .opacity(multiSelection.isEmpty ? 0.5 : 1.0)
+
+            // More Actions
+            Button {
+                showingMoreActionsDialog = true
+            } label: {
+                Image(systemName: "ellipsis.circle.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(Theme.textSecondary)
+            }
+            .disabled(multiSelection.isEmpty)
+            .opacity(multiSelection.isEmpty ? 0.5 : 1.0)
+
+            // Cancel / Done
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                    isBatchMode = false
+                    multiSelection.removeAll()
+                }
+                HapticEngine.selection()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(Theme.textTertiary)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+        )
+        .shadow(color: Color.black.opacity(0.18), radius: 12, y: 5)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
     }
-    
+
+    private func handleBatchClearProgress() {
+        let ids = multiSelection
+        for id in ids {
+            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == id }) {
+                pdf.metadata.lastReadPage = 0
+                ReaderProgressTracker.shared.setProgress(for: id, page: 0, totalPages: max(pdf.pageCount, 1))
+            }
+        }
+        conversionManager.saveLibrary()
+        syncAndRebuildLibraryCache()
+        HapticEngine.success()
+        withAnimation {
+            isBatchMode = false
+            multiSelection.removeAll()
+        }
+    }
+
+    private func handleBatchMarkCompleted() {
+        let ids = multiSelection
+        for id in ids {
+            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == id }) {
+                let lastPage = max(pdf.pageCount - 1, 0)
+                pdf.metadata.lastReadPage = lastPage
+                ReaderProgressTracker.shared.setProgress(for: id, page: lastPage, totalPages: max(pdf.pageCount, 1))
+            }
+        }
+        conversionManager.saveLibrary()
+        syncAndRebuildLibraryCache()
+        HapticEngine.success()
+        withAnimation {
+            isBatchMode = false
+            multiSelection.removeAll()
+        }
+    }
+
+    private func handleLinkDrive() {
+        let manager = conversionManager
+        LinkedLibraryScanner.shared.conversionManager = manager
+
+        FolderLinkCoordinator.present { results in
+            guard !results.isEmpty else {
+                Task { @MainActor in
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        if settingsManager.linkedDrives.isEmpty {
+                            viewModel.filterState = .all
+                        }
+                    }
+                }
+                return
+            }
+
+            Task { @MainActor in
+                let scanner = LinkedLibraryScanner.shared
+                scanner.conversionManager = manager
+                for result in results {
+                    _ = try? await scanner.linkDrive(
+                        folderURL: result.url,
+                        bookmarkData: result.bookmark,
+                        displayName: result.url.lastPathComponent
+                    )
+                }
+                syncAndRebuildLibraryCache()
+            }
+        }
+    }
+
+    private func handleBrowseCloud() {
+        AppRouter.shared.presentSheet(.cloudBrowser)
+    }
+
+    private func cycleShelf(forward: Bool) {
+        let allShelves = ContentShelf.allCases
+        guard let currentIndex = allShelves.firstIndex(of: viewModel.contentShelf) else { return }
+        let nextIndex: Int
+        if forward {
+            nextIndex = (currentIndex + 1) % allShelves.count
+        } else {
+            nextIndex = (currentIndex - 1 + allShelves.count) % allShelves.count
+        }
+        HapticEngine.selection()
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+            viewModel.contentShelf = allShelves[nextIndex]
+        }
+    }
+
+    @ViewBuilder
+    private var connectedDrivesHeader: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "externaldrive.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Color(hex: "#8b5cf6"))
+
+            Text("Linked Drives:")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundColor(Theme.text)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(settingsManager.linkedDrives, id: \.id) { drive in
+                        HStack(spacing: 4) {
+                            Text(drive.displayName)
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("(\(drive.fileCount))")
+                                .font(.system(size: 10, weight: .regular))
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.primary.opacity(0.06), in: Capsule())
+                    }
+                }
+            }
+
+            Spacer()
+
+            Button {
+                handleLinkDrive()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("Link Drive")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color(hex: "#8b5cf6"), in: Capsule())
+            }
+
+            Button {
+                AppRouter.shared.presentSheet(.settings)
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Theme.textSecondary)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+    }
+
     private func handleDropApplied() {
         syncAndRebuildLibraryCache()
     }
-    
+
     private func handleDefaultImport() {
         ImportCoordinator.present(type: .unified) { urls in
             Task { await conversionManager.processImportedFiles(urls: urls) }

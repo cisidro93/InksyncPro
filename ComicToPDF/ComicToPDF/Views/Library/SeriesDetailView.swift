@@ -1430,6 +1430,35 @@ struct SeriesDetailView: View {
                     showingBatchDeleteConfirmation = true
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_ClearProgressAction"))) { _ in
+                if isSelectionMode && !selection.isEmpty {
+                    for id in selection {
+                        if let pdf = issues.first(where: { $0.id == id }) {
+                            pdf.metadata.lastReadPage = 0
+                            ReaderProgressTracker.shared.setProgress(for: id, page: 0, totalPages: max(pdf.pageCount, 1))
+                        }
+                    }
+                    conversionManager.saveLibrary()
+                    HapticEngine.success()
+                    isSelectionMode = false
+                    selection.removeAll()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InkTabBar_MarkCompletedAction"))) { _ in
+                if isSelectionMode && !selection.isEmpty {
+                    for id in selection {
+                        if let pdf = issues.first(where: { $0.id == id }) {
+                            let lastPage = max(pdf.pageCount - 1, 0)
+                            pdf.metadata.lastReadPage = lastPage
+                            ReaderProgressTracker.shared.setProgress(for: id, page: lastPage, totalPages: max(pdf.pageCount, 1))
+                        }
+                    }
+                    conversionManager.saveLibrary()
+                    HapticEngine.success()
+                    isSelectionMode = false
+                    selection.removeAll()
+                }
+            }
             .confirmationDialog(
                 "Delete \(selection.count) Selected Item\(selection.count > 1 ? "s" : "")?",
                 isPresented: $showingBatchDeleteConfirmation,

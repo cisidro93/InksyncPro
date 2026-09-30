@@ -806,6 +806,27 @@ struct ProPDFReaderEngine: View {
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ComicReader_OpenPanelWorkspace"))) { _ in
                 isAdjustingSmartTiers = true
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleReflowMode"))) { _ in
+                toggleReflowMode()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleSpeechMode"))) { _ in
+                togglePDFNarration()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleHighlighterMode"))) { _ in
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                    if !isPencilMode {
+                        isPencilMode = true
+                        InksyncInkingState.shared.activeToolMode = .textHighlight
+                    } else if InksyncInkingState.shared.activeToolMode == .textHighlight {
+                        isPencilMode = false
+                    } else {
+                        InksyncInkingState.shared.activeToolMode = .textHighlight
+                    }
+                }
+                if isPencilMode && InksyncInkingState.shared.activeToolMode == .textHighlight {
+                    showToastMessage("Highlighter Active")
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderToggleMarkupMode"))) { _ in
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
                     isPencilMode.toggle()
@@ -1769,22 +1790,7 @@ struct ProPDFReaderEngine: View {
                 showCropAdjustmentSheet = true
             },
             onReflowToggle: {
-                if let pv = pdfViewReference, let curPage = pv.currentPage, let doc = pv.document {
-                    let activeIdx = doc.index(for: curPage)
-                    if activeIdx >= 0 && activeIdx < doc.pageCount {
-                        currentPageIndex = activeIdx
-                    }
-                }
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    isReflowMode.toggle()
-                    prefs.pdfReflowMode = isReflowMode
-                }
-                if !isReflowMode {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        jumpToPage(currentPageIndex)
-                    }
-                }
-                HapticEngine.medium()
+                toggleReflowMode()
             },
             onMarkupToggle: {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
@@ -2579,6 +2585,25 @@ struct ProPDFReaderEngine: View {
                 }
             }
         }
+    }
+
+    private func toggleReflowMode() {
+        if let pv = pdfViewReference, let curPage = pv.currentPage, let doc = pv.document {
+            let activeIdx = doc.index(for: curPage)
+            if activeIdx >= 0 && activeIdx < doc.pageCount {
+                currentPageIndex = activeIdx
+            }
+        }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            isReflowMode.toggle()
+            prefs.pdfReflowMode = isReflowMode
+        }
+        if !isReflowMode {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                jumpToPage(currentPageIndex)
+            }
+        }
+        HapticEngine.medium()
     }
 
     private func togglePDFNarration() {

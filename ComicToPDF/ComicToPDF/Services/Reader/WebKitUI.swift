@@ -230,23 +230,64 @@ open class HighlightableWebView: WKWebView {
     }
     
     open override var keyCommands: [UIKeyCommand]? {
+        let makeCmd: (String, UIKeyModifierFlags, String) -> UIKeyCommand = { input, flags, title in
+            let cmd = UIKeyCommand(input: input, modifierFlags: flags, action: #selector(self.handleForwardedKeyCommand(_:)))
+            cmd.discoverabilityTitle = title
+            return cmd
+        }
+
         return [
-            UIKeyCommand(input: UIKeyCommand.inputLeftArrow, modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
-            UIKeyCommand(input: UIKeyCommand.inputRightArrow, modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
-            UIKeyCommand(input: UIKeyCommand.inputUpArrow, modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
-            UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
-            UIKeyCommand(input: " ", modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
-            UIKeyCommand(input: " ", modifierFlags: .shift, action: #selector(handleForwardedKeyCommand(_:))),
-            UIKeyCommand(input: UIKeyCommand.inputPageUp, modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
-            UIKeyCommand(input: UIKeyCommand.inputPageDown, modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
-            UIKeyCommand(input: "j", modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
-            UIKeyCommand(input: "k", modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
-            UIKeyCommand(input: "h", modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:))),
-            UIKeyCommand(input: "l", modifierFlags: [], action: #selector(handleForwardedKeyCommand(_:)))
+            makeCmd(UIKeyCommand.inputLeftArrow, [], "Previous Page"),
+            makeCmd(UIKeyCommand.inputRightArrow, [], "Next Page"),
+            makeCmd(UIKeyCommand.inputUpArrow, [], "Scroll Up / Previous"),
+            makeCmd(UIKeyCommand.inputDownArrow, [], "Scroll Down / Next"),
+            makeCmd(" ", [], "Next Page"),
+            makeCmd(" ", .shift, "Previous Page"),
+            makeCmd(UIKeyCommand.inputPageUp, [], "Previous Page"),
+            makeCmd(UIKeyCommand.inputPageDown, [], "Next Page"),
+            makeCmd("j", [], "Next Page (Vim)"),
+            makeCmd("k", [], "Previous Page (Vim)"),
+            makeCmd("h", [], "Previous Page (Vim)"),
+            makeCmd("l", [], "Next Page (Vim)"),
+            makeCmd("]", .command, "Next Page (Split-Notebook Safe)"),
+            makeCmd("[", .command, "Previous Page (Split-Notebook Safe)"),
+            makeCmd("r", .command, "Toggle Reflow Mode"),
+            makeCmd("d", .command, "Toggle Speech / Read Aloud"),
+            makeCmd("m", .command, "Toggle Pencil Markup"),
+            makeCmd("h", .command, "Toggle Text Highlighter"),
+            makeCmd("n", .command, "Toggle Study Notebook"),
+            makeCmd("s", .command, "Toggle Table of Contents / Sidebar"),
+            makeCmd("/", .command, "Keyboard Shortcuts Cheat Sheet")
         ]
     }
 
     @objc open func handleForwardedKeyCommand(_ sender: UIKeyCommand) {
+        if sender.modifierFlags.contains(.command) {
+            switch sender.input {
+            case "]":
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            case "[":
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            case "r":
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleReflowMode"), object: nil)
+            case "d":
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSpeechMode"), object: nil)
+            case "m":
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleMarkupMode"), object: nil)
+            case "h":
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleHighlighterMode"), object: nil)
+            case "n":
+                NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
+            case "s":
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSidebar"), object: nil)
+            case "/", "?":
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderShowShortcutsHelp"), object: nil)
+            default:
+                break
+            }
+            return
+        }
+
         let isForward = sender.input == UIKeyCommand.inputRightArrow
             || sender.input == UIKeyCommand.inputDownArrow
             || (sender.input == " " && !sender.modifierFlags.contains(.shift))

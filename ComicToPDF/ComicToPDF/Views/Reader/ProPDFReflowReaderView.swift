@@ -29,6 +29,7 @@ struct ProPDFReflowReaderView: View {
     @State private var chapterPage: Int = 0
     @State private var chapterTotalPages: Int = 1
 
+    @State private var showingShortcutsSheet = false
     @ObservedObject private var prefs = EBookPreferences.shared
     @Environment(\.colorScheme) private var colorScheme
 
@@ -152,10 +153,29 @@ struct ProPDFReflowReaderView: View {
             onPreviousPage: {
                 NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
             },
+            onToggleReflow: {
+                if let onToggleReflow = onToggleReflow {
+                    onToggleReflow()
+                } else {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleReflowMode"), object: nil)
+                }
+            },
+            onToggleSpeech: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSpeechMode"), object: nil)
+            },
+            onToggleNotebook: {
+                NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
+            },
+            onShowHelp: {
+                showingShortcutsSheet = true
+            },
             onDismiss: {
                 onDismiss()
             }
         )
+        .sheet(isPresented: $showingShortcutsSheet) {
+            KeyboardShortcutsCheatSheetView()
+        }
     }
 
     private func scrollToTargetPDFPage(pageIndex: Int, attempt: Int = 1, isOrientationChange: Bool = false) {

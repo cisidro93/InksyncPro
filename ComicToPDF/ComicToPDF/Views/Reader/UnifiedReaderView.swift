@@ -66,6 +66,7 @@ struct UnifiedReaderView: View {
     
     /// In-reader engine switcher state (allows switching between ProPDF, Comic, and EBook engines on the fly)
     @State private var activeEngineOverride: ContentType? = nil
+    @State private var showingHelpSheet: Bool = false
 
     /// Fast, non-blocking check to verify if the file is a PDF (extension, title, or book content type)
     private var isPDFDocument: Bool {
@@ -393,11 +394,21 @@ struct UnifiedReaderView: View {
             setupVolumeButtonHandlers()
         }
         .readerKeyboardShortcuts(
+            isEditingText: showNotebookPanel,
             onNextPage: {
                 NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
             },
             onPreviousPage: {
                 NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            },
+            onToggleReflow: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleReflowMode"), object: nil)
+            },
+            onToggleSpeech: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSpeechMode"), object: nil)
+            },
+            onToggleHighlighter: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleHighlighterMode"), object: nil)
             },
             onToggleMarkup: {
                 NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleMarkupMode"), object: nil)
@@ -419,10 +430,19 @@ struct UnifiedReaderView: View {
             onResetZoom: {
                 NotificationCenter.default.post(name: NSNotification.Name("ReaderResetZoom"), object: nil)
             },
+            onShowHelp: {
+                showingHelpSheet = true
+            },
             onDismiss: {
                 dismiss()
             }
         )
+        .sheet(isPresented: $showingHelpSheet) {
+            KeyboardShortcutsCheatSheetView()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderShowShortcutsHelp"))) { _ in
+            showingHelpSheet = true
+        }
         .environmentObject(ConversionManager.shared)
         .environmentObject(AppSettingsManager.shared)
     }

@@ -185,6 +185,214 @@ struct ModernEmptyState: View {
         .background(Theme.bg)
     }
 }
+
+// MARK: - Drive Empty State
+struct DriveEmptyState: View {
+    var onLinkDrive: () -> Void
+    var onBackToAll: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            // Illustrated icon with ambient purple glow
+            ZStack {
+                Circle()
+                    .fill(Color(hex: "#8b5cf6").opacity(0.18))
+                    .frame(width: 144, height: 144)
+                    .blur(radius: 20)
+
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 96, height: 96)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.4), Color.white.opacity(0.08)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    )
+                    .shadow(color: Color(hex: "#8b5cf6").opacity(0.25), radius: 20, y: 8)
+
+                Image(systemName: "externaldrive.fill.badge.plus")
+                    .font(.system(size: 40, weight: .medium))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color(hex: "#a78bfa"), Color(hex: "#7c3aed")],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .padding(.bottom, 28)
+
+            Text("No External Drive Linked")
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .foregroundColor(Theme.text)
+                .padding(.bottom, 8)
+
+            Text("Link an external USB-C drive, SD card, or local folder to browse and read your comics directly with zero internal iPad storage usage.")
+                .font(.system(size: 15))
+                .foregroundColor(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(4)
+                .padding(.horizontal, 40)
+                .padding(.bottom, 32)
+
+            // Primary CTA: Link Drive
+            Button(action: onLinkDrive) {
+                HStack(spacing: 10) {
+                    Image(systemName: "externaldrive.badge.plus")
+                        .font(.system(size: 17, weight: .semibold))
+                    Text("Link External Drive")
+                        .font(.system(size: 17, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: 260)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient(
+                        colors: [Color(hex: "#8b5cf6"), Color(hex: "#6d28d9")],
+                        startPoint: .leading, endPoint: .trailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                )
+                .shadow(color: Color(hex: "#8b5cf6").opacity(0.4), radius: 12, y: 6)
+            }
+            .padding(.bottom, 12)
+
+            // Secondary CTA: Back to All
+            Button(action: onBackToAll) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Return to All Books")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundColor(Theme.textSecondary)
+                .frame(maxWidth: 260)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                )
+            }
+
+            Spacer()
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bg)
+    }
+}
+
+// MARK: - Cloud Empty State
+struct CloudEmptyState: View {
+    var onBrowseCloud: () -> Void
+    var onBackToAll: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            // Illustrated icon with ambient cyan glow
+            ZStack {
+                Circle()
+                    .fill(Color(hex: "#06b6d4").opacity(0.18))
+                    .frame(width: 144, height: 144)
+                    .blur(radius: 20)
+
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 96, height: 96)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.4), Color.white.opacity(0.08)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    )
+                    .shadow(color: Color(hex: "#06b6d4").opacity(0.25), radius: 20, y: 8)
+
+                Image(systemName: "icloud.and.arrow.down.fill")
+                    .font(.system(size: 40, weight: .medium))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color(hex: "#22d3ee"), Color(hex: "#0891b2")],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .padding(.bottom, 28)
+
+            Text("No Cloud Files")
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .foregroundColor(Theme.text)
+                .padding(.bottom, 8)
+
+            Text("Connect iCloud Drive, Google Drive, OneDrive, Dropbox, or WebDAV to sync, stream, and download your books seamlessly.")
+                .font(.system(size: 15))
+                .foregroundColor(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(4)
+                .padding(.horizontal, 40)
+                .padding(.bottom, 32)
+
+            // Primary CTA: Browse Cloud
+            Button(action: onBrowseCloud) {
+                HStack(spacing: 10) {
+                    Image(systemName: "icloud.and.arrow.down")
+                        .font(.system(size: 17, weight: .semibold))
+                    Text("Browse Cloud Files")
+                        .font(.system(size: 17, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: 260)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient(
+                        colors: [Color(hex: "#06b6d4"), Color(hex: "#0891b2")],
+                        startPoint: .leading, endPoint: .trailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                )
+                .shadow(color: Color(hex: "#06b6d4").opacity(0.4), radius: 12, y: 6)
+            }
+            .padding(.bottom, 12)
+
+            // Secondary CTA: Back to All
+            Button(action: onBackToAll) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Return to All Books")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundColor(Theme.textSecondary)
+                .frame(maxWidth: 260)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                )
+            }
+
+            Spacer()
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bg)
+    }
+}
 // MARK: - 7. Quick Jump Overlay (Dynamic grid selector for small screens)
 struct QuickJumpOverlay: View {
     @Binding var isPresented: Bool
