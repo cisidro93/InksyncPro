@@ -11,7 +11,7 @@ public final class ReflowCompilationCoordinator {
 
     private init() {}
 
-    public static let cacheVersion = "v8"
+    public nonisolated static let cacheVersion = "v8"
 
     private func cacheKey(pdfUUID: String, isClutterFiltered: Bool) -> String {
         return "\(pdfUUID)_\(isClutterFiltered ? "clean" : "raw")"
