@@ -214,7 +214,9 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                     -webkit-text-size-adjust: 100%;
                 }
                 .page-marker-anchor {
-                    height: 1px;
+                    display: block !important;
+                    height: 1px !important;
+                    min-height: 1px !important;
                     margin: 28px 0 20px 0;
                     position: relative;
                     border-top: 1px dashed rgba(128, 128, 128, 0.18);

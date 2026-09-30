@@ -2241,12 +2241,17 @@ extension EBookPageCurlReader {
                 max-height: none !important;
                 overflow: visible !important;
             }
-            div, section, article, main {
+            div:not(.page-marker-anchor), section, article, main {
                 height: auto !important;
                 column-count: auto !important;
                 -webkit-column-count: auto !important;
                 column-width: auto !important;
                 -webkit-column-width: auto !important;
+            }
+            .page-marker-anchor {
+                display: block !important;
+                height: 1px !important;
+                min-height: 1px !important;
             }
             p, blockquote {
                 orphans: 2 !important;
@@ -2419,26 +2424,68 @@ extension EBookPageCurlReader {
                 _totalPages = _isMultiCol ? (totalSpreads * 2) : totalSpreads;
                 if (_targetAnchor && _targetAnchor.length > 0) {
                     var rawAnchor = _targetAnchor;
-                    var anchorNum = rawAnchor.replace('page-anchor-', '').replace('page-', '');
-                    var anchorEl = document.getElementById('page-anchor-' + anchorNum) ||
-                                   document.getElementById('page-' + anchorNum) ||
-                                   document.getElementById(rawAnchor) ||
-                                   document.getElementsByName(rawAnchor)[0] ||
-                                   document.querySelector('[data-pdf-page="' + anchorNum + '"]');
-                    if (anchorEl) {
-                        var targetNode = (anchorEl.querySelector && anchorEl.querySelector('.page-marker-anchor')) ? anchorEl.querySelector('.page-marker-anchor') : (anchorEl.firstElementChild || anchorEl);
+                    var anchorNum = parseInt(rawAnchor.replace('page-anchor-', '').replace('page-', ''), 10);
+                    var targetNode = null;
+                    if (!isNaN(anchorNum) && anchorNum > 0) {
+                        var sec = document.getElementById('page-' + anchorNum) ||
+                                  document.querySelector('section[data-pdf-page="' + anchorNum + '"]') ||
+                                  document.querySelector('section[data-page="' + anchorNum + '"]');
+                        if (sec) {
+                            var content = sec.querySelector('h1, h2, h3, h4, h5, h6, p, figure, img, table, li, pre, blockquote');
+                            if (content && content.getBoundingClientRect && content.getBoundingClientRect().width > 0) {
+                                targetNode = content;
+                            }
+                            if (!targetNode) {
+                                var children = sec.children;
+                                for (var c = 0; c < children.length; c++) {
+                                    if (!children[c].classList.contains('page-marker-anchor') && children[c].getBoundingClientRect().width > 0) {
+                                        targetNode = children[c];
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (!targetNode) {
+                            var directEls = document.querySelectorAll('[data-pdf-page="' + anchorNum + '"]:not(.page-marker-anchor):not(.pdf-page-marker)');
+                            for (var d = 0; d < directEls.length; d++) {
+                                if (directEls[d].getBoundingClientRect && directEls[d].getBoundingClientRect().width > 0) {
+                                    targetNode = directEls[d];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!targetNode) {
+                        var anchorEl = document.getElementById(rawAnchor) ||
+                                       document.getElementById('page-anchor-' + anchorNum) ||
+                                       document.getElementById('page-' + anchorNum) ||
+                                       document.getElementsByName(rawAnchor)[0];
+                        if (anchorEl) {
+                            var next = anchorEl.nextElementSibling;
+                            while (next) {
+                                if (next.getBoundingClientRect && next.getBoundingClientRect().width > 0) {
+                                    targetNode = next;
+                                    break;
+                                }
+                                next = next.nextElementSibling;
+                            }
+                            if (!targetNode) targetNode = anchorEl;
+                        }
+                    }
+                    if (targetNode) {
                         var aRect = targetNode.getBoundingClientRect();
-                        var absLeft = vp ? (aRect.left - vp.getBoundingClientRect().left) : (aRect.left + (_currentShift || 0));
+                        var vpRect = vp ? vp.getBoundingClientRect() : { left: 0 };
+                        var absLeft = aRect.left - vpRect.left;
                         var colStride = _isMultiCol ? (pageStep / 2) : pageStep;
                         if (colStride > 0 && absLeft >= 0) {
-                            var computedCol = Math.max(0, Math.floor(absLeft / colStride));
+                            var computedCol = Math.max(0, Math.floor((absLeft + 8) / colStride));
                             _targetPage = computedCol;
                             if (_targetPage >= _totalPages) {
                                 _totalPages = _targetPage + 1;
                             }
                         }
                     }
-                    if (anchorEl && document.readyState === 'complete') {
+                    if (targetNode && document.readyState === 'complete') {
                         _targetAnchor = "";
                     }
                 } else if (_targetPage >= 99999) {
@@ -2452,6 +2499,7 @@ extension EBookPageCurlReader {
             }
 
             function goToPage(page, animated) {
+                _targetAnchor = "";
                 if (typeof page === 'number' && !isNaN(page)) {
                     if (_totalPages > 1 && page < _totalPages) {
                         _targetPage = Math.max(0, page);
