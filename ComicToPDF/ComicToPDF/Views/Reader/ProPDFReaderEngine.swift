@@ -871,6 +871,9 @@ struct ProPDFReaderEngine: View {
     var body: some View {
         let configured = baseReaderStack
             .task {
+                // Always start in standard Reading Mode on initial launch — never default to markup or pen mode
+                isPencilMode = false
+                InksyncInkingState.shared.activeToolMode = .read
                 // Apply per-book theme profile if configured for this document
                 prefs.applyBookTheme(bookID: pdf.id.uuidString)
                 // Reset quick filter override so saved document theme takes precedence
@@ -3829,7 +3832,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
         let autoPencilActive = isPad && prefs.applePencilAutoDraw
         let isDrawingMode = (isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive
-        let isCanvasMarkupActive = isDrawingMode || (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
+        let isCanvasMarkupActive = isDrawingMode
         context.coordinator.canvasProvider.isMarkupActive = isCanvasMarkupActive
 
         if #available(iOS 16.0, *) {
@@ -4004,7 +4007,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         let isPenDrawingTool = currentToolMode == .write || currentToolMode == .eraser
         let isDrawingMode = (isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive
-        let isCanvasMarkupActive = isDrawingMode || (!isPencilMode && autoPencilActive && prefs.applePencilDefaultTool == "pen")
+        let isCanvasMarkupActive = isDrawingMode
         if context.coordinator.canvasProvider.isMarkupActive != isCanvasMarkupActive {
             context.coordinator.canvasProvider.isMarkupActive = isCanvasMarkupActive
         }
@@ -4278,7 +4281,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
             let isPenDrawingTool = mode == .write || mode == .eraser
             let isDrawingMode = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive
-            let isCanvasMarkupActive = isDrawingMode || (!parent.isPencilMode && autoPenActive)
+            let isCanvasMarkupActive = isDrawingMode
             canvasProvider.isMarkupActive = isCanvasMarkupActive
             if #available(iOS 16.0, *) {
                 parent.pdfViewRef?.isInMarkupMode = isDrawingMode

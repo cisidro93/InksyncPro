@@ -338,7 +338,7 @@ public final class PDFPageCanvasProvider: NSObject, PKCanvasViewDelegate {
         canvas.bounces = false
         canvas.panGestureRecognizer.isEnabled = false
 
-        if shouldBeActive {
+        if isExplicitDrawingMode {
             if canvas.window != nil {
                 canvas.becomeFirstResponder()
             } else {

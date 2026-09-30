@@ -27,7 +27,8 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
+        let supportedTypes: [UTType] = [.folder, .directory]
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
         picker.delegate = coordinator
         picker.allowsMultipleSelection = false
         picker.shouldShowFileExtensions = true
@@ -55,15 +56,29 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         for url in urls {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
+            var bookmarkData: Data? = nil
+            // Primary attempt: standard options with no restricted iCloud keys
             do {
-                let bookmarkData = try url.bookmarkData(
+                bookmarkData = try url.bookmarkData(
                     options: [],
-                    includingResourceValuesForKeys: [.isUbiquitousItemKey],
+                    includingResourceValuesForKeys: nil,
                     relativeTo: nil
                 )
-                results.append((url, bookmarkData))
             } catch {
-                Logger.shared.log("FolderLinkCoordinator: Failed to create bookmark for \(url.lastPathComponent): \(error.localizedDescription)", category: "FolderLink", type: .error)
+                Logger.shared.log("FolderLinkCoordinator: Standard bookmark failed for \(url.lastPathComponent): \(error.localizedDescription) — trying .minimalBookmark", category: "FolderLink", type: .warning)
+                // Fallback attempt: minimal bookmark
+                bookmarkData = try? url.bookmarkData(
+                    options: .minimalBookmark,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+            }
+
+            if let bookmarkData {
+                results.append((url, bookmarkData))
+            } else {
+                Logger.shared.log("FolderLinkCoordinator: Failed to create bookmark for \(url.lastPathComponent)", category: "FolderLink", type: .error)
             }
         }
         

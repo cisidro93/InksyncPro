@@ -58,12 +58,17 @@ final class LinkedLibraryScanner: ObservableObject {
     /// Files are never copied — only referenced via persistent bookmarks.
     func linkDrive(folderURL: URL, bookmarkData: Data, displayName: String? = nil) async throws -> AppSettingsManager.LinkedDriveEntry {
         var isStale = false
-        let resolvedURL = try URL(
+        let resolvedURL: URL
+        if let res = try? URL(
             resolvingBookmarkData: bookmarkData,
             options: .withoutUI,
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
-        )
+        ) {
+            resolvedURL = res
+        } else {
+            resolvedURL = folderURL
+        }
 
         let accessing = resolvedURL.startAccessingSecurityScopedResource()
         defer { if accessing { resolvedURL.stopAccessingSecurityScopedResource() } }
@@ -71,21 +76,34 @@ final class LinkedLibraryScanner: ObservableObject {
         // Probe write capability while access is still active
         let isReadOnly = !FileManager.default.isWritableFile(atPath: resolvedURL.path)
 
-        // Move disk I/O off the MainActor
+        // Move disk I/O off the MainActor: recursively spider all subfolders like ImportCoordinator
         scanStatus = "Scanning folder…"
         let exts = supportedExtensions
         let files: [URL] = await Task.detached(priority: .userInitiated) { [resolvedURL] in
             let accessingDetached = resolvedURL.startAccessingSecurityScopedResource()
             defer { if accessingDetached { resolvedURL.stopAccessingSecurityScopedResource() } }
 
-            guard let enumerator = FileManager.default.enumerator(
+            let fm = FileManager.default
+            let keys: [URLResourceKey] = [.isDirectoryKey]
+            guard let enumerator = fm.enumerator(
                 at: resolvedURL,
-                includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+                includingPropertiesForKeys: keys,
                 options: [.skipsHiddenFiles]
             ) else { return [] }
-            return enumerator.compactMap { $0 as? URL }.filter {
-                exts.contains($0.pathExtension.lowercased())
+
+            var collected: [URL] = []
+            var enumCount = 0
+            while let fileURL = enumerator.nextObject() as? URL {
+                enumCount += 1
+                if enumCount % 25 == 0 { await Task.yield() }
+
+                guard let rsrc = try? fileURL.resourceValues(forKeys: Set(keys)),
+                      rsrc.isDirectory == false else { continue }
+                if exts.contains(fileURL.pathExtension.lowercased()) {
+                    collected.append(fileURL)
+                }
             }
+            return collected
         }.value
 
         scanStatus = "Found \(files.count) file\(files.count == 1 ? "" : "s") — registering…"
@@ -100,27 +118,15 @@ final class LinkedLibraryScanner: ObservableObject {
             isReadOnly: isReadOnly
         )
 
-        // ── SCALE GUARD ───────────────────────────────────────────────────────
-        // Drives with >500 files are too large to flatten into convertedPDFs.
-        // Register only the drive entry; files surface via LinkedDriveBrowserView.
-        // Drives with ≤500 files register each file individually (original behavior).
-        let isLargeDrive = files.count > Self.largeDriveThreshold
-        if !isLargeDrive {
-            await registerFiles(files, driveEntry: entry, rootURL: resolvedURL)
-        } else {
-            Logger.shared.log(
-                "LinkedLibraryScanner: Large drive detected (\(files.count) files > \(Self.largeDriveThreshold) threshold). Registering as DriveFolder card — browse via LinkedDriveBrowserView.",
-                category: "Drive"
-            )
-        }
+        // Register files into convertedPDFs so they appear in the library with series buckets
+        await registerFiles(files, driveEntry: entry, rootURL: resolvedURL)
 
         AppSettingsManager.shared.addLinkedDrive(entry)
         Logger.shared.log("LinkedLibraryScanner: Linked drive '\(entry.displayName)' with \(files.count) files", category: "Drive")
 
         DriveMonitor.shared.startMonitoring(drives: AppSettingsManager.shared.linkedDrives)
 
-        // Only crawl thumbnails for small drives — large drives surface files on demand.
-        if !isLargeDrive, let manager = conversionManager {
+        if let manager = conversionManager {
             Task { await ThumbnailDaemon.shared.startCrawling(pdfs: manager.convertedPDFs) }
         }
 
@@ -175,14 +181,27 @@ final class LinkedLibraryScanner: ObservableObject {
             let accessingDetached = url.startAccessingSecurityScopedResource()
             defer { if accessingDetached { url.stopAccessingSecurityScopedResource() } }
 
-            guard let enumerator = FileManager.default.enumerator(
+            let fm = FileManager.default
+            let keys: [URLResourceKey] = [.isDirectoryKey]
+            guard let enumerator = fm.enumerator(
                 at: url,
-                includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+                includingPropertiesForKeys: keys,
                 options: [.skipsHiddenFiles]
             ) else { return [] }
-            return enumerator.compactMap { $0 as? URL }.filter {
-                exts.contains($0.pathExtension.lowercased())
+
+            var collected: [URL] = []
+            var enumCount = 0
+            while let fileURL = enumerator.nextObject() as? URL {
+                enumCount += 1
+                if enumCount % 25 == 0 { await Task.yield() }
+
+                guard let rsrc = try? fileURL.resourceValues(forKeys: Set(keys)),
+                      rsrc.isDirectory == false else { continue }
+                if exts.contains(fileURL.pathExtension.lowercased()) {
+                    collected.append(fileURL)
+                }
             }
+            return collected
         }.value
         let foundPaths = Set(foundFiles.map { $0.path })
 
@@ -502,23 +521,40 @@ final class LinkedLibraryScanner: ObservableObject {
                 if existingPaths.contains(fileURL.path) { continue }
 
                 let fileAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-                guard let attrs = fileAttrs,
-                      let fileSize = attrs[.size] as? Int64
-                else { continue }
+                let fileSize = (fileAttrs?[.size] as? Int64) ?? 0
 
-                // Per-file bookmarks use options: []
-                guard let bookmark = try? fileURL.bookmarkData(
+                // Per-file bookmarks: try standard options, then minimal bookmark, then fallback to drive's volume bookmark
+                var bookmark = try? fileURL.bookmarkData(
                     options: [],
                     includingResourceValuesForKeys: nil,
                     relativeTo: nil
-                ) else { continue }
+                )
+                if bookmark == nil {
+                    bookmark = try? fileURL.bookmarkData(
+                        options: .minimalBookmark,
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    )
+                }
+                if bookmark == nil {
+                    bookmark = driveEntry.volumeBookmarkData
+                }
+                guard let validBookmark = bookmark else { continue }
 
                 let stem = fileURL.deletingPathExtension().lastPathComponent
                 let parsedTokens = DeterministicFilenameParser.parse(filename: fileURL.lastPathComponent)
+
+                // Inherit parent subfolder name (e.g. "Marvel master order #8") if not root
+                let parentFolderName = fileURL.deletingLastPathComponent().lastPathComponent
+                let fallbackSeriesName = (parentFolderName != rootURL.lastPathComponent && !parentFolderName.isEmpty)
+                    ? parentFolderName
+                    : SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
+
                 var metadata = PDFMetadata(title: parsedTokens.title ?? stem)
                 if let parsed = ComicInfoParser.parse(from: fileURL) {
                     metadata.title = parsed.title ?? stem
-                    metadata.series = parsed.series ?? (parsedTokens.seriesName.isEmpty ? SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName : parsedTokens.seriesName)
+                    let candidateSeries = parsed.series ?? (parsedTokens.seriesName.isEmpty ? fallbackSeriesName : parsedTokens.seriesName)
+                    metadata.series = candidateSeries.isEmpty ? fallbackSeriesName : candidateSeries
                     metadata.issueNumber = parsed.number ?? parsedTokens.issueNumber
                     metadata.volume = parsed.volume.map { String($0) } ?? parsedTokens.volume
                     metadata.publisher = parsed.publisher
@@ -537,7 +573,7 @@ final class LinkedLibraryScanner: ObservableObject {
                     metadata.isManga = parsed.manga ? true : nil
                     metadata.tags = parsed.tags
                 } else {
-                    metadata.series = parsedTokens.seriesName.isEmpty ? SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName : parsedTokens.seriesName
+                    metadata.series = parsedTokens.seriesName.isEmpty ? fallbackSeriesName : parsedTokens.seriesName
                     metadata.volume = parsedTokens.volume
                     metadata.issueNumber = parsedTokens.issueNumber
                 }
@@ -549,7 +585,7 @@ final class LinkedLibraryScanner: ObservableObject {
                     fileSize: fileSize,
                     metadata: metadata
                 )
-                pdf.sourceMode = .linked(bookmarkData: bookmark)
+                pdf.sourceMode = .linked(bookmarkData: validBookmark)
                 tempPDFs.append(pdf)
             }
             return tempPDFs
@@ -557,15 +593,23 @@ final class LinkedLibraryScanner: ObservableObject {
 
         guard !newPDFs.isEmpty else { return }
 
-        // Parallelize cover thumbnail extraction with strict thermal throttling & autoreleasepool
+        // Fast Ingestion: Append all comics to library and persist immediately so UI updates instantly!
+        manager.convertedPDFs.append(contentsOf: newPDFs)
+        manager.saveLibrary()
+
+        // Extract visible viewport thumbnails quickly (up to 12 items), leave rest to ThumbnailDaemon
+        let initialBatchCount = min(newPDFs.count, 12)
+        let initialPDFs = Array(newPDFs.prefix(initialBatchCount))
         let maxConcurrency = ProcessInfo.processInfo.activeProcessorCount <= 4 ? 2 : 3
         await withTaskGroup(of: (Int, Data?).self) { group in
             var inFlight = 0
 
-            for (index, pdf) in newPDFs.enumerated() {
+            for (index, pdf) in initialPDFs.enumerated() {
                 if inFlight >= maxConcurrency {
                     if let (idx, data) = await group.next() {
-                        if let data { newPDFs[idx].coverImageData = data }
+                        if let data, let targetIdx = manager.convertedPDFs.firstIndex(where: { $0.id == initialPDFs[idx].id }) {
+                            manager.convertedPDFs[targetIdx].coverImageData = data
+                        }
                         inFlight -= 1
                     }
                 }
@@ -598,12 +642,11 @@ final class LinkedLibraryScanner: ObservableObject {
                 inFlight += 1
             }
             for await (idx, data) in group {
-                if let data { newPDFs[idx].coverImageData = data }
+                if let data, let targetIdx = manager.convertedPDFs.firstIndex(where: { $0.id == initialPDFs[idx].id }) {
+                    manager.convertedPDFs[targetIdx].coverImageData = data
+                }
             }
         }
-
-        manager.convertedPDFs.append(contentsOf: newPDFs)
-        manager.saveLibrary()
     }
 
     @objc private func handleStaleBookmark(_ notification: Notification) {

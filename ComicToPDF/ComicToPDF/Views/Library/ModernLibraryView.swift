@@ -1771,11 +1771,16 @@ struct ModernLibraryView: View {
                 let scanner = LinkedLibraryScanner.shared
                 scanner.conversionManager = manager
                 for result in results {
-                    _ = try? await scanner.linkDrive(
-                        folderURL: result.url,
-                        bookmarkData: result.bookmark,
-                        displayName: result.url.lastPathComponent
-                    )
+                    do {
+                        _ = try await scanner.linkDrive(
+                            folderURL: result.url,
+                            bookmarkData: result.bookmark,
+                            displayName: result.url.lastPathComponent
+                        )
+                    } catch {
+                        Logger.shared.log("handleLinkDrive error: \(error.localizedDescription)", category: "Drive", type: .error)
+                        manager.appAlert = AppAlert(title: "Drive Link Failed", message: error.localizedDescription)
+                    }
                 }
                 syncAndRebuildLibraryCache()
             }
