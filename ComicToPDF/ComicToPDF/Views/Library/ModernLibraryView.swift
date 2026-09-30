@@ -1152,9 +1152,9 @@ struct ModernLibraryView: View {
                 selectedFilter: $viewModel.filterState,
                 counts: libraryFilterCounts,
                 onLinkDrive: handleLinkDrive,
-                onManageDrives: { AppRouter.shared.presentSheet(.settings) },
+                onManageDrives: { AppRouter.shared.presentSheet(.controlCenter) },
                 onBrowseCloud: handleBrowseCloud,
-                onManageCloud: { AppRouter.shared.presentSheet(.settings) }
+                onManageCloud: { AppRouter.shared.presentSheet(.controlCenter) }
             )
             .padding(.bottom, 8)
 
@@ -1728,12 +1728,8 @@ struct ModernLibraryView: View {
     private func handleBatchClearProgress() {
         let ids = multiSelection
         for id in ids {
-            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == id }) {
-                pdf.metadata.lastReadPage = 0
-                ReaderProgressTracker.shared.setProgress(for: id, page: 0, totalPages: max(pdf.pageCount, 1))
-            }
+            ReaderProgressTracker.shared.clearReadingData(for: id, in: conversionManager)
         }
-        conversionManager.saveLibrary()
         syncAndRebuildLibraryCache()
         HapticEngine.success()
         withAnimation {
@@ -1745,13 +1741,8 @@ struct ModernLibraryView: View {
     private func handleBatchMarkCompleted() {
         let ids = multiSelection
         for id in ids {
-            if let pdf = conversionManager.convertedPDFs.first(where: { $0.id == id }) {
-                let lastPage = max(pdf.pageCount - 1, 0)
-                pdf.metadata.lastReadPage = lastPage
-                ReaderProgressTracker.shared.setProgress(for: id, page: lastPage, totalPages: max(pdf.pageCount, 1))
-            }
+            ReaderProgressTracker.shared.markCompleted(for: id, in: conversionManager)
         }
-        conversionManager.saveLibrary()
         syncAndRebuildLibraryCache()
         HapticEngine.success()
         withAnimation {
@@ -1856,7 +1847,7 @@ struct ModernLibraryView: View {
             }
 
             Button {
-                AppRouter.shared.presentSheet(.settings)
+                AppRouter.shared.presentSheet(.controlCenter)
             } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 13, weight: .semibold))

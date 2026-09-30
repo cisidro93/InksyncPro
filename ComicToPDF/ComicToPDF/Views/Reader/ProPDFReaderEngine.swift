@@ -434,14 +434,18 @@ struct ProPDFReaderEngine: View {
 
             if showTierBadge && !chromeVisible && prefs.isPDFSmartTiersActive && !currentTierQuadrants.isEmpty && currentTierIndex >= 0 && currentTierIndex < currentTierQuadrants.count {
                 VStack {
-                    pdfTierBadgeView(for: currentTierQuadrants[currentTierIndex])
-                        .padding(.top, 54)
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.92)),
-                            removal: .opacity
-                        ))
                     Spacer()
+                    HStack {
+                        Spacer()
+                        pdfTierPageTurnFooterBadge(for: currentTierQuadrants[currentTierIndex])
+                    }
+                    .padding(.horizontal, isPad ? 28 : 16)
                 }
+                .padding(.bottom, isPad ? 14 : 8)
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .scale(scale: 0.92)),
+                    removal: .opacity
+                ))
                 .zIndex(100)
             }
 
@@ -1820,7 +1824,7 @@ struct ProPDFReaderEngine: View {
                 onDismiss()
             },
             subHeaderView: (prefs.isPDFSmartTiersActive && !currentTierQuadrants.isEmpty && currentTierIndex >= 0 && currentTierIndex < currentTierQuadrants.count)
-                ? AnyView(pdfTierBadgeView(for: currentTierQuadrants[currentTierIndex]))
+                ? AnyView(pdfTierAdjustHeaderBadge(for: currentTierQuadrants[currentTierIndex]))
                 : nil
         )
     }
@@ -2348,10 +2352,36 @@ struct ProPDFReaderEngine: View {
         }
     }
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     // MARK: - PDF Smart Tiers & Guided Column Flow Helpers
 
+    /// Sleek, non-intrusive badge shown at the right-hand footer during page turns
     @ViewBuilder
-    private func pdfTierBadgeView(for quad: PDFTierQuadrant) -> some View {
+    private func pdfTierPageTurnFooterBadge(for quad: PDFTierQuadrant) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "rectangle.split.3x1")
+                .font(.system(size: isPad ? 11 : 10, weight: .bold))
+                .foregroundColor(.inkGreen)
+            Text(quad.label)
+                .font(.system(size: isPad ? 12 : 11, weight: .semibold, design: .rounded))
+                .foregroundColor(Color.inkTextPrimary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.horizontal, isPad ? 12 : 10)
+        .padding(.vertical, isPad ? 7 : 5.5)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.6))
+        .shadow(color: .black.opacity(0.2), radius: 8, y: 2)
+    }
+
+    /// Full interactive badge with Adjust pill shown in the hidden UI (ReaderChrome) when user taps to exit/navigate
+    @ViewBuilder
+    private func pdfTierAdjustHeaderBadge(for quad: PDFTierQuadrant) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "rectangle.split.3x1")
                 .font(.system(size: 11, weight: .bold))
@@ -2373,13 +2403,14 @@ struct ProPDFReaderEngine: View {
                 HStack(spacing: 4) {
                     Image(systemName: "slider.horizontal.2.square")
                         .font(.system(size: 11, weight: .semibold))
-                    Text("Adjust")
+                    Text("Adjust Tiers")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                 }
                 .foregroundColor(Color.inkViolet)
             }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -2387,6 +2418,11 @@ struct ProPDFReaderEngine: View {
         .clipShape(Capsule())
         .overlay(Capsule().stroke(Color.inkBorderSubtle, lineWidth: 0.8))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
+    }
+
+    @ViewBuilder
+    private func pdfTierBadgeView(for quad: PDFTierQuadrant) -> some View {
+        pdfTierAdjustHeaderBadge(for: quad)
     }
 
     private func refreshSmartTierQuadrants() {

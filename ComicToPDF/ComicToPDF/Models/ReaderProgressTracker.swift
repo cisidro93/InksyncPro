@@ -415,6 +415,40 @@ class ReaderProgressTracker: ObservableObject {
         HapticEngine.light()
     }
     
+    /// Marks a document as 100% completed and updates its reading progress
+    @MainActor
+    func markCompleted(for pdfID: UUID, in manager: ConversionManager? = nil) {
+        let targetManager = manager ?? ConversionManager.shared
+        guard let idx = targetManager.convertedPDFs.firstIndex(where: { $0.id == pdfID }) else { return }
+        let totalPages = max(targetManager.convertedPDFs[idx].pageCount, 1)
+        let lastPage = max(0, totalPages - 1)
+        
+        targetManager.objectWillChange.send()
+        targetManager.convertedPDFs[idx].metadata.lastReadPage = lastPage
+        targetManager.saveProgressOnly()
+        
+        let progress = ReadingProgress(
+            pdfID: pdfID,
+            lastOpenedAt: Date(),
+            currentPageIndex: lastPage,
+            totalPagesRead: totalPages,
+            completionFraction: 1.0,
+            readingSessionDates: [Date()]
+        )
+        update(progress)
+        
+        AppGroupSyncService.shared.syncToAppGroup()
+        
+        NotificationCenter.default.post(
+            name: .readingProgressDidChange,
+            object: nil,
+            userInfo: ["pdfID": pdfID]
+        )
+        NotificationCenter.default.post(name: .libraryUpdated, object: nil)
+        
+        HapticEngine.light()
+    }
+    
     // MARK: - Stats
     
     func totalMinutesReadToday() -> Int {
