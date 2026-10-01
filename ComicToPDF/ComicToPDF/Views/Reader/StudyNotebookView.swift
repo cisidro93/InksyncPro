@@ -3705,6 +3705,14 @@ private extension StudyNotebookView {
         case .anchor:
             let pageNum = (activeReaderPageIndex ?? currentNotebookPageIndex) + 1
             stamp = "\n[📍 Page \(pageNum)](page:\(pageNum - 1))\n"
+        case .thesis:
+            stamp = "\n> 💡 **Thesis:** "
+        case .premise:
+            stamp = "\n> ⚖️ **Premise:** "
+        case .objection:
+            stamp = "\n> ⚡ **Objection:** "
+        case .definition:
+            stamp = "\n> 📖 **Definition:** "
         }
         localNotes += stamp
         debounceSave()
@@ -3885,16 +3893,16 @@ extension StudyNotebookView {
                         toggleSpeechDictation()
                     } label: {
                         HStack(spacing: 8) {
-                            Image(systemName: isRecordingSpeech ? "waveform.badge.mic" : "mic.fill")
+                            Image(systemName: speechManager.isRecording ? "waveform.badge.mic" : "mic.fill")
                                 .font(.system(size: 14, weight: .bold))
-                            Text(isRecordingSpeech ? "Transcribing Voice Recitation..." : "Practice Recitation via Dictation (⌘D)")
+                            Text(speechManager.isRecording ? "Transcribing Voice Recitation..." : "Practice Recitation via Dictation (⌘D)")
                                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                         }
-                        .foregroundColor(isRecordingSpeech ? .white : Color(hex: "#EC4899"))
+                        .foregroundColor(speechManager.isRecording ? .white : Color(hex: "#EC4899"))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                         .background(
-                            isRecordingSpeech
+                            speechManager.isRecording
                                 ? AnyShapeStyle(Color.red)
                                 : AnyShapeStyle(Color.white.opacity(0.12)),
                             in: Capsule()

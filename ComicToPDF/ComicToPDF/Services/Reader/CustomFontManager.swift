@@ -141,7 +141,7 @@ final class CustomFontManager: ObservableObject {
         let newFont = CustomDownloadedFont(
             displayName: fullName,
             postScriptName: postScriptName,
-            familyName: (cgFont.name as String?) ?? fullName,
+            familyName: fullName,
             fileName: uniqueFileName
         )
 
