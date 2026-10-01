@@ -51,7 +51,7 @@ extension ConversionManager {
                 existing.coverImageData = currentCover
                 didUpdate = true
             }
-            if existing.contentType == .pdf && currentContentType != .pdf {
+            if existing.contentType != currentContentType {
                 existing.contentType = currentContentType
                 didUpdate = true
             }

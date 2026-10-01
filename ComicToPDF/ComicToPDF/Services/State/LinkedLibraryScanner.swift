@@ -163,7 +163,7 @@ final class LinkedLibraryScanner: ObservableObject {
 
             var metadata = PDFMetadata(title: parsedTokens.title ?? stem)
 
-            let parsedComicInfo: ComicInfo?
+            let parsedComicInfo: ComicInfoParser.ComicInfo?
             if fileSize > 300_000_000 {
                 parsedComicInfo = await Task.detached(priority: .userInitiated) { [fileURL] in
                     let detAccess = fileURL.startAccessingSecurityScopedResource()
