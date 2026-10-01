@@ -4038,7 +4038,7 @@ extension StudyNotebookView {
                     .padding(14)
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.inkBackground.opacity(0.92).background(.ultraThinMaterial))
+                            .fill(Color.inkSurfaceRaised)
                             .shadow(color: Color.black.opacity(0.2), radius: 12, y: 4)
                             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.primary.opacity(0.1), lineWidth: 1))
                     )
