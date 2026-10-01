@@ -77,6 +77,8 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                     NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSpeechMode"), object: nil)
                 case "n":
                     NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
+                case "p":
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.stampPageLink"), object: nil)
                 case "s":
                     NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSidebar"), object: nil)
                 case "/", "?":
@@ -3087,6 +3089,7 @@ final class InksyncPageViewController: UIPageViewController {
             makeCmd("r", .command, "Toggle Reflow Mode"),
             makeCmd("d", .command, "Toggle Speech / Read Aloud"),
             makeCmd("n", .command, "Toggle Study Notebook"),
+            makeCmd("p", .command, "Stamp Current Page in Notebook"),
             makeCmd("s", .command, "Toggle Table of Contents / Sidebar"),
             makeCmd("/", .command, "Keyboard Shortcuts Cheat Sheet")
         ]

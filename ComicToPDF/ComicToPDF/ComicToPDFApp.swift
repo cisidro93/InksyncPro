@@ -4,7 +4,7 @@ import SwiftData
 import CoreSpotlight
 import AVFoundation
 
-class AppDelegate: NSObject, UIApplicationDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         // Guarantee app default audio session is ambient + mixWithOthers so background audio (Spotify, Apple Music, podcasts) is NEVER interrupted.
         try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
@@ -91,11 +91,20 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         builder.insertSibling(notebookMenu, afterMenu: .window)
     }
 
-    @objc func handleReaderNextPage(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.readerNextPage"), object: nil) }
-    @objc func handleReaderPrevPage(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.readerPrevPage"), object: nil) }
+    @objc func handleReaderNextPage(_ sender: Any?) {
+        NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.readerNextPage"), object: nil)
+    }
+    @objc func handleReaderPrevPage(_ sender: Any?) {
+        NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.readerPrevPage"), object: nil)
+    }
     @objc func handleToggleDualPage(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.toggleDualPage"), object: nil) }
     @objc func handleToggleSmartCrop(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.toggleSmartCrop"), object: nil) }
-    @objc func handleHighlightSelection(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.highlightSelection"), object: nil) }
+    @objc func handleHighlightSelection(_ sender: Any?) {
+        NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleHighlighterMode"), object: nil)
+        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.highlightSelection"), object: nil)
+    }
     @objc func handleToggleStudyNotebook(_ sender: Any?) { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) }
     @objc func handleStampPageLink(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.stampPageLink"), object: nil) }
     @objc func handlePasteQuoteToNotebook(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.pasteQuoteToNotebook"), object: nil) }
@@ -287,8 +296,8 @@ struct InksyncProApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Import Books & Comics...") {
-                    AppRouter.shared.presentSheet(.importFiles)
+                Button("Import Queue / Books...") {
+                    AppRouter.shared.presentSheet(.importQueue)
                 }
                 .keyboardShortcut("o", modifiers: [.command])
 
@@ -332,11 +341,13 @@ struct InksyncProApp: App {
 
             CommandMenu("Reader") {
                 Button("Next Page (Split-Notebook Safe)") {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
                     NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.readerNextPage"), object: nil)
                 }
                 .keyboardShortcut("]", modifiers: [.command])
 
                 Button("Previous Page (Split-Notebook Safe)") {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
                     NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.readerPrevPage"), object: nil)
                 }
                 .keyboardShortcut("[", modifiers: [.command])

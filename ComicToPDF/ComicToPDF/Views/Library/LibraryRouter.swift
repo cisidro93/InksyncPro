@@ -26,6 +26,7 @@ enum LibrarySheetDestination: Identifiable {
     case controlCenter
     case whatsNew
     case opdsBrowser
+    case shortcutsCheatSheet
     
     var id: String {
         switch self {
@@ -34,6 +35,7 @@ enum LibrarySheetDestination: Identifiable {
         case .merge: return "merge"
         case .cloudBrowser: return "cloudBrowser"
         case .opdsBrowser: return "opdsBrowser"
+        case .shortcutsCheatSheet: return "shortcutsCheatSheet"
         case .cloudSync(let p): return "cloudSync_\(p.id)"
         case .export(let p): return "export_\(p.id)"
         case .importQueue: return "importQueue"

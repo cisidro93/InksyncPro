@@ -48,7 +48,21 @@ struct KeyboardShortcutsCheatSheetView: View {
                         ]
                     )
 
-                    // 3. Library & Shelf Management
+                    // 3. Study Notebook & Quoting
+                    shortcutSection(
+                        title: "Study Notebook & Quoting",
+                        icon: "note.text",
+                        color: Color(hex: "#f59e0b"),
+                        shortcuts: [
+                            ("Toggle Study Notebook", ["⌘ N"]),
+                            ("Stamp Current Page Link", ["⌘ P"]),
+                            ("Paste Formatted Book Quote", ["⌥ ⌘ V"]),
+                            ("Save Notes to Storage", ["⌘ S"]),
+                            ("Dictate / Voice Note", ["⌘ D"])
+                        ]
+                    )
+
+                    // 4. Library & Shelf Management
                     shortcutSection(
                         title: "Library & Shelves",
                         icon: "books.vertical.fill",

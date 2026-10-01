@@ -45,7 +45,6 @@ struct ModernLibraryView: View {
     @State private var isSearchActive: Bool = false
     @State private var showingMoreActionsDialog: Bool = false
     @State private var showingBatchDeleteConfirmation: Bool = false
-    @State private var showingShortcutsSheet: Bool = false
     @State private var highlightedItemID: String? = nil
     @FocusState private var isLibraryFocused: Bool
     @ObservedObject private var linkedScanner = LinkedLibraryScanner.shared
@@ -182,7 +181,7 @@ struct ModernLibraryView: View {
                         return .handled
                     }
                     if press.key == "/" {
-                        showingShortcutsSheet = true
+                        AppRouter.shared.presentSheet(.shortcutsCheatSheet)
                         return .handled
                     }
                 }
@@ -196,7 +195,7 @@ struct ModernLibraryView: View {
                     return .handled
                 }
                 if press.key == "?" {
-                    showingShortcutsSheet = true
+                    AppRouter.shared.presentSheet(.shortcutsCheatSheet)
                     return .handled
                 }
                 
@@ -593,10 +592,7 @@ struct ModernLibraryView: View {
                 destinationSheet(for: item)
                     .forceProMotion()
             }
-            .sheet(isPresented: $showingShortcutsSheet) {
-                KeyboardShortcutsCheatSheetView()
-            }
-            .onChange(of: router.activeFullScreen) { _, newVal in
+            .onChange(of: router.activeFullScreen) { _, (newVal: LibraryFullScreenDestination?) in
                 if newVal == nil {
                     isLibraryFocused = true
                 }
@@ -652,6 +648,9 @@ struct ModernLibraryView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.linkDriveRequested"))) { _ in
                 handleLinkDrive()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.showShortcutsSheet"))) { _ in
+                AppRouter.shared.presentSheet(.shortcutsCheatSheet)
             }
     }
 
@@ -804,6 +803,9 @@ struct ModernLibraryView: View {
     @ViewBuilder
     private func destinationSheet(for item: LibrarySheetDestination) -> some View {
         switch item {
+        case .shortcutsCheatSheet:
+            KeyboardShortcutsCheatSheetView()
+
         case .ledger:
             ConversionLedgerView()
                 .environmentObject(conversionManager)
@@ -1149,7 +1151,7 @@ struct ModernLibraryView: View {
                     }
                     
                     Button {
-                        showingShortcutsSheet = true
+                        AppRouter.shared.presentSheet(.shortcutsCheatSheet)
                     } label: {
                         Image(systemName: "questionmark.circle")
                             .font(.system(size: hSizeClass == .regular ? 16 : 15, weight: .semibold))
