@@ -248,6 +248,12 @@ struct LibraryGridView: View {
                             self.cellFrames = value
                         }
                         .inkTabBarScrollDetect()
+                        .onChange(of: highlightedItemID) { _, newID in
+                            guard let newID else { return }
+                            withAnimation(.easeInOut(duration: 0.22)) {
+                                proxy.scrollTo(newID, anchor: .center)
+                            }
+                        }
                         .background(Color.clear)
                         .overlay(alignment: .trailing) {
                             Button {

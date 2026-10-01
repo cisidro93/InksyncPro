@@ -90,8 +90,9 @@ class AppRouter: ObservableObject {
         if let current = activeFullScreen {
             switch (current, screen) {
             case (.read(let currentPDF, _), .read(let newPDF, _)):
-                if currentPDF.id == newPDF.id || currentPDF.url.fastCanonicalPath == newPDF.url.fastCanonicalPath {
-                    Logger.shared.log("AppRouter: Already presenting document '\(currentPDF.name)' — ignoring duplicate presentation", category: "Navigation", type: .info)
+                if currentPDF.id == newPDF.id || currentPDF.url.fastCanonicalPath == newPDF.url.fastCanonicalPath || currentPDF.name.lowercased() == newPDF.name.lowercased() {
+                    Logger.shared.log("AppRouter: Already presenting document '\(currentPDF.name)' — updating in-place", category: "Navigation", type: .info)
+                    updateCurrentReaderBook(newPDF)
                     return
                 }
             default:

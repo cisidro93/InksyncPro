@@ -521,6 +521,7 @@ struct ProPDFReaderEngine: View {
     private func applyKeyboardShortcuts<Content: View>(to content: Content) -> some View {
         content
             .focusable()
+            .focused($isReaderFocused)
             .focusEffectDisabled()
             .onKeyPress(.leftArrow) {
                 advancePage(forward: false)
@@ -542,12 +543,38 @@ struct ProPDFReaderEngine: View {
                 advancePage(forward: true)
                 return .handled
             }
+            .onKeyPress(.return) {
+                advancePage(forward: true)
+                return .handled
+            }
             .onKeyPress(.pageUp) {
                 advancePage(forward: false)
                 return .handled
             }
             .onKeyPress(.pageDown) {
                 advancePage(forward: true)
+                return .handled
+            }
+            .onKeyPress(KeyEquivalent("j")) {
+                advancePage(forward: true)
+                return .handled
+            }
+            .onKeyPress(KeyEquivalent("k")) {
+                advancePage(forward: false)
+                return .handled
+            }
+            .onKeyPress(KeyEquivalent("l")) {
+                advancePage(forward: true)
+                return .handled
+            }
+            .onKeyPress(KeyEquivalent("h")) {
+                advancePage(forward: false)
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    toggleChrome()
+                }
                 return .handled
             }
             .onKeyPress(KeyEquivalent("p")) {
@@ -558,6 +585,62 @@ struct ProPDFReaderEngine: View {
                     }
                 }
                 return .handled
+            }
+            .onKeyPress(characters: CharacterSet(charactersIn: "rR"), phases: .down) { press in
+                if press.modifiers.contains(.command) {
+                    toggleReflowMode()
+                    return .handled
+                }
+                return .ignored
+            }
+            .onKeyPress(characters: CharacterSet(charactersIn: "dD"), phases: .down) { press in
+                if press.modifiers.contains(.command) {
+                    togglePDFNarration()
+                    return .handled
+                }
+                return .ignored
+            }
+            .onKeyPress(characters: CharacterSet(charactersIn: "mM"), phases: .down) { press in
+                if press.modifiers.contains(.command) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        isPencilMode.toggle()
+                        if isPencilMode {
+                            InksyncInkingState.shared.activeToolMode = .write
+                        }
+                    }
+                    return .handled
+                }
+                return .ignored
+            }
+            .onKeyPress(characters: CharacterSet(charactersIn: "sS"), phases: .down) { press in
+                if press.modifiers.contains(.command) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        showingOutlineDrawer.toggle()
+                    }
+                    return .handled
+                }
+                return .ignored
+            }
+            .onKeyPress(characters: CharacterSet(charactersIn: "0"), phases: .down) { press in
+                if press.modifiers.contains(.command) {
+                    resetZoomToFit()
+                    return .handled
+                }
+                return .ignored
+            }
+            .onKeyPress(characters: CharacterSet(charactersIn: "+="), phases: .down) { press in
+                if press.modifiers.contains(.command) {
+                    adjustZoom(delta: 0.15)
+                    return .handled
+                }
+                return .ignored
+            }
+            .onKeyPress(characters: CharacterSet(charactersIn: "-_"), phases: .down) { press in
+                if press.modifiers.contains(.command) {
+                    adjustZoom(delta: -0.15)
+                    return .handled
+                }
+                return .ignored
             }
             .onKeyPress(characters: CharacterSet(charactersIn: "zZ"), phases: .down) { press in
                 if press.modifiers.contains(.command) {
@@ -885,6 +968,9 @@ struct ProPDFReaderEngine: View {
                 smartTiersConfig = prefs.pdfTierConfiguration
                 AnnotationStore.shared.initialize(with: modelContext)
                 loadPDFDocument()
+            }
+            .onAppear {
+                isReaderFocused = true
             }
             .onDisappear {
                 handleDisappear()
@@ -3874,6 +3960,13 @@ class ProPDFHighlightableView: PDFView {
         setupEditMenuSuppression()
     }
 
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil {
+            _ = becomeFirstResponder()
+        }
+    }
+
     private func setupEditMenuSuppression() {
         disableEditMenuInteractions(in: self)
     }
@@ -4034,11 +4127,12 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.minScaleFactor = 0.5
         pdfView.maxScaleFactor = 3.5
 
-        // ── Tap gesture (finger & stylus) ──────────────────────────────────────────
+        // ── Tap gesture (finger, stylus & trackpad) ──────────────────────────────────
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         tapGesture.allowedTouchTypes = [
             NSNumber(value: UITouch.TouchType.direct.rawValue),
-            NSNumber(value: UITouch.TouchType.pencil.rawValue)
+            NSNumber(value: UITouch.TouchType.pencil.rawValue),
+            NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)
         ]
         tapGesture.cancelsTouchesInView = true
         tapGesture.delegate = context.coordinator
@@ -4063,10 +4157,13 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         pdfView.addGestureRecognizer(twoFingerSwipeRight)
         context.coordinator.twoFingerSwipeRight = twoFingerSwipeRight
 
-        // ── Double-tap zoom (finger only) ─────────────────────────────────────────
+        // ── Double-tap zoom (finger & trackpad) ────────────────────────────────────
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
-        doubleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        doubleTap.allowedTouchTypes = [
+            NSNumber(value: UITouch.TouchType.direct.rawValue),
+            NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)
+        ]
         doubleTap.cancelsTouchesInView = false
         pdfView.addGestureRecognizer(doubleTap)
         // Single-tap must wait for double-tap to fail — standard iOS pattern
@@ -4095,7 +4192,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         // Single-tap page turn must wait for 2-finger tap to fail so multi-finger gestures don't turn the page
         tapGesture.require(toFail: twoFingerTap)
 
-        // ── Finger Glide (word-snap) highlight gesture (finger only) ─────────────
+        // ── Finger & Trackpad Glide (word-snap) highlight gesture ──────────────────
         // 40ms duration when in text highlight mode for responsive fluid touch-drag,
         // 550ms minimum press duration when in normal reading allows scrolling/swiping and reliable single taps without hair-trigger selection.
         let fingerGlide = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleGlideSelection(_:)))
@@ -4103,7 +4200,10 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
         fingerGlide.minimumPressDuration = isDedicatedHighlighter ? 0.04 : 0.55
         fingerGlide.allowableMovement = 2000
         fingerGlide.cancelsTouchesInView = false
-        fingerGlide.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        fingerGlide.allowedTouchTypes = [
+            NSNumber(value: UITouch.TouchType.direct.rawValue),
+            NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)
+        ]
         fingerGlide.delegate = context.coordinator
         fingerGlide.isEnabled = isDedicatedHighlighter || (!isPencilMode)
         pdfView.addGestureRecognizer(fingerGlide)
@@ -4879,6 +4979,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
 
         @MainActor @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let view = gesture.view as? PDFView else { return }
+            _ = view.becomeFirstResponder()
 
             let inkingState = InksyncInkingState.shared
             let currentToolMode = inkingState.activeToolMode

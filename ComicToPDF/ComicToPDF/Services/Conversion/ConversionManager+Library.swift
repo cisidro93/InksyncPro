@@ -17,11 +17,60 @@ extension ConversionManager {
         let canonicalPath = fileURL.fastCanonicalPath
         let filename = fileURL.lastPathComponent.lowercased()
 
+        let currentFileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+        let cleanTitle = fileURL.deletingPathExtension().lastPathComponent
+        var displayName = cleanTitle.isEmpty ? fileURL.lastPathComponent : cleanTitle
+        if fileURL.pathExtension.lowercased() == "pdf" {
+            if let recoveredTitle = PDFTitleRecoverer.recoverPDFTitle(from: fileURL) {
+                displayName = recoveredTitle
+            }
+        }
+
+        let currentContentType = MetadataHeuristics.detectAsymmetricContentType(url: fileURL)
+        let currentPageCount = PhysicalFileSystemRouter.getPageCountStatic(from: fileURL)
+        let currentCover = PhysicalFileSystemRouter.extractCoverImageStatic(from: fileURL)?.jpegData(compressionQuality: 0.7)
+
         // Check if this document is already loaded in memory
-        if let existing = convertedPDFs.first(where: {
+        if let idx = convertedPDFs.firstIndex(where: {
             $0.url.fastCanonicalPath == canonicalPath ||
             $0.url.lastPathComponent.lowercased() == filename
         }) {
+            var existing = convertedPDFs[idx]
+            var didUpdate = false
+
+            // Repair any 0-page or 0-byte corruptions from previous race conditions
+            if existing.pageCount == 0 && currentPageCount > 0 {
+                existing.pageCount = currentPageCount
+                didUpdate = true
+            }
+            if existing.fileSize == 0 && currentFileSize > 0 {
+                existing.fileSize = currentFileSize
+                didUpdate = true
+            }
+            if existing.coverImageData == nil && currentCover != nil {
+                existing.coverImageData = currentCover
+                didUpdate = true
+            }
+            if existing.contentType == .pdf && currentContentType != .pdf {
+                existing.contentType = currentContentType
+                didUpdate = true
+            }
+
+            if didUpdate {
+                convertedPDFs[idx] = existing
+                saveLibrary()
+                Logger.shared.log("ConversionManager.registerDirectFile: Repaired in-memory book '\(existing.name)' (Pages: \(existing.pageCount), Size: \(existing.fileSize))", category: "Library", type: .info)
+            }
+
+            // Keep LibraryService.shared.items in sync
+            if let libIdx = LibraryService.shared.items.firstIndex(where: { $0.id == existing.id || $0.url.fastCanonicalPath == canonicalPath }) {
+                LibraryService.shared.items[libIdx] = existing
+            } else {
+                LibraryService.shared.items.insert(existing, at: 0)
+            }
+            LibraryService.shared.saveLibrary(isStructural: true)
+            NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+
             Logger.shared.log("ConversionManager.registerDirectFile: File already registered in library: '\(existing.name)' (ContentType: .\(existing.contentType.rawValue)). AutoOpen=\(autoOpen)", category: "Library", type: .info)
             if autoOpen {
                 Task { @MainActor in
@@ -34,35 +83,30 @@ extension ConversionManager {
             return existing
         }
 
-        let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-        let cleanTitle = fileURL.deletingPathExtension().lastPathComponent
-        var displayName = cleanTitle.isEmpty ? fileURL.lastPathComponent : cleanTitle
-        if fileURL.pathExtension.lowercased() == "pdf" {
-            if let recoveredTitle = PDFTitleRecoverer.recoverPDFTitle(from: fileURL) {
-                displayName = recoveredTitle
-            }
-        }
-
-        let contentType = MetadataHeuristics.detectAsymmetricContentType(url: fileURL)
-        let pageCount = PhysicalFileSystemRouter.getPageCountStatic(from: fileURL)
-        let coverData = PhysicalFileSystemRouter.extractCoverImageStatic(from: fileURL)?.jpegData(compressionQuality: 0.7)
-
         var newPDF = ConvertedPDF(
             name: displayName,
             url: fileURL,
-            pageCount: pageCount,
-            fileSize: fileSize,
+            pageCount: currentPageCount,
+            fileSize: currentFileSize,
             metadata: PDFMetadata(title: displayName),
-            coverImageData: coverData,
-            contentType: contentType
+            coverImageData: currentCover,
+            contentType: currentContentType
         )
         newPDF.addedByMode = .pro
 
         convertedPDFs.insert(newPDF, at: 0)
         saveLibrary()
 
+        // Sync with authoritative LibraryService
+        if let libIdx = LibraryService.shared.items.firstIndex(where: { $0.id == newPDF.id || $0.url.fastCanonicalPath == canonicalPath }) {
+            LibraryService.shared.items[libIdx] = newPDF
+        } else {
+            LibraryService.shared.items.insert(newPDF, at: 0)
+        }
+        LibraryService.shared.saveLibrary(isStructural: true)
+
         Logger.shared.log(
-            "ConversionManager.registerDirectFile: Registered '\(displayName)' | File: '\(fileURL.lastPathComponent)' | Size: \(ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)) | Evaluated Type: .\(contentType.rawValue) | Pages: \(pageCount) | AutoOpen: \(autoOpen)",
+            "ConversionManager.registerDirectFile: Registered '\(displayName)' | File: '\(fileURL.lastPathComponent)' | Size: \(ByteCountFormatter.string(fromByteCount: currentFileSize, countStyle: .file)) | Evaluated Type: .\(currentContentType.rawValue) | Pages: \(currentPageCount) | AutoOpen: \(autoOpen)",
             category: "Library",
             type: .success
         )

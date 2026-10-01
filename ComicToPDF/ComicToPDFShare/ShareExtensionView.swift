@@ -634,6 +634,22 @@ struct ShareExtensionView: View {
                 try? self.markForConversion(file)
             }
 
+            // Immediately set pending share flags and dual-bridge to pasteboard
+            let appGroupIDs = [
+                "group.com.antigravity.InksyncPro",
+                "group.com.antigravity.ComicToPDF",
+                "group.com.antigravity.inksync"
+            ]
+            let timestamp = Date().timeIntervalSince1970
+            for gid in appGroupIDs {
+                if let ud = UserDefaults(suiteName: gid) {
+                    ud.set(timestamp, forKey: "pendingShareImportTimestamp")
+                    ud.set(true, forKey: "hasPendingShareImport")
+                    ud.synchronize()
+                }
+            }
+            self.bridgeFilesToPasteboard(filesToProcess)
+
             self.selectedFiles = filesToProcess
             self.isLoading = false
         }
@@ -1003,7 +1019,7 @@ struct ShareExtensionView: View {
 
         var newItems: [[String: Any]] = []
         var totalBytes: Int64 = 0
-        let maxTotalBytes: Int64 = 200_000_000 // 200MB safety cap to support large comics & manga volumes
+        let maxTotalBytes: Int64 = 1_500_000_000 // 1.5GB cap to support large comics & graphic novels
 
         for file in files {
             // Find the best existing accessible copy of this file

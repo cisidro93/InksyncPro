@@ -42,15 +42,24 @@ final class LibraryService: ObservableObject {
                 }
             }
             
-            if uniqueItems.count < loadedItems.count {
-                Logger.shared.log("LibraryService: Purged \(loadedItems.count - uniqueItems.count) duplicate items from startup load.", category: "Library", type: .warning)
+            // Preserve newly arrived items from in-flight share imports or cold launch file handoffs
+            let memoryCandidates = ConversionManager.shared.convertedPDFs + self.items
+            for memItem in memoryCandidates {
+                let memCanonical = LibraryViewModel.fastCanonicalPath(memItem.url)
+                if !uniqueItems.contains(where: { LibraryViewModel.fastCanonicalPath($0.url) == memCanonical || $0.id == memItem.id }) {
+                    uniqueItems.insert(memItem, at: 0)
+                }
+            }
+
+            if uniqueItems.count != loadedItems.count {
+                Logger.shared.log("LibraryService: Reconciled items (authoritative count: \(uniqueItems.count), loaded from DB: \(loadedItems.count)).", category: "Library", type: .info)
                 self.items = uniqueItems
                 Task.detached(priority: .background) {
                     try? await LibraryRepository.shared.sync(pdfs: uniqueItems, collections: loadedCollections)
                     await LibraryDatabaseService.shared.save(uniqueItems)
                 }
             } else {
-                self.items = loadedItems
+                self.items = uniqueItems
             }
             
             self.collections = loadedCollections

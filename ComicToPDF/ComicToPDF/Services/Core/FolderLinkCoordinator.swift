@@ -27,14 +27,20 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        let supportedTypes: [UTType] = [.folder]
+        var supportedTypes: [UTType] = [.folder, .pdf, .epub]
+        if let cbz = UTType(filenameExtension: "cbz") { supportedTypes.append(cbz) }
+        if let cbr = UTType(filenameExtension: "cbr") { supportedTypes.append(cbr) }
+        if let cb7 = UTType(filenameExtension: "cb7") { supportedTypes.append(cb7) }
+        if let cbt = UTType(filenameExtension: "cbt") { supportedTypes.append(cbt) }
+        if let zip = UTType(filenameExtension: "zip") { supportedTypes.append(zip) }
+
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
         picker.delegate = coordinator
-        picker.allowsMultipleSelection = false
+        picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
         picker.modalPresentationStyle = .pageSheet
 
-        Logger.shared.log("FolderLinkCoordinator: presenting folder picker", category: "FolderLink", type: .info)
+        Logger.shared.log("FolderLinkCoordinator: presenting folder and file picker", category: "FolderLink", type: .info)
         rootVC.present(picker, animated: true)
     }
 
@@ -81,7 +87,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             finish(with: [])
             return
         }
-        Logger.shared.log("FolderLinkCoordinator: user picked \(urls.count) folder(s): \(urls.map { $0.lastPathComponent }.joined(separator: ", "))", category: "FolderLink", type: .success)
+        Logger.shared.log("FolderLinkCoordinator: user picked \(urls.count) item(s): \(urls.map { $0.lastPathComponent }.joined(separator: ", "))", category: "FolderLink", type: .success)
         
         var results: [(url: URL, bookmark: Data)] = []
         for url in urls {
@@ -98,12 +104,17 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
                 )
             } catch {
                 Logger.shared.log("FolderLinkCoordinator: Standard bookmark failed for \(url.lastPathComponent): \(error.localizedDescription) — trying .minimalBookmark", category: "FolderLink", type: .warning)
-                // Fallback attempt: minimal bookmark
+                // Fallback attempt 1: minimal bookmark
                 bookmarkData = try? url.bookmarkData(
                     options: .minimalBookmark,
                     includingResourceValuesForKeys: nil,
                     relativeTo: nil
                 )
+            }
+
+            // Fallback attempt 2: Secure archived URL fallback (guarantees third-party File providers never drop selected items)
+            if bookmarkData == nil {
+                bookmarkData = try? NSKeyedArchiver.archivedData(withRootObject: url, requiringSecureCoding: true)
             }
 
             if let bookmarkData {
@@ -113,7 +124,6 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             }
         }
         
-        controller.dismiss(animated: true)
         self.finish(with: results)
     }
 

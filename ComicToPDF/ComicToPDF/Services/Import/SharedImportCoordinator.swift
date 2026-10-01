@@ -46,7 +46,7 @@ final class SharedImportCoordinator: ObservableObject {
     ]
 
     private var isIngesting = false
-    private var inFlightDirectOpens: Set<String> = []
+    private var inFlightDirectTasks: [String: Task<URL?, Never>] = [:]
     private var pendingTargetFilenames: [String] = []
     private var drainPassCount: Int = 0
 
@@ -265,21 +265,22 @@ final class SharedImportCoordinator: ObservableObject {
     @discardableResult
     func handleDirectFileOpen(url: URL, autoOpen: Bool = true) async -> URL? {
         let pathKey = url.path
-        if inFlightDirectOpens.contains(pathKey) {
-            let appSupport = FileManager.default.urls(
-                for: .applicationSupportDirectory, in: .userDomainMask
-            ).first ?? FileManager.default.temporaryDirectory
-            let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
-            let dest = inboxDir.appendingPathComponent(url.lastPathComponent)
-            if autoOpen {
-                let manager = conversionManager ?? ConversionManager.shared
-                manager.registerDirectFile(at: dest, autoOpen: true)
-            }
-            return dest
+        if let existingTask = inFlightDirectTasks[pathKey] {
+            Logger.shared.log("SharedImportCoordinator: Reusing in-flight direct file import task for '\(url.lastPathComponent)'", category: "Import", type: .info)
+            return await existingTask.value
         }
-        inFlightDirectOpens.insert(pathKey)
-        defer { inFlightDirectOpens.remove(pathKey) }
 
+        let importTask = Task<URL?, Never> { @MainActor [weak self] in
+            guard let self = self else { return nil }
+            return await self.performDirectFileImport(url: url, autoOpen: autoOpen)
+        }
+        inFlightDirectTasks[pathKey] = importTask
+        let result = await importTask.value
+        inFlightDirectTasks.removeValue(forKey: pathKey)
+        return result
+    }
+
+    private func performDirectFileImport(url: URL, autoOpen: Bool) async -> URL? {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
@@ -304,7 +305,11 @@ final class SharedImportCoordinator: ObservableObject {
         if dest.path == url.path && FileManager.default.fileExists(atPath: dest.path) {
             registerDirectlyOpenedFile(at: dest)
             let manager = conversionManager ?? ConversionManager.shared
-            manager.registerDirectFile(at: dest, autoOpen: autoOpen)
+            let openedPDF = manager.registerDirectFile(at: dest, autoOpen: autoOpen)
+            if !LibraryService.shared.items.contains(where: { $0.id == openedPDF.id || $0.url.fastCanonicalPath == dest.fastCanonicalPath }) {
+                LibraryService.shared.items.insert(openedPDF, at: 0)
+            }
+            LibraryService.shared.saveLibrary(isStructural: true)
             NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
             return dest
         }
@@ -323,18 +328,18 @@ final class SharedImportCoordinator: ObservableObject {
                 try FileManager.default.copyItem(at: safeURL, to: dest)
                 copySuccess = true
             } catch {
-                if let data = try? Data(contentsOf: safeURL, options: .alwaysMapped) {
+                if let data = try? Data(contentsOf: safeURL, options: .mappedIfSafe) {
                     copySuccess = (try? data.write(to: dest, options: .atomic)) != nil
                 }
             }
         }
 
         // Direct stream fallback
-        if !copySuccess, let data = try? Data(contentsOf: url, options: .alwaysMapped) {
+        if !copySuccess, let data = try? Data(contentsOf: url, options: .mappedIfSafe) {
             copySuccess = (try? data.write(to: dest, options: .atomic)) != nil
         }
 
-        guard copySuccess else {
+        guard copySuccess, FileManager.default.fileExists(atPath: dest.path) else {
             Logger.shared.log(
                 "SharedImportCoordinator: Failed to copy file \(filename) to InksyncVault/Inbox",
                 category: "Import", type: .error
@@ -350,6 +355,10 @@ final class SharedImportCoordinator: ObservableObject {
         registerDirectlyOpenedFile(at: dest)
         let manager = conversionManager ?? ConversionManager.shared
         let openedPDF = manager.registerDirectFile(at: dest, autoOpen: autoOpen)
+        if !LibraryService.shared.items.contains(where: { $0.id == openedPDF.id || $0.url.fastCanonicalPath == dest.fastCanonicalPath }) {
+            LibraryService.shared.items.insert(openedPDF, at: 0)
+        }
+        LibraryService.shared.saveLibrary(isStructural: true)
         manager.scanLibrary()
         NotificationCenter.default.post(
             name: NSNotification.Name("InksyncPro.DirectFileOpenReceived"),
@@ -727,31 +736,63 @@ final class SharedImportCoordinator: ObservableObject {
     /// Returns true only when the file size is non-zero AND has stabilized
     /// across two non-blocking measurements — ensuring active AirDrop or cross-app transfers are complete.
     nonisolated private func isFileSettled(at url: URL) async -> Bool {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
         let fm = FileManager.default
+        let path = url.path
+
+        // Fast-path: Files already in the app's internal sandbox or app support
+        let isInternalSandbox = path.contains("/InksyncVault/") ||
+                                path.contains("/Documents/Inbox/") ||
+                                path.contains("/tmp/") ||
+                                path.contains("/Application Support/")
+        if isInternalSandbox && fm.fileExists(atPath: path) {
+            let directSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
+                ?? (try? fm.attributesOfItem(atPath: path)[.size] as? Int64)
+                ?? 0
+            if directSize > 0 {
+                return true
+            }
+        }
+
         var attempts = 0
         let maxAttempts = 10
 
         while attempts < maxAttempts {
             attempts += 1
-            if let attrs1 = try? fm.attributesOfItem(atPath: url.path),
-               let sizeVal1 = attrs1[.size] {
-                let size1 = (sizeVal1 as? NSNumber)?.int64Value ?? (sizeVal1 as? Int64) ?? (sizeVal1 as? UInt64).map(Int64.init) ?? 0
-                if size1 > 0 {
-                    // For very small files (<1MB) accept if stable or after 1 retry
-                    if size1 < 1_048_576 && attempts > 1 { return true }
+            let size1: Int64 = {
+                if let rv = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                    return Int64(rv)
+                }
+                if let attrs = try? fm.attributesOfItem(atPath: path), let s = attrs[.size] {
+                    return (s as? NSNumber)?.int64Value ?? (s as? Int64) ?? (s as? UInt64).map(Int64.init) ?? 0
+                }
+                return 0
+            }()
 
-                    try? await Task.sleep(nanoseconds: 150_000_000)
-                    if let attrs2 = try? fm.attributesOfItem(atPath: url.path),
-                       let sizeVal2 = attrs2[.size] {
-                        let size2 = (sizeVal2 as? NSNumber)?.int64Value ?? (sizeVal2 as? Int64) ?? (sizeVal2 as? UInt64).map(Int64.init) ?? 0
-                        if size1 == size2 && size2 > 0 {
-                            return true
-                        }
+            if size1 > 0 {
+                // For small files (<1MB), accept if stable or after 1 retry
+                if size1 < 1_048_576 && attempts > 1 { return true }
+
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                let size2: Int64 = {
+                    if let rv = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                        return Int64(rv)
                     }
+                    if let attrs = try? fm.attributesOfItem(atPath: path), let s = attrs[.size] {
+                        return (s as? NSNumber)?.int64Value ?? (s as? Int64) ?? (s as? UInt64).map(Int64.init) ?? 0
+                    }
+                    return 0
+                }()
+
+                if size1 == size2 && size2 > 0 {
+                    return true
                 }
             }
+
             if attempts < maxAttempts {
-                try? await Task.sleep(nanoseconds: 200_000_000)
+                try? await Task.sleep(nanoseconds: 180_000_000)
             }
         }
         return false

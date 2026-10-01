@@ -138,7 +138,8 @@ final class LinkedLibraryScanner: ObservableObject {
 
     /// Register individual comic or document files from external drives without copying.
     func linkFiles(pickedFiles: [(url: URL, bookmark: Data)]) async -> Int {
-        guard let manager = conversionManager, !pickedFiles.isEmpty else { return 0 }
+        let manager = conversionManager ?? ConversionManager.shared
+        guard !pickedFiles.isEmpty else { return 0 }
 
         scanStatus = "Linking \(pickedFiles.count) file\(pickedFiles.count == 1 ? "" : "s")…"
         let existingPaths = Set(manager.convertedPDFs.filter { $0.isLinked }.map { $0.url.path })
@@ -161,7 +162,19 @@ final class LinkedLibraryScanner: ObservableObject {
             let parentFolder = fileURL.deletingLastPathComponent().lastPathComponent
 
             var metadata = PDFMetadata(title: parsedTokens.title ?? stem)
-            if let parsed = ComicInfoParser.parse(from: fileURL) {
+
+            let parsedComicInfo: ComicInfo?
+            if fileSize > 300_000_000 {
+                parsedComicInfo = await Task.detached(priority: .userInitiated) { [fileURL] in
+                    let detAccess = fileURL.startAccessingSecurityScopedResource()
+                    defer { if detAccess { fileURL.stopAccessingSecurityScopedResource() } }
+                    return ComicInfoParser.parse(from: fileURL)
+                }.value
+            } else {
+                parsedComicInfo = ComicInfoParser.parse(from: fileURL)
+            }
+
+            if let parsed = parsedComicInfo {
                 metadata.title = parsed.title ?? stem
                 metadata.series = parsed.series ?? (parsedTokens.seriesName.isEmpty ? parentFolder : parsedTokens.seriesName)
                 metadata.issueNumber = parsed.number ?? parsedTokens.issueNumber
@@ -194,6 +207,15 @@ final class LinkedLibraryScanner: ObservableObject {
 
         manager.convertedPDFs.append(contentsOf: newPDFs)
         manager.saveLibrary()
+
+        // Sync with authoritative LibraryService
+        for pdf in newPDFs {
+            if !LibraryService.shared.items.contains(where: { $0.id == pdf.id || $0.url.fastCanonicalPath == pdf.url.fastCanonicalPath }) {
+                LibraryService.shared.items.append(pdf)
+            }
+        }
+        LibraryService.shared.saveLibrary(isStructural: true)
+        NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
 
         Task { await ThumbnailDaemon.shared.startCrawling(pdfs: manager.convertedPDFs) }
         scanStatus = ""

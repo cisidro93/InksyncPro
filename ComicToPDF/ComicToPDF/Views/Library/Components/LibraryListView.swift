@@ -164,6 +164,12 @@ struct LibraryListView: View {
                             .padding(.trailing, 8)
                         }
                         .id(tapAction)
+                        .onChange(of: highlightedItemID) { _, newID in
+                            guard let newID else { return }
+                            withAnimation(.easeInOut(duration: 0.22)) {
+                                proxy.scrollTo(newID, anchor: .center)
+                            }
+                        }
                         
                         if showingQuickJump {
                             QuickJumpOverlay(

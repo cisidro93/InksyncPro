@@ -67,6 +67,10 @@ actor BookmarkResolver {
             }
             return url
         } catch {
+            if let fallbackURL = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSURL.self, from: bookmarkData) as? URL {
+                Logger.shared.log("BookmarkResolver: Resolved fallback unarchived URL: \(fallbackURL.lastPathComponent)", category: "BookmarkResolver", type: .info)
+                return fallbackURL
+            }
             Logger.shared.log("BookmarkResolver: resolve FAILED: \(error.localizedDescription)", category: "BookmarkResolver", type: .error)
             throw BookmarkError.resolutionFailed(underlying: error)
         }

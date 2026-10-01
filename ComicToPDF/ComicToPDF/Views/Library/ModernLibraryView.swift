@@ -1770,18 +1770,39 @@ struct ModernLibraryView: View {
             Task { @MainActor in
                 let scanner = LinkedLibraryScanner.shared
                 scanner.conversionManager = manager
+
+                var folderResults: [(url: URL, bookmark: Data)] = []
+                var fileResults: [(url: URL, bookmark: Data)] = []
+
                 for result in results {
+                    var isDir: ObjCBool = false
+                    if FileManager.default.fileExists(atPath: result.url.path, isDirectory: &isDir), isDir.boolValue {
+                        folderResults.append(result)
+                    } else if result.url.hasDirectoryPath {
+                        folderResults.append(result)
+                    } else {
+                        fileResults.append(result)
+                    }
+                }
+
+                for folder in folderResults {
                     do {
                         _ = try await scanner.linkDrive(
-                            folderURL: result.url,
-                            bookmarkData: result.bookmark,
-                            displayName: result.url.lastPathComponent
+                            folderURL: folder.url,
+                            bookmarkData: folder.bookmark,
+                            displayName: folder.url.lastPathComponent
                         )
                     } catch {
                         Logger.shared.log("handleLinkDrive error: \(error.localizedDescription)", category: "Drive", type: .error)
                         manager.appAlert = AppAlert(title: "Drive Link Failed", message: error.localizedDescription)
                     }
                 }
+
+                if !fileResults.isEmpty {
+                    let linkedCount = await scanner.linkFiles(pickedFiles: fileResults)
+                    Logger.shared.log("handleLinkDrive: Successfully linked \(linkedCount) direct files", category: "Drive", type: .info)
+                }
+
                 syncAndRebuildLibraryCache()
             }
         }
