@@ -1051,7 +1051,7 @@ struct ProPDFReaderEngine: View {
                     }
                 },
                 onToggleDualPage: {
-                    prefs.pdfDualPageMode.toggle()
+                    prefs.pdfDualPage.toggle()
                 },
                 onToggleMarkup: {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {

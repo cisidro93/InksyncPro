@@ -568,11 +568,11 @@ struct ProPDFReflowReaderView: View {
     private func unhighlightInReflow(text: String) {
         let anns = AnnotationStore.shared.annotations(for: pdf.id)
         if let active = activeHighlightToEdit {
-            AnnotationStore.shared.delete(active)
+            AnnotationStore.shared.delete(id: active.id, pdfID: pdf.id)
             let js = "if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(active.id.uuidString)'); }"
             webViewRef?.evaluateJavaScript(js)
         } else if let match = anns.first(where: { $0.id.uuidString == text || $0.selectedText == text }) {
-            AnnotationStore.shared.delete(match)
+            AnnotationStore.shared.delete(id: match.id, pdfID: pdf.id)
             let js = "if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(match.id.uuidString)'); }"
             webViewRef?.evaluateJavaScript(js)
         }

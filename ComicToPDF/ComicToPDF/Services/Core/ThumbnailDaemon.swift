@@ -50,7 +50,7 @@ actor ThumbnailDaemon {
         guard !isRunning else { return }
         
         // Guard against starting background extraction while device is under severe thermal stress
-        if ProcessInfo.processInfo.thermalState >= .serious {
+        if ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue {
             Logger.shared.log("ThumbnailDaemon: Skipping crawl due to thermal pressure (\(ProcessInfo.processInfo.thermalState.rawValue))", category: "System")
             return
         }
@@ -97,7 +97,7 @@ actor ThumbnailDaemon {
 
             func enqueue() {
                 // Abort further work if thermal state escalates to serious or critical
-                if ProcessInfo.processInfo.thermalState >= .serious {
+                if ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue {
                     return
                 }
 

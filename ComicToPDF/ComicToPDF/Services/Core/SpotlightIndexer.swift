@@ -221,7 +221,7 @@ final class SpotlightIndexer {
             
             for pageIndex in 0..<maxPages {
                 guard !Task.isCancelled else { break }
-                if ProcessInfo.processInfo.thermalState >= .serious {
+                if ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue {
                     Logger.shared.log("Spotlight: Throttling page indexing due to thermal pressure", category: "Spotlight", type: .info)
                     break
                 }
@@ -275,7 +275,7 @@ final class SpotlightIndexer {
     /// Helper to render a PDF page and perform fast text recognition
     nonisolated private func runVisionOCR(on page: PDFPage) async -> String {
         // Battery & Thermal Defense: Skip heavy Vision neural network operations under low-power or elevated thermal state
-        guard !ProcessInfo.processInfo.isLowPowerModeEnabled && ProcessInfo.processInfo.thermalState < .serious else {
+        guard !ProcessInfo.processInfo.isLowPowerModeEnabled && ProcessInfo.processInfo.thermalState.rawValue < ProcessInfo.ThermalState.serious.rawValue else {
             return ""
         }
 
