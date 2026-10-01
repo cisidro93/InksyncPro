@@ -1085,7 +1085,6 @@ extension EBookPageCurlReader {
             if boundsChanged {
                 // Invalidate all snapshots from previous orientation/aspect ratio
                 pageSnapshots.removeAll()
-                backgroundSnapshots.removeAll()
 
                 // Clear images on any active child view controllers so they don't stretch
                 if let contentVCs = pvc.viewControllers as? [EBookPageContentViewController] {
@@ -1284,7 +1283,6 @@ extension EBookPageCurlReader {
 
             // Invalidate obsolete snapshots so stale aspect ratios are never rendered
             self.pageSnapshots.removeAll()
-            self.backgroundSnapshots.removeAll()
 
             if dual {
                 let leftIndex = currentPageIndex % 2 == 0 ? currentPageIndex : currentPageIndex - 1
