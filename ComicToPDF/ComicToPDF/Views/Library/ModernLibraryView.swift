@@ -593,9 +593,7 @@ struct ModernLibraryView: View {
                     .forceProMotion()
             }
             .onChange(of: router.activeFullScreen) { _, newVal in
-                if newVal == nil {
-                    isLibraryFocused = true
-                }
+                handleFullScreenChanged(newVal)
             }
             .onReceive(conversionManager.objectWillChange.debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { _ in
                 syncAndRebuildLibraryCache()
@@ -618,40 +616,11 @@ struct ModernLibraryView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.DirectFileOpenReceived"))) { _ in
                 syncAndRebuildLibraryCache()
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.switchShelf"))) { notif in
-                guard let target = notif.userInfo?["shelf"] as? String else { return }
-                HapticEngine.selection()
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
-                    switch target {
-                    case "all":
-                        viewModel.contentShelf = .all
-                        viewModel.filterState = .all
-                    case "comics":
-                        viewModel.contentShelf = .comics
-                        viewModel.filterState = .comics
-                    case "books":
-                        viewModel.contentShelf = .books
-                        viewModel.filterState = .books
-                    case "onDrive":
-                        viewModel.contentShelf = .all
-                        viewModel.filterState = .onDrive
-                    default:
-                        break
-                    }
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.focusSearch"))) { _ in
-                HapticEngine.light()
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    isSearchActive.toggle()
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.linkDriveRequested"))) { _ in
-                handleLinkDrive()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.showShortcutsSheet"))) { _ in
-                AppRouter.shared.presentSheet(.shortcutsCheatSheet)
-            }
+            .modifier(LibraryKeyboardShortcutsModifier(
+                viewModel: viewModel,
+                isSearchActive: $isSearchActive,
+                onLinkDrive: handleLinkDrive
+            ))
     }
 
     // MARK: - Alert Shell (rootShell + alerts + onDrop)
@@ -1966,5 +1935,55 @@ struct ModernLibraryView: View {
         }
     }
 
-
+    private func handleFullScreenChanged(_ destination: LibraryFullScreenDestination?) {
+        if destination == nil {
+            isLibraryFocused = true
+        }
+    }
 }
+
+// MARK: - Dedicated Library Keyboard Shortcuts Modifier
+private struct LibraryKeyboardShortcutsModifier: ViewModifier {
+    @ObservedObject var viewModel: LibraryViewModel
+    @Binding var isSearchActive: Bool
+    let onLinkDrive: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.switchShelf"))) { notif in
+                guard let target = notif.userInfo?["shelf"] as? String else { return }
+                HapticEngine.selection()
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                    switch target {
+                    case "all":
+                        viewModel.contentShelf = .all
+                        viewModel.filterState = .all
+                    case "comics":
+                        viewModel.contentShelf = .comics
+                        viewModel.filterState = .comics
+                    case "books":
+                        viewModel.contentShelf = .books
+                        viewModel.filterState = .books
+                    case "onDrive":
+                        viewModel.contentShelf = .all
+                        viewModel.filterState = .onDrive
+                    default:
+                        break
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.focusSearch"))) { _ in
+                HapticEngine.light()
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    isSearchActive.toggle()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.linkDriveRequested"))) { _ in
+                onLinkDrive()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.showShortcutsSheet"))) { _ in
+                AppRouter.shared.presentSheet(.shortcutsCheatSheet)
+            }
+    }
+}
+

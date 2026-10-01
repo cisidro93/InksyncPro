@@ -212,92 +212,98 @@ struct UnifiedReaderView: View {
         isTablet && sizeClass == .regular
     }
 
+    @ViewBuilder
+    private func splitReaderView(geo: GeometryProxy) -> some View {
+        HStack(spacing: 0) {
+            if notebookPlacement == .left && showNotebookPanel && canShowSplitSidebar {
+                StudyNotebookView(
+                    bookID: pdf.id.uuidString,
+                    bookTitle: pdf.name,
+                    fileURL: pdf.url
+                )
+                .frame(width: notebookWidth)
+                .clipped()
+                .transition(.move(edge: .leading).combined(with: .opacity))
+                .id("sidebar_notebook_\(pdf.id)")
+                
+                draggableDivider(geo: geo, placement: .left)
+            }
+            
+            ZStack {
+                prefs.activeTheme.background.edgesIgnoringSafeArea(.all)
+                
+                switch resolvedReaderEngine.engine {
+                case .comic:
+                    ComicReaderEngine(pdf: currentBook, onDismiss: { dismiss() }, allBooks: effectiveAllBooks)
+                        .id(currentBook.id)
+                case .proPDF:
+                    ProPDFReaderEngine(pdf: currentBook, onDismiss: { dismiss() }, allBooks: effectiveAllBooks)
+                        .id(currentBook.id)
+                case .eBook:
+                    EBookReaderView(fileURL: currentBook.url, title: currentBook.name, pdf: currentBook, onExit: { dismiss() }, allBooks: effectiveAllBooks)
+                        .id(currentBook.id)
+                case .checkingEPUB:
+                    ProgressView("Loading…")
+                        .tint(Color.inkTextPrimary)
+                        .foregroundColor(Color.inkTextPrimary)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            
+            if notebookPlacement == .right && showNotebookPanel && canShowSplitSidebar {
+                draggableDivider(geo: geo, placement: .right)
+                
+                StudyNotebookView(
+                    bookID: pdf.id.uuidString,
+                    bookTitle: pdf.name,
+                    fileURL: pdf.url
+                )
+                .frame(width: notebookWidth)
+                .clipped()
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .id("sidebar_notebook_\(pdf.id)")
+            }
+        }
+    }
+
+    private func runEPUBComicCheckIfNeeded() async {
+        guard needsEPUBComicCheck && epubComicCheckResult == nil else { return }
+        let pdfCopy = self.pdf
+        Logger.shared.log("UnifiedReaderView: Starting background EPUB check for '\(pdfCopy.name)'", category: "Reader", type: .info)
+        let result = await Task.detached(priority: .userInitiated) {
+            Self.checkIsEPUBComic(pdf: pdfCopy)
+        }.value
+        await MainActor.run {
+            Logger.shared.log("UnifiedReaderView: Background EPUB check completed with result=\(result)", category: "Reader", type: .info)
+            epubComicCheckResult = result
+            logReaderRouting(trigger: "EPUB check completed")
+        }
+        let newType: ContentType = result ? .hybrid : .book
+        if pdfCopy.contentType != newType {
+            Logger.shared.log("UnifiedReaderView: Updating contentType from \(pdfCopy.contentType) to \(newType) for '\(pdfCopy.name)'", category: "Reader", type: .success)
+            ConversionManager.shared.updateContentType(for: pdfCopy.id, to: newType)
+        }
+    }
+
     var body: some View {
         GeometryReader { geo in
-            HStack(spacing: 0) {
-                if notebookPlacement == .left && showNotebookPanel && canShowSplitSidebar {
-                    StudyNotebookView(
-                        bookID: pdf.id.uuidString,
-                        bookTitle: pdf.name,
-                        fileURL: pdf.url
-                    )
-                    .frame(width: notebookWidth)
-                    .clipped()
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-                    .id("sidebar_notebook_\(pdf.id)")
-                    
-                    draggableDivider(geo: geo, placement: .left)
-                }
-                
-                ZStack {
-                    prefs.activeTheme.background.edgesIgnoringSafeArea(.all)
-                    
-                    switch resolvedReaderEngine.engine {
-                    case .comic:
-                        ComicReaderEngine(pdf: currentBook, onDismiss: { dismiss() }, allBooks: effectiveAllBooks)
-                            .id(currentBook.id)
-                    case .proPDF:
-                        ProPDFReaderEngine(pdf: currentBook, onDismiss: { dismiss() }, allBooks: effectiveAllBooks)
-                            .id(currentBook.id)
-                    case .eBook:
-                        EBookReaderView(fileURL: currentBook.url, title: currentBook.name, pdf: currentBook, onExit: { dismiss() }, allBooks: effectiveAllBooks)
-                            .id(currentBook.id)
-                    case .checkingEPUB:
-                        ProgressView("Loading…")
-                            .tint(Color.inkTextPrimary)
-                            .foregroundColor(Color.inkTextPrimary)
+            splitReaderView(geo: geo)
+                .onChange(of: geo.size.width) { _, newWidth in
+                    let maxW = max(280, min(newWidth * 0.70, newWidth - 280))
+                    if notebookWidth > maxW {
+                        notebookWidth = maxW
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-                
-                if notebookPlacement == .right && showNotebookPanel && canShowSplitSidebar {
-                    draggableDivider(geo: geo, placement: .right)
-                    
-                    StudyNotebookView(
-                        bookID: pdf.id.uuidString,
-                        bookTitle: pdf.name,
-                        fileURL: pdf.url
-                    )
-                    .frame(width: notebookWidth)
-                    .clipped()
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                    .id("sidebar_notebook_\(pdf.id)")
-                }
-            }
-            .onChange(of: geo.size.width) { _, newWidth in
-                let maxW = max(280, min(newWidth * 0.70, newWidth - 280))
-                if notebookWidth > maxW {
-                    notebookWidth = maxW
-                }
-            }
-            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showNotebookPanel)
-            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: notebookPlacement)
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showNotebookPanel)
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: notebookPlacement)
         }
         .ignoresSafeArea()
         .navigationBarHidden(true)
         .statusBar(hidden: true)
         .forceProMotion()
         .task {
-            // Run the EPUB comic check off the main thread when the view appears
-            if needsEPUBComicCheck && epubComicCheckResult == nil {
-                let pdfCopy = self.pdf
-                Logger.shared.log("UnifiedReaderView: Starting background EPUB check for '\(pdfCopy.name)'", category: "Reader", type: .info)
-                let result = await Task.detached(priority: .userInitiated) {
-                    Self.checkIsEPUBComic(pdf: pdfCopy)
-                }.value
-                await MainActor.run {
-                    Logger.shared.log("UnifiedReaderView: Background EPUB check completed with result=\(result)", category: "Reader", type: .info)
-                    epubComicCheckResult = result
-                    logReaderRouting(trigger: "EPUB check completed")
-                }
-                // Sync the scanned type to the database if it differs
-                let newType: ContentType = result ? .hybrid : .book
-                if pdfCopy.contentType != newType {
-                    Logger.shared.log("UnifiedReaderView: Updating contentType from \(pdfCopy.contentType) to \(newType) for '\(pdfCopy.name)'", category: "Reader", type: .success)
-                    ConversionManager.shared.updateContentType(for: pdfCopy.id, to: newType)
-                }
-            }
+            await runEPUBComicCheckIfNeeded()
         }
         .sheet(isPresented: Binding(
             get: { showNotebookPanel && !canShowSplitSidebar },
@@ -313,34 +319,12 @@ struct UnifiedReaderView: View {
             .presentationDragIndicator(.visible)
             .presentationCornerRadius(28)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleStudyNotebook)) { _ in
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                showNotebookPanel.toggle()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openStudyNotebook)) { _ in
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                showNotebookPanel = true
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .hideStudyNotebook)) { _ in
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                showNotebookPanel = false
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.showShortcutsSheet"))) { _ in
-            showingHelpSheet = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.toggleDualPage"))) { _ in
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                prefs.isDoublePageMode.toggle()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.toggleSmartCrop"))) { _ in
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                prefs.isAutoCropEnabled.toggle()
-            }
-        }
+        .modifier(UnifiedReaderKeyboardModifier(
+            showNotebookPanel: $showNotebookPanel,
+            showingHelpSheet: $showingHelpSheet,
+            prefs: prefs,
+            dismiss: dismiss
+        ))
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.switchReaderEngine"))) { notification in
             let targetEngine = notification.userInfo?["engine"] as? String ?? ""
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
@@ -381,21 +365,17 @@ struct UnifiedReaderView: View {
             ReaderIdleTimerManager.shared.reassertKeepAwake()
         }
         .onAppear {
-            // Assert display keep-awake (always-on mode across normal and Low Power Mode)
             ReaderIdleTimerManager.shared.enterReader()
 
-            // Auto-heal misclassified PDF books that were mistakenly tagged as comic without explicit user choice
             if isPDFDocument && pdf.contentType == .comic && pdf.metadata.hasFormatOverride != true {
                 ConversionManager.shared.updateContentType(for: pdf.id, to: .book)
             }
-            // Auto-heal misclassified EPUB documents that were mistakenly tagged as comic/hybrid without explicit user choice
             let ext = pdf.url.pathExtension.lowercased()
             if ext == "epub" && (pdf.contentType == .comic || pdf.contentType == .hybrid) && pdf.metadata.hasFormatOverride != true {
                 ConversionManager.shared.updateContentType(for: pdf.id, to: .book)
             }
             logReaderRouting(trigger: "onAppear")
 
-            // Hardware volume buttons page turning (iPhone 1-handed & iPad hands-free)
             setupVolumeButtonHandlers()
         }
         .onDisappear {
@@ -410,56 +390,6 @@ struct UnifiedReaderView: View {
         }
         .onChange(of: prefs.invertVolumeButtons) { _, _ in
             setupVolumeButtonHandlers()
-        }
-        .readerKeyboardShortcuts(
-            isEditingText: showNotebookPanel,
-            onNextPage: {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
-            },
-            onPreviousPage: {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
-            },
-            onToggleReflow: {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleReflowMode"), object: nil)
-            },
-            onToggleSpeech: {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSpeechMode"), object: nil)
-            },
-            onToggleHighlighter: {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleHighlighterMode"), object: nil)
-            },
-            onToggleMarkup: {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleMarkupMode"), object: nil)
-            },
-            onToggleNotebook: {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                    showNotebookPanel.toggle()
-                }
-            },
-            onToggleSidebar: {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSidebar"), object: nil)
-            },
-            onZoomIn: {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderZoomIn"), object: nil)
-            },
-            onZoomOut: {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderZoomOut"), object: nil)
-            },
-            onResetZoom: {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderResetZoom"), object: nil)
-            },
-            onShowHelp: {
-                showingHelpSheet = true
-            },
-            onDismiss: {
-                dismiss()
-            }
-        )
-        .sheet(isPresented: $showingHelpSheet) {
-            KeyboardShortcutsCheatSheetView()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderShowShortcutsHelp"))) { _ in
-            showingHelpSheet = true
         }
         .environmentObject(ConversionManager.shared)
         .environmentObject(AppSettingsManager.shared)
@@ -709,3 +639,94 @@ struct UnifiedReaderView: View {
         }
     }
 }
+
+// MARK: - Dedicated Keyboard Shortcuts & Reader Notifications Modifier
+private struct UnifiedReaderKeyboardModifier: ViewModifier {
+    @Binding var showNotebookPanel: Bool
+    @Binding var showingHelpSheet: Bool
+    @ObservedObject var prefs: EBookPreferences
+    let dismiss: DismissAction
+
+    func body(content: Content) -> some View {
+        content
+            .readerKeyboardShortcuts(
+                isEditingText: showNotebookPanel,
+                onNextPage: {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+                },
+                onPreviousPage: {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+                },
+                onToggleReflow: {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleReflowMode"), object: nil)
+                },
+                onToggleSpeech: {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSpeechMode"), object: nil)
+                },
+                onToggleHighlighter: {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleHighlighterMode"), object: nil)
+                },
+                onToggleMarkup: {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleMarkupMode"), object: nil)
+                },
+                onToggleNotebook: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        showNotebookPanel.toggle()
+                    }
+                },
+                onToggleSidebar: {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSidebar"), object: nil)
+                },
+                onZoomIn: {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderZoomIn"), object: nil)
+                },
+                onZoomOut: {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderZoomOut"), object: nil)
+                },
+                onResetZoom: {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderResetZoom"), object: nil)
+                },
+                onShowHelp: {
+                    showingHelpSheet = true
+                },
+                onDismiss: {
+                    dismiss()
+                }
+            )
+            .sheet(isPresented: $showingHelpSheet) {
+                KeyboardShortcutsCheatSheetView()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderShowShortcutsHelp"))) { _ in
+                showingHelpSheet = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleStudyNotebook)) { _ in
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    showNotebookPanel.toggle()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openStudyNotebook)) { _ in
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    showNotebookPanel = true
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .hideStudyNotebook)) { _ in
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    showNotebookPanel = false
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.showShortcutsSheet"))) { _ in
+                showingHelpSheet = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.toggleDualPage"))) { _ in
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    prefs.isDoublePageMode.toggle()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.toggleSmartCrop"))) { _ in
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    prefs.isAutoCropEnabled.toggle()
+                }
+            }
+    }
+}
+

@@ -125,7 +125,7 @@ struct ReaderKeyboardShortcuts: ViewModifier {
                             .keyboardShortcut("a", modifiers: [.command, .shift])
                     }
 
-                    // Study Notebook (⌘N, ⌥⌘N)
+                    // Study Notebook Controls (⌘N, ⌥⌘N, ⌘P, ⌥⌘V)
                     if let onToggleNotebook {
                         Button("") { onToggleNotebook() }
                             .keyboardShortcut("n", modifiers: [.command])
@@ -133,14 +133,42 @@ struct ReaderKeyboardShortcuts: ViewModifier {
                             .keyboardShortcut("n", modifiers: [.command, .option])
                     }
 
-                    // Table of Contents / Sidebar (⌘S, ⌘T, ⌥⌘S)
-                    if let onToggleSidebar {
-                        Button("") { onToggleSidebar() }
-                            .keyboardShortcut("s", modifiers: [.command])
-                        Button("") { onToggleSidebar() }
-                            .keyboardShortcut("t", modifiers: [.command])
-                        Button("") { onToggleSidebar() }
-                            .keyboardShortcut("s", modifiers: [.command, .option])
+                    // Stamp Current Page in Notebook (⌘P)
+                    Button("") {
+                        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.stampPageLink"), object: nil)
+                    }
+                    .keyboardShortcut("p", modifiers: [.command])
+
+                    // Paste Quote into Notebook (⌥⌘V)
+                    Button("") {
+                        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.pasteQuoteToNotebook"), object: nil)
+                    }
+                    .keyboardShortcut("v", modifiers: [.command, .option])
+
+                    // Table of Contents / Sidebar / Save Notes
+                    if isTextEditingActive {
+                        // When text editing in Notebook, ⌘S flushes save
+                        Button("") {
+                            NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.saveNotes"), object: nil)
+                        }
+                        .keyboardShortcut("s", modifiers: [.command])
+
+                        if let onToggleSidebar {
+                            Button("") { onToggleSidebar() }
+                                .keyboardShortcut("t", modifiers: [.command])
+                            Button("") { onToggleSidebar() }
+                                .keyboardShortcut("s", modifiers: [.command, .option])
+                        }
+                    } else {
+                        // When reading, ⌘S, ⌘T, ⌥⌘S toggle Sidebar / Table of Contents
+                        if let onToggleSidebar {
+                            Button("") { onToggleSidebar() }
+                                .keyboardShortcut("s", modifiers: [.command])
+                            Button("") { onToggleSidebar() }
+                                .keyboardShortcut("t", modifiers: [.command])
+                            Button("") { onToggleSidebar() }
+                                .keyboardShortcut("s", modifiers: [.command, .option])
+                        }
                     }
 
                     // ── 4. ZOOM & VIEW CONTROLS ──

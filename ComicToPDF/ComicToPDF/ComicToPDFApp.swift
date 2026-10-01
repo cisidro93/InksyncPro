@@ -68,6 +68,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             return cmd
         }
 
+        // Library Shortcuts Menu
+        let libraryCommands = [
+            makeCmd("o", .command, #selector(handleImportQueue(_:)), "Import Queue / Books..."),
+            makeCmd("l", .command, #selector(handleLinkDrive(_:)), "Link External Drive..."),
+            makeCmd("f", .command, #selector(handleFocusSearch(_:)), "Search Library"),
+            makeCmd("1", .command, #selector(handleShelfAll(_:)), "All Books Shelf"),
+            makeCmd("2", .command, #selector(handleShelfComics(_:)), "Comics Shelf"),
+            makeCmd("3", .command, #selector(handleShelfBooks(_:)), "Books & EPUB Shelf"),
+            makeCmd("4", .command, #selector(handleShelfDrive(_:)), "External Drive Shelf"),
+            makeCmd("/", .command, #selector(handleShowShortcutsSheet(_:)), "Keyboard Shortcuts Cheat Sheet")
+        ]
+        let libraryMenu = UIMenu(title: "Library", children: libraryCommands)
+
         // Reader Shortcuts Menu
         let readerCommands = [
             makeCmd("]", .command, #selector(handleReaderNextPage(_:)), "Next Page (Split-Notebook Safe)"),
@@ -78,7 +91,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             makeCmd("/", .command, #selector(handleShowShortcutsSheet(_:)), "Keyboard Shortcuts Cheat Sheet")
         ]
         let readerMenu = UIMenu(title: "Reader", children: readerCommands)
-        builder.insertSibling(readerMenu, afterMenu: .view)
 
         // Study Notebook Menu
         let notebookCommands = [
@@ -88,7 +100,36 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             makeCmd("s", .command, #selector(handleSaveNotes(_:)), "Save Notes")
         ]
         let notebookMenu = UIMenu(title: "Study Notebook", children: notebookCommands)
-        builder.insertSibling(notebookMenu, afterMenu: .window)
+
+        if builder.menu(for: .file) != nil {
+            builder.insertSibling(libraryMenu, afterMenu: .file)
+        } else {
+            builder.insertChild(libraryMenu, atStartOfMenu: .root)
+        }
+        builder.insertChild(readerMenu, atEndOfMenu: .root)
+        builder.insertChild(notebookMenu, atEndOfMenu: .root)
+    }
+
+    @objc func handleImportQueue(_ sender: Any?) {
+        AppRouter.shared.presentSheet(.importQueue)
+    }
+    @objc func handleLinkDrive(_ sender: Any?) {
+        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.linkDriveRequested"), object: nil)
+    }
+    @objc func handleFocusSearch(_ sender: Any?) {
+        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.focusSearch"), object: nil)
+    }
+    @objc func handleShelfAll(_ sender: Any?) {
+        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.switchShelf"), object: nil, userInfo: ["shelf": "all"])
+    }
+    @objc func handleShelfComics(_ sender: Any?) {
+        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.switchShelf"), object: nil, userInfo: ["shelf": "comics"])
+    }
+    @objc func handleShelfBooks(_ sender: Any?) {
+        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.switchShelf"), object: nil, userInfo: ["shelf": "books"])
+    }
+    @objc func handleShelfDrive(_ sender: Any?) {
+        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.switchShelf"), object: nil, userInfo: ["shelf": "onDrive"])
     }
 
     @objc func handleReaderNextPage(_ sender: Any?) {
