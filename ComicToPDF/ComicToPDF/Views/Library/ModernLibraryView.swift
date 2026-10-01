@@ -622,6 +622,37 @@ struct ModernLibraryView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.DirectFileOpenReceived"))) { _ in
                 syncAndRebuildLibraryCache()
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.switchShelf"))) { notif in
+                guard let target = notif.userInfo?["shelf"] as? String else { return }
+                HapticEngine.selection()
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                    switch target {
+                    case "all":
+                        viewModel.contentShelf = .all
+                        viewModel.filterState = .all
+                    case "comics":
+                        viewModel.contentShelf = .comics
+                        viewModel.filterState = .comics
+                    case "books":
+                        viewModel.contentShelf = .books
+                        viewModel.filterState = .books
+                    case "onDrive":
+                        viewModel.contentShelf = .all
+                        viewModel.filterState = .onDrive
+                    default:
+                        break
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.focusSearch"))) { _ in
+                HapticEngine.light()
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    isSearchActive.toggle()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.linkDriveRequested"))) { _ in
+                handleLinkDrive()
+            }
     }
 
     // MARK: - Alert Shell (rootShell + alerts + onDrop)

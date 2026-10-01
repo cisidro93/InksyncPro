@@ -101,6 +101,7 @@ struct ProPDFTextSelectionHUD: View {
     var onAdjustEnd: ((Int) -> Void)? = nil
     var onDismiss: (() -> Void)? = nil
     var onSaveVocabulary: ((String) -> Void)? = nil
+    var onQuoteInNotebook: ((String) -> Void)? = nil
 
     init(
         selectedText: String,
@@ -116,7 +117,8 @@ struct ProPDFTextSelectionHUD: View {
         onAdjustStart: ((Int) -> Void)? = nil,
         onAdjustEnd: ((Int) -> Void)? = nil,
         onDismiss: (() -> Void)? = nil,
-        onSaveVocabulary: ((String) -> Void)? = nil
+        onSaveVocabulary: ((String) -> Void)? = nil,
+        onQuoteInNotebook: ((String) -> Void)? = nil
     ) {
         self.selectedText = selectedText
         self.pageIndex = pageIndex
@@ -132,6 +134,7 @@ struct ProPDFTextSelectionHUD: View {
         self.onAdjustEnd = onAdjustEnd
         self.onDismiss = onDismiss
         self.onSaveVocabulary = onSaveVocabulary
+        self.onQuoteInNotebook = onQuoteInNotebook
     }
 
     @State private var showingNoteInput = false
@@ -242,6 +245,34 @@ struct ProPDFTextSelectionHUD: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Copy")
                     .help("Copy text")
+
+                    // Quote into Notebook (Split-View & Active Learning)
+                    Button {
+                        HapticEngine.medium()
+                        UIPasteboard.general.string = selectedText
+                        if let onQuoteInNotebook = onQuoteInNotebook {
+                            onQuoteInNotebook(selectedText)
+                        } else {
+                            NotificationCenter.default.post(
+                                name: .quoteInNotebook,
+                                object: nil,
+                                userInfo: [
+                                    "text": selectedText,
+                                    "pageIndex": pageIndex
+                                ]
+                            )
+                            NotificationCenter.default.post(name: .openStudyNotebook, object: nil)
+                        }
+                    } label: {
+                        Image(systemName: "quote.opening")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Quote in Notebook")
+                    .help("Add Quote to Study Notebook")
 
                     // Define (Dictionary & Vocabulary Auto-Save)
                     Button {

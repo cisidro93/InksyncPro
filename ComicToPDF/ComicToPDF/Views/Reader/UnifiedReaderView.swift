@@ -28,6 +28,7 @@ struct UnifiedReaderView: View {
     @State private var notebookWidth: CGFloat = 380
     @State private var dragInitialWidth: CGFloat? = nil
     @State private var isDraggingDivider: Bool = false
+    @State private var showingShortcutsSheet: Bool = false
 
     init(pdf: ConvertedPDF, allBooks: [ConvertedPDF] = [], startWithNotebookOpen: Bool = false, initialReadingMode: String? = nil) {
         self.initialPDF = pdf
@@ -313,14 +314,35 @@ struct UnifiedReaderView: View {
             .presentationDragIndicator(.visible)
             .presentationCornerRadius(28)
         }
+        .sheet(isPresented: $showingShortcutsSheet) {
+            KeyboardShortcutsCheatSheetView()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .toggleStudyNotebook)) { _ in
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 showNotebookPanel.toggle()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openStudyNotebook)) { _ in
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                showNotebookPanel = true
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .hideStudyNotebook)) { _ in
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 showNotebookPanel = false
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.showShortcutsSheet"))) { _ in
+            showingShortcutsSheet = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.toggleDualPage"))) { _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                prefs.isDoublePageMode.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.toggleSmartCrop"))) { _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                prefs.isAutoCropEnabled.toggle()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.switchReaderEngine"))) { notification in

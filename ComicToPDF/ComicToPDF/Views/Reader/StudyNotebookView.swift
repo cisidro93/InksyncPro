@@ -441,8 +441,18 @@ struct StudyNotebookView: View {
 
     @ViewBuilder
     private var pasteButton: some View {
-        Button {
-            pasteFromClipboard()
+        Menu {
+            Button {
+                pasteFromClipboard()
+            } label: {
+                Label("Paste Text Cleanly", systemImage: "doc.on.clipboard")
+            }
+
+            Button {
+                pasteQuoteFromClipboard()
+            } label: {
+                Label("Paste as Formatted Book Quote", systemImage: "quote.opening")
+            }
         } label: {
             Image(systemName: "doc.on.clipboard")
                 .font(.system(size: 15, weight: .semibold))
@@ -450,8 +460,10 @@ struct StudyNotebookView: View {
                 .padding(8)
                 .background(Color.orange.opacity(0.12))
                 .clipShape(Circle())
+        } primaryAction: {
+            pasteFromClipboard()
         }
-        .help("Paste copied text or web article from clipboard")
+        .help("Paste clipboard text or formatted quote (⌥⌘V)")
     }
 
     @ViewBuilder
@@ -1194,6 +1206,40 @@ struct StudyNotebookView: View {
                         refreshHighlights()
                     }
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .quoteInNotebook)) { notification in
+                guard let quoteText = notification.userInfo?["text"] as? String, !quoteText.isEmpty else { return }
+                let page = notification.userInfo?["pageIndex"] as? Int ?? activeReaderPageIndex
+                let book = notification.userInfo?["bookTitle"] as? String ?? bookTitle
+                
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    inputMode = .markdown
+                }
+                
+                var quoteBlock = "\n\n> " + quoteText.replacingOccurrences(of: "\n", with: "\n> ") + "\n"
+                if let p = page {
+                    quoteBlock += "— *\(book)*, [📍 Page \(p + 1)](page:\(p))\n"
+                    referencedPageIndices.insert(p)
+                } else {
+                    quoteBlock += "— *\(book)*\n"
+                }
+                
+                if localNotes.isEmpty {
+                    localNotes = quoteBlock.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    localNotes += quoteBlock
+                }
+                debounceSave()
+                HapticEngine.success()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.pasteQuoteToNotebook"))) { _ in
+                pasteQuoteFromClipboard()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.stampPageLink"))) { _ in
+                stampCurrentPageLink()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.saveNotes"))) { _ in
+                flushSave()
             }
             .onAppear {
                 Logger.shared.log("StudyNotebook appeared for book: '\(bookTitle)'", category: "Notebook", type: .info)
@@ -2042,6 +2088,35 @@ struct StudyNotebookView: View {
             localNotes = trimmed
         } else {
             localNotes += "\n\n" + trimmed
+        }
+        debounceSave()
+    }
+
+    private func pasteQuoteFromClipboard() {
+        guard let clipboardString = UIPasteboard.general.string, !clipboardString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            HapticEngine.error()
+            return
+        }
+
+        HapticEngine.success()
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            inputMode = .markdown
+        }
+
+        let trimmed = clipboardString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let page = activeReaderPageIndex
+        var quoteBlock = "\n\n> " + trimmed.replacingOccurrences(of: "\n", with: "\n> ") + "\n"
+        if let p = page {
+            quoteBlock += "— *\(bookTitle)*, [📍 Page \(p + 1)](page:\(p))\n"
+            referencedPageIndices.insert(p)
+        } else {
+            quoteBlock += "— *\(bookTitle)*\n"
+        }
+
+        if localNotes.isEmpty {
+            localNotes = quoteBlock.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            localNotes += quoteBlock
         }
         debounceSave()
     }

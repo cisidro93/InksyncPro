@@ -56,6 +56,51 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             completionHandler()
         }
     }
+
+    // MARK: - iPadOS Hardware Keyboard Shortcuts HUD (⌘ held down)
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        guard builder.system == .main else { return }
+
+        let makeCmd: (String, UIKeyModifierFlags, Selector, String) -> UIKeyCommand = { input, flags, action, title in
+            let cmd = UIKeyCommand(title: title, action: action, input: input, modifierFlags: flags)
+            cmd.discoverabilityTitle = title
+            return cmd
+        }
+
+        // Reader Shortcuts Menu
+        let readerCommands = [
+            makeCmd("]", .command, #selector(handleReaderNextPage(_:)), "Next Page (Split-Notebook Safe)"),
+            makeCmd("[", .command, #selector(handleReaderPrevPage(_:)), "Previous Page (Split-Notebook Safe)"),
+            makeCmd("d", .command, #selector(handleToggleDualPage(_:)), "Toggle Dual Page Spread"),
+            makeCmd("m", .command, #selector(handleToggleSmartCrop(_:)), "Toggle Smart Margin Crop"),
+            makeCmd("h", .command, #selector(handleHighlightSelection(_:)), "Stylus Highlighter Mode"),
+            makeCmd("/", .command, #selector(handleShowShortcutsSheet(_:)), "Keyboard Shortcuts Cheat Sheet")
+        ]
+        let readerMenu = UIMenu(title: "Reader", children: readerCommands)
+        builder.insertSibling(readerMenu, afterMenu: .view)
+
+        // Study Notebook Menu
+        let notebookCommands = [
+            makeCmd("n", .command, #selector(handleToggleStudyNotebook(_:)), "Toggle Study Notebook"),
+            makeCmd("p", .command, #selector(handleStampPageLink(_:)), "Stamp Current Page Link"),
+            makeCmd("v", [.command, .alternate], #selector(handlePasteQuoteToNotebook(_:)), "Paste Quote into Notebook"),
+            makeCmd("s", .command, #selector(handleSaveNotes(_:)), "Save Notes")
+        ]
+        let notebookMenu = UIMenu(title: "Study Notebook", children: notebookCommands)
+        builder.insertSibling(notebookMenu, afterMenu: .window)
+    }
+
+    @objc func handleReaderNextPage(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.readerNextPage"), object: nil) }
+    @objc func handleReaderPrevPage(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.readerPrevPage"), object: nil) }
+    @objc func handleToggleDualPage(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.toggleDualPage"), object: nil) }
+    @objc func handleToggleSmartCrop(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.toggleSmartCrop"), object: nil) }
+    @objc func handleHighlightSelection(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.highlightSelection"), object: nil) }
+    @objc func handleToggleStudyNotebook(_ sender: Any?) { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) }
+    @objc func handleStampPageLink(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.stampPageLink"), object: nil) }
+    @objc func handlePasteQuoteToNotebook(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.pasteQuoteToNotebook"), object: nil) }
+    @objc func handleSaveNotes(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.saveNotes"), object: nil) }
+    @objc func handleShowShortcutsSheet(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.showShortcutsSheet"), object: nil) }
 }
 
 @main
@@ -239,6 +284,100 @@ struct InksyncProApp: App {
                         await SharedImportCoordinator.shared.handleIncomingURL(url)
                     }
                 }
+        }
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("Import Books & Comics...") {
+                    AppRouter.shared.presentSheet(.importFiles)
+                }
+                .keyboardShortcut("o", modifiers: [.command])
+
+                Button("Link External Drive...") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.linkDriveRequested"), object: nil)
+                }
+                .keyboardShortcut("l", modifiers: [.command])
+            }
+
+            CommandMenu("Library") {
+                Button("Search Library") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.focusSearch"), object: nil)
+                }
+                .keyboardShortcut("f", modifiers: [.command])
+
+                Button("All Books Shelf") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.switchShelf"), object: nil, userInfo: ["shelf": "all"])
+                }
+                .keyboardShortcut("1", modifiers: [.command])
+
+                Button("Comics Shelf") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.switchShelf"), object: nil, userInfo: ["shelf": "comics"])
+                }
+                .keyboardShortcut("2", modifiers: [.command])
+
+                Button("Books & EPUB Shelf") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.switchShelf"), object: nil, userInfo: ["shelf": "books"])
+                }
+                .keyboardShortcut("3", modifiers: [.command])
+
+                Button("External Drive Shelf") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.switchShelf"), object: nil, userInfo: ["shelf": "onDrive"])
+                }
+                .keyboardShortcut("4", modifiers: [.command])
+
+                Button("Keyboard Shortcuts Cheat Sheet") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.showShortcutsSheet"), object: nil)
+                }
+                .keyboardShortcut("/", modifiers: [.command])
+            }
+
+            CommandMenu("Reader") {
+                Button("Next Page (Split-Notebook Safe)") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.readerNextPage"), object: nil)
+                }
+                .keyboardShortcut("]", modifiers: [.command])
+
+                Button("Previous Page (Split-Notebook Safe)") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.readerPrevPage"), object: nil)
+                }
+                .keyboardShortcut("[", modifiers: [.command])
+
+                Button("Toggle Dual Page Spread") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.toggleDualPage"), object: nil)
+                }
+                .keyboardShortcut("d", modifiers: [.command])
+
+                Button("Toggle Smart Margin Crop") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.toggleSmartCrop"), object: nil)
+                }
+                .keyboardShortcut("m", modifiers: [.command])
+
+                Button("Stylus Highlighter Mode") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.highlightSelection"), object: nil)
+                }
+                .keyboardShortcut("h", modifiers: [.command])
+            }
+
+            CommandMenu("Study Notebook") {
+                Button("Toggle Study Notebook") {
+                    NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
+                }
+                .keyboardShortcut("n", modifiers: [.command])
+
+                Button("Stamp Current Page Link") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.stampPageLink"), object: nil)
+                }
+                .keyboardShortcut("p", modifiers: [.command])
+
+                Button("Paste Quote into Notebook") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.pasteQuoteToNotebook"), object: nil)
+                }
+                .keyboardShortcut("v", modifiers: [.command, .option])
+
+                Button("Save Notes") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.saveNotes"), object: nil)
+                }
+                .keyboardShortcut("s", modifiers: [.command])
+            }
         }
     }
     

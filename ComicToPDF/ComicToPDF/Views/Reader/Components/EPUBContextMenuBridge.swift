@@ -149,6 +149,29 @@ public struct EPUBContextMenuBridge: View {
             }
             .buttonStyle(.plain)
             
+            // Quote into Notebook (Split-View Active Learning)
+            Button {
+                HapticEngine.medium()
+                UIPasteboard.general.string = selectedText
+                NotificationCenter.default.post(
+                    name: .quoteInNotebook,
+                    object: nil,
+                    userInfo: [
+                        "text": selectedText
+                    ]
+                )
+                NotificationCenter.default.post(name: .openStudyNotebook, object: nil)
+                onDismiss()
+            } label: {
+                Image(systemName: "quote.opening")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.inkOrange)
+                    .padding(6)
+                    .background(Color.inkOrange.opacity(0.12), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Quote in Notebook")
+            
             // Copy
             Button {
                 HapticEngine.light()

@@ -3872,6 +3872,9 @@ class ProPDFHighlightableView: PDFView {
             makeCmd("d", .command, "Toggle Dual Page Spread"),
             makeCmd("m", .command, "Toggle Pencil Markup"),
             makeCmd("s", .command, "Toggle Table of Contents"),
+            makeCmd("n", .command, "Toggle Study Notebook"),
+            makeCmd("p", .command, "Stamp Current Page in Notebook"),
+            makeCmd("/", .command, "Keyboard Shortcuts Cheat Sheet"),
             makeCmd("+", .command, "Zoom In"),
             makeCmd("=", .command, "Zoom In"),
             makeCmd("-", .command, "Zoom Out"),
@@ -3923,6 +3926,12 @@ class ProPDFHighlightableView: PDFView {
                 onToggleMarkup?()
             case "s":
                 onToggleSidebar?()
+            case "n":
+                NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
+            case "p":
+                NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.stampPageLink"), object: nil)
+            case "/":
+                NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.showShortcutsSheet"), object: nil)
             case "+", "=":
                 self.scaleFactor = min(self.maxScaleFactor, self.scaleFactor * 1.2)
             case "-":

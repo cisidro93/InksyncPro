@@ -51,6 +51,10 @@ extension Notification.Name {
     static let toggleStudyNotebook    = Notification.Name("ToggleStudyNotebook")
     /// Hides the sliding side notebook panel in the active reader view.
     static let hideStudyNotebook      = Notification.Name("HideStudyNotebook")
+    /// Explicitly opens the sliding side notebook panel in the active reader view.
+    static let openStudyNotebook      = Notification.Name("OpenStudyNotebook")
+    /// Sends a formatted quote directly from the reader into the open notebook.
+    static let quoteInNotebook        = Notification.Name("QuoteInNotebook")
 
     // MARK: Manual Crop Editor
     /// Opens the interactive visual manual crop editor sheet in the active reader.
