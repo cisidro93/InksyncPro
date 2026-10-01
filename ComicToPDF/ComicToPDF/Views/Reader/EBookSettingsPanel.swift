@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - EBookSettingsPanel
 // Three-tab premium sheet: Themes · Typography · Layout
@@ -16,6 +17,10 @@ struct EBookSettingsPanel: View {
     @State private var activeTab: PanelTab = .themes
     @State private var showCustomBgPicker = false
     @State private var showCustomTextPicker = false
+    @ObservedObject private var customFontManager = CustomFontManager.shared
+    @State private var showingFontImporter = false
+    @State private var fontImportErrorMessage: String? = nil
+    @State private var showingFontImportError = false
 
     enum PanelTab: String, CaseIterable {
         case themes     = "Themes"
@@ -102,6 +107,37 @@ struct EBookSettingsPanel: View {
                     .foregroundStyle(Color.orange)
                 }
             }
+            .fileImporter(
+                isPresented: $showingFontImporter,
+                allowedContentTypes: [.font, UTType(filenameExtension: "ttf") ?? .data, UTType(filenameExtension: "otf") ?? .data, UTType(filenameExtension: "woff") ?? .data, UTType(filenameExtension: "woff2") ?? .data]
+            ) { result in
+                switch result {
+                case .success(let url):
+                    Task { @MainActor in
+                        do {
+                            let imported = try await customFontManager.importFont(from: url)
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                prefs.fontFamily = "'\(imported.postScriptName)', sans-serif"
+                            }
+                            prefs.notifyTypographyChanged()
+                            HapticEngine.success()
+                        } catch {
+                            fontImportErrorMessage = error.localizedDescription
+                            showingFontImportError = true
+                            HapticEngine.error()
+                        }
+                    }
+                case .failure(let error):
+                    fontImportErrorMessage = error.localizedDescription
+                    showingFontImportError = true
+                    HapticEngine.error()
+                }
+            }
+            .alert("Font Import", isPresented: $showingFontImportError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(fontImportErrorMessage ?? "Failed to import font file.")
+            }
         }
     }
 
@@ -139,7 +175,11 @@ struct EBookSettingsPanel: View {
         // Strip CSS fallbacks to get just the primary font name
         let raw = prefs.fontFamily
         let first = raw.components(separatedBy: ",").first ?? raw
-        return first.trimmingCharacters(in: CharacterSet(charactersIn: " \"'"))
+        let cleaned = first.trimmingCharacters(in: CharacterSet(charactersIn: " \"'"))
+        if let customFont = customFontManager.installedFonts.first(where: { $0.postScriptName == cleaned || $0.familyName == cleaned }) {
+            return customFont.postScriptName
+        }
+        return cleaned
     }
 
     // MARK: - Tab Strip
@@ -451,6 +491,10 @@ struct EBookSettingsPanel: View {
                         ForEach(EBookFontFamily.allCases) { family in
                             fontChip(family)
                         }
+                        ForEach(customFontManager.installedFonts) { customFont in
+                            customFontChip(customFont)
+                        }
+                        addFontButton
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -622,6 +666,7 @@ struct EBookSettingsPanel: View {
             withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
                 prefs.fontFamily = family.rawValue
             }
+            prefs.notifyTypographyChanged()
             HapticEngine.light()
         } label: {
             Text(family.displayName)
@@ -637,6 +682,88 @@ struct EBookSettingsPanel: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(isSelected ? Color.orange.opacity(0.6) : Color.white.opacity(0.08), lineWidth: 1.5)
                 )
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func customFontChip(_ font: CustomDownloadedFont) -> some View {
+        let isSelected = prefs.fontFamily.contains(font.postScriptName)
+        Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                prefs.fontFamily = "'\(font.postScriptName)', sans-serif"
+            }
+            prefs.notifyTypographyChanged()
+            HapticEngine.light()
+        } label: {
+            HStack(spacing: 6) {
+                Text(font.displayName)
+                    .font(Font(UIFont(name: font.postScriptName, size: 15) ?? .systemFont(ofSize: 15)))
+                
+                Menu {
+                    Button(role: .destructive) {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                            customFontManager.deleteFont(font)
+                        }
+                        prefs.notifyTypographyChanged()
+                        HapticEngine.medium()
+                    } label: {
+                        Label("Delete Font", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(isSelected ? Color.orange.opacity(0.8) : Color.inkTextTertiary)
+                        .padding(4)
+                }
+            }
+            .foregroundStyle(isSelected ? Color.orange : Color.inkTextPrimary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? Color.orange.opacity(0.12) : Color.inkSurface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? Color.orange.opacity(0.6) : Color.white.opacity(0.08), lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive) {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                    customFontManager.deleteFont(font)
+                }
+                prefs.notifyTypographyChanged()
+                HapticEngine.medium()
+            } label: {
+                Label("Delete '\(font.displayName)'", systemImage: "trash")
+            }
+        }
+    }
+
+    private var addFontButton: some View {
+        Button {
+            showingFontImporter = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Add Font")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(Color.orange)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.orange.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.orange.opacity(0.4), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+            )
         }
         .buttonStyle(.plain)
     }

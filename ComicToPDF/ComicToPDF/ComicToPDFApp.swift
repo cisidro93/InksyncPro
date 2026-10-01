@@ -8,6 +8,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         // Guarantee app default audio session is ambient + mixWithOthers so background audio (Spotify, Apple Music, podcasts) is NEVER interrupted.
         try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+        // Dynamically register any downloaded custom fonts with CoreText
+        CustomFontManager.shared.registerInstalledFonts()
         return true
     }
 
@@ -97,6 +99,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             makeCmd("n", .command, #selector(handleToggleStudyNotebook(_:)), "Toggle Study Notebook"),
             makeCmd("p", .command, #selector(handleStampPageLink(_:)), "Stamp Current Page Link"),
             makeCmd("v", [.command, .alternate], #selector(handlePasteQuoteToNotebook(_:)), "Paste Quote into Notebook"),
+            makeCmd("d", [.command, .alternate], #selector(handlePasteMetabolizedDialectic(_:)), "Metabolize as Dialectic Triad"),
+            makeCmd("r", [.command, .alternate], #selector(handleToggleRecitationCurtain(_:)), "Toggle Recall Recitation Curtain"),
             makeCmd("s", .command, #selector(handleSaveNotes(_:)), "Save Notes")
         ]
         let notebookMenu = UIMenu(title: "Study Notebook", children: notebookCommands)
@@ -149,6 +153,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     @objc func handleToggleStudyNotebook(_ sender: Any?) { NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil) }
     @objc func handleStampPageLink(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.stampPageLink"), object: nil) }
     @objc func handlePasteQuoteToNotebook(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.pasteQuoteToNotebook"), object: nil) }
+    @objc func handlePasteMetabolizedDialectic(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.pasteMetabolizedDialectic"), object: nil) }
+    @objc func handleToggleRecitationCurtain(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.toggleRecitationCurtain"), object: nil) }
     @objc func handleSaveNotes(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.saveNotes"), object: nil) }
     @objc func handleShowShortcutsSheet(_ sender: Any?) { NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.showShortcutsSheet"), object: nil) }
 }
@@ -208,6 +214,9 @@ struct InksyncProApp: App {
                 task.setTaskCompleted(success: false)
             }
         }
+        
+        // Dynamically register installed custom fonts
+        CustomFontManager.shared.registerInstalledFonts()
     }
     
     @AppStorage("selectedTheme") private var selectedTheme: AppearanceMode = .system
@@ -424,6 +433,16 @@ struct InksyncProApp: App {
                     NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.pasteQuoteToNotebook"), object: nil)
                 }
                 .keyboardShortcut("v", modifiers: [.command, .option])
+
+                Button("Metabolize as Dialectic Triad") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.pasteMetabolizedDialectic"), object: nil)
+                }
+                .keyboardShortcut("d", modifiers: [.command, .option])
+
+                Button("Toggle Recall Recitation Curtain") {
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.toggleRecitationCurtain"), object: nil)
+                }
+                .keyboardShortcut("r", modifiers: [.command, .option])
 
                 Button("Save Notes") {
                     NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.saveNotes"), object: nil)

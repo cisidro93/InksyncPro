@@ -149,25 +149,60 @@ public struct EPUBContextMenuBridge: View {
             }
             .buttonStyle(.plain)
             
-            // Quote into Notebook (Split-View Active Learning)
-            Button {
-                HapticEngine.medium()
-                UIPasteboard.general.string = selectedText
-                NotificationCenter.default.post(
-                    name: .quoteInNotebook,
-                    object: nil,
-                    userInfo: [
-                        "text": selectedText
-                    ]
-                )
-                NotificationCenter.default.post(name: .openStudyNotebook, object: nil)
-                onDismiss()
+            // Quote into Notebook (Split-View Active Learning & Dialectic)
+            Menu {
+                Button {
+                    HapticEngine.medium()
+                    UIPasteboard.general.string = selectedText
+                    NotificationCenter.default.post(
+                        name: .quoteInNotebook,
+                        object: nil,
+                        userInfo: [
+                            "text": selectedText,
+                            "isDialectic": false
+                        ]
+                    )
+                    NotificationCenter.default.post(name: .openStudyNotebook, object: nil)
+                    onDismiss()
+                } label: {
+                    Label("Quote in Notebook", systemImage: "quote.opening")
+                }
+
+                Button {
+                    HapticEngine.medium()
+                    UIPasteboard.general.string = selectedText
+                    NotificationCenter.default.post(
+                        name: .quoteInNotebook,
+                        object: nil,
+                        userInfo: [
+                            "text": selectedText,
+                            "isDialectic": true
+                        ]
+                    )
+                    NotificationCenter.default.post(name: .openStudyNotebook, object: nil)
+                    onDismiss()
+                } label: {
+                    Label("Metabolize as Dialectic Triad (⌥⌘D)", systemImage: "scale.3d")
+                }
             } label: {
                 Image(systemName: "quote.opening")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundColor(.inkOrange)
                     .padding(6)
                     .background(Color.inkOrange.opacity(0.12), in: Circle())
+            } primaryAction: {
+                HapticEngine.medium()
+                UIPasteboard.general.string = selectedText
+                NotificationCenter.default.post(
+                    name: .quoteInNotebook,
+                    object: nil,
+                    userInfo: [
+                        "text": selectedText,
+                        "isDialectic": false
+                    ]
+                )
+                NotificationCenter.default.post(name: .openStudyNotebook, object: nil)
+                onDismiss()
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Quote in Notebook")

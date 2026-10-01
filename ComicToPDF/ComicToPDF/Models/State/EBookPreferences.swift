@@ -21,8 +21,34 @@ class EBookPreferences: ObservableObject {
         }
         set {
             UserDefaults.standard.set(newValue, forKey: "ebook_theme")
-            objectWillChange.send()
+            notifyTypographyChanged()
         }
+    }
+
+    func notifyTypographyChanged() {
+        objectWillChange.send()
+        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ebookPreferencesChanged"), object: nil)
+    }
+
+    var currentTypographySnapshot: TypographyStateSnapshot {
+        TypographyStateSnapshot(
+            fontFamily: fontFamily,
+            fontSize: fontSize,
+            lineHeight: lineHeight,
+            letterSpacing: letterSpacing,
+            wordSpacing: wordSpacing,
+            textAlign: textAlign,
+            textMargin: textMargin,
+            paragraphSpacing: paragraphSpacing,
+            paragraphIndent: paragraphIndent,
+            hyphenation: hyphenation,
+            isBoldTextEnabled: isBoldTextEnabled,
+            activeThemeID: activeTheme.id,
+            customThemeBg: customThemeBg,
+            customThemeText: customThemeText,
+            columnCount: columnCount,
+            autoLandscapeDualPage: autoLandscapeDualPage
+        )
     }
 
     // Per-book theme memory: [bookID: themeRaw]
@@ -31,45 +57,45 @@ class EBookPreferences: ObservableObject {
         get { (try? JSONDecoder().decode([String: String].self, from: bookThemesData)) ?? [:] }
         set {
             bookThemesData = (try? JSONEncoder().encode(newValue)) ?? Data()
-            objectWillChange.send()
+            notifyTypographyChanged()
         }
     }
 
     // Custom theme slot
     @AppStorage("ebook_customThemeBg")   var customThemeBg: String   = "#FFFFFF" {
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     @AppStorage("ebook_customThemeText") var customThemeText: String  = "#1A1A1A" {
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
 
     // MARK: - Typography
     @AppStorage("ebook_fontFamily")     var fontFamily: String  = EBookFontFamily.newYork.rawValue {
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     @AppStorage("ebook_isBionicReadingEnabled") var isBionicReadingEnabled: Bool = false {
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     @AppStorage("ebook_fontSize")       var fontSize: Double    = 18 {
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     @AppStorage("ebook_lineHeight")     var lineHeight: Double  = 1.6 {
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     @AppStorage("ebook_letterSpacing")  var letterSpacing: Double = 0.0 { // em
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     @AppStorage("ebook_wordSpacing")    var wordSpacing: Double   = 0.0 { // em
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     @AppStorage("ebook_textAlign")      var textAlign: String   = EBookTextAlign.justify.rawValue {
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     @AppStorage("ebook_hyphenation")    var hyphenation: Bool   = true {
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     @AppStorage("ebook_isBoldTextEnabled") var isBoldTextEnabled: Bool = false {
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     
     // MARK: - Smart Splash-Spread Splitting (P4)
@@ -91,27 +117,27 @@ class EBookPreferences: ObservableObject {
         get { (try? JSONDecoder().decode([String: BookTypographyProfile].self, from: bookTypographyData)) ?? [:] }
         set {
             bookTypographyData = (try? JSONEncoder().encode(newValue)) ?? Data()
-            objectWillChange.send()
+            notifyTypographyChanged()
         }
     }
 
     // MARK: - Layout
     @AppStorage("ebook_textMargin")     var textMargin: Double      = 24 {
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     @AppStorage("ebook_paraIndent")     var paragraphIndent: Double = 1.2 { // em
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     @AppStorage("ebook_paraSpacing")    var paragraphSpacing: Double = 0.5 { // em
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
 
     // MARK: - Reading Mode
     @AppStorage("ebook_pagination")     var paginationMode: String = EBookPaginationMode.paged.rawValue {
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
     @AppStorage("ebook_columns")        var columnCount: Int       = 0 { // 0 = Auto, 1 = Single, 2 = Double
-        didSet { objectWillChange.send() }
+        didSet { notifyTypographyChanged() }
     }
 
     // MARK: - Reader Features
@@ -728,6 +754,26 @@ class EBookPreferences: ObservableObject {
         get { PDFHighlightColor(rawValue: defaultHighlightColorRaw) ?? .yellow }
         set { defaultHighlightColorRaw = newValue.rawValue }
     }
+}
+
+// MARK: - Typography State Snapshot
+struct TypographyStateSnapshot: Equatable, Sendable {
+    let fontFamily: String
+    let fontSize: Double
+    let lineHeight: Double
+    let letterSpacing: Double
+    let wordSpacing: Double
+    let textAlign: String
+    let textMargin: Double
+    let paragraphSpacing: Double
+    let paragraphIndent: Double
+    let hyphenation: Bool
+    let isBoldTextEnabled: Bool
+    let activeThemeID: String
+    let customThemeBg: String
+    let customThemeText: String
+    let columnCount: Int
+    let autoLandscapeDualPage: Bool
 }
 
 // MARK: - Per-Book Typography Profile

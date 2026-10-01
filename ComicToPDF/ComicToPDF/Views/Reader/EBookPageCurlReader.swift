@@ -231,24 +231,9 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
         if context.coordinator.isTransitioning { return }
 
         // If typography / theme preferences changed, update live styles in WKWebView
-        if oldParent.prefs.fontSize != self.prefs.fontSize ||
-           oldParent.prefs.fontFamily != self.prefs.fontFamily ||
-           oldParent.prefs.activeTheme.id != self.prefs.activeTheme.id ||
-           oldParent.prefs.customThemeBg != self.prefs.customThemeBg ||
-           oldParent.prefs.customThemeText != self.prefs.customThemeText ||
-           oldParent.prefs.readingFilter != self.prefs.readingFilter ||
-           oldParent.prefs.lineHeight != self.prefs.lineHeight ||
-           oldParent.prefs.letterSpacing != self.prefs.letterSpacing ||
-           oldParent.prefs.wordSpacing != self.prefs.wordSpacing ||
-           oldParent.prefs.textAlign != self.prefs.textAlign ||
-           oldParent.prefs.textMargin != self.prefs.textMargin ||
-           oldParent.prefs.paragraphSpacing != self.prefs.paragraphSpacing ||
-           oldParent.prefs.paragraphIndent != self.prefs.paragraphIndent ||
-           oldParent.prefs.hyphenation != self.prefs.hyphenation ||
-           oldParent.prefs.isBoldTextEnabled != self.prefs.isBoldTextEnabled ||
-           oldParent.prefs.columnCount != self.prefs.columnCount ||
-           oldParent.prefs.autoLandscapeDualPage != self.prefs.autoLandscapeDualPage ||
-           oldParent.prefs.fullBleedSpreads != self.prefs.fullBleedSpreads {
+        let currentSnapshot = self.prefs.currentTypographySnapshot
+        if context.coordinator.lastAppliedSnapshot != currentSnapshot {
+            context.coordinator.lastAppliedSnapshot = currentSnapshot
             context.coordinator.updateLiveStyles()
         }
 
@@ -323,6 +308,7 @@ extension EBookPageCurlReader {
         }
         private var transitionWatchdogTask: Task<Void, Never>? = nil
         var lastCompletedControllerIndex: Int? = nil
+        var lastAppliedSnapshot: TypographyStateSnapshot? = nil
 
         // Chapter & Primary WebEngine state
         private var chapterHTML: String = ""
@@ -349,6 +335,7 @@ extension EBookPageCurlReader {
 
         init(_ parent: EBookPageCurlReader) {
             self.parent = parent
+            self.lastAppliedSnapshot = parent.prefs.currentTypographySnapshot
             super.init()
             setupPrimaryWebView()
 
@@ -493,6 +480,36 @@ extension EBookPageCurlReader {
                 }
             }
             observerTokens.append(bgToken)
+
+            // Live Typography & Theme Observation: Instantly recompute CSS and render live styles
+            let typoToken = NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("InksyncPro.ebookPreferencesChanged"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self = self else { return }
+                    let current = self.parent.prefs.currentTypographySnapshot
+                    if self.lastAppliedSnapshot != current {
+                        self.lastAppliedSnapshot = current
+                        self.updateLiveStyles()
+                    }
+                }
+            }
+            observerTokens.append(typoToken)
+
+            // Dynamic Custom Fonts Observation: Re-inject CSS @font-face rules when fonts are imported/removed
+            let customFontToken = NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("InksyncPro.customFontsChanged"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self = self else { return }
+                    self.updateLiveStyles()
+                }
+            }
+            observerTokens.append(customFontToken)
         }
 
         /// Prunes snapshot cache to a strict sliding window of (centerIndex ± maxSnapshotDistance)
@@ -1744,6 +1761,7 @@ extension EBookPageCurlReader {
 
         func updateLiveStyles() {
             guard let wv = primaryWebView else { return }
+            lastAppliedSnapshot = parent.prefs.currentTypographySnapshot
             let frac = computedTotalPages > 1 ? Double(currentPageIndex) / Double(computedTotalPages - 1) : 0.0
             let size = containerSize
             let newCSS = computeCSS(prefs: parent.prefs, size: size)
@@ -1760,7 +1778,12 @@ extension EBookPageCurlReader {
                 var currentFrac = \(frac);
                 _isMultiCol = \(isMultiCol ? "true" : "false");
                 var el = document.getElementById('__inksync_live__');
-                if (el) { el.innerHTML = `\(safeCSS)`; }
+                if (!el) {
+                    el = document.createElement('style');
+                    el.id = '__inksync_live__';
+                    document.head.appendChild(el);
+                }
+                el.innerHTML = `\(safeCSS)`;
                 if (window.updateAllInksyncHighlights) {
                     window.updateAllInksyncHighlights(\(isDark ? "true" : "false"), '\(themeBg)', '\(themeText)');
                 }
@@ -1779,8 +1802,19 @@ extension EBookPageCurlReader {
             })();
             """
             wv.evaluateJavaScript(js)
+            let newBg = UIColor(hex: parent.prefs.activeTheme.cssBackground) ?? .black
             if let pvc = pageViewController, let view = pvc.view {
-                view.backgroundColor = UIColor(hex: parent.prefs.activeTheme.cssBackground) ?? .black
+                view.backgroundColor = newBg
+                for child in pvc.children {
+                    if let pageVC = child as? EBookPageContentViewController {
+                        pageVC.updateTheme(bgColor: newBg)
+                    }
+                }
+                if let activeVCs = pvc.viewControllers as? [EBookPageContentViewController] {
+                    for vc in activeVCs {
+                        vc.updateTheme(bgColor: newBg)
+                    }
+                }
             }
             pageSnapshots.removeAll()
             takePageSnapshot(for: currentPageIndex)
@@ -2174,6 +2208,7 @@ extension EBookPageCurlReader {
             let paddingBottom = isPhone ? (safeArea.bottom + 20.0) : (safeBottom + max(48.0, prefs.textMarginBottom + 20.0))
 
             return """
+            \(CustomFontManager.shared.generateCSSRules())
             @font-face { font-family: 'Literata'; src: local('Literata-Regular'); font-weight: normal; font-style: normal; }
             @font-face { font-family: 'Literata'; src: local('Literata-Bold'); font-weight: bold; font-style: normal; }
             @font-face { font-family: 'Literata'; src: local('Literata-Italic'); font-weight: normal; font-style: italic; }
@@ -3152,6 +3187,11 @@ class EBookPageContentViewController: UIViewController {
         self.snapshot = image
         self.imageView?.image = image
         let bgColor = UIColor(hex: EBookPreferences.shared.activeTheme.cssBackground) ?? .black
+        self.view.backgroundColor = bgColor
+        self.imageView?.backgroundColor = bgColor
+    }
+
+    func updateTheme(bgColor: UIColor) {
         self.view.backgroundColor = bgColor
         self.imageView?.backgroundColor = bgColor
     }

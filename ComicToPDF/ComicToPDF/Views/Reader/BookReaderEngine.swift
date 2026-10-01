@@ -613,6 +613,7 @@ struct EPUBWebView: View {
         let paddingRight = m
 
         return """
+        \(CustomFontManager.shared.generateCSSRules())
         @font-face {
             font-family: 'Literata';
             src: local('Literata-Regular');

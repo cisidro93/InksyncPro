@@ -145,6 +145,18 @@ struct ReaderKeyboardShortcuts: ViewModifier {
                     }
                     .keyboardShortcut("v", modifiers: [.command, .option])
 
+                    // Metabolize Quote as Dialectic Triad (⌥⌘D)
+                    Button("") {
+                        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.pasteMetabolizedDialectic"), object: nil)
+                    }
+                    .keyboardShortcut("d", modifiers: [.command, .option])
+
+                    // Toggle Active Recall Recitation Curtain (⌥⌘R)
+                    Button("") {
+                        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.toggleRecitationCurtain"), object: nil)
+                    }
+                    .keyboardShortcut("r", modifiers: [.command, .option])
+
                     // Table of Contents / Sidebar / Save Notes
                     if isTextEditingActive {
                         // When text editing in Notebook, ⌘S flushes save

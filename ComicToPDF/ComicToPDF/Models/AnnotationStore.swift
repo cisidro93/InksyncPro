@@ -846,28 +846,40 @@ enum PARACategory: String, CaseIterable, Identifiable {
 }
 
 enum MarginaliaSymbol: String, CaseIterable, Identifiable {
-    case question = "question"
-    case insight  = "insight"
-    case favorite = "favorite"
-    case anchor   = "anchor"
+    case thesis     = "thesis"
+    case premise    = "premise"
+    case objection  = "objection"
+    case definition = "definition"
+    case question   = "question"
+    case insight    = "insight"
+    case favorite   = "favorite"
+    case anchor     = "anchor"
     
     var id: String { rawValue }
     
     var symbolString: String {
         switch self {
-        case .question: return "❓"
-        case .insight:  return "❗"
-        case .favorite: return "★"
-        case .anchor:   return "📍"
+        case .thesis:     return "💡"
+        case .premise:    return "⚖️"
+        case .objection:  return "⚡"
+        case .definition: return "📖"
+        case .question:   return "❓"
+        case .insight:    return "❗"
+        case .favorite:   return "★"
+        case .anchor:     return "📍"
         }
     }
     
     var displayName: String {
         switch self {
-        case .question: return "Question"
-        case .insight:  return "Crucial Insight"
-        case .favorite: return "Favorite Panel"
-        case .anchor:   return "Page Anchor"
+        case .thesis:     return "Thesis / Core Claim"
+        case .premise:    return "Supporting Premise"
+        case .objection:  return "Objection / Counter-Argument"
+        case .definition: return "Definition / Distinction"
+        case .question:   return "Question"
+        case .insight:    return "Crucial Insight"
+        case .favorite:   return "Favorite Passage"
+        case .anchor:     return "Page Anchor"
         }
     }
 }

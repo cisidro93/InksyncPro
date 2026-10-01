@@ -57,6 +57,8 @@ struct KeyboardShortcutsCheatSheetView: View {
                             ("Toggle Study Notebook", ["⌘ N"]),
                             ("Stamp Current Page Link", ["⌘ P"]),
                             ("Paste Formatted Book Quote", ["⌥ ⌘ V"]),
+                            ("Metabolize as Dialectic Triad", ["⌥ ⌘ D"]),
+                            ("Toggle Recall Curtain", ["⌥ ⌘ R"]),
                             ("Save Notes to Storage", ["⌘ S"]),
                             ("Dictate / Voice Note", ["⌘ D"])
                         ]

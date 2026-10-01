@@ -74,6 +74,8 @@ struct ReflowTextView: UIViewRepresentable {
             case .sfMono:
                 uiFont = UIFont.monospacedSystemFont(ofSize: fontSize, weight: fontWeight)
             }
+        } else if let customFont = CustomFontManager.shared.installedFonts.first(where: { prefs.fontFamily.contains($0.postScriptName) || prefs.fontFamily.contains($0.familyName) }) {
+            uiFont = UIFont(name: customFont.postScriptName, size: fontSize) ?? .systemFont(ofSize: fontSize, weight: fontWeight)
         }
         
         let paragraphStyle = NSMutableParagraphStyle()

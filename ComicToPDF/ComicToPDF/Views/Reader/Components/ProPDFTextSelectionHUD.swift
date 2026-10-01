@@ -144,11 +144,12 @@ struct ProPDFTextSelectionHUD: View {
     @State private var activeColor: PDFHighlightColor = EBookPreferences.shared.defaultHighlightColor
 
     private let marginaliaSymbols = [
-        (symbol: "?", label: "Question / Needs Clarification", shortLabel: "Question"),
-        (symbol: "!", label: "Important / Key Insight", shortLabel: "Important"),
-        (symbol: "★", label: "Core Thesis / Main Argument", shortLabel: "Core Thesis"),
-        (symbol: "≠", label: "Counter-Argument / Disagreement", shortLabel: "Counter-Argument"),
-        (symbol: "Δ", label: "Shift in Logic / Topic Change", shortLabel: "Logic Shift")
+        (symbol: "💡", label: "Thesis / Core Claim", shortLabel: "Thesis"),
+        (symbol: "⚖️", label: "Supporting Premise", shortLabel: "Premise"),
+        (symbol: "⚡", label: "Objection / Counter-Argument", shortLabel: "Objection"),
+        (symbol: "📖", label: "Definition / Distinction", shortLabel: "Definition"),
+        (symbol: "★", label: "Key Insight / Crucial Idea", shortLabel: "Insight"),
+        (symbol: "?", label: "Question / Needs Clarification", shortLabel: "Question")
     ]
 
     var body: some View {
@@ -246,8 +247,52 @@ struct ProPDFTextSelectionHUD: View {
                     .accessibilityLabel("Copy")
                     .help("Copy text")
 
-                    // Quote into Notebook (Split-View & Active Learning)
-                    Button {
+                    // Quote into Notebook (Split-View & Dialectical Inquiry)
+                    Menu {
+                        Button {
+                            HapticEngine.medium()
+                            UIPasteboard.general.string = selectedText
+                            if let onQuoteInNotebook = onQuoteInNotebook {
+                                onQuoteInNotebook(selectedText)
+                            } else {
+                                NotificationCenter.default.post(
+                                    name: .quoteInNotebook,
+                                    object: nil,
+                                    userInfo: [
+                                        "text": selectedText,
+                                        "pageIndex": pageIndex,
+                                        "isDialectic": false
+                                    ]
+                                )
+                                NotificationCenter.default.post(name: .openStudyNotebook, object: nil)
+                            }
+                        } label: {
+                            Label("Quote in Notebook", systemImage: "quote.opening")
+                        }
+
+                        Button {
+                            HapticEngine.medium()
+                            UIPasteboard.general.string = selectedText
+                            NotificationCenter.default.post(
+                                name: .quoteInNotebook,
+                                object: nil,
+                                userInfo: [
+                                    "text": selectedText,
+                                    "pageIndex": pageIndex,
+                                    "isDialectic": true
+                                ]
+                            )
+                            NotificationCenter.default.post(name: .openStudyNotebook, object: nil)
+                        } label: {
+                            Label("Metabolize as Dialectic Triad (⌥⌘D)", systemImage: "scale.3d")
+                        }
+                    } label: {
+                        Image(systemName: "quote.opening")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    } primaryAction: {
                         HapticEngine.medium()
                         UIPasteboard.general.string = selectedText
                         if let onQuoteInNotebook = onQuoteInNotebook {
@@ -258,21 +303,16 @@ struct ProPDFTextSelectionHUD: View {
                                 object: nil,
                                 userInfo: [
                                     "text": selectedText,
-                                    "pageIndex": pageIndex
+                                    "pageIndex": pageIndex,
+                                    "isDialectic": false
                                 ]
                             )
                             NotificationCenter.default.post(name: .openStudyNotebook, object: nil)
                         }
-                    } label: {
-                        Image(systemName: "quote.opening")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(Color.white)
-                            .frame(width: 32, height: 32)
-                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Quote in Notebook")
-                    .help("Add Quote to Study Notebook")
+                    .help("Add Quote to Study Notebook (Hold for Dialectic Triad)")
 
                     // Define (Dictionary & Vocabulary Auto-Save)
                     Button {

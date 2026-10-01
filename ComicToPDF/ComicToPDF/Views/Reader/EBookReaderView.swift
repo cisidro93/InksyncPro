@@ -2511,6 +2511,7 @@ struct EBookWebReader: View {
         let bottomPadding: CGFloat = isPhone ? 32.0 : 64.0
 
         return """
+        \(CustomFontManager.shared.generateCSSRules())
         @font-face {
             font-family: 'Literata';
             src: local('Literata-Regular');
