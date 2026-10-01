@@ -592,7 +592,7 @@ struct ModernLibraryView: View {
                 destinationSheet(for: item)
                     .forceProMotion()
             }
-            .onChange(of: router.activeFullScreen) { _, (newVal: LibraryFullScreenDestination?) in
+            .onChange(of: router.activeFullScreen) { _, newVal in
                 if newVal == nil {
                     isLibraryFocused = true
                 }
