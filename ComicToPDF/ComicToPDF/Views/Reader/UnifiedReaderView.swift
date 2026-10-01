@@ -719,12 +719,12 @@ private struct UnifiedReaderKeyboardModifier: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.toggleDualPage"))) { _ in
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    prefs.isDoublePageMode.toggle()
+                    prefs.pdfDualPage.toggle()
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.toggleSmartCrop"))) { _ in
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    prefs.isAutoCropEnabled.toggle()
+                    prefs.isSmartCropEnabled.toggle()
                 }
             }
     }

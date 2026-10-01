@@ -1960,10 +1960,10 @@ private struct LibraryKeyboardShortcutsModifier: ViewModifier {
                         viewModel.filterState = .all
                     case "comics":
                         viewModel.contentShelf = .comics
-                        viewModel.filterState = .comics
+                        viewModel.filterState = .all
                     case "books":
                         viewModel.contentShelf = .books
-                        viewModel.filterState = .books
+                        viewModel.filterState = .all
                     case "onDrive":
                         viewModel.contentShelf = .all
                         viewModel.filterState = .onDrive
