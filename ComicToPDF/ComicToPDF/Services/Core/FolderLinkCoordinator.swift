@@ -89,42 +89,66 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         }
         Logger.shared.log("FolderLinkCoordinator: user picked \(urls.count) item(s): \(urls.map { $0.lastPathComponent }.joined(separator: ", "))", category: "FolderLink", type: .success)
         
-        var results: [(url: URL, bookmark: Data)] = []
-        for url in urls {
+        // Fast path for 1 item (typically a folder URL or single file)
+        if urls.count == 1, let url = urls.first {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
-            var bookmarkData: Data? = nil
-            // Primary attempt: standard options with no restricted iCloud keys
-            do {
-                bookmarkData = try url.bookmarkData(
-                    options: [],
-                    includingResourceValuesForKeys: nil,
-                    relativeTo: nil
-                )
-            } catch {
-                Logger.shared.log("FolderLinkCoordinator: Standard bookmark failed for \(url.lastPathComponent): \(error.localizedDescription) — trying .minimalBookmark", category: "FolderLink", type: .warning)
-                // Fallback attempt 1: minimal bookmark
+            var bookmarkData: Data? = try? url.bookmarkData(
+                options: [],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            if bookmarkData == nil {
                 bookmarkData = try? url.bookmarkData(
                     options: .minimalBookmark,
                     includingResourceValuesForKeys: nil,
                     relativeTo: nil
                 )
             }
-
-            // Fallback attempt 2: Secure archived URL fallback (guarantees third-party File providers never drop selected items)
             if bookmarkData == nil {
                 bookmarkData = try? NSKeyedArchiver.archivedData(withRootObject: url, requiringSecureCoding: true)
             }
-
             if let bookmarkData {
-                results.append((url, bookmarkData))
+                finish(with: [(url, bookmarkData)])
             } else {
-                Logger.shared.log("FolderLinkCoordinator: Failed to create bookmark for \(url.lastPathComponent)", category: "FolderLink", type: .error)
+                finish(with: [])
+            }
+            return
+        }
+
+        // Multi-item path: offload bookmark creation off @MainActor so UIKit dismisses picker sheet immediately
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var results: [(url: URL, bookmark: Data)] = []
+            results.reserveCapacity(urls.count)
+            for (index, url) in urls.enumerated() {
+                if index % 25 == 0 { await Task.yield() }
+                let accessing = url.startAccessingSecurityScopedResource()
+                var bookmarkData: Data? = try? url.bookmarkData(
+                    options: [],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+                if bookmarkData == nil {
+                    bookmarkData = try? url.bookmarkData(
+                        options: .minimalBookmark,
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    )
+                }
+                if bookmarkData == nil {
+                    bookmarkData = try? NSKeyedArchiver.archivedData(withRootObject: url, requiringSecureCoding: true)
+                }
+                if accessing { url.stopAccessingSecurityScopedResource() }
+
+                if let bookmarkData {
+                    results.append((url, bookmarkData))
+                }
+            }
+            await MainActor.run {
+                self?.finish(with: results)
             }
         }
-        
-        self.finish(with: results)
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {

@@ -84,11 +84,11 @@ final class LinkedLibraryScanner: ObservableObject {
             defer { if accessingDetached { resolvedURL.stopAccessingSecurityScopedResource() } }
 
             let fm = FileManager.default
-            let keys: [URLResourceKey] = [.isDirectoryKey]
+            let keys: [URLResourceKey] = [.isDirectoryKey, .isPackageKey]
             guard let enumerator = fm.enumerator(
                 at: resolvedURL,
                 includingPropertiesForKeys: keys,
-                options: [.skipsHiddenFiles]
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
             ) else { return [] }
 
             var collected: [URL] = []
@@ -127,7 +127,9 @@ final class LinkedLibraryScanner: ObservableObject {
         DriveMonitor.shared.startMonitoring(drives: AppSettingsManager.shared.linkedDrives)
 
         if let manager = conversionManager {
-            Task { await ThumbnailDaemon.shared.startCrawling(pdfs: manager.convertedPDFs) }
+            if files.count <= 100 {
+                Task { await ThumbnailDaemon.shared.startCrawling(pdfs: manager.convertedPDFs) }
+            }
         }
 
         scanStatus = ""
@@ -144,61 +146,52 @@ final class LinkedLibraryScanner: ObservableObject {
         scanStatus = "Linking \(pickedFiles.count) file\(pickedFiles.count == 1 ? "" : "s")…"
         let existingPaths = Set(manager.convertedPDFs.filter { $0.isLinked }.map { $0.url.path })
 
-        var newPDFs: [ConvertedPDF] = []
-        for item in pickedFiles {
-            let fileURL = item.url
-            let bookmark = item.bookmark
+        let newPDFs = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
+            var tempPDFs: [ConvertedPDF] = []
+            for item in pickedFiles {
+                let fileURL = item.url
+                let bookmark = item.bookmark
 
-            let accessing = fileURL.startAccessingSecurityScopedResource()
-            defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
+                let accessing = fileURL.startAccessingSecurityScopedResource()
+                defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
 
-            if existingPaths.contains(fileURL.path) { continue }
+                if existingPaths.contains(fileURL.path) { continue }
 
-            let fileAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-            let fileSize = (fileAttrs?[.size] as? Int64) ?? 0
+                let fileAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+                let fileSize = (fileAttrs?[.size] as? Int64) ?? 0
 
-            let stem = fileURL.deletingPathExtension().lastPathComponent
-            let parsedTokens = DeterministicFilenameParser.parse(filename: fileURL.lastPathComponent)
-            let parentFolder = fileURL.deletingLastPathComponent().lastPathComponent
+                let stem = fileURL.deletingPathExtension().lastPathComponent
+                let parsedTokens = DeterministicFilenameParser.parse(filename: fileURL.lastPathComponent)
+                let parentFolder = fileURL.deletingLastPathComponent().lastPathComponent
 
-            var metadata = PDFMetadata(title: parsedTokens.title ?? stem)
+                var metadata = PDFMetadata(title: parsedTokens.title ?? stem)
+                if pickedFiles.count <= 15, let parsed = ComicInfoParser.parse(from: fileURL) {
+                    metadata.title = parsed.title ?? stem
+                    metadata.series = parsed.series ?? (parsedTokens.seriesName.isEmpty ? parentFolder : parsedTokens.seriesName)
+                    metadata.issueNumber = parsed.number ?? parsedTokens.issueNumber
+                    metadata.volume = parsed.volume.map { String($0) } ?? parsedTokens.volume
+                    metadata.publisher = parsed.publisher
+                    metadata.summary = parsed.summary
+                    metadata.writer = parsed.writer
+                    metadata.isManga = parsed.manga ? true : nil
+                } else {
+                    metadata.series = parsedTokens.seriesName.isEmpty ? parentFolder : parsedTokens.seriesName
+                    metadata.volume = parsedTokens.volume
+                    metadata.issueNumber = parsedTokens.issueNumber
+                }
 
-            let parsedComicInfo: ComicInfoParser.ComicInfo?
-            if fileSize > 300_000_000 {
-                parsedComicInfo = await Task.detached(priority: .userInitiated) { [fileURL] in
-                    let detAccess = fileURL.startAccessingSecurityScopedResource()
-                    defer { if detAccess { fileURL.stopAccessingSecurityScopedResource() } }
-                    return ComicInfoParser.parse(from: fileURL)
-                }.value
-            } else {
-                parsedComicInfo = ComicInfoParser.parse(from: fileURL)
+                var pdf = ConvertedPDF(
+                    name: stem,
+                    url: fileURL,
+                    pageCount: 0,
+                    fileSize: fileSize,
+                    metadata: metadata
+                )
+                pdf.sourceMode = .linked(bookmarkData: bookmark)
+                tempPDFs.append(pdf)
             }
-
-            if let parsed = parsedComicInfo {
-                metadata.title = parsed.title ?? stem
-                metadata.series = parsed.series ?? (parsedTokens.seriesName.isEmpty ? parentFolder : parsedTokens.seriesName)
-                metadata.issueNumber = parsed.number ?? parsedTokens.issueNumber
-                metadata.volume = parsed.volume.map { String($0) } ?? parsedTokens.volume
-                metadata.publisher = parsed.publisher
-                metadata.summary = parsed.summary
-                metadata.writer = parsed.writer
-                metadata.isManga = parsed.manga ? true : nil
-            } else {
-                metadata.series = parsedTokens.seriesName.isEmpty ? parentFolder : parsedTokens.seriesName
-                metadata.volume = parsedTokens.volume
-                metadata.issueNumber = parsedTokens.issueNumber
-            }
-
-            var pdf = ConvertedPDF(
-                name: stem,
-                url: fileURL,
-                pageCount: 0,
-                fileSize: fileSize,
-                metadata: metadata
-            )
-            pdf.sourceMode = .linked(bookmarkData: bookmark)
-            newPDFs.append(pdf)
-        }
+            return tempPDFs
+        }.value
 
         guard !newPDFs.isEmpty else {
             scanStatus = ""
@@ -217,7 +210,27 @@ final class LinkedLibraryScanner: ObservableObject {
         LibraryService.shared.saveLibrary(isStructural: true)
         NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
 
-        Task { await ThumbnailDaemon.shared.startCrawling(pdfs: manager.convertedPDFs) }
+        // If files are from an external drive, ensure a linked drive entry exists so DriveMonitor monitors it
+        if let firstItem = pickedFiles.first {
+            let parentDir = firstItem.url.deletingLastPathComponent()
+            let driveName = parentDir.lastPathComponent.isEmpty ? "External Drive" : parentDir.lastPathComponent
+            if !AppSettingsManager.shared.linkedDrives.contains(where: { $0.displayName == driveName }) {
+                let entry = AppSettingsManager.LinkedDriveEntry(
+                    displayName: driveName,
+                    volumeBookmarkData: firstItem.bookmark,
+                    lastSeenDate: Date(),
+                    lastSyncedDate: Date(),
+                    fileCount: newPDFs.count,
+                    isReadOnly: false
+                )
+                AppSettingsManager.shared.addLinkedDrive(entry)
+                DriveMonitor.shared.startMonitoring(drives: AppSettingsManager.shared.linkedDrives)
+            }
+        }
+
+        if newPDFs.count <= 100 {
+            Task { await ThumbnailDaemon.shared.startCrawling(pdfs: manager.convertedPDFs) }
+        }
         scanStatus = ""
         Logger.shared.log("LinkedLibraryScanner: Directly linked \(newPDFs.count) individual comic/book files", category: "Drive", type: .success)
         return newPDFs.count
@@ -599,96 +612,96 @@ final class LinkedLibraryScanner: ObservableObject {
         // Fetch existing paths on MainActor to avoid data races
         let existingPaths = Set(manager.convertedPDFs.filter { $0.isLinked }.map { $0.url.path })
 
-        // Process files on a userInitiated detached background task
-        var newPDFs = await Task.detached(priority: .userInitiated) { [rootURL] () -> [ConvertedPDF] in
-            let accessing = rootURL.startAccessingSecurityScopedResource()
-            defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
-            
-            var tempPDFs: [ConvertedPDF] = []
-            for fileURL in files {
-                // Deduplicate check
-                if existingPaths.contains(fileURL.path) { continue }
+        let chunkSize = 50
+        let total = files.count
+        var allNewPDFs: [ConvertedPDF] = []
+        allNewPDFs.reserveCapacity(min(total, 500))
 
-                let fileAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-                let fileSize = (fileAttrs?[.size] as? Int64) ?? 0
+        for chunkStart in stride(from: 0, to: total, by: chunkSize) {
+            let chunkEnd = min(chunkStart + chunkSize, total)
+            let chunkFiles = Array(files[chunkStart..<chunkEnd])
 
-                // Per-file bookmarks: try standard options, then minimal bookmark, then fallback to drive's volume bookmark
-                var bookmark = try? fileURL.bookmarkData(
-                    options: [],
-                    includingResourceValuesForKeys: nil,
-                    relativeTo: nil
-                )
-                if bookmark == nil {
-                    bookmark = try? fileURL.bookmarkData(
-                        options: .minimalBookmark,
-                        includingResourceValuesForKeys: nil,
-                        relativeTo: nil
+            scanStatus = "Cataloging \(chunkStart) of \(total) files…"
+
+            let chunkPDFs = await Task.detached(priority: .userInitiated) { [rootURL, driveBookmark = driveEntry.volumeBookmarkData] () -> [ConvertedPDF] in
+                let accessing = rootURL.startAccessingSecurityScopedResource()
+                defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
+
+                var tempPDFs: [ConvertedPDF] = []
+                tempPDFs.reserveCapacity(chunkFiles.count)
+
+                for fileURL in chunkFiles {
+                    if existingPaths.contains(fileURL.path) { continue }
+
+                    let fileAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+                    let fileSize = (fileAttrs?[.size] as? Int64) ?? 0
+
+                    let stem = fileURL.deletingPathExtension().lastPathComponent
+                    let parsedTokens = DeterministicFilenameParser.parse(filename: fileURL.lastPathComponent)
+
+                    let parentFolderName = fileURL.deletingLastPathComponent().lastPathComponent
+                    let fallbackSeriesName = (parentFolderName != rootURL.lastPathComponent && !parentFolderName.isEmpty)
+                        ? parentFolderName
+                        : SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
+
+                    var metadata = PDFMetadata(title: parsedTokens.title ?? stem)
+                    // For small batches (<= 15 items), attempt rich ComicInfo parse if fast
+                    if total <= 15, let parsed = ComicInfoParser.parse(from: fileURL) {
+                        metadata.title = parsed.title ?? stem
+                        let candidateSeries = parsed.series ?? (parsedTokens.seriesName.isEmpty ? fallbackSeriesName : parsedTokens.seriesName)
+                        metadata.series = candidateSeries.isEmpty ? fallbackSeriesName : candidateSeries
+                        metadata.issueNumber = parsed.number ?? parsedTokens.issueNumber
+                        metadata.volume = parsed.volume.map { String($0) } ?? parsedTokens.volume
+                        metadata.publisher = parsed.publisher
+                        metadata.summary = parsed.summary
+                        metadata.writer = parsed.writer
+                        metadata.isManga = parsed.manga ? true : nil
+                    } else {
+                        metadata.series = parsedTokens.seriesName.isEmpty ? fallbackSeriesName : parsedTokens.seriesName
+                        metadata.volume = parsedTokens.volume
+                        metadata.issueNumber = parsedTokens.issueNumber
+                    }
+
+                    var pdf = ConvertedPDF(
+                        name: stem,
+                        url: fileURL,
+                        pageCount: 0,
+                        fileSize: fileSize,
+                        metadata: metadata
                     )
+                    // The volume bookmark grants access to all files in the linked directory
+                    pdf.sourceMode = .linked(bookmarkData: driveBookmark)
+                    tempPDFs.append(pdf)
                 }
-                if bookmark == nil {
-                    bookmark = driveEntry.volumeBookmarkData
+                return tempPDFs
+            }.value
+
+            if !chunkPDFs.isEmpty {
+                manager.convertedPDFs.append(contentsOf: chunkPDFs)
+                for pdf in chunkPDFs {
+                    if !LibraryService.shared.items.contains(where: { $0.id == pdf.id || $0.url.fastCanonicalPath == pdf.url.fastCanonicalPath }) {
+                        LibraryService.shared.items.append(pdf)
+                    }
                 }
-                guard let validBookmark = bookmark else { continue }
-
-                let stem = fileURL.deletingPathExtension().lastPathComponent
-                let parsedTokens = DeterministicFilenameParser.parse(filename: fileURL.lastPathComponent)
-
-                // Inherit parent subfolder name (e.g. "Marvel master order #8") if not root
-                let parentFolderName = fileURL.deletingLastPathComponent().lastPathComponent
-                let fallbackSeriesName = (parentFolderName != rootURL.lastPathComponent && !parentFolderName.isEmpty)
-                    ? parentFolderName
-                    : SeriesNameDetector.detect(from: fileURL.lastPathComponent).seriesName
-
-                var metadata = PDFMetadata(title: parsedTokens.title ?? stem)
-                if let parsed = ComicInfoParser.parse(from: fileURL) {
-                    metadata.title = parsed.title ?? stem
-                    let candidateSeries = parsed.series ?? (parsedTokens.seriesName.isEmpty ? fallbackSeriesName : parsedTokens.seriesName)
-                    metadata.series = candidateSeries.isEmpty ? fallbackSeriesName : candidateSeries
-                    metadata.issueNumber = parsed.number ?? parsedTokens.issueNumber
-                    metadata.volume = parsed.volume.map { String($0) } ?? parsedTokens.volume
-                    metadata.publisher = parsed.publisher
-                    metadata.summary = parsed.summary
-                    metadata.writer = parsed.writer
-                    metadata.penciller = parsed.penciller
-                    metadata.inker = parsed.inker
-                    metadata.colorist = parsed.colorist
-                    metadata.letterer = parsed.letterer
-                    metadata.coverArtist = parsed.coverArtist
-                    metadata.editor = parsed.editor
-                    metadata.characters = parsed.characters
-                    metadata.genre = parsed.genre
-                    metadata.ageRating = parsed.ageRating
-                    metadata.web = parsed.web
-                    metadata.isManga = parsed.manga ? true : nil
-                    metadata.tags = parsed.tags
-                } else {
-                    metadata.series = parsedTokens.seriesName.isEmpty ? fallbackSeriesName : parsedTokens.seriesName
-                    metadata.volume = parsedTokens.volume
-                    metadata.issueNumber = parsedTokens.issueNumber
-                }
-
-                var pdf = ConvertedPDF(
-                    name: stem,
-                    url: fileURL,
-                    pageCount: 0,
-                    fileSize: fileSize,
-                    metadata: metadata
-                )
-                pdf.sourceMode = .linked(bookmarkData: validBookmark)
-                tempPDFs.append(pdf)
+                allNewPDFs.append(contentsOf: chunkPDFs)
             }
-            return tempPDFs
-        }.value
 
-        guard !newPDFs.isEmpty else { return }
+            await Task.yield()
+        }
 
-        // Fast Ingestion: Append all comics to library and persist immediately so UI updates instantly!
-        manager.convertedPDFs.append(contentsOf: newPDFs)
+        guard !allNewPDFs.isEmpty else {
+            scanStatus = ""
+            return
+        }
+
+        scanStatus = "Saving library records…"
         manager.saveLibrary()
+        LibraryService.shared.saveLibrary(isStructural: true)
+        NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
 
-        // Extract visible viewport thumbnails quickly (up to 12 items), leave rest to ThumbnailDaemon
-        let initialBatchCount = min(newPDFs.count, 12)
-        let initialPDFs = Array(newPDFs.prefix(initialBatchCount))
+        // Extract visible viewport thumbnails quickly (up to 12 items), leave rest to on-demand scrolling
+        let initialBatchCount = min(allNewPDFs.count, 12)
+        let initialPDFs = Array(allNewPDFs.prefix(initialBatchCount))
         let maxConcurrency = ProcessInfo.processInfo.activeProcessorCount <= 4 ? 2 : 3
         await withTaskGroup(of: (Int, Data?).self) { group in
             var inFlight = 0
@@ -736,6 +749,7 @@ final class LinkedLibraryScanner: ObservableObject {
                 }
             }
         }
+        scanStatus = ""
     }
 
     @objc private func handleStaleBookmark(_ notification: Notification) {

@@ -36,6 +36,15 @@ struct ComicInfoParser {
         let ext = archiveURL.pathExtension.lowercased()
         guard ["cbz", "zip"].contains(ext) else { return nil }
 
+        // Safeguard for giant archives (>2GB / ZIP64) on external USB drives:
+        // Avoid multi-minute directory scans or ZIP64 unsupported errors during initial linking
+        let attrs = try? FileManager.default.attributesOfItem(atPath: archiveURL.path)
+        let fileSize = (attrs?[.size] as? Int64) ?? 0
+        if fileSize > 2_000_000_000 {
+            Logger.shared.log("ComicInfoParser: Skipping embedded XML for giant \(fileSize / (1024*1024))MB archive — using deterministic filename parser", category: "Import", type: .info)
+            return nil
+        }
+
         guard let archive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: .utf8) else {
             Logger.shared.log("ComicInfoParser: Could not open archive \(archiveURL.lastPathComponent)", category: "Import", type: .error)
             return nil

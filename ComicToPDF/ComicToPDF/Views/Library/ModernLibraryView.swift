@@ -48,6 +48,7 @@ struct ModernLibraryView: View {
     @State private var showingShortcutsSheet: Bool = false
     @State private var highlightedItemID: String? = nil
     @FocusState private var isLibraryFocused: Bool
+    @ObservedObject private var linkedScanner = LinkedLibraryScanner.shared
 
 
     /// Derived header collapse state.
@@ -1200,6 +1201,7 @@ struct ModernLibraryView: View {
                 .overlay(Rectangle().frame(height: 1).foregroundColor(Color.white.opacity(0.1)), alignment: .bottom)
             }
 
+            indexingDriveBanner
             disconnectedDrivesBanner
             pendingJobsBanner
 
@@ -1216,7 +1218,7 @@ struct ModernLibraryView: View {
             }
 
             // MARK: - Discrete Layout Layers
-            if viewModel.filterState == .onDrive && (settingsManager.linkedDrives.isEmpty || viewModel.cachedLibraryItems.isEmpty) {
+            if viewModel.filterState == .onDrive && viewModel.cachedLibraryItems.isEmpty {
                 DriveEmptyState(
                     onLinkDrive: handleLinkDrive,
                     onBackToAll: {
@@ -1527,6 +1529,38 @@ struct ModernLibraryView: View {
         }
     }
 
+    // MARK: - Indexing Drive Banner
+
+    @ViewBuilder
+    private var indexingDriveBanner: some View {
+        if !linkedScanner.scanStatus.isEmpty {
+            HStack(spacing: 12) {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: Color(hex: "#8b5cf6")))
+                    .scaleEffect(0.9)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("External Drive")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(Color.inkTextPrimary)
+                    Text(linkedScanner.scanStatus)
+                        .font(.system(size: 12))
+                        .foregroundColor(Color.inkTextSecondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color(hex: "#8b5cf6").opacity(0.3), lineWidth: 1)
+            )
+            .padding(.horizontal, 20)
+            .padding(.top, 6)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
     // MARK: - Pending Jobs Banner
 
     @ViewBuilder
@@ -1775,6 +1809,9 @@ struct ModernLibraryView: View {
                 var fileResults: [(url: URL, bookmark: Data)] = []
 
                 for result in results {
+                    let accessing = result.url.startAccessingSecurityScopedResource()
+                    defer { if accessing { result.url.stopAccessingSecurityScopedResource() } }
+
                     var isDir: ObjCBool = false
                     if FileManager.default.fileExists(atPath: result.url.path, isDirectory: &isDir), isDir.boolValue {
                         folderResults.append(result)
@@ -1804,6 +1841,7 @@ struct ModernLibraryView: View {
                 }
 
                 syncAndRebuildLibraryCache()
+                HapticEngine.success()
             }
         }
     }
