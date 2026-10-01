@@ -578,6 +578,12 @@ extension EBookPageCurlReader {
                 return 1
             }
 
+            // On iPhone, ALWAYS single page mode (1 column) in BOTH portrait and landscape.
+            // Dual-column spreads require at least 820pt width and tablet height, reserved for iPad and Mac.
+            if UIDevice.current.userInterfaceIdiom == .phone {
+                return 1
+            }
+
             if renderWidth < minDualColumnRenderWidth && prefs.columnCount == 0 {
                 return 1
             }
@@ -1076,6 +1082,24 @@ extension EBookPageCurlReader {
                 canvas.frame = bounds
             }
 
+            if boundsChanged {
+                // Invalidate all snapshots from previous orientation/aspect ratio
+                pageSnapshots.removeAll()
+                backgroundSnapshots.removeAll()
+
+                // Clear images on any active child view controllers so they don't stretch
+                if let contentVCs = pvc.viewControllers as? [EBookPageContentViewController] {
+                    for cvc in contentVCs {
+                        cvc.clearSnapshot()
+                    }
+                }
+
+                updateLiveStyles()
+                wv.evaluateJavaScript("if(window.computeMetrics) { computeMetrics(); applyPagePosition(false); }")
+                let vcs = spreadViewControllers(for: currentPageIndex)
+                safeSetViewControllers(vcs, direction: .forward, animated: false)
+            }
+
             if !isTransitioning {
                 pvc.view.bringSubviewToFront(wv)
                 if let canvas = pencilCanvas {
@@ -1084,21 +1108,14 @@ extension EBookPageCurlReader {
                 }
                 wv.isHidden = false
             }
-
-            if boundsChanged {
-                updateLiveStyles()
-                wv.evaluateJavaScript("if(window.computeMetrics) { computeMetrics(); applyPagePosition(false); }")
-                let vcs = spreadViewControllers(for: currentPageIndex)
-                safeSetViewControllers(vcs, direction: .forward, animated: false)
-            }
         }
 
         func mountPrimaryWebViewOnRoot(reveal: Bool = true) {
             guard let pvc = pageViewController, let wv = primaryWebView else { return }
             let bgColor = UIColor(hex: parent.prefs.activeTheme.cssBackground) ?? .black
             pvc.view.backgroundColor = bgColor
-            wv.backgroundColor = .clear
-            wv.scrollView.backgroundColor = .clear
+            wv.backgroundColor = bgColor
+            wv.scrollView.backgroundColor = bgColor
 
             let targetBounds = containerBounds
             wv.clipsToBounds = true
@@ -1258,7 +1275,16 @@ extension EBookPageCurlReader {
             defer { isTransitioning = false }
 
             let isLandscape = orientation.isLandscape
-            let dual = isLandscape && isDualPageMode
+            // When spineLocationFor is called, containerBounds is still the old orientation.
+            // Project the prospective dimensions for the incoming orientation:
+            let prospectiveWidth = isLandscape ? max(containerSize.width, containerSize.height) : min(containerSize.width, containerSize.height)
+            let prospectiveHeight = isLandscape ? min(containerSize.width, containerSize.height) : max(containerSize.width, containerSize.height)
+            let prospectiveSize = CGSize(width: prospectiveWidth, height: prospectiveHeight)
+            let dual = isLandscape && (Coordinator.computeColumnCount(prefs: parent.prefs, size: prospectiveSize) > 1)
+
+            // Invalidate obsolete snapshots so stale aspect ratios are never rendered
+            self.pageSnapshots.removeAll()
+            self.backgroundSnapshots.removeAll()
 
             if dual {
                 let leftIndex = currentPageIndex % 2 == 0 ? currentPageIndex : currentPageIndex - 1
@@ -2296,7 +2322,7 @@ extension EBookPageCurlReader {
                 width: 100vw !important;
                 height: 100vh !important;
                 overflow: hidden !important;
-                background-color: transparent !important;
+                background-color: \(bgColor) !important;
                 word-wrap: break-word;
                 -webkit-text-size-adjust: 100%;
                 -webkit-user-select: text !important;
@@ -3191,6 +3217,11 @@ class EBookPageContentViewController: UIViewController {
         self.imageView?.backgroundColor = bgColor
     }
 
+    func clearSnapshot() {
+        self.snapshot = nil
+        self.imageView?.image = nil
+    }
+
     func updateTheme(bgColor: UIColor) {
         self.view.backgroundColor = bgColor
         self.imageView?.backgroundColor = bgColor
@@ -3207,8 +3238,8 @@ class EBookPageContentViewController: UIViewController {
 
         // Setup snapshot image view (0ms instant page rendering for 3D curl)
         let iv = UIImageView(frame: view.bounds)
-        // scaleToFill maps snapshot pixels 1:1 to view bounds — avoids shrinking/expanding text during 3D page curl.
-        iv.contentMode = .scaleToFill
+        // scaleAspectFit ensures snapshot never distorts or stretches across mismatched aspect ratios
+        iv.contentMode = .scaleAspectFit
         iv.clipsToBounds = true
         iv.layer.masksToBounds = true
         iv.image = snapshot

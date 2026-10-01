@@ -11,7 +11,7 @@ public final class ReflowCompilationCoordinator {
 
     private init() {}
 
-    public nonisolated static let cacheVersion = "v8"
+    public nonisolated static let cacheVersion = "v9"
 
     private func cacheKey(pdfUUID: String, isClutterFiltered: Bool) -> String {
         return "\(pdfUUID)_\(isClutterFiltered ? "clean" : "raw")"
@@ -73,23 +73,36 @@ public final class ReflowCompilationCoordinator {
             return await ongoing.value
         }
 
-        let task = Task.detached(priority: .utility) {
+        let task = Task.detached(priority: .userInitiated) {
             let blocks = await PDFSpatialParser.shared.parseDocument(document, skipClutter: isClutterFiltered)
 
-            // Only extract images for pages that lack digital text blocks
+            // Fast-path: Illustration images extract asynchronously in the background so text reflow is instant.
             let textPages = Set(blocks.map { $0.pageIndex })
             let nonTextPages = Set(0..<document.pageCount).subtracting(textPages)
-            let images = await PDFImageExtractor.shared.extractImages(
-                from: document,
-                pdfUUID: pdfUUID,
-                nonTextPages: nonTextPages
-            )
+
+            var placeholderImages: [ExtractedPDFImage] = []
+            if let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+                let imgDir = cacheDir.appendingPathComponent("ReflowPDF/\(pdfUUID)/images", isDirectory: true)
+                for pageIdx in nonTextPages.sorted() {
+                    let imageName = "fig_page_\(pageIdx + 1).jpg"
+                    let imageURL = imgDir.appendingPathComponent(imageName)
+                    placeholderImages.append(ExtractedPDFImage(pageIndex: pageIdx, imagePath: imageURL.path, rect: .zero))
+                }
+            }
+
+            Task.detached(priority: .utility) {
+                _ = await PDFImageExtractor.shared.extractImages(
+                    from: document,
+                    pdfUUID: pdfUUID,
+                    nonTextPages: nonTextPages
+                )
+            }
 
             let compiledURL = await ReflowDOMSynthesizer.shared.synthesizeHTML(
                 pdfUUID: pdfUUID,
                 documentTitle: documentTitle,
                 blocks: blocks,
-                images: images,
+                images: placeholderImages,
                 isClutterFiltered: isClutterFiltered
             )
 

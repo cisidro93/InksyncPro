@@ -265,7 +265,14 @@ class EBookPreferences: ObservableObject {
             return 1
         }
 
-        // In Landscape:
+        // iPhone Parity Standard: On iPhones, portrait AND landscape are ALWAYS single column (1 page)
+        // to maintain typographic measure (65-75 chars/line) without vertical letter crowding.
+        // Dual-column spreads are reserved for iPad and Mac.
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            return 1
+        }
+
+        // In Landscape on iPad / Mac:
         // Always 2-page spread unless the user has explicitly selected 1 column
         if columnCount == 1 {
             return 1

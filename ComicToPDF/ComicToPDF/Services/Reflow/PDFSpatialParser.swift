@@ -55,8 +55,8 @@ public final class PDFSpatialParser: Sendable {
     private init() {}
 
     /// Parses a PDFDocument page-by-page into spatial text blocks ordered by column reading flow.
+    /// Employs parallel batch worker tasks across available CPU cores for high-speed synthesis on massive textbooks.
     public func parseDocument(_ document: PDFDocument, skipClutter: Bool = true) async -> [SpatialTextBlock] {
-        var blocks: [SpatialTextBlock] = []
         let pageCount = document.pageCount
         guard pageCount > 0 else { return [] }
 
@@ -66,61 +66,81 @@ public final class PDFSpatialParser: Sendable {
         var hasDigitalText = false
         for i in 0..<min(pageCount, 10) {
             if let page = document.page(at: i),
-               let str = page.string,
+               let sel = page.selection(for: page.bounds(for: .mediaBox)),
+               let str = sel.string,
                !str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 hasDigitalText = true
                 break
             }
         }
 
-        for i in 0..<pageCount {
-            if Task.isCancelled { break }
-            guard let page = document.page(at: i) else { continue }
+        if !hasDigitalText {
+            // For purely scanned documents with no digital text, parse with OCR sequentially with yields
+            var blocks: [SpatialTextBlock] = []
+            for i in 0..<pageCount {
+                if Task.isCancelled { break }
+                guard let page = document.page(at: i) else { continue }
+                let ocrBlocks = await parsePageWithVisionOCR(page, pageIndex: i, medianFontSize: medianFontSize, skipClutter: skipClutter)
+                blocks.append(contentsOf: ocrBlocks)
+                if i % 3 == 0 { await Task.yield() }
+            }
+            return blocks
+        }
 
-            let pageString = page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // Digital text document: High-Performance Multi-Core Parallel Parsing
+        let coreCount = max(2, min(ProcessInfo.processInfo.activeProcessorCount, 8))
+        let batchSize = max(8, (pageCount + coreCount - 1) / coreCount)
+        var batches: [Range<Int>] = []
+        var start = 0
+        while start < pageCount {
+            let end = min(start + batchSize, pageCount)
+            batches.append(start..<end)
+            start = end
+        }
 
-            var pageBlocks: [SpatialTextBlock] = autoreleasepool {
-                if hasDigitalText {
-                    if !pageString.isEmpty {
-                        var parsed = parsePage(page, pageIndex: i, medianFontSize: medianFontSize, skipClutter: skipClutter)
-                        // If all lines were filtered as headers/footers but text actually exists, create fallback block
-                        if parsed.isEmpty {
-                            let pageBounds = page.bounds(for: .mediaBox)
-                            parsed.append(SpatialTextBlock(
-                                pageIndex: i,
-                                rect: pageBounds,
-                                text: Self.sanitizeExtractedText(pageString),
-                                kind: .paragraph,
-                                fontName: "System",
-                                fontSize: medianFontSize,
-                                isBold: false,
-                                isItalic: false
-                            ))
+        let parsedBatches = await withTaskGroup(of: (Int, [SpatialTextBlock]).self) { group in
+            for (batchIdx, range) in batches.enumerated() {
+                group.addTask {
+                    var batchBlocks: [SpatialTextBlock] = []
+                    for i in range {
+                        if Task.isCancelled { break }
+                        guard let page = document.page(at: i) else { continue }
+                        let pageBlocks: [SpatialTextBlock] = autoreleasepool {
+                            var parsed = self.parsePage(page, pageIndex: i, medianFontSize: medianFontSize, skipClutter: skipClutter)
+                            if parsed.isEmpty {
+                                let pageBounds = page.bounds(for: .mediaBox)
+                                if let sel = page.selection(for: pageBounds),
+                                   let str = sel.string?.trimmingCharacters(in: .whitespacesAndNewlines),
+                                   !str.isEmpty {
+                                    parsed.append(SpatialTextBlock(
+                                        pageIndex: i,
+                                        rect: pageBounds,
+                                        text: Self.sanitizeExtractedText(str),
+                                        kind: .paragraph,
+                                        fontName: "System",
+                                        fontSize: medianFontSize,
+                                        isBold: false,
+                                        isItalic: false
+                                    ))
+                                }
+                            }
+                            return parsed
                         }
-                        return parsed
-                    } else {
-                        // Digital document page with no text is an illustration or blank page: skip OCR
-                        return []
+                        batchBlocks.append(contentsOf: pageBlocks)
                     }
-                } else {
-                    // Document is scanned; OCR will be performed asynchronously below if needed
-                    return []
+                    return (batchIdx, batchBlocks)
                 }
             }
 
-            // For fully scanned documents (no digital text anywhere), run throttled fast Vision OCR
-            if !hasDigitalText && pageBlocks.isEmpty {
-                pageBlocks = await parsePageWithVisionOCR(page, pageIndex: i, medianFontSize: medianFontSize, skipClutter: skipClutter)
+            var results: [(Int, [SpatialTextBlock])] = []
+            for await result in group {
+                results.append(result)
             }
-
-            blocks.append(contentsOf: pageBlocks)
-
-            if i % 3 == 0 {
-                await Task.yield()
-            }
+            results.sort { $0.0 < $1.0 }
+            return results
         }
 
-        return blocks
+        return parsedBatches.flatMap { $0.1 }
     }
 
     private func parsePageWithVisionOCR(_ page: PDFPage, pageIndex: Int, medianFontSize: CGFloat, skipClutter: Bool = true) async -> [SpatialTextBlock] {
@@ -292,9 +312,14 @@ public final class PDFSpatialParser: Sendable {
                let font = attrStr.attribute(.font, at: 0, effectiveRange: nil) as? UIFont {
                 fontSize = font.pointSize
                 fontName = font.fontName
-                let traits = font.fontDescriptor.symbolicTraits
-                isBold = traits.contains(.traitBold) || fontName.contains("Bold") || fontName.contains("bold")
-                isItalic = traits.contains(.traitItalic) || fontName.contains("Italic") || fontName.contains("italic") || fontName.contains("Oblique")
+                let name = fontName.lowercased()
+                isBold = name.contains("bold") || name.contains("-b") || name.contains("black") || name.contains("heavy")
+                isItalic = name.contains("italic") || name.contains("oblique") || name.contains("-i")
+                if !isBold && !isItalic {
+                    let traits = font.fontDescriptor.symbolicTraits
+                    isBold = traits.contains(.traitBold)
+                    isItalic = traits.contains(.traitItalic)
+                }
             }
 
             lines.append(LineInfo(rect: lineBounds, text: text, fontSize: fontSize, fontName: fontName, isBold: isBold, isItalic: isItalic))

@@ -135,9 +135,6 @@ struct ProPDFReflowReaderView: View {
                 guard oldSize != .zero && (abs(oldSize.width - newSize.width) > 5 || abs(oldSize.height - newSize.height) > 5) else { return }
                 handleOrientationOrBoundsChange(newSize: newSize)
             }
-            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-                handleOrientationOrBoundsChange(newSize: size)
-            }
             .onChange(of: prefs.pdfReflowSmartClutterRemoval) { _, _ in
                 Task { @MainActor in
                     self.isCompilingReflow = true
