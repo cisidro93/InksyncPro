@@ -1043,6 +1043,31 @@ struct ProPDFReaderEngine: View {
                 },
                 onRedoRequested: { pageIdx in
                     performRedo(preferredPageIndex: pageIdx)
+                },
+                onToggleReflow: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        isReflowMode.toggle()
+                        prefs.pdfReflowMode = isReflowMode
+                    }
+                },
+                onToggleDualPage: {
+                    prefs.pdfDualPageMode.toggle()
+                },
+                onToggleMarkup: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        isPencilMode.toggle()
+                        if isPencilMode {
+                            InksyncInkingState.shared.activeToolMode = .write
+                        }
+                    }
+                },
+                onToggleSidebar: {
+                    showingOutlineDrawer.toggle()
+                },
+                onEscape: {
+                    selectedTextForHUD = nil
+                    activeTappedAnnotationID = nil
+                    activeSelectionSnapshot = nil
                 }
             )
             .applyPDFTheme(
@@ -3710,7 +3735,134 @@ struct PDFSelectionSnapshot: Sendable {
 class ProPDFHighlightableView: PDFView {
     var onHighlightRequested: (() -> Void)?
     var onLayoutSubviews: ((CGRect) -> Void)?
+    var onPrevPage: (() -> Void)?
+    var onNextPage: (() -> Void)?
+    var onToggleReflow: (() -> Void)?
+    var onToggleDualPage: (() -> Void)?
+    var onToggleMarkup: (() -> Void)?
+    var onToggleSidebar: (() -> Void)?
+    var onEscape: (() -> Void)?
     private var lastReportedBounds: CGSize = .zero
+
+    override var canBecomeFirstResponder: Bool {
+        return true
+    }
+
+    override var keyCommands: [UIKeyCommand]? {
+        let makeCmd: (String, UIKeyModifierFlags, String) -> UIKeyCommand = { input, flags, title in
+            let cmd = UIKeyCommand(input: input, modifierFlags: flags, action: #selector(self.handleKeyCommand(_:)))
+            cmd.discoverabilityTitle = title
+            return cmd
+        }
+
+        return [
+            // Page navigation
+            makeCmd(UIKeyCommand.inputLeftArrow, [], "Previous Page"),
+            makeCmd(UIKeyCommand.inputRightArrow, [], "Next Page"),
+            makeCmd(UIKeyCommand.inputUpArrow, [], "Previous Page / Scroll Up"),
+            makeCmd(UIKeyCommand.inputDownArrow, [], "Next Page / Scroll Down"),
+            makeCmd(UIKeyCommand.inputPageUp, [], "Previous Page"),
+            makeCmd(UIKeyCommand.inputPageDown, [], "Next Page"),
+            makeCmd(" ", [], "Next Page"),
+            makeCmd(" ", .shift, "Previous Page"),
+            makeCmd("]", .command, "Next Page"),
+            makeCmd("[", .command, "Previous Page"),
+
+            // Vim navigation
+            makeCmd("j", [], "Next Page (Vim)"),
+            makeCmd("k", [], "Previous Page (Vim)"),
+            makeCmd("l", [], "Next Page (Vim)"),
+            makeCmd("h", [], "Previous Page / Highlight"),
+
+            // Highlighting & selection
+            makeCmd("\r", [], "Highlight Selection"),
+            makeCmd("h", .command, "Highlight Selection / Toggle Highlighter"),
+
+            // Escape / Dismiss
+            makeCmd(UIKeyCommand.inputEscape, [], "Dismiss HUD / Clear Selection"),
+
+            // Reader modes
+            makeCmd("r", .command, "Toggle Reflow Mode"),
+            makeCmd("d", .command, "Toggle Dual Page Spread"),
+            makeCmd("m", .command, "Toggle Pencil Markup"),
+            makeCmd("s", .command, "Toggle Table of Contents"),
+            makeCmd("+", .command, "Zoom In"),
+            makeCmd("=", .command, "Zoom In"),
+            makeCmd("-", .command, "Zoom Out"),
+            makeCmd("0", .command, "Reset Zoom")
+        ]
+    }
+
+    @objc private func handleKeyCommand(_ sender: UIKeyCommand) {
+        let hasActiveSelection = (self.currentSelection != nil && !(self.currentSelection?.string ?? "").isEmpty)
+
+        // 1. Highlight triggers (Enter, ⌘H, or 'h' when text is selected)
+        if sender.input == "\r" || (sender.input == "h" && sender.modifierFlags.contains(.command)) {
+            if hasActiveSelection {
+                onHighlightRequested?()
+                return
+            }
+        }
+
+        if sender.input == "h" && !sender.modifierFlags.contains(.command) {
+            if hasActiveSelection {
+                onHighlightRequested?()
+                return
+            } else {
+                // Vim 'h' turns page backward when no text is selected
+                onPrevPage?()
+                return
+            }
+        }
+
+        // 2. Escape clears selection and dismisses HUD
+        if sender.input == UIKeyCommand.inputEscape {
+            self.clearSelection()
+            onEscape?()
+            return
+        }
+
+        // 3. Command shortcuts
+        if sender.modifierFlags.contains(.command) {
+            switch sender.input {
+            case "]":
+                onNextPage?()
+            case "[":
+                onPrevPage?()
+            case "r":
+                onToggleReflow?()
+            case "d":
+                onToggleDualPage?()
+            case "m":
+                onToggleMarkup?()
+            case "s":
+                onToggleSidebar?()
+            case "+", "=":
+                self.scaleFactor = min(self.maxScaleFactor, self.scaleFactor * 1.2)
+            case "-":
+                self.scaleFactor = max(self.minScaleFactor, self.scaleFactor / 1.2)
+            case "0":
+                self.scaleFactor = self.scaleFactorForSizeToFit
+            default:
+                break
+            }
+            return
+        }
+
+        // 4. Directional & Space navigation
+        let isForward = sender.input == UIKeyCommand.inputRightArrow
+            || sender.input == UIKeyCommand.inputDownArrow
+            || (sender.input == " " && !sender.modifierFlags.contains(.shift))
+            || sender.input == UIKeyCommand.inputPageDown
+            || sender.input == "j"
+            || sender.input == "l"
+
+        if isForward {
+            onNextPage?()
+        } else {
+            onPrevPage?()
+        }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -3797,6 +3949,11 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
     var onScannedPageDetected: (() -> Void)? = nil
     var onUndoRequested: ((Int) -> Void)? = nil
     var onRedoRequested: ((Int) -> Void)? = nil
+    var onToggleReflow: (() -> Void)? = nil
+    var onToggleDualPage: (() -> Void)? = nil
+    var onToggleMarkup: (() -> Void)? = nil
+    var onToggleSidebar: (() -> Void)? = nil
+    var onEscape: (() -> Void)? = nil
 
     func makeUIView(context: Context) -> PDFView {
         let pdfView = ProPDFHighlightableView()
@@ -3807,6 +3964,13 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             guard let coordinator = coordinator, let pv = pdfView else { return }
             coordinator.handleBoundsUpdated(bounds, pdfView: pv)
         }
+        pdfView.onPrevPage = { onPrevPage() }
+        pdfView.onNextPage = { onNextPage() }
+        pdfView.onToggleReflow = { onToggleReflow?() }
+        pdfView.onToggleDualPage = { onToggleDualPage?() }
+        pdfView.onToggleMarkup = { onToggleMarkup?() }
+        pdfView.onToggleSidebar = { onToggleSidebar?() }
+        pdfView.onEscape = { onEscape?() }
         pdfView.delegate = context.coordinator
         pdfView.pageOverlayViewProvider = context.coordinator.canvasProvider
         if UIDevice.current.userInterfaceIdiom == .pad {

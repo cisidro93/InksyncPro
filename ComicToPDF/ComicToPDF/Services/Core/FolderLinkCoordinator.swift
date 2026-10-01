@@ -27,7 +27,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        let supportedTypes: [UTType] = [.folder, .directory]
+        let supportedTypes: [UTType] = [.folder]
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
         picker.delegate = coordinator
         picker.allowsMultipleSelection = false
@@ -35,6 +35,37 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         picker.modalPresentationStyle = .pageSheet
 
         Logger.shared.log("FolderLinkCoordinator: presenting folder picker", category: "FolderLink", type: .info)
+        rootVC.present(picker, animated: true)
+    }
+
+    /// Present the document picker allowing users to link specific comic/book files directly without copying.
+    /// - Parameter completion: Receives all selected file URLs and bookmark data, or empty array on cancel.
+    static func presentFiles(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
+        let coordinator = FolderLinkCoordinator()
+        coordinator.completion = completion
+        FolderLinkCoordinator.live = coordinator
+
+        guard let rootVC = topViewController() else {
+            Logger.shared.log("FolderLinkCoordinator: no root view controller found — cannot present file picker", category: "FolderLink", type: .error)
+            completion([])
+            FolderLinkCoordinator.live = nil
+            return
+        }
+
+        var supportedTypes: [UTType] = [.pdf, .epub]
+        if let cbz = UTType(filenameExtension: "cbz") { supportedTypes.append(cbz) }
+        if let cbr = UTType(filenameExtension: "cbr") { supportedTypes.append(cbr) }
+        if let cb7 = UTType(filenameExtension: "cb7") { supportedTypes.append(cb7) }
+        if let cbt = UTType(filenameExtension: "cbt") { supportedTypes.append(cbt) }
+        if let zip = UTType(filenameExtension: "zip") { supportedTypes.append(zip) }
+
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
+        picker.delegate = coordinator
+        picker.allowsMultipleSelection = true
+        picker.shouldShowFileExtensions = true
+        picker.modalPresentationStyle = .pageSheet
+
+        Logger.shared.log("FolderLinkCoordinator: presenting direct file picker for linked files", category: "FolderLink", type: .info)
         rootVC.present(picker, animated: true)
     }
 

@@ -247,14 +247,15 @@ open class HighlightableWebView: WKWebView {
             makeCmd(UIKeyCommand.inputPageDown, [], "Next Page"),
             makeCmd("j", [], "Next Page (Vim)"),
             makeCmd("k", [], "Previous Page (Vim)"),
-            makeCmd("h", [], "Previous Page (Vim)"),
+            makeCmd("h", [], "Previous Page (Vim) / Highlight"),
             makeCmd("l", [], "Next Page (Vim)"),
+            makeCmd("\r", [], "Highlight Selection"),
             makeCmd("]", .command, "Next Page (Split-Notebook Safe)"),
             makeCmd("[", .command, "Previous Page (Split-Notebook Safe)"),
             makeCmd("r", .command, "Toggle Reflow Mode"),
             makeCmd("d", .command, "Toggle Speech / Read Aloud"),
             makeCmd("m", .command, "Toggle Pencil Markup"),
-            makeCmd("h", .command, "Toggle Text Highlighter"),
+            makeCmd("h", .command, "Highlight Selection / Toggle Highlighter"),
             makeCmd("n", .command, "Toggle Study Notebook"),
             makeCmd("s", .command, "Toggle Table of Contents / Sidebar"),
             makeCmd("/", .command, "Keyboard Shortcuts Cheat Sheet")
@@ -262,6 +263,22 @@ open class HighlightableWebView: WKWebView {
     }
 
     @objc open func handleForwardedKeyCommand(_ sender: UIKeyCommand) {
+        // Highlighting hotkeys: Enter (\r), ⌘H, or 'h' with active selection
+        if sender.input == "\r" || sender.input == "h" {
+            self.evaluateJavaScript("window.getSelection() ? window.getSelection().toString() : ''") { [weak self] (result, error) in
+                guard let self = self else { return }
+                if let str = result as? String, !str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self.onHighlightRequested?()
+                } else if sender.modifierFlags.contains(.command) {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleHighlighterMode"), object: nil)
+                } else {
+                    // Vim 'h' turns page backward when no text is selected
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+                }
+            }
+            return
+        }
+
         if sender.modifierFlags.contains(.command) {
             switch sender.input {
             case "]":
@@ -274,8 +291,6 @@ open class HighlightableWebView: WKWebView {
                 NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSpeechMode"), object: nil)
             case "m":
                 NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleMarkupMode"), object: nil)
-            case "h":
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleHighlighterMode"), object: nil)
             case "n":
                 NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
             case "s":

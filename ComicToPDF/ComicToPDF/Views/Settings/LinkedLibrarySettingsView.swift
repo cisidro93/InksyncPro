@@ -78,7 +78,7 @@ struct LinkedLibrarySettingsView: View {
                 }
             }
 
-            // MARK: Link Button
+            // MARK: Link Actions
             Section {
                 Button(action: { linkNewFolders() }) {
                     HStack(spacing: 14) {
@@ -91,21 +91,21 @@ struct LinkedLibrarySettingsView: View {
                                     .controlSize(.small)
                                     .tint(.orange)
                             } else {
-                                Image(systemName: "plus.circle.fill")
+                                Image(systemName: "folder.badge.plus")
                                     .foregroundColor(.blue)
                                     .font(.title3)
                             }
                         }
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(isLinkingDrive ? "Linking Folder…" : "Link External Folder")
+                            Text(isLinkingDrive ? "Linking Folder…" : "Link External Folder / Drive")
                                 .fontWeight(.semibold)
                             if isLinkingDrive, !scanner.scanStatus.isEmpty {
                                 Text(scanner.scanStatus)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             } else {
-                                Text("USB drives, Dropbox, iCloud, Google Drive…")
+                                Text("Select a folder and tap 'Open' in top right")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -114,6 +114,33 @@ struct LinkedLibrarySettingsView: View {
                     .padding(.vertical, 4)
                 }
                 .disabled(isLinkingDrive)
+
+                Button(action: { linkIndividualFiles() }) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(isLinkingDrive ? Color.orange.opacity(0.15) : Color.inkGreen.opacity(0.12))
+                                .frame(width: 36, height: 36)
+                            Image(systemName: "doc.badge.plus")
+                                .foregroundColor(.inkGreen)
+                                .font(.title3)
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Link Specific Comic Files")
+                                .fontWeight(.semibold)
+                            Text("Select multiple CBZ, CBR, PDF, EPUB files directly")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .disabled(isLinkingDrive)
+            } footer: {
+                Text("Files inside external drives are streamed on demand and never copied to internal storage. When picking a folder, navigate inside and tap 'Open' at the top right.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
 
             // MARK: How It Works
@@ -121,9 +148,9 @@ struct LinkedLibrarySettingsView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     howItWorksRow(icon: "1.circle", text: "For USB drives: connect via a USB-C hub or Lightning adapter and open the Files app to verify it appears.")
                     howItWorksRow(icon: "2.circle", text: "For Dropbox / iCloud / Google Drive: install the app and enable it in Files → Browse → Edit.")
-                    howItWorksRow(icon: "3.circle", text: "Tap \"Link External Folder\" and navigate to your comics folder in the picker. Tap Open.")
-                    howItWorksRow(icon: "4.circle", text: "InksyncPro indexes your files instantly — nothing is copied to your device. Comics are streamed on demand.")
-                    howItWorksRow(icon: "5.circle", text: "If a link expires, tap the Re-link button next to the folder to refresh without losing your library data.")
+                    howItWorksRow(icon: "3.circle", text: "Tap \"Link External Folder\" and navigate to your comics folder. Tap \"Open\" in the top right. (Files inside appear dimmed during folder selection—this is normal iOS behavior).")
+                    howItWorksRow(icon: "4.circle", text: "Or tap \"Link Specific Comic Files\" to directly pick individual .cbz, .cbr, or .pdf files.")
+                    howItWorksRow(icon: "5.circle", text: "InksyncPro indexes your files instantly with zero storage copied to your device.")
                 }
                 .padding(.vertical, 4)
             }
@@ -294,6 +321,38 @@ struct LinkedLibrarySettingsView: View {
                             self.successMessage = nil
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private func linkIndividualFiles() {
+        errorMessage = nil
+        successMessage = nil
+        isLinkingDrive = true
+
+        let manager = conversionManager
+        LinkedLibraryScanner.shared.conversionManager = manager
+
+        FolderLinkCoordinator.presentFiles { results in
+            guard !results.isEmpty else {
+                Task { @MainActor in self.isLinkingDrive = false }
+                return
+            }
+
+            Task { @MainActor in
+                let scanner = LinkedLibraryScanner.shared
+                scanner.conversionManager = manager
+                let count = await scanner.linkFiles(pickedFiles: results)
+                self.isLinkingDrive = false
+                if count > 0 {
+                    self.successMessage = "Linked \(count) comic file\(count == 1 ? "" : "s") directly without copying."
+                    Task {
+                        try? await Task.sleep(nanoseconds: 6_000_000_000)
+                        self.successMessage = nil
+                    }
+                } else {
+                    self.errorMessage = "Selected files could not be linked or were already linked in the library."
                 }
             }
         }

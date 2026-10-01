@@ -10,10 +10,14 @@ actor ThumbnailDaemon {
     private let cacheDirectory: URL
     private var isRunning = false
     
-    // M5: In-memory cache makes getCachedThumbnail O(1) with zero disk I/O on the actor thread.
-    // Thumbnails are populated here when written to disk, so repeated lookups during scroll
-    // never block the actor executor waiting on Data(contentsOf:).
-    private var memoryCache: [UUID: UIImage] = [:]
+    // Bounded NSCache automatically evicts under memory pressure and sets strict byte/item ceilings.
+    // Eliminates the unbounded dictionary heap bloat (+128MB) identified in the Apple IPS CPU resource diagnostic.
+    private let memoryCache: NSCache<NSUUID, UIImage> = {
+        let cache = NSCache<NSUUID, UIImage>()
+        cache.totalCostLimit = 40 * 1024 * 1024 // 40 MB ceiling
+        cache.countLimit = 150 // Max 150 covers in memory
+        return cache
+    }()
     
     private init() {
         let fm = FileManager.default
@@ -44,6 +48,13 @@ actor ThumbnailDaemon {
     /// Starts a low-priority background crawl to extract missing thumbnails for a given list of PDFs.
     func startCrawling(pdfs: [ConvertedPDF]) {
         guard !isRunning else { return }
+        
+        // Guard against starting background extraction while device is under severe thermal stress
+        if ProcessInfo.processInfo.thermalState >= .serious {
+            Logger.shared.log("ThumbnailDaemon: Skipping crawl due to thermal pressure (\(ProcessInfo.processInfo.thermalState.rawValue))", category: "System")
+            return
+        }
+        
         isRunning = true
         
         Task.detached(priority: .background) { [weak self] in
@@ -52,28 +63,22 @@ actor ThumbnailDaemon {
         }
     }
     
-    // H1: Replaced serial loop + single Task.yield with a TaskGroup capped at 4 concurrent slots.
-    // For 200 linked-library files this cuts crawl time to ~25% of the previous serial approach.
-    // Concurrency cap prevents NAND bus saturation and matches LibraryScanner's proven pattern.
+    // Controlled background extraction capped at 2 concurrent tasks (or 1 under Low Power / Thermal Fair).
+    // Prevents Apple Watchdog 50% CPU over 180s timeout while keeping disk I/O smooth.
     private func processQueue(pdfs: [ConvertedPDF]) async {
-        let perfClass = ProcessInfo.processInfo.performanceClass
-        let maxConcurrency = perfClass == .low ? 2 : 4
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let isThermalConstrained = ProcessInfo.processInfo.thermalState != .nominal
+        let maxConcurrency = (isLowPower || isThermalConstrained) ? 1 : 2
 
-        // 1. Pre-warm existing thumbnails from disk asynchronously on background threads
+        // 1. Filter for PDFs missing disk thumbnails without decompressing existing images into RAM
         var missingPDFs: [ConvertedPDF] = []
         for pdf in pdfs {
             let cachedURL = cacheDirectory.appendingPathComponent("\(pdf.id.uuidString).webp")
             if FileManager.default.fileExists(atPath: cachedURL.path) {
-                // Read from disk asynchronously and cache in memory
-                if let data = try? Data(contentsOf: cachedURL),
-                   let image = UIImage(data: data) {
-                    self.cacheInMemory(image, for: pdf.id)
-                } else {
-                    missingPDFs.append(pdf)
-                }
-            } else if let coverData = pdf.coverImageData, let image = UIImage(data: coverData) {
-                // Deduplication: cover already extracted during file registration — cache directly without re-extracting
-                self.cacheInMemory(image, for: pdf.id)
+                // Disk thumbnail already exists — do NOT load or decompress into RAM during scan
+                continue
+            } else if let coverData = pdf.coverImageData {
+                // Deduplication: cover already extracted during file registration — persist to disk atomically
                 try? coverData.write(to: cachedURL, options: .atomic)
             } else {
                 missingPDFs.append(pdf)
@@ -85,16 +90,23 @@ actor ThumbnailDaemon {
             return
         }
 
-        // 2. Extract missing thumbnails using task group
+        // 2. Extract missing thumbnails using cooperative task group
         await withTaskGroup(of: Void.self) { group in
             var inFlight = 0
             var pending = missingPDFs.makeIterator()
 
             func enqueue() {
+                // Abort further work if thermal state escalates to serious or critical
+                if ProcessInfo.processInfo.thermalState >= .serious {
+                    return
+                }
+
                 guard let pdf = pending.next() else { return }
                 let cachedURL = cacheDirectory.appendingPathComponent("\(pdf.id.uuidString).webp")
 
                 group.addTask(priority: .background) {
+                    await Task.yield()
+
                     // Resolve URL securely for Linked Libraries
                     let url: URL
                     var accessedURL: URL? = nil
@@ -122,7 +134,7 @@ actor ThumbnailDaemon {
                     }
 
                     if let thumbnail = thumbnailImage {
-                        // Populate in-memory cache so subsequent getCachedThumbnail calls are O(1)
+                        // Populate bounded in-memory cache
                         await ThumbnailDaemon.shared.cacheInMemory(thumbnail, for: pdf.id)
                     }
 
@@ -136,43 +148,44 @@ actor ThumbnailDaemon {
 
             for await _ in group {
                 inFlight -= 1
-                enqueue() // refill slot immediately
+                enqueue() // refill slot cooperatively
             }
         }
 
         isRunning = false
     }
 
-    /// Called from task group workers to populate the in-memory cache after a thumbnail is written.
+    /// Called to populate the bounded in-memory cache after a thumbnail is written or loaded.
     func cacheInMemory(_ image: UIImage, for pdfID: UUID) {
-        memoryCache[pdfID] = image
+        let cost = Int(image.size.width * image.size.height * 4)
+        memoryCache.setObject(image, forKey: pdfID as NSUUID, cost: cost)
     }
 
-    /// Fetch a pre-cached thumbnail. Pure O(1) in-memory lookup — zero disk I/O on the actor thread.
-    /// Falls back to disk only on first access after a cold app launch (before the crawl has run).
+    /// Fetch a pre-cached thumbnail. Bounded O(1) in-memory lookup.
+    /// Falls back to disk on-demand as library items scroll into view, warming NSCache.
     func getCachedThumbnail(for pdfID: UUID) -> UIImage? {
         // Fast path: in-memory hit
-        if let cached = memoryCache[pdfID] { return cached }
+        if let cached = memoryCache.object(forKey: pdfID as NSUUID) { return cached }
 
-        // Cold-start path: crawl hasn't run yet — load from disk once and warm the memory cache.
+        // On-demand disk load: load single image when scrolled into view and warm cache
         let cachedURL = cacheDirectory.appendingPathComponent("\(pdfID.uuidString).webp")
         guard FileManager.default.fileExists(atPath: cachedURL.path),
               let data = try? Data(contentsOf: cachedURL),
               let image = UIImage(data: data) else { return nil }
-        memoryCache[pdfID] = image  // warm so next call is O(1)
+        cacheInMemory(image, for: pdfID)
         return image
     }
     
     /// Clear the cached thumbnail from memory and disk for a specific PDF.
     func clearCache(for pdfID: UUID) {
-        memoryCache.removeValue(forKey: pdfID)
+        memoryCache.removeObject(forKey: pdfID as NSUUID)
         let cachedURL = cacheDirectory.appendingPathComponent("\(pdfID.uuidString).webp")
         try? FileManager.default.removeItem(at: cachedURL)
     }
 
     /// Clear all thumbnails currently held in memory to reclaim system resources.
     func clearMemoryCache() {
-        memoryCache.removeAll()
+        memoryCache.removeAllObjects()
         Logger.shared.log("ThumbnailDaemon: Purged in-memory cache due to memory pressure", category: "System")
     }
 }

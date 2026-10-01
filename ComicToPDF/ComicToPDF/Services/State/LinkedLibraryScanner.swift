@@ -134,6 +134,73 @@ final class LinkedLibraryScanner: ObservableObject {
         return entry
     }
 
+    // MARK: - Link Individual Files
+
+    /// Register individual comic or document files from external drives without copying.
+    func linkFiles(pickedFiles: [(url: URL, bookmark: Data)]) async -> Int {
+        guard let manager = conversionManager, !pickedFiles.isEmpty else { return 0 }
+
+        scanStatus = "Linking \(pickedFiles.count) file\(pickedFiles.count == 1 ? "" : "s")…"
+        let existingPaths = Set(manager.convertedPDFs.filter { $0.isLinked }.map { $0.url.path })
+
+        var newPDFs: [ConvertedPDF] = []
+        for item in pickedFiles {
+            let fileURL = item.url
+            let bookmark = item.bookmark
+
+            let accessing = fileURL.startAccessingSecurityScopedResource()
+            defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
+
+            if existingPaths.contains(fileURL.path) { continue }
+
+            let fileAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+            let fileSize = (fileAttrs?[.size] as? Int64) ?? 0
+
+            let stem = fileURL.deletingPathExtension().lastPathComponent
+            let parsedTokens = DeterministicFilenameParser.parse(filename: fileURL.lastPathComponent)
+            let parentFolder = fileURL.deletingLastPathComponent().lastPathComponent
+
+            var metadata = PDFMetadata(title: parsedTokens.title ?? stem)
+            if let parsed = ComicInfoParser.parse(from: fileURL) {
+                metadata.title = parsed.title ?? stem
+                metadata.series = parsed.series ?? (parsedTokens.seriesName.isEmpty ? parentFolder : parsedTokens.seriesName)
+                metadata.issueNumber = parsed.number ?? parsedTokens.issueNumber
+                metadata.volume = parsed.volume.map { String($0) } ?? parsedTokens.volume
+                metadata.publisher = parsed.publisher
+                metadata.summary = parsed.summary
+                metadata.writer = parsed.writer
+                metadata.isManga = parsed.manga ? true : nil
+            } else {
+                metadata.series = parsedTokens.seriesName.isEmpty ? parentFolder : parsedTokens.seriesName
+                metadata.volume = parsedTokens.volume
+                metadata.issueNumber = parsedTokens.issueNumber
+            }
+
+            var pdf = ConvertedPDF(
+                name: stem,
+                url: fileURL,
+                pageCount: 0,
+                fileSize: fileSize,
+                metadata: metadata
+            )
+            pdf.sourceMode = .linked(bookmarkData: bookmark)
+            newPDFs.append(pdf)
+        }
+
+        guard !newPDFs.isEmpty else {
+            scanStatus = ""
+            return 0
+        }
+
+        manager.convertedPDFs.append(contentsOf: newPDFs)
+        manager.saveLibrary()
+
+        Task { await ThumbnailDaemon.shared.startCrawling(pdfs: manager.convertedPDFs) }
+        scanStatus = ""
+        Logger.shared.log("LinkedLibraryScanner: Directly linked \(newPDFs.count) individual comic/book files", category: "Drive", type: .success)
+        return newPDFs.count
+    }
+
     // MARK: - Sync Drive
 
     /// Non-destructive re-scan when a drive reconnects.

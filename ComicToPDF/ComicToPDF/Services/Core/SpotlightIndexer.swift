@@ -220,36 +220,45 @@ final class SpotlightIndexer {
             let maxPages = min(pdfDoc.pageCount, 15)
             
             for pageIndex in 0..<maxPages {
+                guard !Task.isCancelled else { break }
+                if ProcessInfo.processInfo.thermalState >= .serious {
+                    Logger.shared.log("Spotlight: Throttling page indexing due to thermal pressure", category: "Spotlight", type: .info)
+                    break
+                }
+
                 guard let page = pdfDoc.page(at: pageIndex) else { continue }
                 var pageText = page.string ?? ""
                 
-                // Scanned PDF/Comic fallback to Vision OCR
+                // Scanned PDF/Comic fallback to Vision OCR (guarded against thermal & battery pressure)
                 if pageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    // Render page & run OCR
+                    // Render page & run OCR with thermal protection
                     pageText = await self.runVisionOCR(on: page)
                 }
                 
                 let trimmed = pageText.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { continue }
-                
-                let attrs = CSSearchableItemAttributeSet(contentType: .text)
-                attrs.title = "\(pdfName) — Page \(pageIndex + 1)"
-                attrs.contentDescription = String(trimmed.prefix(200))
-                attrs.textContent = trimmed
-                attrs.keywords = [pdfName, "page \(pageIndex + 1)", series].compactMap { $0 }
-                attrs.relatedUniqueIdentifier = pdfID.uuidString
-                
-                // Associate with NSUserActivity for deep linking to this page
-                let activity = NSUserActivity(activityType: SpotlightIndexer.openBookActivityType)
-                activity.userInfo = ["pdfID": pdfID.uuidString, "pageIndex": pageIndex]
-                attrs.relatedUniqueIdentifier = pdfID.uuidString
-                
-                let item = CSSearchableItem(
-                    uniqueIdentifier: "book-\(pdfID.uuidString)-page-\(pageIndex)",
-                    domainIdentifier: "com.inksyncpro.pages-\(pdfID.uuidString)",
-                    attributeSet: attrs
-                )
-                items.append(item)
+                if !trimmed.isEmpty {
+                    let attrs = CSSearchableItemAttributeSet(contentType: .text)
+                    attrs.title = "\(pdfName) — Page \(pageIndex + 1)"
+                    attrs.contentDescription = String(trimmed.prefix(200))
+                    attrs.textContent = trimmed
+                    attrs.keywords = [pdfName, "page \(pageIndex + 1)", series].compactMap { $0 }
+                    attrs.relatedUniqueIdentifier = pdfID.uuidString
+                    
+                    // Associate with NSUserActivity for deep linking to this page
+                    let activity = NSUserActivity(activityType: SpotlightIndexer.openBookActivityType)
+                    activity.userInfo = ["pdfID": pdfID.uuidString, "pageIndex": pageIndex]
+                    attrs.relatedUniqueIdentifier = pdfID.uuidString
+                    
+                    let item = CSSearchableItem(
+                        uniqueIdentifier: "book-\(pdfID.uuidString)-page-\(pageIndex)",
+                        domainIdentifier: "com.inksyncpro.pages-\(pdfID.uuidString)",
+                        attributeSet: attrs
+                    )
+                    items.append(item)
+                }
+
+                // Cooperative multitasking: yield execution after each page to prevent Watchdog CPU spikes
+                await Task.yield()
             }
             
             if !items.isEmpty {
@@ -265,11 +274,21 @@ final class SpotlightIndexer {
     
     /// Helper to render a PDF page and perform fast text recognition
     nonisolated private func runVisionOCR(on page: PDFPage) async -> String {
+        // Battery & Thermal Defense: Skip heavy Vision neural network operations under low-power or elevated thermal state
+        guard !ProcessInfo.processInfo.isLowPowerModeEnabled && ProcessInfo.processInfo.thermalState < .serious else {
+            return ""
+        }
+
         let bounds = page.bounds(for: .mediaBox)
         guard bounds.width > 0 && bounds.height > 0 else { return "" }
         
-        let width = Int(bounds.width)
-        let height = Int(bounds.height)
+        // Cap rendering dimensions at max 1200px to avoid memory bloat on ultra-res scans
+        let maxDim: CGFloat = 1200.0
+        let scale = min(1.0, maxDim / max(bounds.width, bounds.height))
+        let width = Int(bounds.width * scale)
+        let height = Int(bounds.height * scale)
+        guard width > 0 && height > 0 else { return "" }
+
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(
                   data: nil,
@@ -284,7 +303,10 @@ final class SpotlightIndexer {
         context.setFillColor(CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0))
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         
+        context.saveGState()
+        context.scaleBy(x: scale, y: scale)
         page.draw(with: .mediaBox, to: context)
+        context.restoreGState()
         
         guard let cgImage = context.makeImage() else { return "" }
         

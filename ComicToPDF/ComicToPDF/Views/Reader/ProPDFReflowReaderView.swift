@@ -1,6 +1,7 @@
 import SwiftUI
 @preconcurrency import PDFKit
 import WebKit
+import SwiftData
 import os
 
 struct ProPDFReflowReaderView: View {
@@ -32,6 +33,12 @@ struct ProPDFReflowReaderView: View {
     @State private var showingShortcutsSheet = false
     @ObservedObject private var prefs = EBookPreferences.shared
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.modelContext) private var modelContext
+
+    // Text Selection & Markup HUD State
+    @State private var selectedTextForHUD: String? = nil
+    @State private var activeHighlightToEdit: Annotation? = nil
+    @StateObject private var speechEngine = PDFSpeechNarrationEngine.shared
 
     init(
         pdf: ConvertedPDF,
@@ -89,6 +96,8 @@ struct ProPDFReflowReaderView: View {
                                 .scaleEffect(1.1)
                                 .tint(prefs.activeTheme.foreground(colorScheme: colorScheme).opacity(0.8))
                         }
+
+                        textSelectionHUDOverlay(bottomInset: proxy.safeAreaInsets.bottom)
                     }
                     .onChange(of: webViewRef) { _, newWebView in
                         if newWebView != nil && !hasAnchoredInitialPage {
@@ -469,6 +478,25 @@ struct ProPDFReflowReaderView: View {
             onPrev: { debouncedSyncCurrentPDFPage() },
             onCenterTap: { onCenterTap?() },
             onPageTurn: { debouncedSyncCurrentPDFPage() },
+            onHighlightCreated: { text in
+                applyReflowHighlight(text: text, colorHex: prefs.defaultHighlightColor.rawValue, style: .highlight)
+            },
+            onHighlightCreatedWithMetadata: { id, text, color in
+                applyReflowHighlight(id: id, text: text, colorHex: color, style: .highlight)
+            },
+            onHighlightTapped: { highlightID in
+                handleHighlightTapped(id: highlightID)
+            },
+            onTextSelected: { text in
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                    selectedTextForHUD = text
+                }
+            },
+            onSelectionDismissed: {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    selectedTextForHUD = nil
+                }
+            },
             pdfID: pdf.id,
             initialScrollFraction: 0.0,
             onScrollFractionChanged: { _ in debouncedSyncCurrentPDFPage() },
@@ -477,6 +505,168 @@ struct ProPDFReflowReaderView: View {
         )
         .opacity(hasAnchoredInitialPage ? 1.0 : 0.0)
         .animation(.easeInOut(duration: 0.18), value: hasAnchoredInitialPage)
+    }
+
+    // MARK: - Reflow Highlighting & Text HUD
+
+    private func applyReflowHighlight(
+        id: String = UUID().uuidString,
+        text: String,
+        colorHex: String,
+        note: String? = nil,
+        symbol: String? = nil,
+        style: AnnotationMarkupStyle = .highlight
+    ) {
+        let annKind: Annotation.AnnotationKind
+        switch style {
+        case .underline: annKind = .underline
+        case .strikeOut: annKind = .strikeOut
+        case .highlight: annKind = (note != nil) ? .note : .highlight
+        }
+
+        var annotation = Annotation(
+            id: UUID(uuidString: id) ?? UUID(),
+            pdfID: pdf.id,
+            pageIndex: currentPageIndex,
+            chapterTitle: "Page \(currentPageIndex + 1)",
+            kind: annKind,
+            createdAt: Date(),
+            modifiedAt: Date(),
+            colorHex: colorHex,
+            selectedText: text,
+            noteText: note
+        )
+        if let s = symbol {
+            annotation.marginaliaSymbolRaw = s
+            if note == nil {
+                annotation.noteText = "Marginalia Symbol: \(s)"
+            }
+        }
+        AnnotationStore.shared.add(annotation)
+
+        let safeSymbol = symbol?.replacingOccurrences(of: "'", with: "\\'") ?? ""
+        let js = "if (window.applyInksyncHighlight) { window.applyInksyncHighlight('\(annotation.id.uuidString)', '\(colorHex)', '\(safeSymbol)', '\(style.rawValue)'); }"
+        webViewRef?.evaluateJavaScript(js)
+
+        HapticEngine.selection()
+        withAnimation(.easeInOut(duration: 0.18)) {
+            selectedTextForHUD = nil
+            activeHighlightToEdit = nil
+        }
+    }
+
+    private func handleHighlightTapped(id: String) {
+        let anns = AnnotationStore.shared.annotations(for: pdf.id)
+        if let match = anns.first(where: { $0.id.uuidString == id }) {
+            activeHighlightToEdit = match
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                selectedTextForHUD = match.selectedText ?? ""
+            }
+        }
+    }
+
+    private func unhighlightInReflow(text: String) {
+        let anns = AnnotationStore.shared.annotations(for: pdf.id)
+        if let active = activeHighlightToEdit {
+            AnnotationStore.shared.delete(active)
+            let js = "if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(active.id.uuidString)'); }"
+            webViewRef?.evaluateJavaScript(js)
+        } else if let match = anns.first(where: { $0.id.uuidString == text || $0.selectedText == text }) {
+            AnnotationStore.shared.delete(match)
+            let js = "if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(match.id.uuidString)'); }"
+            webViewRef?.evaluateJavaScript(js)
+        }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            selectedTextForHUD = nil
+            activeHighlightToEdit = nil
+        }
+        webViewRef?.evaluateJavaScript("window.getSelection()?.removeAllRanges();")
+    }
+
+    @ViewBuilder
+    private func textSelectionHUDOverlay(bottomInset: CGFloat) -> some View {
+        if let selectedText = selectedTextForHUD, !selectedText.isEmpty {
+            ZStack {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            selectedTextForHUD = nil
+                            activeHighlightToEdit = nil
+                        }
+                        webViewRef?.evaluateJavaScript("window.getSelection()?.removeAllRanges();")
+                    }
+
+                VStack {
+                    Spacer()
+                    ProPDFTextSelectionHUD(
+                        selectedText: selectedText,
+                        pageIndex: currentPageIndex,
+                        onHighlight: { color in
+                            prefs.defaultHighlightColor = color
+                            applyReflowHighlight(text: selectedText, colorHex: color.rawValue, style: .highlight)
+                        },
+                        onMarkup: { color, style in
+                            prefs.defaultHighlightColor = color
+                            applyReflowHighlight(text: selectedText, colorHex: color.rawValue, style: style)
+                        },
+                        onUnhighlight: {
+                            unhighlightInReflow(text: selectedText)
+                        },
+                        onAddNote: { note in
+                            applyReflowHighlight(text: selectedText, colorHex: prefs.defaultHighlightColor.rawValue, note: note)
+                        },
+                        onCopy: {
+                            UIPasteboard.general.string = selectedText
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                selectedTextForHUD = nil
+                            }
+                            HapticEngine.selection()
+                        },
+                        onSpeak: { text in
+                            speechEngine.playSingle(text: text, boundsInPage: .zero, pageIndex: currentPageIndex, title: pdf.name)
+                        },
+                        onCreateZettelkastenCard: { text in
+                            let card = SDNotebook(
+                                title: "Quote from \(pdf.name) (Page \(currentPageIndex + 1))",
+                                linkedBookID: pdf.id
+                            )
+                            modelContext.insert(card)
+                            try? modelContext.save()
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                selectedTextForHUD = nil
+                            }
+                        },
+                        onAddMarginaliaSymbol: { symbol in
+                            applyReflowHighlight(text: selectedText, colorHex: prefs.defaultHighlightColor.rawValue, symbol: symbol)
+                        },
+                        onAdjustStart: { _ in },
+                        onAdjustEnd: { _ in },
+                        onDismiss: {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                selectedTextForHUD = nil
+                                activeHighlightToEdit = nil
+                            }
+                            webViewRef?.evaluateJavaScript("window.getSelection()?.removeAllRanges();")
+                        },
+                        onSaveVocabulary: { word in
+                            DictionaryLookupService.shared.lookupAndSave(
+                                term: word,
+                                contextSentence: selectedText,
+                                bookTitle: pdf.name,
+                                bookID: pdf.id.uuidString,
+                                modelContext: modelContext
+                            )
+                            HapticEngine.success()
+                        }
+                    )
+                    .padding(.bottom, max(bottomInset + 20, 34))
+                    .padding(.horizontal, 20)
+                }
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 
     @ViewBuilder

@@ -81,11 +81,26 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
                     NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSidebar"), object: nil)
                 case "/", "?":
                     NotificationCenter.default.post(name: NSNotification.Name("ReaderShowShortcutsHelp"), object: nil)
+                case "h":
+                    coordinator.handleHighlightOrToggleHighlighter()
                 default:
                     break
                 }
                 return
             }
+
+            if sender.input == "\r" {
+                coordinator.handleHighlightRequest()
+                return
+            }
+
+            if sender.input == "h" {
+                // If text is selected in the active web view, 'h' commits the highlight.
+                // If no selection is active, it preserves Vim backward page navigation.
+                coordinator.handleHKeyCommand(pageVC: pageVC)
+                return
+            }
+
             let isForward = sender.input == UIKeyCommand.inputRightArrow
                 || sender.input == UIKeyCommand.inputDownArrow
                 || (sender.input == " " && !sender.modifierFlags.contains(.shift))
@@ -1973,7 +1988,38 @@ extension EBookPageCurlReader {
             parent.onScrollFractionChanged?(fraction)
         }
 
-        private func handleHighlightRequest() {
+        func handleHKeyCommand(pageVC: UIPageViewController) {
+            guard let wv = primaryWebView else {
+                turnBackward(pageVC)
+                return
+            }
+            let js = "(window.getSelection() && !window.getSelection().isCollapsed && window.getSelection().toString().trim().length > 0) || (window.__lastSelectedText && window.__lastSelectedText.trim().length > 0)"
+            wv.evaluateJavaScript(js) { [weak self, weak pageVC] result, _ in
+                guard let self = self else { return }
+                let hasSelection = (result as? Bool) ?? false
+                if hasSelection {
+                    self.handleHighlightRequest()
+                } else if let pvc = pageVC {
+                    self.turnBackward(pvc)
+                }
+            }
+        }
+
+        func handleHighlightOrToggleHighlighter() {
+            guard let wv = primaryWebView else { return }
+            let js = "(window.getSelection() && !window.getSelection().isCollapsed && window.getSelection().toString().trim().length > 0) || (window.__lastSelectedText && window.__lastSelectedText.trim().length > 0)"
+            wv.evaluateJavaScript(js) { [weak self] result, _ in
+                guard let self = self else { return }
+                let hasSelection = (result as? Bool) ?? false
+                if hasSelection {
+                    self.handleHighlightRequest()
+                } else {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleHighlighterMode"), object: nil)
+                }
+            }
+        }
+
+        func handleHighlightRequest() {
             guard let wv = primaryWebView else { return }
             let colorHex = parent.prefs.defaultHighlightColor.rawValue
             let newID = UUID().uuidString
@@ -3032,8 +3078,10 @@ final class InksyncPageViewController: UIPageViewController {
             makeCmd(UIKeyCommand.inputPageDown, [], "Next Page"),
             makeCmd("j", [], "Next Page (Vim)"),
             makeCmd("k", [], "Previous Page (Vim)"),
-            makeCmd("h", [], "Previous Page (Vim)"),
+            makeCmd("h", [], "Previous Page / Highlight Selection (Vim)"),
             makeCmd("l", [], "Next Page (Vim)"),
+            makeCmd("\r", [], "Highlight Selection"),
+            makeCmd("h", .command, "Highlight Selection / Toggle Highlighter"),
             makeCmd("]", .command, "Next Page (Split-Notebook Safe)"),
             makeCmd("[", .command, "Previous Page (Split-Notebook Safe)"),
             makeCmd("r", .command, "Toggle Reflow Mode"),

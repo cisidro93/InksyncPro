@@ -22,6 +22,7 @@ public final class VolumeButtonPageTurnManager: ObservableObject {
     private var isListening: Bool = false
     private var initialVolume: Float = 0.5
     private var resetTask: Task<Void, Never>? = nil
+    private var volumeObservation: NSKeyValueObservation? = nil
 
     private init() {}
 
@@ -35,20 +36,14 @@ public final class VolumeButtonPageTurnManager: ObservableObject {
             volumeView.alpha = 0.0001
             volumeView.clipsToBounds = true
 
-            // Locate the internal UISlider within MPVolumeView
-            for subview in volumeView.subviews {
-                if let slider = subview as? UISlider {
-                    self.volumeSlider = slider
-                    break
-                }
-            }
-
             let allWindows = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene })
                 .flatMap({ $0.windows })
             if let window = allWindows.first(where: { $0.isKeyWindow }) ?? allWindows.first {
                 window.addSubview(volumeView)
+                volumeView.layoutIfNeeded()
                 self.hiddenVolumeView = volumeView
+                self.volumeSlider = findVolumeSlider(in: volumeView)
             }
         }
 
@@ -67,9 +62,20 @@ public final class VolumeButtonPageTurnManager: ObservableObject {
             // Non-critical audio session fallback
         }
 
+        // Primary: Apple-standard Key-Value Observation on outputVolume
+        volumeObservation = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.new, .old]) { [weak self] _, change in
+            guard let self = self else { return }
+            Task { @MainActor in
+                guard let newVol = change.newValue else { return }
+                let oldVol = change.oldValue ?? self.initialVolume
+                self.processVolumeChange(newVolume: newVol, oldVolume: oldVol)
+            }
+        }
+
+        // Secondary / Fallback: System notification
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(handleVolumeChanged(_:)),
+            selector: #selector(handleVolumeNotification(_:)),
             name: NSNotification.Name("AVSystemController_SystemVolumeDidChangeNotification"),
             object: nil
         )
@@ -79,6 +85,9 @@ public final class VolumeButtonPageTurnManager: ObservableObject {
 
     public func stopListening() {
         guard isListening else { return }
+        volumeObservation?.invalidate()
+        volumeObservation = nil
+
         NotificationCenter.default.removeObserver(
             self,
             name: NSNotification.Name("AVSystemController_SystemVolumeDidChangeNotification"),
@@ -95,20 +104,15 @@ public final class VolumeButtonPageTurnManager: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    @objc private func handleVolumeChanged(_ notification: Notification) {
+    private func processVolumeChange(newVolume: Float, oldVolume: Float) {
         guard EBookPreferences.shared.volumeButtonsTurnPages else { return }
-        guard let userInfo = notification.userInfo else { return }
+        guard abs(newVolume - oldVolume) > 0.001 else { return }
 
-        let reason = userInfo["AVSystemController_AudioVolumeChangeReasonNotificationParameter"] as? String
-        guard reason == "ExplicitVolumeChange" else { return }
-
-        guard let newVolume = userInfo["AVSystemController_AudioVolumeNotificationParameter"] as? Float else { return }
-
-        if newVolume > initialVolume {
+        if newVolume > oldVolume {
             HapticEngine.selection()
             onVolumeUp?()
             initialVolume = newVolume
-        } else if newVolume < initialVolume {
+        } else if newVolume < oldVolume {
             HapticEngine.selection()
             onVolumeDown?()
             initialVolume = newVolume
@@ -131,6 +135,21 @@ public final class VolumeButtonPageTurnManager: ObservableObject {
                 }
             }
         }
+    }
+
+    @objc private func handleVolumeNotification(_ notification: Notification) {
+        guard let userInfo = notification.userInfo else { return }
+        if let newVolume = userInfo["AVSystemController_AudioVolumeNotificationParameter"] as? Float {
+            processVolumeChange(newVolume: newVolume, oldVolume: initialVolume)
+        }
+    }
+
+    private func findVolumeSlider(in view: UIView) -> UISlider? {
+        if let slider = view as? UISlider { return slider }
+        for sub in view.subviews {
+            if let slider = findVolumeSlider(in: sub) { return slider }
+        }
+        return nil
     }
 
     private func setVolume(_ value: Float) {
