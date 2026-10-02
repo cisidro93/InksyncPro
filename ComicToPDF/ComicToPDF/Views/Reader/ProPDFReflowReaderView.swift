@@ -29,6 +29,7 @@ struct ProPDFReflowReaderView: View {
     @State private var webViewRef: WKWebView? = nil
     @State private var chapterPage: Int = 0
     @State private var chapterTotalPages: Int = 1
+    @State private var isAnchorTriggerPending = false
 
     @State private var showingShortcutsSheet = false
     @ObservedObject private var prefs = EBookPreferences.shared
@@ -101,8 +102,10 @@ struct ProPDFReflowReaderView: View {
                         textSelectionHUDOverlay(bottomInset: proxy.safeAreaInsets.bottom)
                     }
                     .onChange(of: webViewRef) { _, newWebView in
-                        if newWebView != nil && !hasAnchoredInitialPage {
+                        if newWebView != nil && !hasAnchoredInitialPage && !isAnchorTriggerPending {
+                            isAnchorTriggerPending = true
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                isAnchorTriggerPending = false
                                 scrollToTargetPDFPage(pageIndex: targetPDFPageIndex)
                             }
                         }
@@ -113,8 +116,10 @@ struct ProPDFReflowReaderView: View {
                         lastSyncedPDFPageIndex = currentPageIndex
                         hasAnchoredInitialPage = false
                         isAnchoringInProgress = false
-                        if webViewRef != nil {
+                        if webViewRef != nil && !isAnchorTriggerPending {
+                            isAnchorTriggerPending = true
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                isAnchorTriggerPending = false
                                 scrollToTargetPDFPage(pageIndex: targetPDFPageIndex)
                             }
                         }
@@ -157,61 +162,6 @@ struct ProPDFReflowReaderView: View {
         .focused($isReflowFocused)
         .focusable()
         .focusEffectDisabled()
-        .onKeyPress(.rightArrow) {
-            guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
-            return .handled
-        }
-        .onKeyPress(.leftArrow) {
-            guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
-            return .handled
-        }
-        .onKeyPress(.downArrow) {
-            guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
-            return .handled
-        }
-        .onKeyPress(.upArrow) {
-            guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
-            return .handled
-        }
-        .onKeyPress(.space) {
-            guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
-            return .handled
-        }
-        .onKeyPress(.pageDown) {
-            guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
-            return .handled
-        }
-        .onKeyPress(.pageUp) {
-            guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
-            return .handled
-        }
-        .onKeyPress(KeyEquivalent("j")) {
-            guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
-            return .handled
-        }
-        .onKeyPress(KeyEquivalent("k")) {
-            guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
-            return .handled
-        }
-        .onKeyPress(KeyEquivalent("l")) {
-            guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
-            return .handled
-        }
-        .onKeyPress(KeyEquivalent("h")) {
-            guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
-            return .handled
-        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageForward"))) { _ in
             NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
         }
@@ -234,6 +184,12 @@ struct ProPDFReflowReaderView: View {
             },
             onToggleSpeech: {
                 NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleSpeechMode"), object: nil)
+            },
+            onToggleHighlighter: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleHighlighterMode"), object: nil)
+            },
+            onToggleMarkup: {
+                NotificationCenter.default.post(name: NSNotification.Name("ReaderToggleMarkupMode"), object: nil)
             },
             onToggleNotebook: {
                 NotificationCenter.default.post(name: .toggleStudyNotebook, object: nil)
@@ -821,6 +777,22 @@ struct ProPDFReflowReaderView: View {
         }
 
         let isClutterFiltered = prefs.pdfReflowSmartClutterRemoval
+
+        // If we already have a valid local compilation URL, skip recompiling and avoid overlay flash
+        if let currentURL = reflowHTMLURL, FileManager.default.fileExists(atPath: currentURL.path) {
+            isCompilingReflow = false
+            return
+        }
+
+        // If cache coordinator already has it on disk, seed it immediately without overlay flash
+        if ReflowCompilationCoordinator.shared.hasCachedReflow(pdfUUID: pdf.id.uuidString, isClutterFiltered: isClutterFiltered),
+           let cachedURL = ReflowCompilationCoordinator.shared.cachedReflowURL(pdfUUID: pdf.id.uuidString, isClutterFiltered: isClutterFiltered) {
+            self.reflowHTMLURL = cachedURL
+            self.isCompilingReflow = false
+            return
+        }
+
+        self.isCompilingReflow = true
         let compiledURL = await ReflowCompilationCoordinator.shared.compileOrFetchReflow(
             document: doc,
             pdfUUID: pdf.id.uuidString,

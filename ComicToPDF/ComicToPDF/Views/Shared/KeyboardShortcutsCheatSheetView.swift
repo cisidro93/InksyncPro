@@ -41,7 +41,7 @@ struct KeyboardShortcutsCheatSheetView: View {
                         shortcuts: [
                             ("Toggle Reflow Mode", ["⌘ R"]),
                             ("Read Aloud / Dictation", ["⌘ D", "⌥ Space"]),
-                            ("Stylus Highlighter Mode", ["⌘ H"]),
+                            ("Stylus Highlighter Mode", ["⇧ ⌘ H"]),
                             ("Inking & Markup Dock", ["⌘ M", "⇧ ⌘ A"]),
                             ("Study Notebook (Split/Sheet)", ["⌘ N"]),
                             ("Table of Contents / Sidebar", ["⌘ S", "⌘ T"])

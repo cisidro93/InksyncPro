@@ -20,6 +20,26 @@ import UIKit
 //    URL to activate the grant for file I/O beyond the picker session.
 // ============================================================================
 
+enum LinkedLibraryError: LocalizedError, Sendable {
+    case bookmarkResolutionFailed
+    case folderNotAccessible
+    case readOnlyFolder
+    case copyFailed
+    
+    var errorDescription: String? {
+        switch self {
+        case .bookmarkResolutionFailed:
+            return "Could not secure access to this folder. Please try linking it again."
+        case .folderNotAccessible:
+            return "The selected folder is not accessible or access was revoked."
+        case .readOnlyFolder:
+            return "The selected drive folder is read-only."
+        case .copyFailed:
+            return "None of the selected files could be copied to the drive."
+        }
+    }
+}
+
 @MainActor
 final class LinkedLibraryScanner: ObservableObject {
 
@@ -58,20 +78,22 @@ final class LinkedLibraryScanner: ObservableObject {
     /// Files are never copied — only referenced via persistent bookmarks.
     func linkDrive(folderURL: URL, bookmarkData: Data, displayName: String? = nil) async throws -> AppSettingsManager.LinkedDriveEntry {
         var isStale = false
-        let resolvedURL: URL
-        if let res = try? URL(
+        guard let resolvedURL = try? URL(
             resolvingBookmarkData: bookmarkData,
             options: .withoutUI,
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
-        ) {
-            resolvedURL = res
-        } else {
-            resolvedURL = folderURL
+        ) else {
+            Logger.shared.log("LinkedLibraryScanner: Failed to resolve bookmark data for '\(folderURL.lastPathComponent)'", category: "Drive", type: .error)
+            throw LinkedLibraryError.bookmarkResolutionFailed
         }
 
         let accessing = resolvedURL.startAccessingSecurityScopedResource()
-        defer { if accessing { resolvedURL.stopAccessingSecurityScopedResource() } }
+        guard accessing else {
+            Logger.shared.log("LinkedLibraryScanner: Failed to start accessing security-scoped resource for '\(resolvedURL.lastPathComponent)'", category: "Drive", type: .error)
+            throw LinkedLibraryError.folderNotAccessible
+        }
+        defer { resolvedURL.stopAccessingSecurityScopedResource() }
 
         // Probe write capability while access is still active
         let isReadOnly = !FileManager.default.isWritableFile(atPath: resolvedURL.path)
@@ -156,7 +178,14 @@ final class LinkedLibraryScanner: ObservableObject {
                     relativeTo: nil,
                     bookmarkDataIsStale: &isStale
                 )) ?? item.url
-                let bookmark = item.bookmark
+                var bookmark = item.bookmark
+                if let fresh = try? fileURL.bookmarkData(
+                    options: [],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                ) {
+                    bookmark = fresh
+                }
 
                 let accessing = fileURL.startAccessingSecurityScopedResource()
                 defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
@@ -512,8 +541,7 @@ final class LinkedLibraryScanner: ObservableObject {
         defer { if accessing { targetFolderURL.stopAccessingSecurityScopedResource() } }
 
         guard FileManager.default.isWritableFile(atPath: targetFolderURL.path) else {
-            throw NSError(domain: "LinkedLibrary", code: 3,
-                          userInfo: [NSLocalizedDescriptionKey: "The selected drive folder is read-only."])
+            throw LinkedLibraryError.readOnlyFolder
         }
 
         let total = files.count
@@ -532,8 +560,7 @@ final class LinkedLibraryScanner: ObservableObject {
         }
 
         guard !copiedPairs.isEmpty else {
-            throw NSError(domain: "LinkedLibrary", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "None of the selected files could be copied to the drive."])
+            throw LinkedLibraryError.copyFailed
         }
 
         progress(0.95, "Linking drive files...")
@@ -668,6 +695,14 @@ final class LinkedLibraryScanner: ObservableObject {
                         metadata.issueNumber = parsedTokens.issueNumber
                     }
 
+                    // Create per-file bookmark while access to root directory is active,
+                    // falling back to volume bookmark.
+                    let perFileBookmark = try? fileURL.bookmarkData(
+                        options: [],
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    )
+
                     var pdf = ConvertedPDF(
                         name: stem,
                         url: fileURL,
@@ -676,7 +711,7 @@ final class LinkedLibraryScanner: ObservableObject {
                         metadata: metadata
                     )
                     // The volume bookmark grants access to all files in the linked directory
-                    pdf.sourceMode = .linked(bookmarkData: driveBookmark)
+                    pdf.sourceMode = .linked(bookmarkData: perFileBookmark ?? driveBookmark)
                     tempPDFs.append(pdf)
                 }
                 return tempPDFs

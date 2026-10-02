@@ -637,7 +637,7 @@ private struct UnifiedReaderKeyboardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .readerKeyboardShortcuts(
-                isEditingText: showNotebookPanel,
+                isEditingText: showNotebookPanel && UIResponder.isTextInputActive,
                 onNextPage: {
                     NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
                 },

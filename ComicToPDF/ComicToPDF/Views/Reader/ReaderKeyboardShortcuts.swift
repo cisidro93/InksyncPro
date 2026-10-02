@@ -109,10 +109,8 @@ struct ReaderKeyboardShortcuts: ViewModifier {
                             .keyboardShortcut(.space, modifiers: [.option])
                     }
 
-                    // Stylus Highlighter Mode (⌘H, ⇧⌘H)
+                    // Stylus Highlighter Mode (⇧⌘H)
                     if let onToggleHighlighter {
-                        Button("") { onToggleHighlighter() }
-                            .keyboardShortcut("h", modifiers: [.command])
                         Button("") { onToggleHighlighter() }
                             .keyboardShortcut("h", modifiers: [.command, .shift])
                     }
@@ -243,16 +241,29 @@ extension View {
 // MARK: - UIResponder Extension for Active Text Input Detection
 
 extension UIResponder {
+    @MainActor private static var cachedTextInputActive: (result: Bool, timestamp: Date)? = nil
+    @MainActor private static let textInputCacheTTL: TimeInterval = 0.10 // 100ms TTL
+
     /// True if any text field, text view, or web text element is currently first responder
-    static var isTextInputActive: Bool {
+    @MainActor static var isTextInputActive: Bool {
+        if let cached = cachedTextInputActive, Date().timeIntervalSince(cached.timestamp) < textInputCacheTTL {
+            return cached.result
+        }
+
         guard let keyWindow = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .flatMap({ $0.windows })
             .first(where: { $0.isKeyWindow }) else {
+            cachedTextInputActive = (false, Date())
             return false
         }
-        guard let responder = keyWindow.findActiveFirstResponder() else { return false }
-        return responder is UITextView || responder is UITextField || responder is UISearchBar
+        guard let responder = keyWindow.findActiveFirstResponder() else {
+            cachedTextInputActive = (false, Date())
+            return false
+        }
+        let result = responder is UITextView || responder is UITextField || responder is UISearchBar
+        cachedTextInputActive = (result, Date())
+        return result
     }
 }
 

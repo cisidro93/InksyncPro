@@ -23,11 +23,7 @@ struct ShareExtensionView: View {
     ]
 
     private var deepLinkURL: URL {
-        var urlComponents = URLComponents(string: "inksyncpro://shared-import")!
-        if let first = selectedFiles.first {
-            urlComponents.queryItems = [URLQueryItem(name: "file", value: first.name)]
-        }
-        return urlComponents.url ?? URL(string: "inksyncpro://shared-import")!
+        URL(string: "inksyncpro://shared-import")!
     }
     
     var body: some View {
@@ -445,8 +441,6 @@ struct ShareExtensionView: View {
 
     // MARK: - Load Shared Files
 
-    @State private var sessionStagingID: String = UUID().uuidString
-
     private func loadSharedFiles() {
         Task { @MainActor in
             var foundItems: [NSExtensionItem] = []
@@ -626,26 +620,6 @@ struct ShareExtensionView: View {
                         url: finalURL,
                         fileExtension: targetExt
                     ))
-                }
-            }
-
-            // Pre-stage all discovered files into App Group Inbox & PendingConversions if available
-            for file in filesToProcess {
-                try? self.markForConversion(file)
-            }
-
-            // Immediately set pending share flags and dual-bridge to pasteboard
-            let appGroupIDs = [
-                "group.com.antigravity.InksyncPro",
-                "group.com.antigravity.ComicToPDF",
-                "group.com.antigravity.inksync"
-            ]
-            let timestamp = Date().timeIntervalSince1970
-            for gid in appGroupIDs {
-                if let ud = UserDefaults(suiteName: gid) {
-                    ud.set(timestamp, forKey: "pendingShareImportTimestamp")
-                    ud.set(true, forKey: "hasPendingShareImport")
-                    ud.synchronize()
                 }
             }
 

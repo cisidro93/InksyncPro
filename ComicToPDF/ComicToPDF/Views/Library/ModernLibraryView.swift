@@ -476,7 +476,11 @@ struct ModernLibraryView: View {
                     let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
                     FolderLinkCoordinator.presentFolder { urls in
                         guard let targetURL = urls.first else { return }
+                        let accessing = targetURL.url.startAccessingSecurityScopedResource()
                         Task {
+                            defer {
+                                if accessing { targetURL.url.stopAccessingSecurityScopedResource() }
+                            }
                             await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
                             do {
                                 try await LinkedLibraryScanner.shared.offloadToExternalDrive(

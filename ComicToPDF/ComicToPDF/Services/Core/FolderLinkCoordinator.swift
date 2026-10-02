@@ -218,6 +218,18 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
                 }
                 return
             } else {
+                guard presented.view.window != nil else {
+                    presented.dismiss(animated: false) {
+                        DispatchQueue.main.async {
+                            if let safeTop = topViewController() {
+                                safeTop.present(picker, animated: true)
+                            } else {
+                                rootVC.present(picker, animated: true)
+                            }
+                        }
+                    }
+                    return
+                }
                 presented.present(picker, animated: true)
                 return
             }
