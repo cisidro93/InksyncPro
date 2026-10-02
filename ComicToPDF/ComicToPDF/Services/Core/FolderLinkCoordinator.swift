@@ -37,13 +37,6 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         coordinator.completion = completion
         FolderLinkCoordinator.live = coordinator
 
-        guard let rootVC = topViewController() else {
-            Logger.shared.log("FolderLinkCoordinator: no root view controller found — cannot present folder picker", category: "FolderLink", type: .error)
-            completion([])
-            FolderLinkCoordinator.live = nil
-            return
-        }
-
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: false)
         picker.delegate = coordinator
         picker.allowsMultipleSelection = false
@@ -55,7 +48,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         }
 
         Logger.shared.log("FolderLinkCoordinator: presenting dedicated folder picker", category: "FolderLink", type: .info)
-        rootVC.present(picker, animated: true)
+        presentSafely(picker)
     }
 
     /// Backward-compatible alias for folder linking.
@@ -70,13 +63,6 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         coordinator.completion = completion
         FolderLinkCoordinator.live = coordinator
 
-        guard let rootVC = topViewController() else {
-            Logger.shared.log("FolderLinkCoordinator: no root view controller found — cannot present file picker", category: "FolderLink", type: .error)
-            completion([])
-            FolderLinkCoordinator.live = nil
-            return
-        }
-
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedFileTypes, asCopy: false)
         picker.delegate = coordinator
         picker.allowsMultipleSelection = true
@@ -88,17 +74,21 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         }
 
         Logger.shared.log("FolderLinkCoordinator: presenting direct multi-file picker for linked files", category: "FolderLink", type: .info)
-        rootVC.present(picker, animated: true)
+        presentSafely(picker)
     }
 
     // MARK: - UIDocumentPickerDelegate
 
     /// Single-URL callback required by iPadOS when allowsMultipleSelection = false and a folder is picked.
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
-        documentPicker(controller, didPickDocumentsAt: [url])
+        handlePickedURLs([url], from: controller)
     }
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        handlePickedURLs(urls, from: controller)
+    }
+
+    private func handlePickedURLs(_ urls: [URL], from controller: UIDocumentPickerViewController) {
         guard !urls.isEmpty else {
             controller.dismiss(animated: true)
             finish(with: [])
@@ -106,57 +96,51 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         }
         Logger.shared.log("FolderLinkCoordinator: user picked \(urls.count) item(s): \(urls.map { $0.lastPathComponent }.joined(separator: ", "))", category: "FolderLink", type: .success)
 
-        // Dismiss picker immediately first — prevents XPC deadlocks with remote file provider
-        controller.dismiss(animated: true) { [weak self] in
-            guard let self = self else { return }
+        // Capture security-scoped bookmarks SYNCHRONOUSLY while the system picker's temporary
+        // sandbox extension is 100% active and before dismissal can invalidate the kernel token.
+        var results: [(url: URL, bookmark: Data)] = []
+        results.reserveCapacity(urls.count)
 
-            // Offload security scoping and bookmark creation to background task
-            Task.detached(priority: .userInitiated) { [weak self] in
-                var results: [(url: URL, bookmark: Data)] = []
-                results.reserveCapacity(urls.count)
-
-                for (index, url) in urls.enumerated() {
-                    if index % 25 == 0 { await Task.yield() }
-                    let accessing = url.startAccessingSecurityScopedResource()
-                    defer {
-                        if accessing {
-                            url.stopAccessingSecurityScopedResource()
-                        }
-                    }
-
-                    var bookmarkData: Data? = try? url.bookmarkData(
-                        options: [],
-                        includingResourceValuesForKeys: nil,
-                        relativeTo: nil
-                    )
-                    if bookmarkData == nil {
-                        bookmarkData = try? url.bookmarkData(
-                            options: .minimalBookmark,
-                            includingResourceValuesForKeys: nil,
-                            relativeTo: nil
-                        )
-                    }
-                    if bookmarkData == nil {
-                        bookmarkData = try? NSKeyedArchiver.archivedData(withRootObject: url, requiringSecureCoding: true)
-                    }
-
-                    if let bookmarkData {
-                        var isStale = false
-                        let resolvedURL = (try? URL(
-                            resolvingBookmarkData: bookmarkData,
-                            options: .withoutUI,
-                            relativeTo: nil,
-                            bookmarkDataIsStale: &isStale
-                        )) ?? url
-                        results.append((resolvedURL, bookmarkData))
-                    }
-                }
-
-                await MainActor.run {
-                    self?.finish(with: results)
+        for url in urls {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessing {
+                    url.stopAccessingSecurityScopedResource()
                 }
             }
+
+            var bookmarkData: Data? = nil
+            do {
+                bookmarkData = try url.bookmarkData(
+                    options: [],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+            } catch {
+                Logger.shared.log("FolderLinkCoordinator: Standard bookmark failed for \(url.lastPathComponent): \(error.localizedDescription) — trying .minimalBookmark", category: "FolderLink", type: .warning)
+                bookmarkData = try? url.bookmarkData(
+                    options: .minimalBookmark,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+            }
+            if bookmarkData == nil {
+                bookmarkData = try? NSKeyedArchiver.archivedData(withRootObject: url, requiringSecureCoding: true)
+            }
+
+            if let bookmarkData {
+                results.append((url, bookmarkData))
+            } else {
+                Logger.shared.log("FolderLinkCoordinator: Failed to create bookmark for \(url.lastPathComponent)", category: "FolderLink", type: .error)
+            }
         }
+
+        // Dismiss picker immediately
+        controller.dismiss(animated: true)
+
+        // UNCONDITIONALLY notify caller with results — NEVER bury inside controller.dismiss
+        // completion handler where iOS skips execution if the controller was already dismissing.
+        self.finish(with: results)
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
@@ -173,23 +157,43 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         FolderLinkCoordinator.live = nil
     }
 
+    private static func presentSafely(_ picker: UIViewController) {
+        guard let rootVC = topViewController() else {
+            Logger.shared.log("FolderLinkCoordinator: no root view controller found — cannot present picker", category: "FolderLink", type: .error)
+            live?.finish(with: [])
+            return
+        }
+
+        if let presented = rootVC.presentedViewController {
+            if presented.isBeingDismissed {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    if let safeTop = topViewController() {
+                        safeTop.present(picker, animated: true)
+                    } else {
+                        live?.finish(with: [])
+                    }
+                }
+                return
+            } else {
+                presented.present(picker, animated: true)
+                return
+            }
+        }
+        rootVC.present(picker, animated: true)
+    }
+
     private static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes
-        var windowScene: UIWindowScene? = nil
-        if let active = scenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
-            windowScene = active
-        } else if let first = scenes.first as? UIWindowScene {
-            windowScene = first
+            .compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive }
+        guard let windowScene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else { return nil }
+
+        let candidateWindows = windowScene.windows.filter { window in
+            let desc = String(describing: type(of: window))
+            return !desc.contains("UITextEffectsWindow") && !desc.contains("UIRemoteKeyboardWindow")
         }
-        guard let windowScene = windowScene else { return nil }
-        
-        var root: UIViewController? = nil
-        if let keyRoot = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController {
-            root = keyRoot
-        } else if let firstRoot = windowScene.windows.first?.rootViewController {
-            root = firstRoot
-        }
-        guard var top = root else { return nil }
+        let keyWindow = candidateWindows.first(where: { $0.isKeyWindow }) ?? candidateWindows.first ?? windowScene.windows.first
+        guard var top = keyWindow?.rootViewController else { return nil }
         
         while let presented = top.presentedViewController, !presented.isBeingDismissed {
             top = presented

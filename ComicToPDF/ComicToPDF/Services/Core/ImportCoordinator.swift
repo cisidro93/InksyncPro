@@ -97,119 +97,117 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
         let type = self.currentType
 
-        // Dismiss picker immediately first — prevents XPC deadlocks with remote file provider
-        controller.dismiss(animated: true) { [weak self] in
-            guard let self = self else { return }
+        // Dismiss picker immediately first
+        controller.dismiss(animated: true)
 
-            let stagingTask = Task.detached(priority: .userInitiated) { () -> [URL] in
-                if type == .json || type == .smartList {
-                    return urls
-                }
+        let stagingTask = Task.detached(priority: .userInitiated) { () -> [URL] in
+            if type == .json || type == .smartList {
+                return urls
+            }
 
-                // --- Parallel Staging: Phase 1 enumerate, Phase 2 concurrent copy ---
-                let fm = FileManager.default
-                let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cbt", "zip", "rar"]
+            // --- Parallel Staging: Phase 1 enumerate, Phase 2 concurrent copy ---
+            let fm = FileManager.default
+            let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cbt", "zip", "rar"]
 
-                let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
-                try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+            let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+            try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
 
-                // ── Phase 1: Collect candidate (source, dest) pairs without copying ──
-                struct CopyJob {
-                    let source: URL
-                    let dest: URL
-                }
-                var jobs: [CopyJob] = []
-                var seenInBatch = Set<String>()
+            // ── Phase 1: Collect candidate (source, dest) pairs without copying ──
+            struct CopyJob {
+                let source: URL
+                let dest: URL
+            }
+            var jobs: [CopyJob] = []
+            var seenInBatch = Set<String>()
 
-                for url in urls {
-                    let accessing = url.startAccessingSecurityScopedResource()
-                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            for url in urls {
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
-                    var isDirectory: ObjCBool = false
-                    if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
-                        // Recursively spider — metadata-only, no I/O
-                        let keys: [URLResourceKey] = [.isDirectoryKey]
-                        if let enumerator = fm.enumerator(at: url,
-                                                           includingPropertiesForKeys: keys,
-                                                           options: [.skipsHiddenFiles]) {
-                            var enumCount = 0
-                            while let fileURL = enumerator.nextObject() as? URL {
-                                enumCount += 1
-                                if enumCount % 25 == 0 { await Task.yield() }
+                var isDirectory: ObjCBool = false
+                if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                    // Recursively spider — metadata-only, no I/O
+                    let keys: [URLResourceKey] = [.isDirectoryKey]
+                    if let enumerator = fm.enumerator(at: url,
+                                                       includingPropertiesForKeys: keys,
+                                                       options: [.skipsHiddenFiles]) {
+                        var enumCount = 0
+                        while let fileURL = enumerator.nextObject() as? URL {
+                            enumCount += 1
+                            if enumCount % 25 == 0 { await Task.yield() }
 
-                                guard let rsrc = try? fileURL.resourceValues(forKeys: Set(keys)),
-                                      rsrc.isDirectory == false else { continue }
-                                guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
-                                guard seenInBatch.insert(fileURL.path).inserted else { continue }
+                            guard let rsrc = try? fileURL.resourceValues(forKeys: Set(keys)),
+                                  rsrc.isDirectory == false else { continue }
+                            guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
+                            guard seenInBatch.insert(fileURL.path).inserted else { continue }
 
-                                // Preserve native structure for SeriesNameParser Context
-                                let originalParent = fileURL.deletingLastPathComponent().lastPathComponent
-                                let destFolder = stagingDir.appendingPathComponent(originalParent)
-                                try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
-                                jobs.append(CopyJob(source: fileURL,
-                                                    dest: destFolder.appendingPathComponent(fileURL.lastPathComponent)))
-                            }
-                        }
-                    } else {
-                        // Standard single-file selection
-                        if allowedExts.contains(url.pathExtension.lowercased()) {
-                            guard seenInBatch.insert(url.path).inserted else { continue }
-                            let originalParent = url.deletingLastPathComponent().lastPathComponent
+                            // Preserve native structure for SeriesNameParser Context
+                            let originalParent = fileURL.deletingLastPathComponent().lastPathComponent
                             let destFolder = stagingDir.appendingPathComponent(originalParent)
                             try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
-                            jobs.append(CopyJob(source: url,
-                                                dest: destFolder.appendingPathComponent(url.lastPathComponent)))
+                            jobs.append(CopyJob(source: fileURL,
+                                                dest: destFolder.appendingPathComponent(fileURL.lastPathComponent)))
                         }
+                    }
+                } else {
+                    // Standard single-file selection
+                    if allowedExts.contains(url.pathExtension.lowercased()) {
+                        guard seenInBatch.insert(url.path).inserted else { continue }
+                        let originalParent = url.deletingLastPathComponent().lastPathComponent
+                        let destFolder = stagingDir.appendingPathComponent(originalParent)
+                        try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
+                        jobs.append(CopyJob(source: url,
+                                            dest: destFolder.appendingPathComponent(url.lastPathComponent)))
                     }
                 }
+            }
 
-                // ── Phase 2: Concurrent copy — up to 8 in-flight (APFS parallel I/O) ──
-                let maxConcurrent = 8
-                var foundURLs: [URL] = []
+            // ── Phase 2: Concurrent copy — up to 8 in-flight (APFS parallel I/O) ──
+            let maxConcurrent = 8
+            var foundURLs: [URL] = []
 
-                await withTaskGroup(of: URL?.self) { group in
-                    var inFlight = 0
+            await withTaskGroup(of: URL?.self) { group in
+                var inFlight = 0
 
-                    for job in jobs {
-                        // Back-pressure: drain one slot before adding when at capacity
-                        if inFlight >= maxConcurrent {
-                            if let result = await group.next() {
-                                if let url = result { foundURLs.append(url) }
-                                inFlight -= 1
-                            }
+                for job in jobs {
+                    // Back-pressure: drain one slot before adding when at capacity
+                    if inFlight >= maxConcurrent {
+                        if let result = await group.next() {
+                            if let url = result { foundURLs.append(url) }
+                            inFlight -= 1
                         }
-
-                        let src = job.source
-                        let dst = job.dest
-                        group.addTask {
-                            let accessing = src.startAccessingSecurityScopedResource()
-                            defer { if accessing { src.stopAccessingSecurityScopedResource() } }
-                            do {
-                                if FileManager.default.fileExists(atPath: dst.path) { try FileManager.default.removeItem(at: dst) }
-                                try FileManager.default.copyItem(at: src, to: dst)
-                                return dst
-                            } catch {
-                                Logger.shared.log("ImportCoordinator: Copy failed \(src.lastPathComponent): \(error.localizedDescription)",
-                                                  category: "System", type: .warning)
-                                return nil
-                            }
-                        }
-                        inFlight += 1
                     }
 
-                    // Drain remaining in-flight tasks
-                    for await result in group {
-                        if let url = result { foundURLs.append(url) }
+                    let src = job.source
+                    let dst = job.dest
+                    group.addTask {
+                        let accessing = src.startAccessingSecurityScopedResource()
+                        defer { if accessing { src.stopAccessingSecurityScopedResource() } }
+                        do {
+                            if FileManager.default.fileExists(atPath: dst.path) { try FileManager.default.removeItem(at: dst) }
+                            try FileManager.default.copyItem(at: src, to: dst)
+                            return dst
+                        } catch {
+                            Logger.shared.log("ImportCoordinator: Copy failed \(src.lastPathComponent): \(error.localizedDescription)",
+                                              category: "System", type: .warning)
+                            return nil
+                        }
                     }
+                    inFlight += 1
                 }
 
-                return foundURLs
+                // Drain remaining in-flight tasks
+                for await result in group {
+                    if let url = result { foundURLs.append(url) }
+                }
             }
 
-            Task { @MainActor in
-                let foundURLs = await stagingTask.value
-                self.finish(with: foundURLs)
-            }
+            return foundURLs
+        }
+
+        Task { @MainActor [weak self] in
+            let foundURLs = await stagingTask.value
+            self?.finish(with: foundURLs)
         }
     }
 

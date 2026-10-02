@@ -44,7 +44,7 @@ final class LinkedLibraryScanner: ObservableObject {
     weak var conversionManager: ConversionManager?
 
     // Supported comic/book file extensions
-    private let supportedExtensions = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
+    private let supportedExtensions = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar"]
 
     /// Drives with more files than this threshold are treated as "large drives".
     /// Large drives are registered as a single DriveFolder card in the library
@@ -759,33 +759,75 @@ final class LinkedLibraryScanner: ObservableObject {
     }
 
     @objc private func handleStaleBookmark(_ notification: Notification) {
-        guard let staleData = notification.object as? Data,
-              let manager = conversionManager else { return }
+        guard let staleData = notification.object as? Data else { return }
+        let manager = conversionManager ?? ConversionManager.shared
 
-        for idx in manager.convertedPDFs.indices {
-            if case .linked(let bm) = manager.convertedPDFs[idx].sourceMode, bm == staleData {
-                let name = manager.convertedPDFs[idx].name
-                Logger.shared.log("LinkedLibraryScanner: Stale bookmark for '\(name)' — attempting refresh", category: "Drive", type: .warning)
+        // Attempt resolving and capturing security scope to create a valid fresh bookmark
+        var isStale = false
+        guard let staleURL = try? URL(
+            resolvingBookmarkData: staleData,
+            options: .withoutUI,
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) else {
+            Logger.shared.log("LinkedLibraryScanner: Could not resolve stale bookmark — drive may be disconnected", category: "Drive", type: .error)
+            return
+        }
 
-                var isStale = false
-                if let staleURL = try? URL(
-                    resolvingBookmarkData: staleData,
-                    options: .withoutUI,
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale
-                ), let freshBookmark = try? staleURL.bookmarkData(
-                    options: [],
-                    includingResourceValuesForKeys: nil,
-                    relativeTo: nil
-                ) {
-                    manager.convertedPDFs[idx].sourceMode = .linked(bookmarkData: freshBookmark)
-                    Logger.shared.log("LinkedLibraryScanner: Refreshed bookmark for '\(name)'", category: "Drive")
-                } else {
-                    Logger.shared.log("LinkedLibraryScanner: Could not refresh bookmark for '\(name)' — drive may be disconnected", category: "Drive", type: .error)
-                }
+        let accessing = staleURL.startAccessingSecurityScopedResource()
+        defer { if accessing { staleURL.stopAccessingSecurityScopedResource() } }
+
+        var freshBookmark: Data? = try? staleURL.bookmarkData(
+            options: [],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        if freshBookmark == nil {
+            freshBookmark = try? staleURL.bookmarkData(
+                options: .minimalBookmark,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+        }
+        guard let refreshed = freshBookmark else {
+            Logger.shared.log("LinkedLibraryScanner: Failed to generate refreshed bookmark for '\(staleURL.lastPathComponent)'", category: "Drive", type: .error)
+            return
+        }
+
+        var didUpdate = false
+
+        // 1. Refresh any linked drive volume bookmarks in AppSettingsManager
+        for drive in AppSettingsManager.shared.linkedDrives {
+            if drive.volumeBookmarkData == staleData {
+                var updated = drive
+                updated.volumeBookmarkData = refreshed
+                updated.lastSeenDate = Date()
+                AppSettingsManager.shared.updateLinkedDrive(updated)
+                didUpdate = true
+                Logger.shared.log("LinkedLibraryScanner: Refreshed volume bookmark for drive '\(drive.displayName)'", category: "Drive", type: .success)
             }
         }
 
-        manager.saveLibrary()
+        // 2. Refresh manager.convertedPDFs
+        for idx in manager.convertedPDFs.indices {
+            if case .linked(let bm) = manager.convertedPDFs[idx].sourceMode, bm == staleData {
+                manager.convertedPDFs[idx].sourceMode = .linked(bookmarkData: refreshed)
+                didUpdate = true
+                Logger.shared.log("LinkedLibraryScanner: Refreshed bookmark for '\(manager.convertedPDFs[idx].name)'", category: "Drive", type: .info)
+            }
+        }
+
+        // 3. Refresh LibraryService.shared.items
+        for idx in LibraryService.shared.items.indices {
+            if case .linked(let bm) = LibraryService.shared.items[idx].sourceMode, bm == staleData {
+                LibraryService.shared.items[idx].sourceMode = .linked(bookmarkData: refreshed)
+                didUpdate = true
+            }
+        }
+
+        if didUpdate {
+            manager.saveLibrary()
+            LibraryService.shared.saveLibrary(isStructural: false)
+        }
     }
 }
