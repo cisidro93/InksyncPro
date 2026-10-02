@@ -44,11 +44,18 @@ final class LibraryService: ObservableObject {
             
             // Preserve newly arrived items from in-flight share imports or cold launch file handoffs
             let memoryCandidates = ConversionManager.shared.convertedPDFs + self.items
+            var newlyPreserved: [ConvertedPDF] = []
+            var seenIDs = Set(uniqueItems.map(\.id))
             for memItem in memoryCandidates {
                 let memCanonical = LibraryViewModel.fastCanonicalPath(memItem.url)
-                if !uniqueItems.contains(where: { LibraryViewModel.fastCanonicalPath($0.url) == memCanonical || $0.id == memItem.id }) {
-                    uniqueItems.insert(memItem, at: 0)
+                if !seenPaths.contains(memCanonical) && !seenIDs.contains(memItem.id) {
+                    seenPaths.insert(memCanonical)
+                    seenIDs.insert(memItem.id)
+                    newlyPreserved.append(memItem)
                 }
+            }
+            if !newlyPreserved.isEmpty {
+                uniqueItems = newlyPreserved + uniqueItems
             }
 
             if uniqueItems.count != loadedItems.count {
@@ -118,10 +125,12 @@ final class LibraryService: ObservableObject {
             await loadLibrary()
             
             // Organize flat library files under series subdirectories retroactively
-            await PhysicalFileSystemRouter.shared.migrateFlatFilesToSeriesDirectories(manager: ConversionManager.shared)
-            self.items = ConversionManager.shared.convertedPDFs
-            try? await LibraryRepository.shared.sync(pdfs: self.items, collections: self.collections)
-            await LibraryDatabaseService.shared.save(self.items)
+            let didMigrate = await PhysicalFileSystemRouter.shared.migrateFlatFilesToSeriesDirectories(manager: ConversionManager.shared)
+            if didMigrate {
+                self.items = ConversionManager.shared.convertedPDFs
+                try? await LibraryRepository.shared.sync(pdfs: self.items, collections: self.collections)
+                await LibraryDatabaseService.shared.save(self.items)
+            }
             Task.detached(priority: .background) {
                 PhysicalFileSystemRouter.reapAllEmptySeriesDirectoriesInDocuments()
             }

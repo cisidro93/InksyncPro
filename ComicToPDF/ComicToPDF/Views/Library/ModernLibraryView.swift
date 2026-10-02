@@ -114,11 +114,12 @@ struct ModernLibraryView: View {
         cachedVisiblePDFs = visible
         cachedCollections = mappedCols
         
+        func isBlank(_ s: String?) -> Bool {
+            guard let s = s, !s.isEmpty else { return true }
+            return s.allSatisfy(\.isWhitespace)
+        }
         cachedReviewCount = mapped.filter { pdf in
-            let seriesEmpty = pdf.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
-            let authorEmpty = pdf.metadata.author?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
-            let titleEmpty  = pdf.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            return seriesEmpty || authorEmpty || titleEmpty
+            isBlank(pdf.metadata.series) || isBlank(pdf.metadata.author) || isBlank(pdf.metadata.title)
         }.count
         MetadataMatchService.shared.rebuildClusters(pdfs: visible)
         return (visible, mappedCols)

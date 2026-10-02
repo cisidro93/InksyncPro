@@ -358,6 +358,7 @@ actor LibraryModelActor {
         let existingPDFs = try modelContext.fetch(FetchDescriptor<SDConvertedPDF>())
         let pdfDict = Dictionary(grouping: existingPDFs, by: { $0.id }).compactMapValues { $0.first }
         
+        let defaultLocalData = try? JSONEncoder().encode(DocumentSourceMode.local)
         for pdf in pdfs {
             if let existing = pdfDict[pdf.id] {
                 if existing.name != pdf.name { existing.name = pdf.name }
@@ -370,8 +371,9 @@ actor LibraryModelActor {
                 if existing.isPrivate != pdf.isPrivate { existing.isPrivate = pdf.isPrivate }
                 if existing.contentType != pdf.contentType { existing.contentType = pdf.contentType }
                 if existing.addedByMode != pdf.addedByMode { existing.addedByMode = pdf.addedByMode }
-                if let encoded = try? JSONEncoder().encode(pdf.sourceMode), existing.sourceModeData != encoded {
-                    existing.sourceModeData = encoded
+                let modeData = (pdf.sourceMode == .local) ? defaultLocalData : (try? JSONEncoder().encode(pdf.sourceMode))
+                if let modeData, existing.sourceModeData != modeData {
+                    existing.sourceModeData = modeData
                 }
             } else {
                 let doc = SDConvertedPDF(

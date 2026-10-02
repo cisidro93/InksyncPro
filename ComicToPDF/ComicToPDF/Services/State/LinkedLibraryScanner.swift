@@ -249,8 +249,13 @@ final class LinkedLibraryScanner: ObservableObject {
         manager.saveLibrary()
 
         // Sync with authoritative LibraryService
+        var existingIDs = Set(LibraryService.shared.items.map(\.id))
+        var existingPaths = Set(LibraryService.shared.items.map { $0.url.fastCanonicalPath })
         for pdf in newPDFs {
-            if !LibraryService.shared.items.contains(where: { $0.id == pdf.id || $0.url.fastCanonicalPath == pdf.url.fastCanonicalPath }) {
+            let p = pdf.url.fastCanonicalPath
+            if !existingIDs.contains(pdf.id) && !existingPaths.contains(p) {
+                existingIDs.insert(pdf.id)
+                existingPaths.insert(p)
                 LibraryService.shared.items.append(pdf)
             }
         }
@@ -734,8 +739,13 @@ final class LinkedLibraryScanner: ObservableObject {
 
             if !chunkPDFs.isEmpty {
                 manager.convertedPDFs.append(contentsOf: chunkPDFs)
+                var existingIDs = Set(LibraryService.shared.items.map(\.id))
+                var existingPaths = Set(LibraryService.shared.items.map { $0.url.fastCanonicalPath })
                 for pdf in chunkPDFs {
-                    if !LibraryService.shared.items.contains(where: { $0.id == pdf.id || $0.url.fastCanonicalPath == pdf.url.fastCanonicalPath }) {
+                    let p = pdf.url.fastCanonicalPath
+                    if !existingIDs.contains(pdf.id) && !existingPaths.contains(p) {
+                        existingIDs.insert(pdf.id)
+                        existingPaths.insert(p)
                         LibraryService.shared.items.append(pdf)
                     }
                 }

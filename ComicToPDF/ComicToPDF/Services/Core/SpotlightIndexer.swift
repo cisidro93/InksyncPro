@@ -49,10 +49,16 @@ final class SpotlightIndexer {
                         attributeSet: attrs
                     )
                 }
-                do {
-                    try await localIndex.indexSearchableItems(items)
-                } catch {
-                    Logger.shared.log("Spotlight: failed to index library — \(error)", category: "Spotlight", type: .error)
+                let batchSize = 100
+                for i in stride(from: 0, to: items.count, by: batchSize) {
+                    guard !Task.isCancelled else { return }
+                    let chunk = Array(items[i..<min(i + batchSize, items.count)])
+                    do {
+                        try await localIndex.indexSearchableItems(chunk)
+                    } catch {
+                        Logger.shared.log("Spotlight: failed to index library batch — \(error)", category: "Spotlight", type: .error)
+                    }
+                    await Task.yield()
                 }
             }
         }

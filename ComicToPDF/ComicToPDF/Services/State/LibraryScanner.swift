@@ -367,7 +367,9 @@ actor LibraryScanner {
         }
 
         // ── Deduplication & ghost-file pruning ───────────────────────────────
-        let allPDFs = await MainActor.run { manager.convertedPDFs }
+        let (allPDFs, pendingAutoSelectFilenames) = await MainActor.run {
+            (manager.convertedPDFs, SharedImportCoordinator.shared.pendingAutoSelectFilenames)
+        }
         
         var seenPaths = Set<String>()
         var seenFingerprints = Set<String>()
@@ -464,9 +466,7 @@ actor LibraryScanner {
                 continue
             }
 
-            let isPendingImport = await MainActor.run {
-                SharedImportCoordinator.shared.pendingAutoSelectFilenames.contains(pdf.url.lastPathComponent)
-            }
+            let isPendingImport = pendingAutoSelectFilenames.contains(pdf.url.lastPathComponent)
             if isPendingImport {
                 seenPaths.insert(canonicalPath)
                 if !fingerprint.isEmpty { seenFingerprints.insert(fingerprint) }
@@ -542,9 +542,7 @@ actor LibraryScanner {
                     }
                 }
             }
-            withAnimation(.easeInOut(duration: 0.25)) {
-                manager.convertedPDFs = modified
-            }
+            manager.convertedPDFs = modified
             manager.saveLibrary()
         }
     }

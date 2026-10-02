@@ -230,14 +230,17 @@ struct ContentView: View {
                 }
                 
                 // Offload heavy scans, smart grouping, and disk maintenance to background task after UI settles
-                Task(priority: .utility) {
+                Task.detached(priority: .utility) {
                     try? await Task.sleep(for: .seconds(2.5))
                     guard !Task.isCancelled else { return }
                     await LibraryService.shared.runSmartGrouping()
-                    await LibraryScanner.shared.scanLibrary(manager: conversionManager)
+                    let manager = await MainActor.run { conversionManager }
+                    await LibraryScanner.shared.scanLibrary(manager: manager)
                     await SandboxCleanupManager.shared.passiveScan()
                     await SandboxCleanupManager.shared.autoCleanupIfStorageLow()
-                    PhysicalFileSystemRouter.shared.purgeLegacyCachedCoversIfNeeded(manager: conversionManager)
+                    await MainActor.run {
+                        PhysicalFileSystemRouter.shared.purgeLegacyCachedCoversIfNeeded(manager: manager)
+                    }
                 }
                 
                 Task {

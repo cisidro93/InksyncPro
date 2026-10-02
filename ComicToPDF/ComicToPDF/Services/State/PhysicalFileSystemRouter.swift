@@ -124,12 +124,14 @@ class PhysicalFileSystemRouter {
         // Safe no-op: Preserve all valid user covers without destructive disk purges.
     }
     
-    func migrateFlatFilesToSeriesDirectories(manager: ConversionManager) async {
+    @discardableResult
+    func migrateFlatFilesToSeriesDirectories(manager: ConversionManager) async -> Bool {
         let fileManager = FileManager.default
-        guard let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        guard let docDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return false }
         
         var updated = false
         var indicesToRemove = Set<Int>()
+        var trackedPaths = Set(manager.convertedPDFs.map { $0.url.fastCanonicalPath })
         
         for i in 0..<manager.convertedPDFs.count {
             let pdf = manager.convertedPDFs[i]
@@ -201,17 +203,19 @@ class PhysicalFileSystemRouter {
                     PhysicalFileSystemRouter.excludeFromBackup(at: resolvedDestURL)
                     
                     let canonicalDest = resolvedDestURL.fastCanonicalPath
-                    let alreadyTracked = manager.convertedPDFs.indices.contains { otherIdx in
-                        otherIdx != i && manager.convertedPDFs[otherIdx].url.fastCanonicalPath == canonicalDest
-                    }
+                    let srcCanonical = fileURL.fastCanonicalPath
+                    let alreadyTracked = trackedPaths.contains(canonicalDest) && canonicalDest != srcCanonical
                     
                     if isRedundantDuplicate || alreadyTracked {
                         // Destination already tracked in memory: delete duplicate flat record so two records don't point to same file
                         indicesToRemove.insert(i)
+                        trackedPaths.remove(srcCanonical)
                         updated = true
                     } else {
                         // Update the model url
                         manager.convertedPDFs[i].url = resolvedDestURL
+                        trackedPaths.remove(srcCanonical)
+                        trackedPaths.insert(canonicalDest)
                         
                         // Keep the model's logical series metadata in perfect sync with the grouping
                         if manager.convertedPDFs[i].metadata.series != series {
@@ -238,6 +242,7 @@ class PhysicalFileSystemRouter {
         if updated {
             manager.saveLibrary()
         }
+        return updated
     }
     
     func loadCoverThumbnail(for pdf: ConvertedPDF, manager: ConversionManager) async -> UIImage? {
