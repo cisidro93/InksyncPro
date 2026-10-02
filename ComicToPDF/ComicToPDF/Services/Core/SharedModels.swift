@@ -260,7 +260,7 @@ struct ConvertedPDF: Identifiable, Codable, Hashable, Sendable {
             self.contentType = explicit
         } else if ext == "epub" || ext == "mobi" || ext == "azw3" {
             self.contentType = .book
-        } else if ext == "cbz" || ext == "cbr" || ext == "cb7" {
+        } else if ext == "cbz" || ext == "cbr" || ext == "cb7" || ext == "rar" {
             self.contentType = .comic
         } else {
             self.contentType = .comic

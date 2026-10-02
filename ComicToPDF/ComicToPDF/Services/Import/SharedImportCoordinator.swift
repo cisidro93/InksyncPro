@@ -549,7 +549,7 @@ final class SharedImportCoordinator: ObservableObject {
                     continue
                 }
 
-                let rawData = item[fileTypeKey] ?? item[UTType.data.identifier] ?? item[UTType.pdf.identifier]
+                let rawData = item[fileTypeKey] ?? item["public.data"] ?? item[UTType.data.identifier] ?? item[UTType.pdf.identifier]
                 let pbData: Data? = (rawData as? Data) ?? (rawData as? NSData).map { Data(referencing: $0) }
 
                 // Minimum size check: Valid document archives / PDFs are never < 100 bytes

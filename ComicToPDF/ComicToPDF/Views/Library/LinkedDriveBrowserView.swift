@@ -259,7 +259,7 @@ struct LinkedDriveBrowserView: View {
                 }
 
                 do {
-                    let supportedExts = Set(["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"])
+                    let supportedExts = Set(["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar"])
                     let fm = FileManager.default
                     let children = try fm.contentsOfDirectory(
                         at: targetURL,

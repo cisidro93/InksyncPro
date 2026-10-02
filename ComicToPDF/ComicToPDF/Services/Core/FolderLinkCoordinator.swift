@@ -13,10 +13,14 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
 
     private override init() {}
 
+    private var didFinishHandling = false
+
     /// Comprehensive UTTypes matching all supported comic, book, and archive types across
     /// APFS, HFS+, FAT32, exFAT, and external USB storage volumes.
     static var supportedFileTypes: [UTType] {
-        var types: [UTType] = [.pdf, .epub, .zip, .archive, .data]
+        var types: [UTType] = [.folder, .directory]
+        if let vol = UTType("public.volume") { types.append(vol) }
+        types.append(contentsOf: [.pdf, .epub, .zip, .archive, .data])
         if let cbz = UTType(filenameExtension: "cbz") { types.append(cbz) }
         if let cbr = UTType(filenameExtension: "cbr") { types.append(cbr) }
         if let cb7 = UTType(filenameExtension: "cb7") { types.append(cb7) }
@@ -29,15 +33,22 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         return types
     }
 
+    /// Dedicated folder and external volume UTTypes for folder picking.
+    /// Includes public.volume so root of external USB drives is never greyed out on iPadOS.
+    static var supportedFolderTypes: [UTType] {
+        var types: [UTType] = [.folder, .directory]
+        if let vol = UTType("public.volume") { types.append(vol) }
+        if let item = UTType("public.item") { types.append(item) }
+        return types
+    }
+
     /// Present the folder picker for external USB drives or directory trees.
-    /// In iPadOS, allowsMultipleSelection MUST be false and types MUST only include folders,
-    /// enabling the top-right "Open" button to immediately choose the directory without spinning.
     static func presentFolder(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
         let coordinator = FolderLinkCoordinator()
         coordinator.completion = completion
         FolderLinkCoordinator.live = coordinator
 
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: false)
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedFolderTypes, asCopy: false)
         picker.delegate = coordinator
         picker.allowsMultipleSelection = false
         picker.shouldShowFileExtensions = true
@@ -51,9 +62,24 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         presentSafely(picker)
     }
 
-    /// Backward-compatible alias for folder linking.
+    /// Unified presentation for external drives: allows picking folders, the drive root, or comic files directly.
     static func present(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
-        presentFolder(completion: completion)
+        let coordinator = FolderLinkCoordinator()
+        coordinator.completion = completion
+        FolderLinkCoordinator.live = coordinator
+
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedFileTypes, asCopy: false)
+        picker.delegate = coordinator
+        picker.allowsMultipleSelection = true
+        picker.shouldShowFileExtensions = true
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            picker.modalPresentationStyle = .formSheet
+        } else {
+            picker.modalPresentationStyle = .fullScreen
+        }
+
+        Logger.shared.log("FolderLinkCoordinator: presenting unified drive picker", category: "FolderLink", type: .info)
+        presentSafely(picker)
     }
 
     /// Present the document picker allowing users to link specific comic/book files directly without copying.
@@ -89,9 +115,17 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
     }
 
     private func handlePickedURLs(_ urls: [URL], from controller: UIDocumentPickerViewController) {
+        guard !didFinishHandling else { return }
+        didFinishHandling = true
+
         guard !urls.isEmpty else {
-            controller.dismiss(animated: true)
-            finish(with: [])
+            if controller.isBeingDismissed || controller.presentingViewController == nil {
+                finish(with: [])
+            } else {
+                controller.dismiss(animated: true) { [weak self] in
+                    self?.finish(with: [])
+                }
+            }
             return
         }
         Logger.shared.log("FolderLinkCoordinator: user picked \(urls.count) item(s): \(urls.map { $0.lastPathComponent }.joined(separator: ", "))", category: "FolderLink", type: .success)
@@ -135,18 +169,27 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             }
         }
 
-        // Dismiss picker immediately
-        controller.dismiss(animated: true)
-
-        // UNCONDITIONALLY notify caller with results — NEVER bury inside controller.dismiss
-        // completion handler where iOS skips execution if the controller was already dismissing.
-        self.finish(with: results)
+        let capturedResults = results
+        if controller.isBeingDismissed || controller.presentingViewController == nil {
+            self.finish(with: capturedResults)
+        } else {
+            controller.dismiss(animated: true) { [weak self] in
+                self?.finish(with: capturedResults)
+            }
+        }
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        guard !didFinishHandling else { return }
+        didFinishHandling = true
         Logger.shared.log("FolderLinkCoordinator: user cancelled picker", category: "FolderLink", type: .info)
-        controller.dismiss(animated: true)
-        finish(with: [])
+        if controller.isBeingDismissed || controller.presentingViewController == nil {
+            finish(with: [])
+        } else {
+            controller.dismiss(animated: true) { [weak self] in
+                self?.finish(with: [])
+            }
+        }
     }
 
     // MARK: - Private

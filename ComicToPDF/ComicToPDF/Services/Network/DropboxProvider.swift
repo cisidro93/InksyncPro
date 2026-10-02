@@ -335,7 +335,7 @@ class DropboxProvider: NSObject, CloudStorageProvider, ObservableObject {
             throw NSError(domain: "Dropbox", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
 
-        let supported: Set<String> = ["cbz", "cbr", "epub", "zip", "pdf", "cb7", "cbt"]
+        let supported: Set<String> = ["cbz", "cbr", "epub", "zip", "pdf", "cb7", "cbt", "rar"]
         var allFiles: [CloudFile] = []
         var cursor: String? = nil
         var hasMore = true

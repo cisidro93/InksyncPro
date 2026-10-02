@@ -1018,8 +1018,8 @@ struct ShareExtensionView: View {
 
         var newItems: [[String: Any]] = []
         var totalBytes: Int64 = 0
-        let maxSingleFileBytes: Int64 = 15_000_000 // 15MB limit per file to preserve 120MB extension memory budget
-        let maxTotalBytes: Int64 = 30_000_000 // 30MB total cap
+        let maxSingleFileBytes: Int64 = 85_000_000 // 85MB limit per file (well within 120MB extension budget)
+        let maxTotalBytes: Int64 = 100_000_000 // 100MB total cap
 
         for file in files {
             // Find the best existing accessible copy of this file
@@ -1046,9 +1046,9 @@ struct ShareExtensionView: View {
                 ?? (try? FileManager.default.attributesOfItem(atPath: candidateURL.path)[.size] as? Int64)
                 ?? 0
 
-            // If file exceeds 15MB, rely entirely on App Group disk staging to prevent Jetsam memory kills
+            // If file exceeds 85MB, rely on App Group disk staging to prevent Jetsam memory kills
             guard fileSize > 0, fileSize <= maxSingleFileBytes, (totalBytes + fileSize) <= maxTotalBytes else {
-                print("[ShareExt] Notice: File '\(file.name)' (\(fileSize) bytes) staged to App Group disk. Skipping RAM pasteboard bridge to preserve 120MB extension limit.")
+                print("[ShareExt] Notice: File '\(file.name)' (\(fileSize) bytes) exceeds RAM pasteboard bridge threshold. Relying on container staging.")
                 continue
             }
 
@@ -1068,7 +1068,8 @@ struct ShareExtensionView: View {
                 var dict: [String: Any] = [
                     fileTypeKey: data,
                     fileNameKey: file.name,
-                    UTType.data.identifier: data
+                    UTType.data.identifier: data,
+                    "public.data": data
                 ]
                 let ext = (file.name as NSString).pathExtension.lowercased()
                 if let specificUTI = UTType(filenameExtension: ext)?.identifier {
@@ -1081,10 +1082,9 @@ struct ShareExtensionView: View {
         }
 
         if !newItems.isEmpty {
+            // Assign full multi-item array containing data and names
+            // CRITICAL: NEVER call UIPasteboard.general.setValue afterwards, as that completely wipes .items!
             UIPasteboard.general.items = newItems
-            if let firstFile = files.first {
-                UIPasteboard.general.setValue(firstFile.name, forPasteboardType: fileNameKey)
-            }
             print("[ShareExt] UIPasteboard.general.items populated with \(newItems.count) item(s)")
         }
     }

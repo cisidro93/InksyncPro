@@ -246,8 +246,8 @@ extension ConversionManager {
                 continue
             }
 
-            // Generic archive (CBZ/CBR/ZIP) — stage for concurrent import
-            if ["cbz", "cbr", "cb7", "cbt", "zip"].contains(ext) {
+            // Generic archive (CBZ/CBR/ZIP/RAR) — stage for concurrent import
+            if ["cbz", "cbr", "cb7", "cbt", "zip", "rar"].contains(ext) {
                 archiveURLs.append(url)
             }
         }

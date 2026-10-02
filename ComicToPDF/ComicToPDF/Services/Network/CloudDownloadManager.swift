@@ -70,7 +70,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
         } else {
             ext = "cbz"
         }
-        let knownExts: Set<String> = ["cbz", "cbr", "zip", "epub", "pdf", "cb7", "cbt"]
+        let knownExts: Set<String> = ["cbz", "cbr", "zip", "epub", "pdf", "cb7", "cbt", "rar"]
         let safeFileName = knownExts.contains(ext) ? pdf.name : (pdf.name + ".cbz")
 
         _ = await MainActor.run {
@@ -331,7 +331,7 @@ class CloudDownloadManager: NSObject, ObservableObject, URLSessionDownloadDelega
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "\\", with: "_")
         let ext = (name as NSString).pathExtension.lowercased()
-        let knownExt = ["cbz", "cbr", "zip", "epub", "pdf", "cb7", "cbt"].contains(ext)
+        let knownExt = ["cbz", "cbr", "zip", "epub", "pdf", "cb7", "cbt", "rar"].contains(ext)
         let withExt = knownExt ? name : (name + ".cbz")
         // Truncate the stem so the full path stays safely within POSIX limits
         if withExt.count > 200 {

@@ -93,7 +93,7 @@ class SandboxCleanupManager: ObservableObject {
         ) else { return [] }
 
         let oneHourAgo = Date().addingTimeInterval(-3600)
-        let comicExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
+        let comicExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar"]
 
         return contents.compactMap { url -> CleanupItem? in
             guard comicExtensions.contains(url.pathExtension.lowercased()),
@@ -123,7 +123,7 @@ class SandboxCleanupManager: ObservableObject {
         ) else { return [] }
 
         let oneHourAgo = Date().addingTimeInterval(-3600)
-        let comicExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
+        let comicExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar"]
         return contents.compactMap { url -> CleanupItem? in
             guard comicExtensions.contains(url.pathExtension.lowercased()),
                   let attrs = try? url.resourceValues(forKeys: [.fileSizeKey, .creationDateKey]),
@@ -163,7 +163,7 @@ class SandboxCleanupManager: ObservableObject {
             return pdf.url.lastPathComponent
         })
 
-        let comicExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip"]
+        let comicExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar"]
         var orphanedItems: [CleanupItem] = []
 
         while let url = enumerator.nextObject() as? URL {

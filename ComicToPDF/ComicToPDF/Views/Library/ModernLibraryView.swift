@@ -91,7 +91,8 @@ struct ModernLibraryView: View {
         UTType(filenameExtension: "cbz"),
         UTType(filenameExtension: "cbr"),
         UTType(filenameExtension: "cb7"),
-        UTType(filenameExtension: "cbt")
+        UTType(filenameExtension: "cbt"),
+        UTType(filenameExtension: "rar")
     ].compactMap { $0 }
 
     // PERF D-C1: Cached DTO mapping — previously recomputed on every render.

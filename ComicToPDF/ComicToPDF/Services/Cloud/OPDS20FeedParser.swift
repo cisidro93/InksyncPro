@@ -171,7 +171,7 @@ final class OPDS20FeedParser {
             if rel.contains("opds-spec.org/image") || rel == "thumbnail" || type_.hasPrefix("image/") {
                 if coverURL == nil { coverURL = url }
             } else if rel.contains("opds-spec.org/acquisition") || type_.contains("cbz") ||
-                      type_.contains("cbr") || type_.contains("pdf") || type_.contains("epub") {
+                      type_.contains("cbr") || type_.contains("rar") || type_.contains("pdf") || type_.contains("epub") {
                 if downloadURL == nil { downloadURL = url }
                 if let h = url?.absoluteString { komgaBookId = extractKomgaBookId(from: h) }
             } else if rel == "self", let url {

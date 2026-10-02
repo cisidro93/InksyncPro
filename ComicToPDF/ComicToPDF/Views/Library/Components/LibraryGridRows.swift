@@ -90,7 +90,7 @@ struct ModernGridFileCell: View {
                                         let ext = pdf.fileExtensionString.uppercased()
                                         let (c1, c2): (Color, Color) = {
                                             switch ext {
-                                            case "CBZ","CBR": return (Color(red:0.15,green:0.25,blue:0.6), Color(red:0.1,green:0.15,blue:0.4))
+                                            case "CBZ","CBR","RAR": return (Color(red:0.15,green:0.25,blue:0.6), Color(red:0.1,green:0.15,blue:0.4))
                                             case "PDF":       return (Color(red:0.6,green:0.15,blue:0.15), Color(red:0.4,green:0.1,blue:0.1))
                                             case "EPUB":      return (Color(red:0.15,green:0.5,blue:0.3),  Color(red:0.1,green:0.35,blue:0.2))
                                             default:          return (Color(red:0.25,green:0.25,blue:0.3), Color(red:0.15,green:0.15,blue:0.2))
@@ -363,7 +363,7 @@ struct ModernGridFileCell: View {
         let ext = pdf.fileExtensionString.uppercased()
         let (bg1, bg2): (Color, Color) = {
             switch ext {
-            case "CBZ", "CBR": return (Color(red: 0.15, green: 0.25, blue: 0.6), Color(red: 0.1, green: 0.15, blue: 0.4))
+            case "CBZ", "CBR", "RAR": return (Color(red: 0.15, green: 0.25, blue: 0.6), Color(red: 0.1, green: 0.15, blue: 0.4))
             case "PDF":        return (Color(red: 0.6, green: 0.15, blue: 0.15), Color(red: 0.4, green: 0.1, blue: 0.1))
             case "EPUB":       return (Color(red: 0.15, green: 0.5, blue: 0.3),  Color(red: 0.1, green: 0.35, blue: 0.2))
             default:           return (Color(red: 0.25, green: 0.25, blue: 0.3), Color(red: 0.15, green: 0.15, blue: 0.2))

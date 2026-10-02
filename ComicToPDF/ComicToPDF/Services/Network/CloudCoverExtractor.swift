@@ -89,7 +89,7 @@ actor CloudCoverExtractor {
             case "cbz", "zip":
                 imageData = try await extractFromZip(url: downloadURL, authHeader: authHeader, pdfName: pdf.name)
 
-            case "cbr":
+            case "cbr", "rar":
                 imageData = try await extractFromRar(url: downloadURL, authHeader: authHeader, pdfName: pdf.name, pdf: pdf)
 
             default:
@@ -210,7 +210,7 @@ actor CloudCoverExtractor {
         guard case .cloud(let provider, _) = pdf.sourceMode, provider == "Dropbox" else { return false }
 
         let ext = (pdf.name as NSString).pathExtension.lowercased()
-        guard ["cbz", "zip", "cbr"].contains(ext) else { return false }
+        guard ["cbz", "zip", "cbr", "rar"].contains(ext) else { return false }
 
         let coverURL = coversDirectory()
             .appendingPathComponent("cover_\(pdf.id.uuidString).jpg")

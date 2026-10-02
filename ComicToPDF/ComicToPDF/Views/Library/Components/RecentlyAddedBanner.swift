@@ -113,7 +113,7 @@ private struct RecentAddedCompactCard: View {
         let ext = pdf.fileExtensionString.uppercased()
         let (c1, c2): (Color, Color) = {
             switch ext {
-            case "CBZ", "CBR": return (.init(red: 0.15, green: 0.25, blue: 0.6), .init(red: 0.1, green: 0.15, blue: 0.4))
+            case "CBZ", "CBR", "RAR": return (.init(red: 0.15, green: 0.25, blue: 0.6), .init(red: 0.1, green: 0.15, blue: 0.4))
             case "PDF":        return (.init(red: 0.55, green: 0.13, blue: 0.13), .init(red: 0.4, green: 0.1, blue: 0.1))
             case "EPUB":       return (.init(red: 0.12, green: 0.45, blue: 0.28), .init(red: 0.08, green: 0.3, blue: 0.18))
             default:           return (.init(red: 0.22, green: 0.22, blue: 0.28), .init(red: 0.14, green: 0.14, blue: 0.18))

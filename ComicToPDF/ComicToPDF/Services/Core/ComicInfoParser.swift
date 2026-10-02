@@ -1,7 +1,8 @@
 import Foundation
 import ZIPFoundation
+import Unrar
 
-/// Parses ComicInfo.xml embedded inside a CBZ archive.
+/// Parses ComicInfo.xml embedded inside a comic archive (CBZ, CBR, RAR, ZIP).
 /// ComicInfo.xml is the industry-standard metadata format for comic archives,
 /// defined by the ComicRack schema.
 struct ComicInfoParser {
@@ -30,11 +31,11 @@ struct ComicInfoParser {
         var tags: [String] = []
     }
 
-    /// Attempt to read and parse ComicInfo.xml from a CBZ archive.
+    /// Attempt to read and parse ComicInfo.xml from a CBZ or CBR/RAR archive.
     /// Returns `nil` if the archive has no ComicInfo.xml or if parsing fails.
     static func parse(from archiveURL: URL) -> ComicInfo? {
         let ext = archiveURL.pathExtension.lowercased()
-        guard ["cbz", "zip"].contains(ext) else { return nil }
+        guard ["cbz", "zip", "cbr", "rar"].contains(ext) else { return nil }
 
         // Safeguard for giant archives (>2GB / ZIP64) on external USB drives:
         // Avoid multi-minute directory scans or ZIP64 unsupported errors during initial linking
@@ -43,6 +44,18 @@ struct ComicInfoParser {
         if fileSize > 2_000_000_000 {
             Logger.shared.log("ComicInfoParser: Skipping embedded XML for giant \(fileSize / (1024*1024))MB archive — using deterministic filename parser", category: "Import", type: .info)
             return nil
+        }
+
+        if ["cbr", "rar"].contains(ext) {
+            return ConcurrencyLocks.unrarLock.withLock {
+                guard let archive = try? Unrar.Archive(fileURL: archiveURL),
+                      let entries = try? archive.entries(),
+                      let entry = entries.first(where: { ($0.fileName as NSString).lastPathComponent.lowercased() == "comicinfo.xml" }),
+                      let data = try? archive.extract(entry) else {
+                    return nil
+                }
+                return parseXML(data)
+            }
         }
 
         guard let archive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: .utf8) else {
