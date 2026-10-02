@@ -146,6 +146,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
                     )) ?? url
                     results.append((resolvedURL, bookmarkData))
                 }
+            }
             await MainActor.run {
                 self?.finish(with: results)
             }
