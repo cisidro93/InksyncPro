@@ -229,8 +229,10 @@ struct ContentView: View {
                     isLogoBreathing = false
                 }
                 
-                // Offload heavy scans, smart grouping, and disk maintenance to background task
+                // Offload heavy scans, smart grouping, and disk maintenance to background task after UI settles
                 Task(priority: .utility) {
+                    try? await Task.sleep(for: .seconds(2.5))
+                    guard !Task.isCancelled else { return }
                     await LibraryService.shared.runSmartGrouping()
                     await LibraryScanner.shared.scanLibrary(manager: conversionManager)
                     await SandboxCleanupManager.shared.passiveScan()

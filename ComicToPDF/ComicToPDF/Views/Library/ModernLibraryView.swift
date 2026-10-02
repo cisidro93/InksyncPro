@@ -1816,12 +1816,15 @@ struct ModernLibraryView: View {
                 var fileResults: [(url: URL, bookmark: Data)] = []
 
                 for item in results {
-                    var isDir: ObjCBool = false
                     let accessing = item.url.startAccessingSecurityScopedResource()
-                    let isDirectory = FileManager.default.fileExists(atPath: item.url.path, isDirectory: &isDir) && isDir.boolValue
-                    if accessing { item.url.stopAccessingSecurityScopedResource() }
+                    defer { if accessing { item.url.stopAccessingSecurityScopedResource() } }
 
-                    if isDirectory || item.url.hasDirectoryPath {
+                    var isDir: ObjCBool = false
+                    let fileExistsDir = FileManager.default.fileExists(atPath: item.url.path, isDirectory: &isDir) && isDir.boolValue
+                    let resourceValues = try? item.url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+                    let isDirectory = fileExistsDir || (resourceValues?.isDirectory == true) || item.url.hasDirectoryPath || item.url.pathExtension.isEmpty
+
+                    if isDirectory {
                         folderResults.append(item)
                     } else {
                         fileResults.append(item)
@@ -1844,6 +1847,12 @@ struct ModernLibraryView: View {
                 if !fileResults.isEmpty {
                     let linkedCount = await scanner.linkFiles(pickedFiles: fileResults)
                     Logger.shared.log("handleLinkDrive: Successfully linked \(linkedCount) direct files", category: "Drive", type: .info)
+                }
+
+                if !folderResults.isEmpty || !fileResults.isEmpty {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        viewModel.filterState = .onDrive
+                    }
                 }
 
                 syncAndRebuildLibraryCache()

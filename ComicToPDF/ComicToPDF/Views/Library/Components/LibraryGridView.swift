@@ -15,6 +15,7 @@ struct GridRowItem: Identifiable {
 struct LibraryGridView: View {
     @EnvironmentObject var conversionManager: ConversionManager
     @Environment(\.horizontalSizeClass) private var hSizeClass
+    @ObservedObject private var driveMonitor = DriveMonitor.shared
 
     let items: [LibraryListItem]
     let contentShelf: ContentShelf
@@ -643,7 +644,7 @@ struct LibraryGridView: View {
 
     @ViewBuilder
     private func driveFolderCell(entry: AppSettingsManager.LinkedDriveEntry) -> some View {
-        let isConnected = DriveMonitor.shared.isConnected(driveID: entry.id)
+        let isConnected = driveMonitor.isConnected(driveID: entry.id)
         NavigationLink(destination: LinkedDriveBrowserView(driveEntry: entry)) {
             ZStack(alignment: .bottomLeading) {
                 // Card background
@@ -695,8 +696,7 @@ struct LibraryGridView: View {
             }
         }
         .buttonStyle(TactileButtonStyle())
-        .disabled(!isConnected)
-        .opacity(isConnected ? 1.0 : 0.55)
+        .opacity(isConnected ? 1.0 : 0.75)
         .contextMenu {
             if isConnected {
                 Button {

@@ -593,9 +593,12 @@ class PhysicalFileSystemRouter {
             }
             
             var warmedAny = false
+            var warmCount = 0
             for pdf in pdfsToWarm {
                 guard !Task.isCancelled else { return }
-                
+                warmCount += 1
+                if warmCount % 8 == 0 { await Task.yield() }
+
                 guard let coverURL = getCoverURL(for: pdf),
                       FileManager.default.fileExists(atPath: coverURL.path) else { continue }
 
@@ -626,28 +629,23 @@ class PhysicalFileSystemRouter {
             }
         }
 
-        // Pass 2 — generate covers for files that have no on-disk cover yet.
-        // ✅ OOM Crash Fix: Hand off all missing covers to the `ThumbnailGenerationQueue`.
-        // This ensures they are processed strictly maxConcurrent = 2 at a time, preventing
-        // overlapping bulk tasks from exhausting device RAM during large imports.
-        let pdfsNeedingCovers = allPDFs.filter { pdf in
-            guard let coverURL = getCoverURL(for: pdf) else { return true }
-            return !FileManager.default.fileExists(atPath: coverURL.path)
-        }
-        guard !pdfsNeedingCovers.isEmpty else { return }
-        Task(priority: .background) {
+        // Pass 2 & 3 — generate covers for files that have no on-disk cover yet off-loaded
+        Task(priority: .utility) {
+            let pdfsNeedingCovers = allPDFs.filter { pdf in
+                guard let coverURL = self.getCoverURL(for: pdf) else { return true }
+                return !FileManager.default.fileExists(atPath: coverURL.path)
+            }
+            guard !pdfsNeedingCovers.isEmpty else { return }
             for pdf in pdfsNeedingCovers {
                 await ThumbnailGenerationQueue.shared.enqueue(pdf, manager: manager)
             }
-        }
 
-        // Pass 3 — cloud cover extraction for Dropbox files still missing on-disk covers.
-        let cloudFilesNeedingCovers = pdfsNeedingCovers.filter {
-            if case .cloud = $0.sourceMode { return true }
-            return false
-        }
-        if !cloudFilesNeedingCovers.isEmpty {
-            Task(priority: .background) {
+            // Pass 3 — cloud cover extraction for Dropbox files still missing on-disk covers.
+            let cloudFilesNeedingCovers = pdfsNeedingCovers.filter {
+                if case .cloud = $0.sourceMode { return true }
+                return false
+            }
+            if !cloudFilesNeedingCovers.isEmpty {
                 await CloudCoverExtractor.shared.extract(for: cloudFilesNeedingCovers)
             }
         }

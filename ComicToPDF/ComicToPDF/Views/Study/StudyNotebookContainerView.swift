@@ -603,7 +603,16 @@ struct StudyShareSheet: UIViewControllerRepresentable {
     let items: [Any]
     
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let vc = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        if let popover = vc.popoverPresentationController {
+            if let windowScene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene ?? UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let keyWindow = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first {
+                popover.sourceView = keyWindow
+                popover.sourceRect = CGRect(x: keyWindow.bounds.midX, y: keyWindow.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+        }
+        return vc
     }
     
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}

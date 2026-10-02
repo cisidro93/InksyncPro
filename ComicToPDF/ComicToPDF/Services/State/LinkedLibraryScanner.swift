@@ -77,25 +77,17 @@ final class LinkedLibraryScanner: ObservableObject {
     /// Register a folder on an external drive or cloud provider.
     /// Files are never copied — only referenced via persistent bookmarks.
     func linkDrive(folderURL: URL, bookmarkData: Data, displayName: String? = nil) async throws -> AppSettingsManager.LinkedDriveEntry {
-        var isStale = false
-        guard let resolvedURL = try? URL(
-            resolvingBookmarkData: bookmarkData,
-            options: .withoutUI,
-            relativeTo: nil,
-            bookmarkDataIsStale: &isStale
-        ) else {
-            Logger.shared.log("LinkedLibraryScanner: Failed to resolve bookmark data for '\(folderURL.lastPathComponent)'", category: "Drive", type: .error)
-            throw LinkedLibraryError.bookmarkResolutionFailed
+        let resolvedURL: URL
+        if let resolved = try? BookmarkResolver.shared.resolve(bookmarkData) {
+            resolvedURL = resolved
+        } else {
+            resolvedURL = folderURL
         }
 
         let accessing = resolvedURL.startAccessingSecurityScopedResource()
-        guard accessing else {
-            Logger.shared.log("LinkedLibraryScanner: Failed to start accessing security-scoped resource for '\(resolvedURL.lastPathComponent)'", category: "Drive", type: .error)
-            throw LinkedLibraryError.folderNotAccessible
-        }
-        defer { resolvedURL.stopAccessingSecurityScopedResource() }
+        defer { if accessing { resolvedURL.stopAccessingSecurityScopedResource() } }
 
-        // Probe write capability while access is still active
+        // Probe write capability while access is active
         let isReadOnly = !FileManager.default.isWritableFile(atPath: resolvedURL.path)
 
         // Move disk I/O off the MainActor: recursively spider all subfolders like ImportCoordinator
@@ -144,9 +136,9 @@ final class LinkedLibraryScanner: ObservableObject {
         await registerFiles(files, driveEntry: entry, rootURL: resolvedURL)
 
         AppSettingsManager.shared.addLinkedDrive(entry)
-        Logger.shared.log("LinkedLibraryScanner: Linked drive '\(entry.displayName)' with \(files.count) files", category: "Drive")
-
+        DriveMonitor.shared.markConnected(driveID: entry.id)
         DriveMonitor.shared.startMonitoring(drives: AppSettingsManager.shared.linkedDrives)
+        Logger.shared.log("LinkedLibraryScanner: Linked drive '\(entry.displayName)' with \(files.count) files", category: "Drive")
 
         if let manager = conversionManager {
             if files.count <= 100 {

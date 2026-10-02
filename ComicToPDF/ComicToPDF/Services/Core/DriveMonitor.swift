@@ -122,8 +122,17 @@ final class DriveMonitor: ObservableObject {
         return nowConnected
     }
 
+    func markConnected(driveID: UUID) {
+        connectedDriveIDs.insert(driveID)
+    }
+
     func isConnected(driveID: UUID) -> Bool {
-        connectedDriveIDs.contains(driveID)
+        if connectedDriveIDs.contains(driveID) { return true }
+        if let drive = drives.first(where: { $0.id == driveID }),
+           Date().timeIntervalSince(drive.lastSeenDate) < 120 {
+            return true
+        }
+        return false
     }
 
     // MARK: - App Lifecycle

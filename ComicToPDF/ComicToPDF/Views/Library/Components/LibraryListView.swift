@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 @MainActor
 struct LibraryListView: View {
     @EnvironmentObject var conversionManager: ConversionManager
+    @ObservedObject private var driveMonitor = DriveMonitor.shared
     
     let items: [LibraryListItem]
     @Binding var isBatchMode: Bool
@@ -809,7 +810,7 @@ struct LibraryListView: View {
 
     @ViewBuilder
     private func driveFolderRow(entry: AppSettingsManager.LinkedDriveEntry) -> some View {
-        let isConnected = DriveMonitor.shared.isConnected(driveID: entry.id)
+        let isConnected = driveMonitor.isConnected(driveID: entry.id)
         NavigationLink(destination:
             LinkedDriveBrowserView(driveEntry: entry)
                 .environmentObject(conversionManager)
@@ -835,7 +836,7 @@ struct LibraryListView: View {
             .padding(.vertical, 2)
         }
         .buttonStyle(TactileButtonStyle())
-        .disabled(!isConnected)
+        .opacity(isConnected ? 1.0 : 0.75)
         .listRowBackground(Color.inkSurface.opacity(0.4))
         .listRowSeparatorTint(Color(UIColor.separator))
         .contextMenu {

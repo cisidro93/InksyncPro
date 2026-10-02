@@ -214,9 +214,6 @@ struct InksyncProApp: App {
                 task.setTaskCompleted(success: false)
             }
         }
-        
-        // Dynamically register installed custom fonts
-        CustomFontManager.shared.registerInstalledFonts()
     }
     
     @AppStorage("selectedTheme") private var selectedTheme: AppearanceMode = .system

@@ -636,32 +636,6 @@ struct ShareExtensionView: View {
            !suggested.hasPrefix("SharedDocument_"), !suggested.hasPrefix("temp_"), !suggested.hasPrefix("tmp_") {
             return suggested
         }
-
-        let fileUrlTypes = [UTType.fileURL.identifier, "public.file-url"]
-        for typeId in fileUrlTypes {
-            if provider.hasItemConformingToTypeIdentifier(typeId) || provider.registeredTypeIdentifiers.contains(typeId) {
-                let name: String? = await withCheckedContinuation { continuation in
-                    provider.loadItem(forTypeIdentifier: typeId, options: nil) { item, error in
-                        guard error == nil, let item = item else {
-                            continuation.resume(returning: nil)
-                            return
-                        }
-                        if let url = item as? URL, url.isFileURL {
-                            continuation.resume(returning: url.lastPathComponent)
-                        } else if let nsURL = item as? NSURL, let u = nsURL as URL?, u.isFileURL {
-                            continuation.resume(returning: u.lastPathComponent)
-                        } else if let str = item as? String, let u = URL(string: str), u.isFileURL {
-                            continuation.resume(returning: u.lastPathComponent)
-                        } else {
-                            continuation.resume(returning: nil)
-                        }
-                    }
-                }
-                if let name = name, !name.isEmpty, !name.hasPrefix("temp_"), !name.hasPrefix("tmp_"), !name.hasPrefix("SharedDocument_") {
-                    return name
-                }
-            }
-        }
         return nil
     }
 
@@ -992,8 +966,8 @@ struct ShareExtensionView: View {
 
         var newItems: [[String: Any]] = []
         var totalBytes: Int64 = 0
-        let maxSingleFileBytes: Int64 = 85_000_000 // 85MB limit per file (well within 120MB extension budget)
-        let maxTotalBytes: Int64 = 100_000_000 // 100MB total cap
+        let maxSingleFileBytes: Int64 = 8_000_000 // 8MB limit per file to preserve 60MB extension budget
+        let maxTotalBytes: Int64 = 12_000_000 // 12MB total cap
 
         for file in files {
             // Find the best existing accessible copy of this file
@@ -1020,9 +994,9 @@ struct ShareExtensionView: View {
                 ?? (try? FileManager.default.attributesOfItem(atPath: candidateURL.path)[.size] as? Int64)
                 ?? 0
 
-            // If file exceeds 85MB, rely on App Group disk staging to prevent Jetsam memory kills
+            // If file exceeds 8MB, rely on App Group disk staging to prevent Jetsam memory kills
             guard fileSize > 0, fileSize <= maxSingleFileBytes, (totalBytes + fileSize) <= maxTotalBytes else {
-                print("[ShareExt] Notice: File '\(file.name)' (\(fileSize) bytes) exceeds RAM pasteboard bridge threshold. Relying on container staging.")
+                print("[ShareExt] Notice: File '\(file.name)' (\(fileSize) bytes) staged to App Group disk. Skipping RAM pasteboard bridge to preserve 60MB extension limit.")
                 continue
             }
 
@@ -1039,16 +1013,10 @@ struct ShareExtensionView: View {
 
             if let data = fileData, !data.isEmpty {
                 totalBytes += Int64(data.count)
-                var dict: [String: Any] = [
+                let dict: [String: Any] = [
                     fileTypeKey: data,
-                    fileNameKey: file.name,
-                    UTType.data.identifier: data,
-                    "public.data": data
+                    fileNameKey: file.name
                 ]
-                let ext = (file.name as NSString).pathExtension.lowercased()
-                if let specificUTI = UTType(filenameExtension: ext)?.identifier {
-                    dict[specificUTI] = data
-                }
                 newItems.append(dict)
 
                 print("[ShareExt] Staged '\(file.name)' (\(data.count) bytes) to shared pasteboard bridge")
@@ -1057,7 +1025,6 @@ struct ShareExtensionView: View {
 
         if !newItems.isEmpty {
             // Assign full multi-item array containing data and names
-            // CRITICAL: NEVER call UIPasteboard.general.setValue afterwards, as that completely wipes .items!
             UIPasteboard.general.items = newItems
             print("[ShareExt] UIPasteboard.general.items populated with \(newItems.count) item(s)")
         }

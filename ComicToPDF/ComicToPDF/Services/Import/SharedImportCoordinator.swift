@@ -937,57 +937,30 @@ final class SharedImportCoordinator: ObservableObject {
             return true
         }
 
-        if appGroupIDs.contains(where: {
-            (UserDefaults(suiteName: $0)?.double(forKey: "pendingShareImportTimestamp") ?? 0) > 0 ||
-            UserDefaults(suiteName: $0)?.bool(forKey: "hasPendingShareImport") == true
-        }) {
-            return true
-        }
+        let now = Date().timeIntervalSince1970
+        var foundPending = false
 
-        // Sideload / Unsigned IPA Fallback Bridge: Check UIPasteboard.general for valid document file data
-        let fileTypeKey = "com.antigravity.InksyncPro.sharedFileData"
-        let fileNameKey = "com.antigravity.InksyncPro.sharedFileName"
-        if let pbData = UIPasteboard.general.data(forPasteboardType: fileTypeKey), pbData.count >= 100 {
-            let ext = Self.detectExtensionFromBytes(pbData)
-            if !self.isPayloadRecentlyIngested(count: pbData.count, ext: ext) {
-                return true
-            }
-        }
-        if UIPasteboard.general.items.contains(where: {
-            if let data = $0[fileTypeKey] as? Data, data.count >= 100 {
-                let ext = Self.detectExtensionFromBytes(data)
-                return !self.isPayloadRecentlyIngested(count: data.count, ext: ext)
-            }
-            if let name = $0[fileNameKey] as? String, !name.isEmpty,
-               let data = $0[UTType.data.identifier] as? Data,
-               data.count >= 100,
-               let ext = Self.detectExtensionFromBytes(data) {
-                return !self.isPayloadRecentlyIngested(count: data.count, ext: ext)
-            }
-            return false
-        }) {
-            return true
-        }
+        for groupID in appGroupIDs {
+            guard let ud = UserDefaults(suiteName: groupID) else { continue }
+            let ts = ud.double(forKey: "pendingShareImportTimestamp")
+            let hasFlag = ud.bool(forKey: "hasPendingShareImport")
 
-        // Also check physical directories in App Groups and fallbacks for any staged files
-        let fm = FileManager.default
-        let searchContainers = Self.getAllSearchContainers()
-        for container in searchContainers {
-            let stagingDirs = [
-                container.appendingPathComponent("ShareStaging"),
-                container.appendingPathComponent("Inbox"),
-                container.appendingPathComponent("PendingConversions")
-            ]
-            for dir in stagingDirs {
-                if let contents = try? fm.contentsOfDirectory(atPath: dir.path), !contents.isEmpty {
-                    let validFiles = contents.filter { !$0.hasSuffix(".manifest.json") && !$0.hasPrefix(".") }
-                    if !validFiles.isEmpty {
-                        return true
-                    }
+            if ts > 0 {
+                // Only treat timestamp as active if it occurred in the last 120 seconds
+                if (now - ts) < 120.0 {
+                    foundPending = true
+                } else {
+                    // Purge stale timestamp from earlier sessions to prevent launch retry delays
+                    ud.removeObject(forKey: "pendingShareImportTimestamp")
+                    ud.removeObject(forKey: "hasPendingShareImport")
+                    ud.synchronize()
                 }
+            } else if hasFlag {
+                foundPending = true
             }
         }
-        return false
+
+        return foundPending
     }
 
     // MARK: - Magic Byte Helper
