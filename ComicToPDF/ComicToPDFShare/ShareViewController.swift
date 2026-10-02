@@ -84,23 +84,30 @@ class ShareViewController: UIViewController {
         generator.notificationOccurred(.success)
 
         // ── Step 3: Dynamic Extension Context Open Fallback ──
+        var didTriggerExtensionOpen = false
         if let ext = extensionContext {
             let extOpenSel = NSSelectorFromString("openURL:completionHandler:")
             if ext.responds(to: extOpenSel) {
                 typealias ExtOpenMethod = @convention(c) (NSObject, Selector, NSURL, ((Bool) -> Void)?) -> Void
                 if let imp = ext.method(for: extOpenSel) {
                     let fn = unsafeBitCast(imp, to: ExtOpenMethod.self)
-                    fn(ext, extOpenSel, deepLinkURL as NSURL, nil)
+                    didTriggerExtensionOpen = true
+                    fn(ext, extOpenSel, deepLinkURL as NSURL) { [weak self] _ in
+                        Task { @MainActor in
+                            self?.completeHostAppHandover()
+                        }
+                    }
                 }
             }
         }
 
         // ── Step 4: Graceful Handover Teardown ──
-        // SwiftUI Link initiates SpringBoard app-switching. We wait 200ms to allow the transition
-        // to complete before completing the extension request, preventing premature cancellation.
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            self?.completeHostAppHandover()
+        // If extensionContext.open callback was not supported, wait 400ms for SpringBoard app-switch
+        if !didTriggerExtensionOpen {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                self?.completeHostAppHandover()
+            }
         }
     }
 }

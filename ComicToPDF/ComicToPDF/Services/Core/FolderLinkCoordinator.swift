@@ -38,7 +38,11 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         picker.delegate = coordinator
         picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
-        picker.modalPresentationStyle = .pageSheet
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            picker.modalPresentationStyle = .formSheet
+        } else {
+            picker.modalPresentationStyle = .fullScreen
+        }
 
         Logger.shared.log("FolderLinkCoordinator: presenting folder and file picker", category: "FolderLink", type: .info)
         rootVC.present(picker, animated: true)
@@ -69,7 +73,11 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         picker.delegate = coordinator
         picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
-        picker.modalPresentationStyle = .pageSheet
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            picker.modalPresentationStyle = .formSheet
+        } else {
+            picker.modalPresentationStyle = .fullScreen
+        }
 
         Logger.shared.log("FolderLinkCoordinator: presenting direct file picker for linked files", category: "FolderLink", type: .info)
         rootVC.present(picker, animated: true)
@@ -129,9 +137,15 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
                 }
 
                 if let bookmarkData {
-                    results.append((url, bookmarkData))
+                    var isStale = false
+                    let resolvedURL = (try? URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: .withoutUI,
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    )) ?? url
+                    results.append((resolvedURL, bookmarkData))
                 }
-            }
             await MainActor.run {
                 self?.finish(with: results)
             }

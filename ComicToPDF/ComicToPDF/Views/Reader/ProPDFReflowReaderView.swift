@@ -39,6 +39,7 @@ struct ProPDFReflowReaderView: View {
     @State private var selectedTextForHUD: String? = nil
     @State private var activeHighlightToEdit: Annotation? = nil
     @StateObject private var speechEngine = PDFSpeechNarrationEngine.shared
+    @FocusState private var isReflowFocused: Bool
 
     init(
         pdf: ConvertedPDF,
@@ -107,6 +108,7 @@ struct ProPDFReflowReaderView: View {
                         }
                     }
                     .onAppear {
+                        isReflowFocused = true
                         targetPDFPageIndex = currentPageIndex
                         lastSyncedPDFPageIndex = currentPageIndex
                         hasAnchoredInitialPage = false
@@ -152,69 +154,76 @@ struct ProPDFReflowReaderView: View {
             syncDebounceTask?.cancel()
             syncDebounceTask = nil
         }
+        .focused($isReflowFocused)
         .focusable()
         .focusEffectDisabled()
         .onKeyPress(.rightArrow) {
             guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
             return .handled
         }
         .onKeyPress(.leftArrow) {
             guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
             return .handled
         }
         .onKeyPress(.downArrow) {
             guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
             return .handled
         }
         .onKeyPress(.upArrow) {
             guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
             return .handled
         }
         .onKeyPress(.space) {
             guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
             return .handled
         }
         .onKeyPress(.pageDown) {
             guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
             return .handled
         }
         .onKeyPress(.pageUp) {
             guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
             return .handled
         }
         .onKeyPress(KeyEquivalent("j")) {
             guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
             return .handled
         }
         .onKeyPress(KeyEquivalent("k")) {
             guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
             return .handled
         }
         .onKeyPress(KeyEquivalent("l")) {
             guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
             return .handled
         }
         .onKeyPress(KeyEquivalent("h")) {
             guard !UIResponder.isTextInputActive else { return .ignored }
-            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
             return .handled
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageForward"))) { _ in
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageBackward"))) { _ in
+            NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
         }
         .readerKeyboardShortcuts(
             onNextPage: {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+                NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
             },
             onPreviousPage: {
-                NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+                NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
             },
             onToggleReflow: {
                 if let onToggleReflow = onToggleReflow {

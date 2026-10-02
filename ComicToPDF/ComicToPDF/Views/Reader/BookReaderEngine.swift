@@ -65,19 +65,10 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             // Linked Library: resolve security-scoped URL for linked files.
             // We only need the scope open during the unpack step — chapters are read
             // from the sandbox temp directory afterward, so scope is stopped after extraction.
-            let pdfURL: URL
-            var accessedURL: URL? = nil
-            if case .linked(let bm) = sourcePDF.sourceMode,
-               let url = try? BookmarkResolver.shared.resolve(bm) {
-                let didAccess = url.startAccessingSecurityScopedResource()
-                pdfURL = url
-                if didAccess { accessedURL = url }
-            } else {
-                let targetURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
-                let didAccess = targetURL.startAccessingSecurityScopedResource()
-                pdfURL = targetURL
-                if didAccess { accessedURL = targetURL }
-            }
+            let access = try? BookmarkResolver.shared.resolveAccess(for: sourcePDF)
+            let targetURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
+            let pdfURL: URL = access?.fileURL ?? targetURL
+            let accessedURL: URL? = access?.securityScopeURL
 
             if !fm.fileExists(atPath: tempDir.path) {
                 try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)

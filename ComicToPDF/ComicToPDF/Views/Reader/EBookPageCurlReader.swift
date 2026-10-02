@@ -1546,14 +1546,12 @@ extension EBookPageCurlReader {
         }
 
         fileprivate func turnForward(_ pvc: UIPageViewController) {
-            guard !isTransitioning else { return }
-
             let isDual = isDualPageMode
             let step = isDual ? 2 : 1
 
-            parent.onPageTurn?()
             let nextIndex = currentPageIndex + step
             if nextIndex < computedTotalPages {
+                parent.onPageTurn?()
                 hasLoadedInitialPage = true
                 HapticEngine.light()
                 if parent.prefs.pageTurnStyle == .fade {
@@ -1582,19 +1580,19 @@ extension EBookPageCurlReader {
                     self.precacheAdjacentSnapshots()
                 }
             } else {
+                guard !isTransitioning else { return }
+                parent.onPageTurn?()
                 parent.onNext()
             }
         }
 
         fileprivate func turnBackward(_ pvc: UIPageViewController) {
-            guard !isTransitioning else { return }
-
             let isDual = isDualPageMode
             let step = isDual ? 2 : 1
 
-            parent.onPageTurn?()
             let prevIndex = currentPageIndex - step
             if prevIndex >= 0 {
+                parent.onPageTurn?()
                 hasLoadedInitialPage = true
                 HapticEngine.light()
                 if parent.prefs.pageTurnStyle == .fade {
@@ -1623,6 +1621,8 @@ extension EBookPageCurlReader {
                     self.precacheAdjacentSnapshots()
                 }
             } else {
+                guard !isTransitioning else { return }
+                parent.onPageTurn?()
                 parent.onPrev()
             }
         }

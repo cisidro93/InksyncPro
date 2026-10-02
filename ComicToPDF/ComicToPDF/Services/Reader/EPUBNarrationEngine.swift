@@ -145,6 +145,7 @@ final class EPUBNarrationEngine: NSObject, ObservableObject, AVSpeechSynthesizer
         onChapterFinished = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
     }
 
     func nextBlock() {

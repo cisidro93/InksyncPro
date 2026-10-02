@@ -68,6 +68,9 @@ struct LocalFileImage: View {
                 guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
                 return UIImage(cgImage: cgImage)
             }
+            if let clamped = ImageProcessor.downsampledImage(from: localURL, maxDimension: 2560) {
+                return clamped
+            }
             let optData = try? Data(contentsOf: localURL, options: .mappedIfSafe)
             guard let data = optData,
                   let image = UIImage(data: data) else {

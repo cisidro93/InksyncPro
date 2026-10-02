@@ -880,12 +880,18 @@ struct ProPDFReaderEngine: View {
                 showCropAdjustmentSheet = true
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageForward"))) { _ in
-                guard !isReflowMode else { return }
-                advancePage(forward: true)
+                if isReflowMode {
+                    NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageForward"), object: nil)
+                } else {
+                    advancePage(forward: true)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReaderAdvancePageBackward"))) { _ in
-                guard !isReflowMode else { return }
-                advancePage(forward: false)
+                if isReflowMode {
+                    NotificationCenter.default.post(name: NSNotification.Name("EBookTurnPageBackward"), object: nil)
+                } else {
+                    advancePage(forward: false)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("PDFReader_OpenSmartTiersWorkspace"))) { _ in
                 isAdjustingSmartTiers = true
@@ -1952,17 +1958,10 @@ struct ProPDFReaderEngine: View {
             let resolvedURL: URL
             var accessedURL: URL? = nil
 
-            if case .linked(let bm) = sourcePDF.sourceMode,
-               let url = try? BookmarkResolver.shared.resolve(bm) {
-                let didAccess = url.startAccessingSecurityScopedResource()
-                resolvedURL = url
-                if didAccess { accessedURL = url }
-            } else {
-                let sandboxURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
-                let didAccess = sandboxURL.startAccessingSecurityScopedResource()
-                resolvedURL = sandboxURL
-                if didAccess { accessedURL = sandboxURL }
-            }
+            let access = try? BookmarkResolver.shared.resolveAccess(for: sourcePDF)
+            let sandboxURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
+            resolvedURL = access?.fileURL ?? sandboxURL
+            accessedURL = access?.securityScopeURL
 
             var loaded = PDFDocument(url: resolvedURL)
             if loaded == nil && resolvedURL != sourcePDF.url {
@@ -2301,7 +2300,7 @@ struct ProPDFReaderEngine: View {
     private func advancePage(forward: Bool) {
         if isReflowMode {
             NotificationCenter.default.post(
-                name: NSNotification.Name(forward ? "ReaderAdvancePageForward" : "ReaderAdvancePageBackward"),
+                name: NSNotification.Name(forward ? "EBookTurnPageForward" : "EBookTurnPageBackward"),
                 object: nil
             )
             return

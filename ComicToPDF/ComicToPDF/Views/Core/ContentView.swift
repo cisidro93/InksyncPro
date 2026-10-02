@@ -437,26 +437,38 @@ struct ContentView: View {
             showingOnboarding = false
             showingWhatsNewSheet = false
             showingSettingsInspector = false
+            isAppLoading = false
+            isLogoMorphComplete = true
+            showingOnboarding = false
+            showingWhatsNewSheet = false
+            showingSettingsInspector = false
             showingBatchMergeReorder = false
             conversionManager.pendingSeriesGroup = nil
             conversionManager.isPresentingPanelEditor = false
             AppRouter.shared.dismissSheet()
             router.selectedTab = 0
 
+            let allAvailableBooks = !conversionManager.convertedPDFs.isEmpty
+                ? conversionManager.convertedPDFs
+                : LibraryService.shared.items
+
             let targetPDF: ConvertedPDF? = (notification.object as? ConvertedPDF) ?? {
                 let filenames = SharedImportCoordinator.shared.consumeAutoSelectFilenames()
                 if let name = filenames.first {
                     let cleanName = name.removingPercentEncoding ?? name
-                    if let match = conversionManager.convertedPDFs.first(where: { item in
+                    let cleanStem = (cleanName as NSString).deletingPathExtension.lowercased()
+                    if let match = allAvailableBooks.first(where: { item in
                         let itemClean = item.url.lastPathComponent.removingPercentEncoding ?? item.url.lastPathComponent
+                        let itemStem = (item.url.deletingPathExtension().lastPathComponent.removingPercentEncoding ?? item.url.deletingPathExtension().lastPathComponent).lowercased()
                         return itemClean.localizedCaseInsensitiveCompare(cleanName) == .orderedSame ||
                                item.name.localizedCaseInsensitiveCompare(cleanName) == .orderedSame ||
-                               item.url.deletingPathExtension().lastPathComponent.localizedCaseInsensitiveCompare((cleanName as NSString).deletingPathExtension) == .orderedSame
+                               itemStem == cleanStem ||
+                               item.name.lowercased() == cleanStem
                     }) {
                         return match
                     }
                 }
-                return conversionManager.convertedPDFs.first
+                return allAvailableBooks.first
             }()
 
             if let pdf = targetPDF {

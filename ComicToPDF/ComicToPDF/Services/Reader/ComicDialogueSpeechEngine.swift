@@ -200,6 +200,7 @@ final class ComicDialogueSpeechEngine: NSObject, ObservableObject, AVSpeechSynth
         onPageAdvanceRequested = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
     }
 
     // MARK: - Speech Synthesis

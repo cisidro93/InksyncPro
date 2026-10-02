@@ -91,7 +91,7 @@ public final class StudyNotebookStore: ObservableObject {
     
     public func addCard(_ card: StudyCard) {
         cards.insert(card, at: 0)
-        saveCards()
+        saveCardAtomically(card)
         HapticEngine.light()
         Logger.shared.log("StudyStore: Created new study card with ID \(card.id)", category: "Study")
     }
@@ -99,14 +99,14 @@ public final class StudyNotebookStore: ObservableObject {
     public func updateCard(_ card: StudyCard) {
         if let idx = cards.firstIndex(where: { $0.id == card.id }) {
             cards[idx] = card
-            saveCards()
+            saveCardAtomically(card)
             Logger.shared.log("StudyStore: Updated card \(card.id)", category: "Study")
         }
     }
     
     public func deleteCard(withID id: UUID) {
         cards.removeAll { $0.id == id }
-        saveCards()
+        deleteCardFile(id: id)
         HapticEngine.light()
         Logger.shared.log("StudyStore: Deleted card \(id)", category: "Study")
     }
@@ -114,7 +114,9 @@ public final class StudyNotebookStore: ObservableObject {
     public func deleteCards(at offsets: IndexSet) {
         let targets = offsets.map { filteredCards[$0].id }
         cards.removeAll { targets.contains($0.id) }
-        saveCards()
+        for targetID in targets {
+            deleteCardFile(id: targetID)
+        }
         HapticEngine.light()
     }
     
@@ -127,7 +129,7 @@ public final class StudyNotebookStore: ObservableObject {
         let current = cards[idx]
         let scheduled = scheduler.scheduleNextReview(for: current, rating: rating)
         cards[idx] = scheduled
-        saveCards()
+        saveCardAtomically(scheduled)
         NotificationCenter.default.post(name: .annotationsDidChange, object: nil, userInfo: ["annotationID": id])
         return scheduled
     }
@@ -137,7 +139,7 @@ public final class StudyNotebookStore: ObservableObject {
     public func addNote(_ note: StudyNote) {
         notes.insert(note, at: 0)
         activeNoteID = note.id
-        saveNotes()
+        saveNoteAtomically(note)
         HapticEngine.light()
         Logger.shared.log("StudyStore: Created new Cornell study note \(note.id)", category: "Study")
     }
@@ -145,7 +147,7 @@ public final class StudyNotebookStore: ObservableObject {
     public func updateNote(_ note: StudyNote) {
         if let idx = notes.firstIndex(where: { $0.id == note.id }) {
             notes[idx] = note
-            saveNotes()
+            saveNoteAtomically(note)
         }
     }
     
@@ -154,7 +156,7 @@ public final class StudyNotebookStore: ObservableObject {
         if activeNoteID == id {
             activeNoteID = notes.first?.id
         }
-        saveNotes()
+        deleteNoteFile(id: id)
         HapticEngine.light()
     }
     
@@ -244,30 +246,152 @@ public final class StudyNotebookStore: ObservableObject {
         }
     }
     
-    // MARK: - Persistence Layer
+    // MARK: - Atomic Multi-File Persistence Layer
     
-    private func saveCards() {
-        if let encoded = try? JSONEncoder().encode(cards) {
-            UserDefaults.standard.set(encoded, forKey: cardsStorageKey)
+    private nonisolated static func getStudyVaultDir() -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let dir = appSupport.appendingPathComponent("InksyncVault/Study", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+    
+    private nonisolated static func getCardsDir() -> URL {
+        let dir = getStudyVaultDir().appendingPathComponent("Cards", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+    
+    private nonisolated static func getNotesDir() -> URL {
+        let dir = getStudyVaultDir().appendingPathComponent("Notes", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+    
+    private func saveCardAtomically(_ card: StudyCard) {
+        let fileURL = Self.getCardsDir().appendingPathComponent("\(card.id.uuidString).json")
+        Task.detached(priority: .background) {
+            do {
+                let data = try JSONEncoder().encode(card)
+                try data.write(to: fileURL, options: .atomic)
+            } catch {
+                Logger.shared.log("StudyNotebookStore: failed to write card \(card.id): \(error.localizedDescription)", category: "Study", type: .error)
+            }
         }
     }
     
-    private func saveNotes() {
-        if let encoded = try? JSONEncoder().encode(notes) {
-            UserDefaults.standard.set(encoded, forKey: notesStorageKey)
+    private func deleteCardFile(id: UUID) {
+        let fileURL = Self.getCardsDir().appendingPathComponent("\(id.uuidString).json")
+        Task.detached(priority: .background) {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+    }
+    
+    private func saveNoteAtomically(_ note: StudyNote) {
+        let fileURL = Self.getNotesDir().appendingPathComponent("\(note.id.uuidString).json")
+        Task.detached(priority: .background) {
+            do {
+                let data = try JSONEncoder().encode(note)
+                try data.write(to: fileURL, options: .atomic)
+            } catch {
+                Logger.shared.log("StudyNotebookStore: failed to write note \(note.id): \(error.localizedDescription)", category: "Study", type: .error)
+            }
+        }
+    }
+    
+    private func deleteNoteFile(id: UUID) {
+        let fileURL = Self.getNotesDir().appendingPathComponent("\(id.uuidString).json")
+        Task.detached(priority: .background) {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+    }
+    
+    public func saveCards() {
+        let cardsSnapshot = self.cards
+        Task.detached(priority: .background) {
+            let cardsDir = Self.getCardsDir()
+            for card in cardsSnapshot {
+                let fileURL = cardsDir.appendingPathComponent("\(card.id.uuidString).json")
+                if let data = try? JSONEncoder().encode(card) {
+                    try? data.write(to: fileURL, options: .atomic)
+                }
+            }
+        }
+    }
+    
+    public func saveNotes() {
+        let notesSnapshot = self.notes
+        Task.detached(priority: .background) {
+            let notesDir = Self.getNotesDir()
+            for note in notesSnapshot {
+                let fileURL = notesDir.appendingPathComponent("\(note.id.uuidString).json")
+                if let data = try? JSONEncoder().encode(note) {
+                    try? data.write(to: fileURL, options: .atomic)
+                }
+            }
         }
     }
     
     private func loadPersistedData() {
-        if let data = UserDefaults.standard.data(forKey: cardsStorageKey),
-           let decoded = try? JSONDecoder().decode([StudyCard].self, from: data) {
-            self.cards = decoded
+        let cardsDir = Self.getCardsDir()
+        let notesDir = Self.getNotesDir()
+        let fm = FileManager.default
+        
+        var loadedCards: [StudyCard] = []
+        var loadedNotes: [StudyNote] = []
+        
+        // 1. Load from atomic multi-file vault
+        if let cardFiles = try? fm.contentsOfDirectory(at: cardsDir, includingPropertiesForKeys: nil) {
+            for file in cardFiles where file.pathExtension.lowercased() == "json" {
+                if let data = try? Data(contentsOf: file),
+                   let card = try? JSONDecoder().decode(StudyCard.self, from: data) {
+                    loadedCards.append(card)
+                }
+            }
         }
         
-        if let data = UserDefaults.standard.data(forKey: notesStorageKey),
-           let decoded = try? JSONDecoder().decode([StudyNote].self, from: data) {
-            self.notes = decoded
-            self.activeNoteID = decoded.first?.id
+        if let noteFiles = try? fm.contentsOfDirectory(at: notesDir, includingPropertiesForKeys: nil) {
+            for file in noteFiles where file.pathExtension.lowercased() == "json" {
+                if let data = try? Data(contentsOf: file),
+                   let note = try? JSONDecoder().decode(StudyNote.self, from: data) {
+                    loadedNotes.append(note)
+                }
+            }
+        }
+        
+        // 2. Self-healing migration from legacy UserDefaults
+        var migratedAny = false
+        if let legacyCardData = UserDefaults.standard.data(forKey: cardsStorageKey),
+           let legacyCards = try? JSONDecoder().decode([StudyCard].self, from: legacyCardData) {
+            for card in legacyCards where !loadedCards.contains(where: { $0.id == card.id }) {
+                loadedCards.append(card)
+                saveCardAtomically(card)
+                migratedAny = true
+            }
+            UserDefaults.standard.removeObject(forKey: cardsStorageKey)
+        }
+        
+        if let legacyNoteData = UserDefaults.standard.data(forKey: notesStorageKey),
+           let legacyNotes = try? JSONDecoder().decode([StudyNote].self, from: legacyNoteData) {
+            for note in legacyNotes where !loadedNotes.contains(where: { $0.id == note.id }) {
+                loadedNotes.append(note)
+                saveNoteAtomically(note)
+                migratedAny = true
+            }
+            UserDefaults.standard.removeObject(forKey: notesStorageKey)
+        }
+        
+        self.cards = loadedCards.sorted(by: { $0.createdAt > $1.createdAt })
+        self.notes = loadedNotes.sorted(by: { $0.modifiedAt > $1.modifiedAt })
+        self.activeNoteID = self.notes.first?.id
+        
+        if migratedAny {
+            Logger.shared.log("StudyNotebookStore: Successfully migrated legacy UserDefaults study data to multi-file atomic vault", category: "Study", type: .success)
         }
     }
     

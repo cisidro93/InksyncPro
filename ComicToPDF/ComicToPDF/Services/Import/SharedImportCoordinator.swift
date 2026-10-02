@@ -45,13 +45,33 @@ final class SharedImportCoordinator: ObservableObject {
         "pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z", "tar", "txt", "md"
     ]
 
-    private var isIngesting = false
+    // MARK: - Ingestion State FSM
+    public enum IngestionState: Sendable, Equatable {
+        case idle
+        case staging(filename: String)
+        case settling(filename: String, attempt: Int)
+        case completed(filename: String)
+        case failed(errorDescription: String)
+    }
+
+    @Published public private(set) var ingestionState: IngestionState = .idle
+
+    public var isIngesting: Bool {
+        switch ingestionState {
+        case .idle, .completed, .failed:
+            return false
+        case .staging, .settling:
+            return true
+        }
+    }
+
     private var inFlightDirectTasks: [String: Task<URL?, Never>] = [:]
     private var pendingTargetFilenames: [String] = []
     private var drainPassCount: Int = 0
 
     // Deduplication cache to prevent re-ingesting identical byte payloads across scans
     private var recentlyIngestedSignatures: [String: Date] = [:]
+    private var recentlyHandledURLs: [String: Date] = [:]
 
     private init() {
         Task { @MainActor in
@@ -124,6 +144,13 @@ final class SharedImportCoordinator: ObservableObject {
 
     /// Consolidated entry point for ALL external URL handling (custom schemes and file URLs).
     func handleIncomingURL(_ url: URL) async {
+        let key = url.absoluteString
+        if let last = recentlyHandledURLs[key], Date().timeIntervalSince(last) < 0.6 {
+            Logger.shared.log("SharedImportCoordinator: Debounced duplicate handleIncomingURL call within 0.6s: \(key)", category: "ShareImport", type: .info)
+            return
+        }
+        recentlyHandledURLs[key] = Date()
+
         Logger.shared.log("SharedImportCoordinator: handleIncomingURL '\(url.absoluteString)' (scheme: \(url.scheme ?? "none"), isFileURL: \(url.isFileURL))", category: "ShareImport", type: .info)
         if url.scheme == "inksyncpro" || url.scheme == "inksync" {
             var targetFile: String? = nil
@@ -181,7 +208,7 @@ final class SharedImportCoordinator: ObservableObject {
             )
             return
         }
-        isIngesting = true
+        ingestionState = .staging(filename: targetFilename ?? "all")
         let groupIDs = appGroupIDs
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
@@ -212,8 +239,12 @@ final class SharedImportCoordinator: ObservableObject {
                     for (idx, name) in ingestedNames.enumerated() {
                         let fileURL = inboxDir.appendingPathComponent(name)
                         let cleanTarget = targetFilename?.removingPercentEncoding ?? targetFilename
+                        let targetStem = cleanTarget.map { ($0 as NSString).deletingPathExtension.lowercased() }
+                        let nameStem = (name as NSString).deletingPathExtension.lowercased()
+
                         let shouldOpen = activeTargets.contains(name) ||
-                            (cleanTarget != nil && name.localizedCaseInsensitiveCompare(cleanTarget!) == .orderedSame) ||
+                            activeTargets.contains(where: { ($0 as NSString).deletingPathExtension.lowercased() == nameStem }) ||
+                            (cleanTarget != nil && (name.localizedCaseInsensitiveCompare(cleanTarget!) == .orderedSame || nameStem == targetStem)) ||
                             (activeTargets.isEmpty && targetFilename == nil && idx == 0)
                         let pdf = manager.registerDirectFile(at: fileURL, autoOpen: false)
                         if shouldOpen && firstPDF == nil {
@@ -244,7 +275,7 @@ final class SharedImportCoordinator: ObservableObject {
                     // If no files were found after all retries, reset share flags to avoid infinite foreground triggers
                     Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
                 }
-                self.isIngesting = false
+                self.ingestionState = .idle
 
                 // If new targets arrived specifically while processing, trigger at most ONE follow-up drain pass
                 if !self.pendingTargetFilenames.isEmpty && self.drainPassCount < 1 {

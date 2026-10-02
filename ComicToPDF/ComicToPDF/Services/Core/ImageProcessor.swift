@@ -1,10 +1,32 @@
 import UIKit
+import ImageIO
 
 struct ImageProcessor {
     
+    /// Safely loads and downsamples an image from disk using ImageIO, clamping to a maximum dimension
+    /// (default 2560px) to prevent Jetsam memory spikes while preserving full 2x/3x Retina pinch-to-zoom sharpness.
+    static func downsampledImage(from url: URL, maxDimension: CGFloat = 2560) -> UIImage? {
+        let options = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, options) else {
+            return UIImage(contentsOfFile: url.path)
+        }
+        
+        let downsampleOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxDimension
+        ]
+        
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions as CFDictionary) else {
+            return UIImage(contentsOfFile: url.path)
+        }
+        return UIImage(cgImage: cgImage)
+    }
+
     // Process a single image from disk based on settings
     static func process(imageURL: URL, settings: ConversionSettings, isOddPage: Bool = true) -> UIImage? {
-        guard let image = UIImage(contentsOfFile: imageURL.path) else { return nil }
+        guard let image = downsampledImage(from: imageURL) ?? UIImage(contentsOfFile: imageURL.path) else { return nil }
         return process(image: image, settings: settings, isOddPage: isOddPage)
     }
 

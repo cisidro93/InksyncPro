@@ -248,3 +248,18 @@ targets:
         CODE_SIGN_IDENTITY: ""
         CODE_SIGN_ENTITLEMENTS: ComicToPDFShare/ComicToPDFShare.entitlements
         SWIFT_VERSION: "6.0"
+
+  InksyncProTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ComicToPDFTests
+    dependencies:
+      - target: InksyncPro
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.antigravity.InksyncProTests
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete

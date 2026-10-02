@@ -101,6 +101,13 @@ public struct ResolvedAccess: Sendable {
 
             var isDir: ObjCBool = false
             let exists = FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDir)
+            if !exists {
+                if didAccess { resolved.stopAccessingSecurityScopedResource() }
+                Task { @MainActor in
+                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.driveDisconnected"), object: pdf)
+                }
+                throw BookmarkError.driveDisconnected
+            }
             let isDirectory = (exists && isDir.boolValue) || resolved.hasDirectoryPath
 
             if isDirectory {
@@ -134,6 +141,25 @@ public struct ResolvedAccess: Sendable {
         // Local sandbox document
         let localURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
         return ResolvedAccess(fileURL: localURL, securityScopeURL: nil)
+    }
+
+    /// Resolves access with an explicit timeout race to defend against hung I/O when
+    /// an external drive or network share is disconnected mid-access.
+    nonisolated func resolveAccessWithTimeout(for pdf: ConvertedPDF, timeoutSeconds: Double = 2.5) async throws -> ResolvedAccess {
+        try await withThrowingTaskGroup(of: ResolvedAccess.self) { group in
+            group.addTask {
+                try self.resolveAccess(for: pdf)
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
+                throw BookmarkError.driveDisconnected
+            }
+            guard let firstResult = try await group.next() else {
+                throw BookmarkError.driveDisconnected
+            }
+            group.cancelAll()
+            return firstResult
+        }
     }
 
     /// Resolve a linked ConvertedPDF's URL, or return its url directly if local.

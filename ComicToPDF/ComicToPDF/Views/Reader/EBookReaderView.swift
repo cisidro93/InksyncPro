@@ -1217,11 +1217,13 @@ struct EBookReaderView: View {
                     self.isLoading = false
                     return
                 }
-            } else if case .linked(let bm) = pdf.sourceMode,
-               let url = try? BookmarkResolver.shared.resolve(bm) {
-                let didAccess = url.startAccessingSecurityScopedResource()
-                targetURL = url
-                if didAccess { accessedURL = url }
+            } else if case .linked = pdf.sourceMode {
+                if let access = try? BookmarkResolver.shared.resolveAccess(for: pdf) {
+                    targetURL = access.fileURL
+                    if let scope = access.securityScopeURL {
+                        accessedURL = scope
+                    }
+                }
             }
         }
 

@@ -6,6 +6,15 @@ import Combine
 class TaskEngine: ObservableObject {
     static let shared = TaskEngine()
     
+    // MARK: - Conversion State FSM
+    public enum ConversionState: Sendable, Equatable {
+        case idle
+        case converting(file: URL, progress: Double, message: String)
+        case completed(outputFile: URL?)
+        case failed(errorDescription: String)
+    }
+
+    @Published public private(set) var conversionState: ConversionState = .idle
     @Published var isConverting = false
     @Published var conversionProgress: Double = 0.0
     @Published var processingStatus = ""
@@ -52,17 +61,22 @@ class TaskEngine: ObservableObject {
     private func handleEngineEvent(_ event: ConversionProgressEvent) {
         switch event {
         case .started(let file):
+            self.conversionState = .converting(file: file, progress: 0.0, message: "Starting: \(file.lastPathComponent)")
             self.isConverting = true
             self.processingStatus = "Starting: \(file.lastPathComponent)"
-        case .progress(_, let current, let total, let message):
-            self.conversionProgress = Double(current) / Double(total)
+        case .progress(let file, let current, let total, let message):
+            let prog = Double(current) / Double(total)
+            self.conversionProgress = prog
             self.processingStatus = message
-        case .completed(_, _):
+            self.conversionState = .converting(file: file, progress: prog, message: message)
+        case .completed(_, let outURL):
             self.isConverting = false
             self.processingStatus = ""
+            self.conversionState = .completed(outputFile: outURL)
             NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil, userInfo: nil)
         case .failed(_, let error):
             self.isConverting = false
+            self.conversionState = .failed(errorDescription: error.localizedDescription)
             self.appAlert = AppAlert(title: "Conversion Failed", message: error.localizedDescription)
         }
     }

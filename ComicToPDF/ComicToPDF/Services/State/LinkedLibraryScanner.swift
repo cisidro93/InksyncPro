@@ -149,7 +149,13 @@ final class LinkedLibraryScanner: ObservableObject {
         let newPDFs = await Task.detached(priority: .userInitiated) { () -> [ConvertedPDF] in
             var tempPDFs: [ConvertedPDF] = []
             for item in pickedFiles {
-                let fileURL = item.url
+                var isStale = false
+                let fileURL = (try? URL(
+                    resolvingBookmarkData: item.bookmark,
+                    options: .withoutUI,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                )) ?? item.url
                 let bookmark = item.bookmark
 
                 let accessing = fileURL.startAccessingSecurityScopedResource()

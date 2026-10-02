@@ -1811,17 +1811,19 @@ struct ModernLibraryView: View {
                 var fileResults: [(url: URL, bookmark: Data)] = []
 
                 for result in results {
-                    let accessing = result.url.startAccessingSecurityScopedResource()
-                    defer { if accessing { result.url.stopAccessingSecurityScopedResource() } }
-
                     var isDir: ObjCBool = false
-                    if FileManager.default.fileExists(atPath: result.url.path, isDirectory: &isDir), isDir.boolValue {
-                        folderResults.append(result)
-                    } else if result.url.hasDirectoryPath {
-                        folderResults.append(result)
+                    var isStale = false
+                    let resolvedURL = (try? URL(resolvingBookmarkData: result.bookmark, options: .withoutUI, relativeTo: nil, bookmarkDataIsStale: &isStale)) ?? result.url
+                    let accessing = resolvedURL.startAccessingSecurityScopedResource()
+                    let checkURL = accessing ? resolvedURL : result.url
+                    if FileManager.default.fileExists(atPath: checkURL.path, isDirectory: &isDir), isDir.boolValue {
+                        folderResults.append((resolvedURL, result.bookmark))
+                    } else if checkURL.hasDirectoryPath {
+                        folderResults.append((resolvedURL, result.bookmark))
                     } else {
-                        fileResults.append(result)
+                        fileResults.append((resolvedURL, result.bookmark))
                     }
+                    if accessing { resolvedURL.stopAccessingSecurityScopedResource() }
                 }
 
                 for folder in folderResults {

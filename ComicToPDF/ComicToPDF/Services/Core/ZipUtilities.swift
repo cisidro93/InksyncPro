@@ -169,6 +169,12 @@ struct ZipUtilities {
                                         guard let entry = workerArchive[path] else { return }
 
                                         let destinationURL = tempDir.appendingPathComponent(path)
+                                        // Security guard: Defend against Zip-Slip path traversal attacks in corrupt or malicious archives
+                                        guard destinationURL.standardizedFileURL.path.hasPrefix(tempDir.standardizedFileURL.path) else {
+                                            Logger.shared.log("ZipUtilities: Blocked path traversal attempt '\(path)'", category: "Security", type: .error)
+                                            return
+                                        }
+
                                         let parentDir = destinationURL.deletingLastPathComponent()
 
                                         // createDirectory(withIntermediateDirectories:) is idempotent
