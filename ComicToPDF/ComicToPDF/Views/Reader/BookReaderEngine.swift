@@ -68,7 +68,7 @@ class BookReaderViewModel: NSObject, ObservableObject, WKNavigationDelegate {
             let access = try? BookmarkResolver.shared.resolveAccess(for: sourcePDF)
             let targetURL = LibraryFileRecord.resolveSandboxURL(sourcePDF.url.absoluteString)
             let pdfURL: URL = access?.fileURL ?? targetURL
-            let accessedURL: URL? = access?.securityScopeURL
+            var accessedURL: URL? = access?.securityScopeURL
 
             if !fm.fileExists(atPath: tempDir.path) {
                 try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
