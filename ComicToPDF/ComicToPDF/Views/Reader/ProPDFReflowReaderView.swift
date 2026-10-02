@@ -152,6 +152,63 @@ struct ProPDFReflowReaderView: View {
             syncDebounceTask?.cancel()
             syncDebounceTask = nil
         }
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(.rightArrow) {
+            guard !UIResponder.isTextInputActive else { return .ignored }
+            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            return .handled
+        }
+        .onKeyPress(.leftArrow) {
+            guard !UIResponder.isTextInputActive else { return .ignored }
+            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            guard !UIResponder.isTextInputActive else { return .ignored }
+            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            return .handled
+        }
+        .onKeyPress(.upArrow) {
+            guard !UIResponder.isTextInputActive else { return .ignored }
+            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            return .handled
+        }
+        .onKeyPress(.space) {
+            guard !UIResponder.isTextInputActive else { return .ignored }
+            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            return .handled
+        }
+        .onKeyPress(.pageDown) {
+            guard !UIResponder.isTextInputActive else { return .ignored }
+            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            return .handled
+        }
+        .onKeyPress(.pageUp) {
+            guard !UIResponder.isTextInputActive else { return .ignored }
+            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            return .handled
+        }
+        .onKeyPress(KeyEquivalent("j")) {
+            guard !UIResponder.isTextInputActive else { return .ignored }
+            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            return .handled
+        }
+        .onKeyPress(KeyEquivalent("k")) {
+            guard !UIResponder.isTextInputActive else { return .ignored }
+            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            return .handled
+        }
+        .onKeyPress(KeyEquivalent("l")) {
+            guard !UIResponder.isTextInputActive else { return .ignored }
+            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
+            return .handled
+        }
+        .onKeyPress(KeyEquivalent("h")) {
+            guard !UIResponder.isTextInputActive else { return .ignored }
+            NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageBackward"), object: nil)
+            return .handled
+        }
         .readerKeyboardShortcuts(
             onNextPage: {
                 NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)

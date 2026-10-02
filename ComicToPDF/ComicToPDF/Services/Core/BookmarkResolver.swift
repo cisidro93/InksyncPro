@@ -76,17 +76,70 @@ actor BookmarkResolver {
         }
     }
 
+public struct ResolvedAccess: Sendable {
+    public let fileURL: URL
+    public let securityScopeURL: URL?
+
+    public init(fileURL: URL, securityScopeURL: URL? = nil) {
+        self.fileURL = fileURL
+        self.securityScopeURL = securityScopeURL
+    }
+
+    public func stopAccess() {
+        securityScopeURL?.stopAccessingSecurityScopedResource()
+    }
+}
+
+    /// Resolves guaranteed filesystem access for a ConvertedPDF, whether local sandbox,
+    /// a directly linked file, or a child file inside a linked folder/drive.
+    /// Returns a ResolvedAccess holding the true file URL and the security scope root to cleanup.
+    nonisolated func resolveAccess(for pdf: ConvertedPDF) throws -> ResolvedAccess {
+        if case .linked(let bookmarkData) = pdf.sourceMode {
+            let resolved = try resolve(bookmarkData)
+            let didAccess = resolved.startAccessingSecurityScopedResource()
+            let scopeURL = didAccess ? resolved : nil
+
+            var isDir: ObjCBool = false
+            let exists = FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDir)
+            let isDirectory = (exists && isDir.boolValue) || resolved.hasDirectoryPath
+
+            if isDirectory {
+                // Folder / Volume link: find target file within folder hierarchy
+                let candidateURL: URL
+                if FileManager.default.fileExists(atPath: pdf.url.path) {
+                    candidateURL = pdf.url
+                } else {
+                    let directChild = resolved.appendingPathComponent(pdf.url.lastPathComponent)
+                    if FileManager.default.fileExists(atPath: directChild.path) {
+                        candidateURL = directChild
+                    } else {
+                        let rootName = resolved.lastPathComponent
+                        let components = pdf.url.pathComponents
+                        if let rootIdx = components.lastIndex(of: rootName), rootIdx + 1 < components.count {
+                            let subpath = components[(rootIdx + 1)...].joined(separator: "/")
+                            let subURL = resolved.appendingPathComponent(subpath)
+                            candidateURL = FileManager.default.fileExists(atPath: subURL.path) ? subURL : directChild
+                        } else {
+                            candidateURL = directChild
+                        }
+                    }
+                }
+                return ResolvedAccess(fileURL: candidateURL, securityScopeURL: scopeURL)
+            } else {
+                // Direct single file link
+                return ResolvedAccess(fileURL: resolved, securityScopeURL: scopeURL)
+            }
+        }
+
+        // Local sandbox document
+        let localURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
+        return ResolvedAccess(fileURL: localURL, securityScopeURL: nil)
+    }
+
     /// Resolve a linked ConvertedPDF's URL, or return its url directly if local.
     nonisolated func resolveIfLinked(_ pdf: borrowing ConvertedPDF) throws -> URL {
-        if case .linked(let bm) = pdf.sourceMode {
-            let resolved = try resolve(bm)
-            if resolved.hasDirectoryPath {
-                _ = resolved.startAccessingSecurityScopedResource()
-                return pdf.url
-            }
-            return resolved
-        }
-        return pdf.url
+        let access = try resolveAccess(for: copy pdf)
+        return access.fileURL
     }
 
     // MARK: - Coordinated Access

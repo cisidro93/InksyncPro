@@ -82,7 +82,8 @@ class AppRouter: ObservableObject {
     
     func presentFullScreen(_ screen: LibraryFullScreenDestination) {
         Logger.shared.log("AppRouter: presentFullScreen(\(screen))", category: "Navigation", type: .info)
-        if activeSheet != nil {
+        let hadSheet = (activeSheet != nil)
+        if hadSheet {
             activeSheet = nil
         }
 
@@ -100,8 +101,13 @@ class AppRouter: ObservableObject {
             }
 
             activeFullScreen = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                self.activeFullScreen = screen
+            let delay: Double = hadSheet ? 0.45 : 0.35
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.activeFullScreen = screen
+            }
+        } else if hadSheet {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                self?.activeFullScreen = screen
             }
         } else {
             activeFullScreen = screen

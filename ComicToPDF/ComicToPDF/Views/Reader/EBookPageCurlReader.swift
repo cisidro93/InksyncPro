@@ -239,6 +239,12 @@ struct EBookPageCurlReader: UIViewControllerRepresentable {
 
         let targetIndex = currentPage
 
+        // If Coordinator is already displaying or debounced-syncing targetIndex (e.g. from rapid key/tap turns),
+        // do NOT let SwiftUI re-render re-trigger synchronous setViewControllers and heavy takePageSnapshot!
+        if context.coordinator.currentPageIndex == targetIndex {
+            return
+        }
+
         // Clear gesture completion marker if set
         if context.coordinator.lastCompletedControllerIndex != nil {
             let lastCompleted = context.coordinator.lastCompletedControllerIndex
@@ -330,6 +336,7 @@ extension EBookPageCurlReader {
         // Background pre-cache WKWebView for silent offscreen snapshot generation
         private var backgroundPrecacheWebView: WKWebView?
         private var precacheTask: Task<Void, Never>?
+        private var turnSyncDebounceTask: Task<Void, Never>? = nil
         // Tokens for block-based NotificationCenter observers to prevent memory leaks
         nonisolated(unsafe) private var observerTokens: [NSObjectProtocol] = []
 
@@ -854,6 +861,7 @@ extension EBookPageCurlReader {
 
             pvc.setViewControllers(safeVCs, direction: direction, animated: animated) { [weak self] finished in
                 self?.mountPrimaryWebViewOnRoot()
+                self?.pageViewController?.becomeFirstResponder()
                 completion?(finished)
             }
         }
@@ -1564,10 +1572,15 @@ extension EBookPageCurlReader {
                 // Smooth 120Hz CSS hardware-accelerated slide or instant cut within the active chapter
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(nextIndex), \(animate ? "true" : "false"));")
                 
-                // Keep UIPageViewController underlying view controllers synchronized without tearing down the webview
-                let vcs = spreadViewControllers(for: nextIndex)
-                safeSetViewControllers(vcs, direction: .forward, animated: false)
-                precacheAdjacentSnapshots()
+                // Debounce underlying UIPageViewController sync & GPU snapshotting so rapid key navigation is 100% fluid and responsive
+                turnSyncDebounceTask?.cancel()
+                turnSyncDebounceTask = Task { @MainActor [weak self, weak pvc] in
+                    try? await Task.sleep(nanoseconds: 280_000_000)
+                    guard !Task.isCancelled, let self = self, let pvc = pvc else { return }
+                    let vcs = self.spreadViewControllers(for: nextIndex)
+                    self.safeSetViewControllers(vcs, direction: .forward, animated: false)
+                    self.precacheAdjacentSnapshots()
+                }
             } else {
                 parent.onNext()
             }
@@ -1600,10 +1613,15 @@ extension EBookPageCurlReader {
                 // Smooth 120Hz CSS hardware-accelerated slide or instant cut within the active chapter
                 primaryWebView?.evaluateJavaScript("if(window.goToInksyncPage) window.goToInksyncPage(\(prevIndex), \(animate ? "true" : "false"));")
                 
-                // Keep UIPageViewController underlying view controllers synchronized without tearing down the webview
-                let vcs = spreadViewControllers(for: prevIndex)
-                safeSetViewControllers(vcs, direction: .reverse, animated: false)
-                precacheAdjacentSnapshots()
+                // Debounce underlying UIPageViewController sync & GPU snapshotting so rapid key navigation is 100% fluid and responsive
+                turnSyncDebounceTask?.cancel()
+                turnSyncDebounceTask = Task { @MainActor [weak self, weak pvc] in
+                    try? await Task.sleep(nanoseconds: 280_000_000)
+                    guard !Task.isCancelled, let self = self, let pvc = pvc else { return }
+                    let vcs = self.spreadViewControllers(for: prevIndex)
+                    self.safeSetViewControllers(vcs, direction: .reverse, animated: false)
+                    self.precacheAdjacentSnapshots()
+                }
             } else {
                 parent.onPrev()
             }
@@ -2390,6 +2408,48 @@ extension EBookPageCurlReader {
                 hanging-punctuation: first last !important;
                 -webkit-hanging-punctuation: first last !important;
             }
+            h1 + p, h2 + p, h3 + p, h4 + p, h5 + p, h6 + p,
+            .page-marker-anchor:not(.subtle-continuation) + p,
+            blockquote + p,
+            figure + p,
+            .pdf-figure + p,
+            table + p,
+            .pdf-table-container + p,
+            p.pdf-paragraph-continuation,
+            [data-continues-previous="true"] {
+                text-indent: 0 !important;
+            }
+            p.pdf-paragraph-continuation,
+            [data-continues-previous="true"] {
+                margin-top: 0 !important;
+            }
+            .page-marker-anchor.subtle-continuation {
+                display: inline-block !important;
+                width: 0 !important;
+                height: 0 !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                border: none !important;
+            }
+            .page-marker-anchor.subtle-continuation::after {
+                display: none !important;
+            }
+            .pdf-citation {
+                white-space: nowrap !important;
+                font-size: 0.84em !important;
+                font-weight: 600 !important;
+                opacity: 0.85 !important;
+                vertical-align: super !important;
+                line-height: 0 !important;
+            }
+            sup, .pdf-superscript {
+                font-size: 0.75em !important;
+                vertical-align: super !important;
+                line-height: 0 !important;
+                font-weight: 600 !important;
+                opacity: 0.85 !important;
+            }
             img, svg, figure, video {
                 max-width: 100% !important;
                 max-height: calc(100vh - \(paddingTop + paddingBottom + 20)px) !important;
@@ -3168,6 +3228,13 @@ final class InksyncPageViewController: UIPageViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         becomeFirstResponder()
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
+        if !isFirstResponder {
+            _ = becomeFirstResponder()
+        }
     }
 
     override func viewDidLayoutSubviews() {

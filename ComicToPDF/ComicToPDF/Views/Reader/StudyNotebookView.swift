@@ -92,7 +92,6 @@ struct StudyNotebookView: View {
 
     enum NoteTakingSystem: String, CaseIterable, Identifiable {
         case zettelkasten = "Zettelkasten"
-        case dialectic    = "Dialectic"
         case cornell      = "Cornell"
         case para         = "PARA"
         case marginalia   = "Marginalia"
@@ -102,7 +101,6 @@ struct StudyNotebookView: View {
         var icon: String {
             switch self {
             case .zettelkasten: return "point.3.connected.trianglepath.dotted"
-            case .dialectic:    return "scale.3d"
             case .cornell:      return "rectangle.split.2x1.fill"
             case .para:         return "folder.fill.badge.gearshape"
             case .marginalia:   return "pencil.and.scribble"
@@ -112,7 +110,6 @@ struct StudyNotebookView: View {
         var shortLabel: String {
             switch self {
             case .zettelkasten: return "Zettelkasten"
-            case .dialectic:    return "Dialectic"
             case .cornell:      return "Cornell"
             case .para:         return "PARA"
             case .marginalia:   return "Marginalia"
@@ -122,7 +119,6 @@ struct StudyNotebookView: View {
         var actionSubtitle: String {
             switch self {
             case .zettelkasten: return "Atomic Cards & [[Links]]"
-            case .dialectic:    return "Thesis ⟷ Antithesis ➔ Synthesis"
             case .cornell:      return "3-Zone Recall & Summary"
             case .para:         return "Second Brain Folders"
             case .marginalia:   return "Adlerian Margin Stamps"
@@ -132,7 +128,6 @@ struct StudyNotebookView: View {
         var themeColor: Color {
             switch self {
             case .zettelkasten: return Color(hex: "#8E60E6")
-            case .dialectic:    return Color(hex: "#EC4899")
             case .cornell:      return Color(hex: "#2D7FF9")
             case .para:         return Color(hex: "#10B981")
             case .marginalia:   return Color(hex: "#F59E0B")
@@ -143,8 +138,6 @@ struct StudyNotebookView: View {
             switch self {
             case .zettelkasten:
                 return LinearGradient(colors: [Color(hex: "#8E60E6"), Color(hex: "#6B38C9")], startPoint: .topLeading, endPoint: .bottomTrailing)
-            case .dialectic:
-                return LinearGradient(colors: [Color(hex: "#EC4899"), Color(hex: "#BE185D")], startPoint: .topLeading, endPoint: .bottomTrailing)
             case .cornell:
                 return LinearGradient(colors: [Color(hex: "#2D7FF9"), Color(hex: "#1B5EC4")], startPoint: .topLeading, endPoint: .bottomTrailing)
             case .para:
@@ -158,10 +151,6 @@ struct StudyNotebookView: View {
     @AppStorage("studyNotebookSystem") private var noteSystem: NoteTakingSystem = .zettelkasten
     @State private var showingZettelBoardSheet: Bool = false
     @State private var selectedPARACategory: PARACategory? = nil
-    @State private var isRecitationCurtainActive: Bool = false
-    @State private var isCurtainRevealed: Bool = false
-    @State private var showingLexiconSheet: Bool = false
-    @State private var showingPromoteToManuscriptSheet: Bool = false
     @AppStorage("studyNotebookInputMode") private var inputMode: InputMode = .markdown
     @State private var paperStyle: PaperStyle = .plain
     @State private var paperSpacing: CGFloat = 24.0
@@ -463,12 +452,6 @@ struct StudyNotebookView: View {
                 pasteQuoteFromClipboard()
             } label: {
                 Label("Paste as Formatted Book Quote", systemImage: "quote.opening")
-            }
-
-            Button {
-                pasteMetabolizedDialecticFromClipboard()
-            } label: {
-                Label("Metabolize as Dialectic Triad (⌥⌘D)", systemImage: "scale.3d")
             }
         } label: {
             Image(systemName: "doc.on.clipboard")
@@ -973,11 +956,6 @@ struct StudyNotebookView: View {
             if showHighlightsDrawer {
                 highlightsDrawer(notebookWidth: availableWidth)
             }
-
-            // MARK: Active Recall Recitation Curtain (Philosophy PhD Method)
-            if isRecitationCurtainActive {
-                recitationCurtainOverlay(availableWidth: availableWidth)
-            }
         }
     }
 
@@ -1201,30 +1179,6 @@ struct StudyNotebookView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingLexiconSheet) {
-                NavigationStack {
-                    VocabularyNotebookHubView()
-                        .navigationTitle("Personal Lexicon")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("Done") {
-                                    showingLexiconSheet = false
-                                }
-                            }
-                        }
-                }
-            }
-            .sheet(isPresented: $showingPromoteToManuscriptSheet) {
-                NavigationStack {
-                    PromoteToManuscriptSheet(
-                        noteContent: localNotes,
-                        bookTitle: bookTitle,
-                        activeAnnotation: activeNoteAnnotation,
-                        onDismiss: { showingPromoteToManuscriptSheet = false }
-                    )
-                }
-            }
     }
 
     // MARK: - Lifecycle & Observation Modifiers
@@ -1257,43 +1211,29 @@ struct StudyNotebookView: View {
                 guard let quoteText = notification.userInfo?["text"] as? String, !quoteText.isEmpty else { return }
                 let page = notification.userInfo?["pageIndex"] as? Int ?? activeReaderPageIndex
                 let book = notification.userInfo?["bookTitle"] as? String ?? bookTitle
-                let isDialectic = notification.userInfo?["isDialectic"] as? Bool ?? false
-
-                if isDialectic {
-                    pasteMetabolizedDialecticFromClipboard(quoteText: quoteText, page: page, book: book)
-                } else {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        inputMode = .markdown
-                    }
-
-                    var quoteBlock = "\n\n> " + quoteText.replacingOccurrences(of: "\n", with: "\n> ") + "\n"
-                    if let p = page {
-                        quoteBlock += "— *\(book)*, [📍 Page \(p + 1)](page:\(p))\n"
-                        referencedPageIndices.insert(p)
-                    } else {
-                        quoteBlock += "— *\(book)*\n"
-                    }
-
-                    if localNotes.isEmpty {
-                        localNotes = quoteBlock.trimmingCharacters(in: .whitespacesAndNewlines)
-                    } else {
-                        localNotes += quoteBlock
-                    }
-                    debounceSave()
-                    HapticEngine.success()
+                
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    inputMode = .markdown
                 }
+                
+                var quoteBlock = "\n\n> " + quoteText.replacingOccurrences(of: "\n", with: "\n> ") + "\n"
+                if let p = page {
+                    quoteBlock += "— *\(book)*, [📍 Page \(p + 1)](page:\(p))\n"
+                    referencedPageIndices.insert(p)
+                } else {
+                    quoteBlock += "— *\(book)*\n"
+                }
+                
+                if localNotes.isEmpty {
+                    localNotes = quoteBlock.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    localNotes += quoteBlock
+                }
+                debounceSave()
+                HapticEngine.success()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.pasteQuoteToNotebook"))) { _ in
                 pasteQuoteFromClipboard()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.pasteMetabolizedDialectic"))) { _ in
-                pasteMetabolizedDialecticFromClipboard()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.toggleRecitationCurtain"))) { _ in
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    isRecitationCurtainActive.toggle()
-                    isCurtainRevealed = false
-                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.stampPageLink"))) { _ in
                 stampCurrentPageLink()
@@ -2178,62 +2118,6 @@ struct StudyNotebookView: View {
         } else {
             localNotes += quoteBlock
         }
-        debounceSave()
-    }
-
-    private func pasteMetabolizedDialecticFromClipboard(quoteText: String? = nil, page: Int? = nil, book: String? = nil) {
-        let textToUse = quoteText ?? UIPasteboard.general.string ?? ""
-        let trimmed = textToUse.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            HapticEngine.error()
-            return
-        }
-
-        HapticEngine.success()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-            inputMode = .markdown
-            noteSystem = .dialectic
-        }
-
-        let p = page ?? activeReaderPageIndex
-        let b = book ?? bookTitle
-        var block = "\n\n### 💡 Dialectical Triad: [Core Thesis / Claim]\n"
-        block += "> " + trimmed.replacingOccurrences(of: "\n", with: "\n> ") + "\n"
-        if let pageNum = p {
-            block += "> — *\(b)*, [📍 Page \(pageNum + 1)](page:\(pageNum))\n\n"
-            referencedPageIndices.insert(pageNum)
-        } else {
-            block += "> — *\(b)*\n\n"
-        }
-
-        block += """
-        #### ⚖️ Premises & Argument Reconstruction:
-        1. **P1:** 
-        2. **P2:** 
-        3. **Conclusion:** Therefore, 
-
-        #### ⚡ Counter-Perspective & Objections (Antithesis):
-        - **Objection:** 
-        - **Rival Thinker/Framework:** 
-
-        #### 🔮 Synthetic Resolution (My Own Voice):
-        - **Synthesis:** 
-        """
-
-        if localNotes.isEmpty {
-            localNotes = block.trimmingCharacters(in: .whitespacesAndNewlines)
-        } else {
-            localNotes += block
-        }
-        debounceSave()
-    }
-
-    private func insertDialecticElement(_ text: String) {
-        HapticEngine.selection()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-            inputMode = .markdown
-        }
-        localNotes += text
         debounceSave()
     }
 
@@ -3139,153 +3023,12 @@ private extension StudyNotebookView {
         switch noteSystem {
         case .zettelkasten:
             zettelkastenSubBar
-        case .dialectic:
-            dialecticSubBar
         case .cornell:
             cornellSubBar
         case .para:
             paraSubBar
         case .marginalia:
             marginaliaSubBar
-        }
-    }
-
-    var dialecticSubBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                // Syllogism & Dialectic building elements
-                HStack(spacing: 6) {
-                    Button {
-                        insertDialecticElement("\n\n### 💡 Thesis / Core Claim:\n> ")
-                    } label: {
-                        HStack(spacing: 3) {
-                            Text("💡")
-                            Text("Claim")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(Color(hex: "#EC4899"))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
-                        .background(Color(hex: "#EC4899").opacity(0.12), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        insertDialecticElement("\n- ⚖️ **Premise:** ")
-                    } label: {
-                        HStack(spacing: 3) {
-                            Text("⚖️")
-                            Text("Premise")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(Color(hex: "#EC4899"))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
-                        .background(Color(hex: "#EC4899").opacity(0.12), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        insertDialecticElement("\n- ⚡ **Objection (Antithesis):** ")
-                    } label: {
-                        HStack(spacing: 3) {
-                            Text("⚡")
-                            Text("Objection")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(Color(hex: "#EC4899"))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
-                        .background(Color(hex: "#EC4899").opacity(0.12), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        insertDialecticElement("\n- 🔮 **Synthesis (Resolution):** ")
-                    } label: {
-                        HStack(spacing: 3) {
-                            Text("🔮")
-                            Text("Synthesis")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(Color(hex: "#EC4899"))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
-                        .background(Color(hex: "#EC4899").opacity(0.12), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Divider()
-                    .frame(height: 14)
-                    .padding(.horizontal, 2)
-
-                // Active Recall Curtain Toggle
-                Button {
-                    HapticEngine.medium()
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        isRecitationCurtainActive.toggle()
-                        isCurtainRevealed = false
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: isRecitationCurtainActive ? "eye.fill" : "eye.slash.fill")
-                            .font(.system(size: 10, weight: .bold))
-                        Text(isRecitationCurtainActive ? "Curtain Active" : "Recall Curtain (⌥⌘R)")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(isRecitationCurtainActive ? .white : Color(hex: "#EC4899"))
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(
-                        isRecitationCurtainActive
-                            ? AnyShapeStyle(Color(hex: "#EC4899"))
-                            : AnyShapeStyle(Color(hex: "#EC4899").opacity(0.12)),
-                        in: Capsule()
-                    )
-                }
-                .buttonStyle(.plain)
-                .help("Cover notes to practice verbal recitation recall (⌥⌘R)")
-
-                // Personal Lexicon Drawer
-                Button {
-                    HapticEngine.selection()
-                    showingLexiconSheet = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "character.book.closed.fill")
-                            .font(.system(size: 10, weight: .bold))
-                        Text("Personal Lexicon")
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    }
-                    .foregroundColor(Color.inkBlue)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.inkBlue.opacity(0.12), in: Capsule())
-                }
-                .buttonStyle(.plain)
-
-                // Promote Note to Manuscript
-                Button {
-                    HapticEngine.medium()
-                    showingPromoteToManuscriptSheet = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.up.forward.app.fill")
-                            .font(.system(size: 10, weight: .bold))
-                        Text("To Manuscript")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(Color.inkGreen)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.inkGreen.opacity(0.12), in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .help("Graduate this synthesized note into an essay or book project chapter")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 2)
         }
     }
 
@@ -3705,14 +3448,8 @@ private extension StudyNotebookView {
         case .anchor:
             let pageNum = (activeReaderPageIndex ?? currentNotebookPageIndex) + 1
             stamp = "\n[📍 Page \(pageNum)](page:\(pageNum - 1))\n"
-        case .thesis:
-            stamp = "\n> 💡 **Thesis:** "
-        case .premise:
-            stamp = "\n> ⚖️ **Premise:** "
-        case .objection:
-            stamp = "\n> ⚡ **Objection:** "
-        case .definition:
-            stamp = "\n> 📖 **Definition:** "
+        default:
+            stamp = "\n> \(symbol.symbolString) **\(symbol.displayName):** "
         }
         localNotes += stamp
         debounceSave()
@@ -3748,30 +3485,6 @@ private extension StudyNotebookView {
 
             ## References & Connections
             - [[Related Concept]]
-            """
-        case .dialectic:
-            let pageNum = (activeReaderPageIndex ?? currentNotebookPageIndex) + 1
-            localNotes = """
-            # Dialectical Inquiry: \(bookTitle.isEmpty ? "Core Philosophical Problem" : bookTitle)
-
-            **Focus:** #dialectic/crucible | **Source:** [[\(bookTitle)]], Page \(pageNum)
-
-            ### 💡 Core Thesis / Author's Claim
-            > State the author's primary argument or claim here.
-
-            ### ⚖️ Syllogistic Argument Reconstruction
-            1. **Premise 1:** 
-            2. **Premise 2:** 
-            3. **Conclusion:** Therefore, 
-
-            ### ⚡ Antithesis & Objections (Friction & Rival Thinkers)
-            - **Counter-Argument:** 
-            - **Potential Vulnerability / False Assumption:** 
-            - **Rival Perspective:** 
-
-            ### 🔮 Synthetic Resolution (In My Own Voice)
-            State your own balanced, higher-order thesis reconciling or refuting the arguments:
-            - **My Stance:** 
             """
         case .cornell:
             localNotes = """
@@ -3813,411 +3526,5 @@ private extension StudyNotebookView {
             """
         }
         debounceSave()
-    }
-}
-
-// MARK: - Active Recall Recitation Curtain (Philosophy PhD Method)
-extension StudyNotebookView {
-    enum NoteRecallGrade {
-        case hard
-        case good
-        case easy
-    }
-
-    private func gradeCurrentNoteRecall(_ grade: NoteRecallGrade) {
-        guard let note = activeNoteAnnotation else {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                isRecitationCurtainActive = false
-                isCurtainRevealed = false
-            }
-            return
-        }
-
-        switch grade {
-        case .hard:
-            note.reviewCount = max(0, note.reviewCount - 1)
-            note.easeFactor = max(1.3, note.easeFactor - 0.2)
-            note.nextReviewDate = Calendar.current.date(byAdding: .day, value: 1, to: Date())
-            HapticEngine.selection()
-        case .good:
-            note.reviewCount += 1
-            note.nextReviewDate = Calendar.current.date(byAdding: .day, value: 3, to: Date())
-            HapticEngine.medium()
-        case .easy:
-            note.reviewCount += 1
-            note.easeFactor = min(5.0, note.easeFactor + 0.15)
-            let intervalDays = max(7, Int(round(6 * pow(note.easeFactor, Double(note.reviewCount)))))
-            note.nextReviewDate = Calendar.current.date(byAdding: .day, value: intervalDays, to: Date())
-            HapticEngine.success()
-        }
-        note.modifiedAt = Date()
-        try? modelContext.save()
-
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-            isRecitationCurtainActive = false
-            isCurtainRevealed = false
-        }
-    }
-
-    @ViewBuilder
-    func recitationCurtainOverlay(availableWidth: CGFloat) -> some View {
-        ZStack {
-            if !isCurtainRevealed {
-                // Obscuring Curtain Layer
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .overlay(Color.black.opacity(0.4))
-                    .ignoresSafeArea()
-
-                VStack(spacing: 20) {
-                    VStack(spacing: 8) {
-                        Image(systemName: "brain.head.profile")
-                            .font(.system(size: 42, weight: .bold))
-                            .foregroundStyle(LinearGradient(colors: [Color(hex: "#EC4899"), Color(hex: "#8E60E6")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .shadow(color: Color(hex: "#EC4899").opacity(0.4), radius: 8)
-
-                        Text("Active Recall Recitation Curtain")
-                            .font(.system(size: 19, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-
-                        Text("Rule of Verbal Recitation: Before looking, explain the argument out loud in your own words. Articulate the core thesis, premises, counter-objections, and conclusion without peeking.")
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundColor(Color.white.opacity(0.85))
-                            .multilineTextAlignment(.center)
-                            .lineSpacing(3)
-                            .padding(.horizontal, 28)
-                    }
-
-                    // Voice Recitation (Feynman Method)
-                    Button {
-                        toggleSpeechDictation()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: speechManager.isRecording ? "waveform.badge.mic" : "mic.fill")
-                                .font(.system(size: 14, weight: .bold))
-                            Text(speechManager.isRecording ? "Transcribing Voice Recitation..." : "Practice Recitation via Dictation (⌘D)")
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        }
-                        .foregroundColor(speechManager.isRecording ? .white : Color(hex: "#EC4899"))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(
-                            speechManager.isRecording
-                                ? AnyShapeStyle(Color.red)
-                                : AnyShapeStyle(Color.white.opacity(0.12)),
-                            in: Capsule()
-                        )
-                        .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-
-                    HStack(spacing: 12) {
-                        // Reveal Button
-                        Button {
-                            HapticEngine.medium()
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                isCurtainRevealed = true
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "eye.fill")
-                                Text("Reveal & Check Notes")
-                            }
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 11)
-                            .background(
-                                LinearGradient(colors: [Color(hex: "#EC4899"), Color(hex: "#BE185D")], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                in: Capsule()
-                            )
-                            .shadow(color: Color(hex: "#EC4899").opacity(0.4), radius: 6, y: 3)
-                        }
-                        .buttonStyle(.plain)
-
-                        // Dismiss Curtain
-                        Button {
-                            HapticEngine.selection()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                isRecitationCurtainActive = false
-                            }
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white.opacity(0.8))
-                                .padding(10)
-                                .background(Color.white.opacity(0.12), in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(24)
-                .background(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color(hex: "#1E1E2E").opacity(0.92))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                        )
-                        .shadow(color: Color.black.opacity(0.5), radius: 20, y: 10)
-                )
-                .padding(.horizontal, 24)
-            } else {
-                // Revealed Mode — Floating Evaluation Bar at the bottom
-                VStack {
-                    Spacer()
-
-                    VStack(spacing: 10) {
-                        HStack {
-                            Image(systemName: "brain.head.profile")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(Color(hex: "#EC4899"))
-                            Text("How accurately did you recite this argument?")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
-                            Spacer()
-                            Button {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    isCurtainRevealed = false
-                                }
-                            } label: {
-                                Text("Hide Again")
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                    .foregroundColor(Color.inkBlue)
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        HStack(spacing: 10) {
-                            Button {
-                                gradeCurrentNoteRecall(.hard)
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Text("🔴")
-                                    Text("Struggled (+1d)")
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .foregroundColor(.red)
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                gradeCurrentNoteRecall(.good)
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Text("🟡")
-                                    Text("Good (+3d)")
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .foregroundColor(.orange)
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                gradeCurrentNoteRecall(.easy)
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Text("🟢")
-                                    Text("Mastered (+7d)")
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .foregroundColor(.green)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.inkSurfaceRaised)
-                            .shadow(color: Color.black.opacity(0.2), radius: 12, y: 4)
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.primary.opacity(0.1), lineWidth: 1))
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
-                }
-            }
-        }
-        .transition(.opacity)
-    }
-}
-
-// MARK: - Promote Note to Manuscript Sheet
-struct PromoteToManuscriptSheet: View {
-    let noteContent: String
-    let bookTitle: String
-    let activeAnnotation: SDAnnotation?
-    let onDismiss: () -> Void
-
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \SDManuscriptProject.modifiedAt, order: .reverse) private var projects: [SDManuscriptProject]
-
-    @State private var showingCreateProject = false
-    @State private var newProjectTitle = ""
-    @State private var selectedProjectID: UUID? = nil
-    @State private var newChapterTitle = ""
-    @State private var isSuccess = false
-
-    var body: some View {
-        Form {
-            Section(header: Text("Promote Synthesized Note to Long-Form Manuscript")) {
-                Text("Graduate this atomic dialectic note directly into an essay, thesis chapter, or book manuscript draft.")
-                    .font(.system(size: 12))
-                    .foregroundColor(Color.inkSecondary)
-
-                if projects.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("No manuscript projects found yet.")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("Create a project to start turning your study notes into chapters.")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                } else {
-                    Picker("Target Project", selection: $selectedProjectID) {
-                        Text("Select Project...").tag(nil as UUID?)
-                        ForEach(projects) { proj in
-                            Text(proj.title).tag(proj.id as UUID?)
-                        }
-                    }
-                }
-            }
-
-            if let projID = selectedProjectID, let project = projects.first(where: { $0.id == projID }) {
-                Section(header: Text("Existing Chapters in \(project.title)")) {
-                    ForEach(project.documents) { doc in
-                        Button {
-                            promoteTo(document: doc, in: project)
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(doc.title)
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.primary)
-                                    Text("Append note at end of chapter")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "plus.circle.fill")
-                                    .foregroundColor(Color.inkGreen)
-                            }
-                        }
-                    }
-                }
-
-                Section(header: Text("Or Create New Chapter in \(project.title)")) {
-                    TextField("Chapter Title (e.g. Synthesis on \(bookTitle))", text: $newChapterTitle)
-                    Button {
-                        let title = newChapterTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? (bookTitle.isEmpty ? "Synthesis Note" : "Dialectic on \(bookTitle)")
-                            : newChapterTitle
-                        let newDoc = SDManuscriptDocument(title: title, contentMarkdown: noteContent, orderIndex: project.documents.count)
-                        if let annot = activeAnnotation {
-                            newDoc.attachedNoteIDs.append(annot.id.uuidString)
-                        }
-                        project.documents.append(newDoc)
-                        project.modifiedAt = Date()
-                        try? modelContext.save()
-                        HapticEngine.success()
-                        isSuccess = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                            onDismiss()
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: "doc.badge.plus")
-                            Text("Create Chapter & Insert Note")
-                                .font(.system(size: 14, weight: .bold))
-                        }
-                        .foregroundColor(Color.inkBlue)
-                    }
-                }
-            }
-
-            Section(header: Text("Create New Manuscript Project")) {
-                TextField("New Project Title (e.g. My Philosophy Thesis)", text: $newProjectTitle)
-                Button {
-                    let title = newProjectTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "New Manuscript" : newProjectTitle
-                    let newProj = SDManuscriptProject(title: title)
-                    let firstDoc = SDManuscriptDocument(
-                        title: bookTitle.isEmpty ? "Introduction & Synthesis" : "Chapter 1: Reflections on \(bookTitle)",
-                        contentMarkdown: noteContent,
-                        orderIndex: 0
-                    )
-                    if let annot = activeAnnotation {
-                        firstDoc.attachedNoteIDs.append(annot.id.uuidString)
-                    }
-                    newProj.documents.append(firstDoc)
-                    modelContext.insert(newProj)
-                    try? modelContext.save()
-                    selectedProjectID = newProj.id
-                    newProjectTitle = ""
-                    HapticEngine.success()
-                    isSuccess = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                        onDismiss()
-                    }
-                } label: {
-                    HStack {
-                        Image(systemName: "folder.badge.plus")
-                        Text("Create Project & Graduate Note")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                    .foregroundColor(Color(hex: "#EC4899"))
-                }
-            }
-        }
-        .navigationTitle("Promote to Manuscript")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { onDismiss() }
-            }
-        }
-        .overlay {
-            if isSuccess {
-                VStack(spacing: 12) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 48))
-                        .foregroundColor(Color.inkGreen)
-                    Text("Successfully Promoted to Manuscript!")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                }
-                .padding(24)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                .shadow(radius: 12)
-                .transition(.scale.combined(with: .opacity))
-            }
-        }
-    }
-
-    private func promoteTo(document: SDManuscriptDocument, in project: SDManuscriptProject) {
-        if let annot = activeAnnotation, !document.attachedNoteIDs.contains(annot.id.uuidString) {
-            document.attachedNoteIDs.append(annot.id.uuidString)
-        }
-        if document.contentMarkdown.isEmpty {
-            document.contentMarkdown = noteContent
-        } else {
-            document.contentMarkdown += "\n\n### Source Note: \(bookTitle)\n" + noteContent
-        }
-        document.modifiedAt = Date()
-        project.modifiedAt = Date()
-        try? modelContext.save()
-        HapticEngine.success()
-        isSuccess = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            onDismiss()
-        }
     }
 }

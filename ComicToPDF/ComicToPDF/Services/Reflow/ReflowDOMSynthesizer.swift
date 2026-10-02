@@ -15,6 +15,21 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
         pattern: #"^[\s*•▪▫–—\-]+\s*"#,
         options: []
     )
+    private static let citationRegex = try? NSRegularExpression(
+        pattern: #"(?<=[a-zA-Z0-9\.\,\)])\[(\d+(?:[–\-,\s]+\d+)*)\]"#,
+        options: []
+    )
+
+    private func formatBlockText(_ text: String) -> String {
+        let sanitized = PDFSpatialParser.sanitizeExtractedText(text)
+        var escaped = escapeHTML(sanitized)
+        if let regex = Self.citationRegex {
+            let nsStr = escaped as NSString
+            let range = NSRange(location: 0, length: nsStr.length)
+            escaped = regex.stringByReplacingMatches(in: escaped, options: [], range: range, withTemplate: "<span class=\"pdf-citation\">[$1]</span>")
+        }
+        return escaped
+    }
 
     /// Synthesizes spatial text blocks and extracted images into a cached HTML5 DOM file.
     public func synthesizeHTML(
@@ -49,19 +64,75 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
         )
 
         if maxPage >= 0 {
+            var lastParagraphOfPrevPage: SpatialTextBlock? = nil
+            var prevPageEndedWithHyphen = false
+            let terminalPunctuation: Set<Character> = [".", "!", "?", "…", "”", "’", "\""]
+            let hyphenChars: [Character] = ["-", "\u{2010}", "\u{2011}", "\u{00AD}"]
+
             for p in 0...maxPage {
                 let pageBlocks = blocksByPage[p] ?? []
                 var pageImages = imagesByPage[p] ?? []
                 if pageBlocks.isEmpty && pageImages.isEmpty { continue }
 
+                // Cross-page continuation check (BOOX NeoReader / KOReader standard):
+                // If previous page ended with an unclosed paragraph or hyphenated word, and this page
+                // begins with a lowercase letter, number, or clause continuation, connect the reading flow.
+                var pageStartsContinuation = false
+                if let prevBlock = lastParagraphOfPrevPage,
+                   let firstBlock = pageBlocks.first,
+                   firstBlock.kind == .paragraph {
+                    let trimmedPrev = prevBlock.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let lastChar = trimmedPrev.last ?? " "
+                    let endsWithTerminal = terminalPunctuation.contains(lastChar) ||
+                                          trimmedPrev.hasSuffix(".\"") ||
+                                          trimmedPrev.hasSuffix("?\"") ||
+                                          trimmedPrev.hasSuffix("!\"")
+                    let endsWithHyphen = hyphenChars.contains(lastChar)
+
+                    let trimmedFirst = firstBlock.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let firstChar = trimmedFirst.first ?? " "
+                    let startsWithContinuation = firstChar.isLowercase ||
+                                                 firstChar == "," ||
+                                                 firstChar == ";" ||
+                                                 firstChar == ":" ||
+                                                 firstChar == ")" ||
+                                                 firstChar == "]" ||
+                                                 firstChar.isNumber ||
+                                                 trimmedFirst.hasPrefix("and ") ||
+                                                 trimmedFirst.hasPrefix("or ") ||
+                                                 trimmedFirst.hasPrefix("but ") ||
+                                                 trimmedFirst.hasPrefix("that ") ||
+                                                 trimmedFirst.hasPrefix("which ")
+
+                    if (!endsWithTerminal || endsWithHyphen) && startsWithContinuation {
+                        pageStartsContinuation = true
+                    }
+                }
+
+                let anchorClass = pageStartsContinuation ? "page-marker-anchor subtle-continuation" : "page-marker-anchor"
                 bodyHTML += "\n<section class=\"pdf-page-marker\" id=\"page-\(p + 1)\" data-page=\"\(p + 1)\" data-pdf-page=\"\(p + 1)\">\n"
-                bodyHTML += "  <div class=\"page-marker-anchor\" id=\"page-anchor-\(p + 1)\" aria-hidden=\"true\" data-page-indicator=\"p. \(p + 1)\" data-pdf-page=\"\(p + 1)\"></div>\n"
+                bodyHTML += "  <div class=\"\(anchorClass)\" id=\"page-anchor-\(p + 1)\" aria-hidden=\"true\" data-page-indicator=\"p. \(p + 1)\" data-pdf-page=\"\(p + 1)\"></div>\n"
 
                 var i = 0
                 while i < pageBlocks.count {
                     let block = pageBlocks[i]
                     let rectAttr = "\(Int(block.rect.origin.x)),\(Int(block.rect.origin.y)),\(Int(block.rect.size.width)),\(Int(block.rect.size.height))"
-                    let escapedText = escapeHTML(PDFSpatialParser.sanitizeExtractedText(block.text))
+                    var rawText = block.text
+
+                    // Cross-page de-hyphenation rejoining across the page boundary
+                    let isContinuedParagraph = (i == 0 && pageStartsContinuation && block.kind == .paragraph)
+                    if isContinuedParagraph && prevPageEndedWithHyphen {
+                        let hyphenPrefixes: Set<String> = ["self", "cross", "well", "all", "co", "ex", "quasi", "semi", "multi", "non", "anti", "pre", "post"]
+                        let prevLastWord = (lastParagraphOfPrevPage?.text ?? "")
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                            .dropLast() // drop hyphen
+                            .components(separatedBy: .whitespaces).last?.lowercased() ?? ""
+                        if !hyphenPrefixes.contains(prevLastWord) {
+                            rawText = rawText.trimmingCharacters(in: .whitespaces)
+                        }
+                    }
+
+                    let escapedText = formatBlockText(rawText)
 
                     // Figure & Caption Binding (Adobe Sensei standard)
                     if block.kind == .figureCaption && !pageImages.isEmpty {
@@ -103,7 +174,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                                     }
                                 }
                             }
-                            bodyHTML += "    <li data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(itemRect)\">\(escapeHTML(itemText))</li>\n"
+                            bodyHTML += "    <li data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(itemRect)\">\(formatBlockText(itemText))</li>\n"
                             i += 1
                         }
                         bodyHTML += "  </\(tag)>\n"
@@ -169,7 +240,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                                 let cellTag = (rIdx == 0 && rows.count > 1) ? "th" : "td"
                                 bodyHTML += "      <tr>\n"
                                 for cell in cells {
-                                    bodyHTML += "        <\(cellTag)>\(escapeHTML(cell))</\(cellTag)>\n"
+                                    bodyHTML += "        <\(cellTag)>\(formatBlockText(cell))</\(cellTag)>\n"
                                 }
                                 bodyHTML += "      </tr>\n"
                             }
@@ -177,9 +248,23 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                             bodyHTML += "  </div>\n"
                         }
                     case .paragraph:
-                        bodyHTML += "  <p data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</p>\n"
+                        if isContinuedParagraph {
+                            bodyHTML += "  <p class=\"pdf-paragraph-continuation\" data-continues-previous=\"true\" data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</p>\n"
+                        } else {
+                            bodyHTML += "  <p data-pdf-page=\"\(p + 1)\" data-pdf-rect=\"\(rectAttr)\">\(escapedText)</p>\n"
+                        }
                     }
                     i += 1
+                }
+
+                // Update cross-page tracking for next page
+                if let lastBlock = pageBlocks.last, lastBlock.kind == .paragraph {
+                    lastParagraphOfPrevPage = lastBlock
+                    let trimmed = lastBlock.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    prevPageEndedWithHyphen = hyphenChars.contains(trimmed.last ?? " ")
+                } else if !pageBlocks.isEmpty {
+                    lastParagraphOfPrevPage = nil
+                    prevPageEndedWithHyphen = false
                 }
 
                 // Render any remaining images not paired with captions
@@ -211,7 +296,15 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                     line-height: 1.6;
                     word-wrap: break-word;
                     word-break: break-word;
+                    overflow-wrap: break-word;
                     -webkit-text-size-adjust: 100%;
+                    -webkit-font-smoothing: antialiased;
+                    -moz-osx-font-smoothing: grayscale;
+                    text-rendering: optimizeLegibility;
+                    text-align: justify;
+                    text-justify: inter-word;
+                    -webkit-hyphens: auto;
+                    hyphens: auto;
                 }
                 .page-marker-anchor {
                     display: block !important;
@@ -222,6 +315,18 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                     border-top: 1px dashed rgba(128, 128, 128, 0.18);
                     break-inside: avoid !important;
                     -webkit-column-break-inside: avoid !important;
+                }
+                .page-marker-anchor.subtle-continuation {
+                    display: inline-block !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                    min-height: 0 !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    border: none !important;
+                }
+                .page-marker-anchor.subtle-continuation::after {
+                    display: none !important;
                 }
                 .page-marker-anchor::after {
                     content: attr(data-page-indicator);
@@ -244,6 +349,7 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                     font-weight: 700;
                     break-after: avoid !important;
                     -webkit-column-break-after: avoid !important;
+                    text-wrap: balance !important;
                 }
                 h1 { font-size: 1.6em; }
                 h2 { font-size: 1.35em; }
@@ -251,7 +357,42 @@ public final class ReflowDOMSynthesizer: @unchecked Sendable {
                 h4 { font-size: 1.05em; }
                 p {
                     margin-top: 0;
-                    margin-bottom: 1.1em;
+                    margin-bottom: 0.35em;
+                    text-indent: 1.35em;
+                    text-align: justify;
+                    text-justify: inter-word;
+                    -webkit-hyphens: auto;
+                    hyphens: auto;
+                }
+                h1 + p, h2 + p, h3 + p, h4 + p,
+                .page-marker-anchor:not(.subtle-continuation) + p,
+                blockquote + p,
+                figure + p,
+                .pdf-figure + p,
+                table + p,
+                .pdf-table-container + p,
+                p.pdf-paragraph-continuation,
+                [data-continues-previous="true"] {
+                    text-indent: 0 !important;
+                }
+                p.pdf-paragraph-continuation,
+                [data-continues-previous="true"] {
+                    margin-top: 0 !important;
+                }
+                .pdf-citation {
+                    white-space: nowrap !important;
+                    font-size: 0.84em !important;
+                    font-weight: 600 !important;
+                    opacity: 0.85 !important;
+                    vertical-align: super !important;
+                    line-height: 0 !important;
+                }
+                sup, .pdf-superscript {
+                    font-size: 0.75em !important;
+                    vertical-align: super !important;
+                    line-height: 0 !important;
+                    font-weight: 600 !important;
+                    opacity: 0.85 !important;
                 }
                 blockquote {
                     margin: 1.2em 0;

@@ -488,23 +488,10 @@ struct UnifiedReaderView: View {
         }
         
         // pdf.url is already sandbox-resolved by toDomainModel(), use it directly.
-        let resolvedURL: URL
-        var accessedURL: URL? = nil
-        
-        if case .linked(let bm) = pdf.sourceMode,
-           let url = try? BookmarkResolver.shared.resolve(bm) {
-            let didAccess = url.startAccessingSecurityScopedResource()
-            resolvedURL = url
-            if didAccess { accessedURL = url }
-            Logger.shared.log("isEPUBComic: Using linked bookmark URL: \(url.path)", category: "Reader", type: .info)
-        } else {
-            resolvedURL = pdf.url
-            let didAccess = resolvedURL.startAccessingSecurityScopedResource()
-            if didAccess { accessedURL = resolvedURL }
-            Logger.shared.log("isEPUBComic: Using local URL: \(resolvedURL.path)", category: "Reader", type: .info)
-        }
-        
-        defer { accessedURL?.stopAccessingSecurityScopedResource() }
+        let access = try? BookmarkResolver.shared.resolveAccess(for: pdf)
+        let resolvedURL: URL = access?.fileURL ?? pdf.url
+        defer { access?.stopAccess() }
+        Logger.shared.log("isEPUBComic: Using resolved URL: \(resolvedURL.path)", category: "Reader", type: .info)
         
         // Verify the file actually exists
         let fileExists = FileManager.default.fileExists(atPath: resolvedURL.path)

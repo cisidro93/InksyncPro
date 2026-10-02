@@ -354,7 +354,7 @@ final class SharedImportCoordinator: ObservableObject {
 
         registerDirectlyOpenedFile(at: dest)
         let manager = conversionManager ?? ConversionManager.shared
-        let openedPDF = manager.registerDirectFile(at: dest, autoOpen: autoOpen)
+        let openedPDF = manager.registerDirectFile(at: dest, autoOpen: false)
         if !LibraryService.shared.items.contains(where: { $0.id == openedPDF.id || $0.url.fastCanonicalPath == dest.fastCanonicalPath }) {
             LibraryService.shared.items.insert(openedPDF, at: 0)
         }

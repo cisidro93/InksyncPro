@@ -27,7 +27,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        var supportedTypes: [UTType] = [.folder, .pdf, .epub]
+        var supportedTypes: [UTType] = [.folder, .directory, .pdf, .epub]
         if let cbz = UTType(filenameExtension: "cbz") { supportedTypes.append(cbz) }
         if let cbr = UTType(filenameExtension: "cbr") { supportedTypes.append(cbr) }
         if let cb7 = UTType(filenameExtension: "cb7") { supportedTypes.append(cb7) }
@@ -84,46 +84,34 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard !urls.isEmpty else {
+            controller.dismiss(animated: true)
             finish(with: [])
             return
         }
         Logger.shared.log("FolderLinkCoordinator: user picked \(urls.count) item(s): \(urls.map { $0.lastPathComponent }.joined(separator: ", "))", category: "FolderLink", type: .success)
         
-        // Fast path for 1 item (typically a folder URL or single file)
-        if urls.count == 1, let url = urls.first {
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-
-            var bookmarkData: Data? = try? url.bookmarkData(
-                options: [],
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-            if bookmarkData == nil {
-                bookmarkData = try? url.bookmarkData(
-                    options: .minimalBookmark,
-                    includingResourceValuesForKeys: nil,
-                    relativeTo: nil
-                )
+        // Synchronously capture security scopes on main thread BEFORE dismissal or async dispatch
+        var securedURLs: [URL] = []
+        for url in urls {
+            if url.startAccessingSecurityScopedResource() {
+                securedURLs.append(url)
             }
-            if bookmarkData == nil {
-                bookmarkData = try? NSKeyedArchiver.archivedData(withRootObject: url, requiringSecureCoding: true)
-            }
-            if let bookmarkData {
-                finish(with: [(url, bookmarkData)])
-            } else {
-                finish(with: [])
-            }
-            return
         }
 
-        // Multi-item path: offload bookmark creation off @MainActor so UIKit dismisses picker sheet immediately
+        // Dismiss picker immediately so host UI is never blocked or frozen
+        controller.dismiss(animated: true)
+
+        // Offload bookmark creation to background task while scopes are held active
         Task.detached(priority: .userInitiated) { [weak self] in
+            defer {
+                for url in securedURLs {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
             var results: [(url: URL, bookmark: Data)] = []
             results.reserveCapacity(urls.count)
             for (index, url) in urls.enumerated() {
                 if index % 25 == 0 { await Task.yield() }
-                let accessing = url.startAccessingSecurityScopedResource()
                 var bookmarkData: Data? = try? url.bookmarkData(
                     options: [],
                     includingResourceValuesForKeys: nil,
@@ -139,7 +127,6 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
                 if bookmarkData == nil {
                     bookmarkData = try? NSKeyedArchiver.archivedData(withRootObject: url, requiringSecureCoding: true)
                 }
-                if accessing { url.stopAccessingSecurityScopedResource() }
 
                 if let bookmarkData {
                     results.append((url, bookmarkData))
@@ -153,6 +140,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
         Logger.shared.log("FolderLinkCoordinator: user cancelled folder picker", category: "FolderLink", type: .info)
+        controller.dismiss(animated: true)
         finish(with: [])
     }
 

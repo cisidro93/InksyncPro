@@ -216,6 +216,17 @@ public struct WebView: UIViewRepresentable {
 open class HighlightableWebView: WKWebView {
     public var onHighlightRequested: (() -> Void)?
     
+    open override var canBecomeFirstResponder: Bool {
+        return true
+    }
+
+    open override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
+        if !isFirstResponder {
+            _ = becomeFirstResponder()
+        }
+    }
+
     open override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         if action == #selector(customHighlightAction(_:)) {
             return true

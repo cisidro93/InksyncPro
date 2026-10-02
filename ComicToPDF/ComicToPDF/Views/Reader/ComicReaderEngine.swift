@@ -255,16 +255,9 @@ final class ComicImageCache: ObservableObject {
         } else if isPDF {
             let targetURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
             Task.detached(priority: .userInitiated) { [weak self] in
-                let resolvedURL: URL
-                var accessedURL: URL? = nil
-                if case .linked(let bm) = pdf.sourceMode,
-                   let url = try? BookmarkResolver.shared.resolve(bm) {
-                    let didAccess = url.startAccessingSecurityScopedResource()
-                    resolvedURL = url
-                    if didAccess { accessedURL = url }
-                } else {
-                    resolvedURL = targetURL
-                }
+                let access = try? BookmarkResolver.shared.resolveAccess(for: pdf)
+                let resolvedURL: URL = access?.fileURL ?? targetURL
+                let accessedURL: URL? = access?.securityScopeURL
                 
                 let count = await PDFRenderActor.shared.loadDocument(at: resolvedURL)
                 
@@ -297,16 +290,9 @@ final class ComicImageCache: ObservableObject {
             let targetURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
-                let resolvedURL: URL
-                var accessedURL: URL? = nil
-                if case .linked(let bm) = pdf.sourceMode,
-                   let url = try? BookmarkResolver.shared.resolve(bm) {
-                    let didAccess = url.startAccessingSecurityScopedResource()
-                    resolvedURL = url
-                    if didAccess { accessedURL = url }
-                } else {
-                    resolvedURL = targetURL
-                }
+                let access = try? BookmarkResolver.shared.resolveAccess(for: pdf)
+                let resolvedURL: URL = access?.fileURL ?? targetURL
+                let accessedURL: URL? = access?.securityScopeURL
                 do {
                     let ext = resolvedURL.pathExtension.lowercased()
                     let isCBT = ["cbt", "tar"].contains(ext)
@@ -350,16 +336,9 @@ final class ComicImageCache: ObservableObject {
         } else {
             let targetURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
             Task.detached(priority: .userInitiated) { [weak self] in
-                let resolvedURL: URL
-                var accessedURL: URL? = nil
-                if case .linked(let bm) = pdf.sourceMode,
-                   let url = try? BookmarkResolver.shared.resolve(bm) {
-                    let didAccess = url.startAccessingSecurityScopedResource()
-                    resolvedURL = url
-                    if didAccess { accessedURL = url }
-                } else {
-                    resolvedURL = targetURL
-                }
+                let access = try? BookmarkResolver.shared.resolveAccess(for: pdf)
+                let resolvedURL: URL = access?.fileURL ?? targetURL
+                let accessedURL: URL? = access?.securityScopeURL
                 guard let archive = try? Archive(url: resolvedURL, accessMode: .read, pathEncoding: .utf8) else {
                     if let accessed = accessedURL { accessed.stopAccessingSecurityScopedResource() }
                     let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: pdf, error: nil, context: "ComicReaderEngine")
@@ -712,16 +691,9 @@ final class ComicImageCache: ObservableObject {
         let task = Task.detached(priority: .utility) { [weak self] in
             guard let self = self else { return }
             
-            let resolvedURL: URL
-            var accessedURL: URL? = nil
-            if case .linked(let bm) = pdf.sourceMode,
-               let url = try? BookmarkResolver.shared.resolve(bm) {
-                let didAccess = url.startAccessingSecurityScopedResource()
-                resolvedURL = url
-                if didAccess { accessedURL = url }
-            } else {
-                resolvedURL = pdf.url
-            }
+            let access = try? BookmarkResolver.shared.resolveAccess(for: pdf)
+            let resolvedURL: URL = access?.fileURL ?? pdf.url
+            let accessedURL: URL? = access?.securityScopeURL
             
             defer {
                 accessedURL?.stopAccessingSecurityScopedResource()

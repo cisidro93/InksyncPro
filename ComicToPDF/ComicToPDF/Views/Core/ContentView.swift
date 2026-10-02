@@ -148,7 +148,7 @@ struct ContentView: View {
                         .transition(.opacity)
                 }
             }
-            .fullScreenCover(isPresented: $showingOnboarding) {
+            .sheet(isPresented: $showingOnboarding) {
                 OnboardingView(isPresented: $showingOnboarding, onImportRequested: {
                     AppRouter.shared.presentSheet(.importQueue)
                 })
@@ -318,7 +318,7 @@ struct ContentView: View {
             showingSettingsInspector = true
         }
         .onChange(of: selectedPDF) { _, newPDF in
-            if let pdf = newPDF {
+            if let pdf = newPDF, AppRouter.shared.activeFullScreen == nil {
                 AppRouter.shared.presentFullScreen(.read(pdf))
             }
         }
@@ -434,6 +434,7 @@ struct ContentView: View {
         Task { @MainActor in
             isAppLoading = false
             isLogoMorphComplete = true
+            showingOnboarding = false
             showingWhatsNewSheet = false
             showingSettingsInspector = false
             showingBatchMergeReorder = false
@@ -467,8 +468,8 @@ struct ContentView: View {
                         type: .success
                     )
                 }
-                // Brief yield to guarantee any active sheet dismiss transition settles before presenting full screen
-                try? await Task.sleep(nanoseconds: 150_000_000)
+                // Yield to guarantee any active sheet dismiss transition settles before presenting full screen
+                try? await Task.sleep(nanoseconds: 350_000_000)
                 self.selectedPDF = pdf
                 AppRouter.shared.presentFullScreen(.read(pdf))
             } else {
@@ -488,6 +489,7 @@ struct ContentView: View {
         Task { @MainActor in
             isAppLoading = false
             isLogoMorphComplete = true
+            showingOnboarding = false
             showingWhatsNewSheet = false
             showingSettingsInspector = false
             showingBatchMergeReorder = false
@@ -519,7 +521,7 @@ struct ContentView: View {
                         type: .success
                     )
                 }
-                try? await Task.sleep(nanoseconds: 150_000_000)
+                try? await Task.sleep(nanoseconds: 350_000_000)
                 self.selectedPDF = pdf
                 AppRouter.shared.presentFullScreen(.read(pdf))
             }

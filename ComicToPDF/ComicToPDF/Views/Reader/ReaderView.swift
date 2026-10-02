@@ -769,14 +769,14 @@ struct ReaderView: View {
         // Security-scoped bookmarks expire between app launches and after drive
         // reconnect. We must resolve fresh from bookmark data and acquire scope
         // before any file I/O, or every read silently fails with EPERM / ENOENT.
-        if let pdfItem = pdf, case .linked(let bookmarkData) = pdfItem.sourceMode {
+        if let pdfItem = pdf, case .linked = pdfItem.sourceMode {
             await MainActor.run {
                 self.isLoading = true
                 self.errorMessage = nil
             }
             do {
-                let resolvedURL = try BookmarkResolver.shared.resolve(bookmarkData)
-                let didAccess = resolvedURL.startAccessingSecurityScopedResource()
+                let access = try BookmarkResolver.shared.resolveAccess(for: pdfItem)
+                let resolvedURL = access.fileURL
 
                 // Validate the drive is actually readable right now
                 var coordError: NSError?
@@ -791,7 +791,7 @@ struct ReaderView: View {
                 }
 
                 guard coordError == nil, isAccessible else {
-                    if didAccess { resolvedURL.stopAccessingSecurityScopedResource() }
+                    access.stopAccess()
                     let report = DocumentOpenDiagnostics.logFailure(url: resolvedURL, pdf: pdfItem, error: coordError, context: "ReaderView")
                     await MainActor.run {
                         self.loadDiagnosticReport = report
@@ -808,7 +808,7 @@ struct ReaderView: View {
                 activeFileURL = resolvedURL
 
                 // Run extraction (see shared pipeline below), then release scope.
-                defer { if didAccess { resolvedURL.stopAccessingSecurityScopedResource() } }
+                defer { access.stopAccess() }
                 await extractAndOpen(activeFileURL: resolvedURL)
                 return
 

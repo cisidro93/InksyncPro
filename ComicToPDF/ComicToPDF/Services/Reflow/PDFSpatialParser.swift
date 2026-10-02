@@ -380,6 +380,22 @@ public final class PDFSpatialParser: Sendable {
         result = result.replacingOccurrences(of: "\u{200B}", with: "") // Zero-width space
         result = result.replacingOccurrences(of: "\u{FEFF}", with: "") // Zero-width no-break space
 
+        // 1b. Standard Latin typography ligatures common in digital PDFs (NeoReader / KOReader standard)
+        let ligatures: [(String, String)] = [
+            ("\u{FB00}", "ff"),
+            ("\u{FB01}", "fi"),
+            ("\u{FB02}", "fl"),
+            ("\u{FB03}", "ffi"),
+            ("\u{FB04}", "ffl"),
+            ("\u{FB05}", "ft"),
+            ("\u{FB06}", "st")
+        ]
+        for (lig, rep) in ligatures {
+            if result.contains(lig) {
+                result = result.replacingOccurrences(of: lig, with: rep)
+            }
+        }
+
         // 2. Normalize exotic unicode spaces (thin, hair, non-breaking spaces) to standard ASCII space
         let exoticSpaces: [String] = [
             "\u{00A0}", "\u{2002}", "\u{2003}", "\u{2004}", "\u{2005}",
@@ -594,7 +610,10 @@ public final class PDFSpatialParser: Sendable {
                 let isHeaderSize = line.fontSize >= medianFontSize * 1.25 || (line.isBold && line.text.count < 70)
                 let isMonospaceChange = line.isMonospace != blockIsMonospace
 
-                if isBullet || isHeaderSize || isMonospaceChange {
+                if currentText.count == 1, let firstChar = currentText.first, firstChar.isLetter {
+                    // Drop Cap: Join isolated single-letter with following line
+                    isNewParagraph = false
+                } else if isBullet || isHeaderSize || isMonospaceChange {
                     isNewParagraph = true
                 } else if prevEndsWithPunctuation && (hasIndent || isLargeGap || line.text.first?.isUppercase == true) {
                     isNewParagraph = true
@@ -642,16 +661,35 @@ public final class PDFSpatialParser: Sendable {
                     blockIsItalic = line.isItalic
                     blockIsMonospace = line.isMonospace
                 } else {
-                    // Hyphenation rejoining (K2pdfopt standard)
-                    if currentText.hasSuffix("-") {
-                        let withoutHyphen = String(currentText.dropLast())
-                        if let firstChar = line.text.first, firstChar.isLowercase, let lastChar = withoutHyphen.last, lastChar.isLetter {
-                            currentText = withoutHyphen + line.text
+                    // Drop Cap joining: "O" + "nce upon..." -> "Once upon..."
+                    if currentText.count == 1, let firstChar = currentText.first, firstChar.isLetter {
+                        if line.text.first?.isLowercase == true {
+                            currentText = currentText + line.text
                         } else {
                             currentText = currentText + " " + line.text
                         }
                     } else {
-                        currentText += " " + line.text
+                        // Hyphenation rejoining (K2pdfopt / BOOX NeoReader standard)
+                        let hyphenChars: [Character] = ["-", "\u{2010}", "\u{2011}", "\u{00AD}"]
+                        if let lastChar = currentText.last, hyphenChars.contains(lastChar) {
+                            let withoutHyphen = String(currentText.dropLast())
+                            let prevWord = withoutHyphen.components(separatedBy: .whitespaces).last ?? ""
+                            let nextWord = line.text.components(separatedBy: .whitespaces).first ?? ""
+                            
+                            // Known prefixes/compounds that retain their hyphen
+                            let compoundPrefixes: Set<String> = ["self", "cross", "well", "all", "co", "ex", "quasi", "semi", "multi", "non", "anti", "pre", "post"]
+                            let isCompound = compoundPrefixes.contains(prevWord.lowercased()) || (prevWord.first?.isUppercase == true && nextWord.first?.isUppercase == true)
+                            
+                            if isCompound {
+                                currentText = withoutHyphen + "-" + line.text
+                            } else if let firstChar = line.text.first, firstChar.isLowercase, let lastBefore = withoutHyphen.last, lastBefore.isLetter {
+                                currentText = withoutHyphen + line.text
+                            } else {
+                                currentText = currentText + " " + line.text
+                            }
+                        } else {
+                            currentText += " " + line.text
+                        }
                     }
                     currentRect = currentRect.union(line.rect)
                     maxFontSize = max(maxFontSize, line.fontSize)
