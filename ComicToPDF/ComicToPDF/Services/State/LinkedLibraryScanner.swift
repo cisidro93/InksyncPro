@@ -77,6 +77,10 @@ final class LinkedLibraryScanner: ObservableObject {
     /// Register a folder on an external drive or cloud provider.
     /// Files are never copied — only referenced via persistent bookmarks.
     func linkDrive(folderURL: URL, bookmarkData: Data, displayName: String? = nil) async throws -> AppSettingsManager.LinkedDriveEntry {
+        defer {
+            scanStatus = ""
+        }
+
         let resolvedURL: URL
         if let resolved = try? BookmarkResolver.shared.resolve(bookmarkData) {
             resolvedURL = resolved
@@ -90,7 +94,7 @@ final class LinkedLibraryScanner: ObservableObject {
         // Probe write capability while access is active
         let isReadOnly = !FileManager.default.isWritableFile(atPath: resolvedURL.path)
 
-        // Move disk I/O off the MainActor: recursively spider all subfolders like ImportCoordinator
+        // Move disk I/O off the MainActor: safely scan folder with timeout and system directory guards
         scanStatus = "Scanning folder…"
         let exts = supportedExtensions
         let files: [URL] = await Task.detached(priority: .userInitiated) { [resolvedURL] in
@@ -107,9 +111,23 @@ final class LinkedLibraryScanner: ObservableObject {
 
             var collected: [URL] = []
             var enumCount = 0
+            let startTime = Date()
+
             while let fileURL = enumerator.nextObject() as? URL {
                 enumCount += 1
-                if enumCount % 25 == 0 { await Task.yield() }
+                if enumCount % 25 == 0 {
+                    await Task.yield()
+                    // Cap folder spidering at 10 seconds or largeDriveThreshold files so external drives never hang
+                    if Date().timeIntervalSince(startTime) > 10.0 || collected.count >= LinkedLibraryScanner.largeDriveThreshold {
+                        break
+                    }
+                }
+
+                let lastComp = fileURL.lastPathComponent
+                if lastComp.hasPrefix(".") || lastComp == "System Volume Information" || lastComp == "$RECYCLE.BIN" || lastComp == ".Spotlight-V100" || lastComp == ".Trashes" {
+                    enumerator.skipDescendants()
+                    continue
+                }
 
                 guard let rsrc = try? fileURL.resourceValues(forKeys: Set(keys)),
                       rsrc.isDirectory == false else { continue }
@@ -141,12 +159,11 @@ final class LinkedLibraryScanner: ObservableObject {
         Logger.shared.log("LinkedLibraryScanner: Linked drive '\(entry.displayName)' with \(files.count) files", category: "Drive")
 
         if let manager = conversionManager {
-            if files.count <= 100 {
+            if files.count > 0 && files.count <= 100 {
                 Task { await ThumbnailDaemon.shared.startCrawling(pdfs: manager.convertedPDFs) }
             }
         }
 
-        scanStatus = ""
         return entry
     }
 
@@ -154,6 +171,9 @@ final class LinkedLibraryScanner: ObservableObject {
 
     /// Register individual comic or document files from external drives without copying.
     func linkFiles(pickedFiles: [(url: URL, bookmark: Data)]) async -> Int {
+        defer {
+            scanStatus = ""
+        }
         let manager = conversionManager ?? ConversionManager.shared
         guard !pickedFiles.isEmpty else { return 0 }
 
@@ -632,6 +652,9 @@ final class LinkedLibraryScanner: ObservableObject {
         driveEntry: AppSettingsManager.LinkedDriveEntry,
         rootURL: URL
     ) async {
+        defer {
+            scanStatus = ""
+        }
         guard let manager = conversionManager else { return }
 
         // Fetch existing paths on MainActor to avoid data races

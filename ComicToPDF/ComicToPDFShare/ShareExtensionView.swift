@@ -380,6 +380,20 @@ struct ShareExtensionView: View {
         }
     }
     
+    /// Returns true if the string is an Apple generic share placeholder rather than a real user filename.
+    nonisolated static func isGenericPlaceholderName(_ name: String) -> Bool {
+        let lower = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let genericNames: Set<String> = [
+            "file url", "file-url", "file_url", "fileurl",
+            "item", "document", "public.file-url", "url",
+            "attachment", "untitled", "share", "shared", "shared document"
+        ]
+        if genericNames.contains(lower) { return true }
+        if lower.hasPrefix("file url.") || lower.hasPrefix("file-url.") || lower.hasPrefix("file_url.") { return true }
+        if lower.hasPrefix("shareddocument_") || lower.hasPrefix("temp_") || lower.hasPrefix("tmp_") { return true }
+        return false
+    }
+
     /// Inspects the magic bytes of a file to reliably identify its true format.
     nonisolated static func detectFileExtension(from url: URL) -> String? {
         let existingExt = url.pathExtension.lowercased()
@@ -413,14 +427,12 @@ struct ShareExtensionView: View {
         // ZIP / CBZ / EPUB (PK\x03\x04 or PK\x05\x06 or PK\x07\x08)
         if (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04) ||
            (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x05 && data[3] == 0x06) {
-            if existingExt == "epub" { return "epub" }
-            if existingExt == "cbz"  { return "cbz" }
-            
             // Check if archive contains EPUB mimetype
             let header = String(decoding: data.prefix(1000), as: UTF8.self)
             if header.contains("mimetype") && (header.contains("epub+zip") || header.contains("epub")) {
                 return "epub"
             }
+            if existingExt == "epub" { return "epub" }
             return "cbz"
         }
 
@@ -473,93 +485,114 @@ struct ShareExtensionView: View {
 
                 for provider in attachments {
                     let registered = provider.registeredTypeIdentifiers
-                    let discoveredName = await Self.discoverOriginalFilename(from: provider)
-                    let baseName = discoveredName ?? provider.suggestedName ?? "SharedDocument_\(UUID().uuidString.prefix(6))"
-
-                    // Try registered type identifiers with priority given to file URLs and specific document UTIs
-                    let priorityTypes = [
-                        UTType.fileURL.identifier,
-                        "public.file-url",
-                        UTType.pdf.identifier,
-                        "com.adobe.pdf",
-                        UTType.epub.identifier,
-                        "org.idpf.epub-container",
-                        "com.macrabbit.comicbookzip",
-                        "com.antigravity.cbz",
-                        UTType.zip.identifier,
-                        "com.macrabbit.comicbookrar",
-                        "com.antigravity.cbr",
-                        "org.7-zip.7-zip-archive"
-                    ]
-                    var candidateTypes: [String] = []
-                    for p in priorityTypes {
-                        if registered.contains(p) || provider.hasItemConformingToTypeIdentifier(p) {
-                            if !candidateTypes.contains(p) {
-                                candidateTypes.append(p)
-                            }
-                        }
-                    }
-                    for r in registered {
-                        if !candidateTypes.contains(r) {
-                            candidateTypes.append(r)
-                        }
-                    }
-                    let fallbackTypes = [
-                        UTType.data.identifier,
-                        UTType.item.identifier,
-                        UTType.content.identifier,
-                        "public.data",
-                        "public.archive",
-                        "public.zip-archive"
-                    ]
-                    for fallback in fallbackTypes {
-                        if !candidateTypes.contains(fallback) {
-                            candidateTypes.append(fallback)
-                        }
-                    }
+                    var discoveredName = await Self.discoverOriginalFilename(from: provider)
+                    let baseName = discoveredName ?? (provider.suggestedName.flatMap { Self.isGenericPlaceholderName($0) ? nil : $0 }) ?? "SharedDocument_\(UUID().uuidString.prefix(6))"
 
                     var loadedURL: URL? = nil
                     var detectedExt: String? = nil
 
-                    for typeId in candidateTypes {
-                        guard provider.hasItemConformingToTypeIdentifier(typeId) || registered.contains(typeId) else { continue }
+                    // PRIORITY 1: Direct File URL Inspection
+                    // If the item provider provides a live file-url (e.g. from Files app, Safari, external apps),
+                    // loadItem yields the actual NSURL with the true authentic filename and extension on disk.
+                    let hasFileURL = provider.hasItemConformingToTypeIdentifier("public.file-url") ||
+                                     provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) ||
+                                     registered.contains("public.file-url") ||
+                                     registered.contains(UTType.fileURL.identifier)
 
-                        let hintExt = Self.extensionFromSuggestedName(baseName)
-                            ?? UTType(typeId).flatMap { Self.targetExtension(for: $0) }
-                        let tempName: String
-                        if let h = hintExt {
-                            let clean = (baseName as NSString).deletingPathExtension
-                            tempName = "\(clean).\(h)"
-                        } else {
-                            tempName = baseName
+                    if hasFileURL {
+                        let fileType = provider.hasItemConformingToTypeIdentifier("public.file-url") ? "public.file-url" : UTType.fileURL.identifier
+                        if let url = await Self.tryLoadItem(provider: provider, typeId: fileType, filename: baseName) {
+                            loadedURL = url
+                            let magic = Self.detectFileExtension(from: url)
+                            detectedExt = magic ?? (url.pathExtension.isEmpty ? nil : url.pathExtension.lowercased())
+                            let realName = url.lastPathComponent
+                            if !realName.isEmpty && !Self.isGenericPlaceholderName(realName) {
+                                discoveredName = realName
+                            }
+                        }
+                    }
+
+                    // PRIORITY 2: Document UTI inspection if not already loaded from direct URL
+                    if loadedURL == nil {
+                        let priorityTypes = [
+                            UTType.pdf.identifier,
+                            "com.adobe.pdf",
+                            UTType.epub.identifier,
+                            "org.idpf.epub-container",
+                            "com.macrabbit.comicbookzip",
+                            "com.antigravity.cbz",
+                            UTType.zip.identifier,
+                            "com.macrabbit.comicbookrar",
+                            "com.antigravity.cbr",
+                            "org.7-zip.7-zip-archive"
+                        ]
+                        var candidateTypes: [String] = []
+                        for p in priorityTypes {
+                            if registered.contains(p) || provider.hasItemConformingToTypeIdentifier(p) {
+                                if !candidateTypes.contains(p) {
+                                    candidateTypes.append(p)
+                                }
+                            }
+                        }
+                        for r in registered {
+                            if !candidateTypes.contains(r) && r != "public.file-url" && r != UTType.fileURL.identifier {
+                                candidateTypes.append(r)
+                            }
+                        }
+                        let fallbackTypes = [
+                            UTType.data.identifier,
+                            UTType.item.identifier,
+                            UTType.content.identifier,
+                            "public.data",
+                            "public.archive",
+                            "public.zip-archive"
+                        ]
+                        for fallback in fallbackTypes {
+                            if !candidateTypes.contains(fallback) {
+                                candidateTypes.append(fallback)
+                            }
                         }
 
-                        // Method 1: loadFileRepresentation (modern Apple standard for files from Files app, Mail, Safari)
-                        if let url = await Self.tryLoadFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
-                            loadedURL = url
-                            detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
-                            break
-                        }
+                        for typeId in candidateTypes {
+                            guard provider.hasItemConformingToTypeIdentifier(typeId) || registered.contains(typeId) else { continue }
 
-                        // Method 2: loadInPlaceFileRepresentation
-                        if let url = await Self.tryLoadInPlaceFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
-                            loadedURL = url
-                            detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
-                            break
-                        }
+                            let hintExt = Self.extensionFromSuggestedName(baseName)
+                                ?? UTType(typeId).flatMap { Self.targetExtension(for: $0) }
+                            let tempName: String
+                            if let h = hintExt {
+                                let clean = (baseName as NSString).deletingPathExtension
+                                tempName = "\(clean).\(h)"
+                            } else {
+                                tempName = baseName
+                            }
 
-                        // Method 3: loadItem (handles URLs, NSURLs, file-urls)
-                        if let url = await Self.tryLoadItem(provider: provider, typeId: typeId, filename: tempName) {
-                            loadedURL = url
-                            detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
-                            break
-                        }
+                            // Method 1: loadFileRepresentation (modern Apple standard for data streams)
+                            if let url = await Self.tryLoadFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                                loadedURL = url
+                                detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
+                                break
+                            }
 
-                        // Method 4: loadDataRepresentation (in-memory fallback)
-                        if let url = await Self.tryLoadDataRepresentation(provider: provider, typeId: typeId, filename: tempName) {
-                            loadedURL = url
-                            detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
-                            break
+                            // Method 2: loadInPlaceFileRepresentation
+                            if let url = await Self.tryLoadInPlaceFileRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                                loadedURL = url
+                                detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
+                                break
+                            }
+
+                            // Method 3: loadItem (handles URLs, NSURLs)
+                            if let url = await Self.tryLoadItem(provider: provider, typeId: typeId, filename: tempName) {
+                                loadedURL = url
+                                detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
+                                break
+                            }
+
+                            // Method 4: loadDataRepresentation (in-memory fallback)
+                            if let url = await Self.tryLoadDataRepresentation(provider: provider, typeId: typeId, filename: tempName) {
+                                loadedURL = url
+                                detectedExt = Self.detectFileExtension(from: url) ?? hintExt ?? url.pathExtension.lowercased()
+                                break
+                            }
                         }
                     }
 
@@ -568,29 +601,31 @@ struct ShareExtensionView: View {
                         continue
                     }
 
-                    let ext = (detectedExt ?? Self.detectFileExtension(from: finalURL) ?? finalURL.pathExtension.lowercased()).lowercased()
+                    // Enforce magic-byte truth: If the file header starts with PK\x03\x04 or Rar!, it is a comic/epub archive
+                    let magicExt = Self.detectFileExtension(from: finalURL)
+                    let rawExt = (magicExt ?? detectedExt ?? finalURL.pathExtension.lowercased()).lowercased()
                     let targetExt: String
-                    if ext == "zip" {
+                    if rawExt == "zip" {
                         targetExt = "cbz"
-                    } else if ext == "rar" {
+                    } else if rawExt == "rar" {
                         targetExt = "cbr"
-                    } else if Self.supportedExtensions.contains(ext) {
-                        targetExt = ext
+                    } else if Self.supportedExtensions.contains(rawExt) {
+                        targetExt = rawExt
                     } else {
-                        targetExt = Self.detectFileExtension(from: finalURL) ?? (Self.supportedExtensions.contains(ext) ? ext : "pdf")
+                        targetExt = magicExt ?? "cbz"
                     }
 
                     // Preserve the authentic original filename from discoveredName / finalURL / source item
                     let sourceFilename = finalURL.lastPathComponent
                     let effectiveBase: String
-                    if let discovered = discoveredName, !discovered.isEmpty, !discovered.hasPrefix("SharedDocument_") {
+                    if let discovered = discoveredName, !discovered.isEmpty, !Self.isGenericPlaceholderName(discovered) {
                         effectiveBase = (discovered as NSString).deletingPathExtension
-                    } else if !sourceFilename.isEmpty && !sourceFilename.hasPrefix("SharedDocument_") && !sourceFilename.hasPrefix("temp_") && !sourceFilename.hasPrefix("tmp_") {
+                    } else if !sourceFilename.isEmpty && !Self.isGenericPlaceholderName(sourceFilename) {
                         effectiveBase = (sourceFilename as NSString).deletingPathExtension
-                    } else if let suggested = provider.suggestedName, !suggested.isEmpty, !suggested.hasPrefix("SharedDocument_") {
+                    } else if let suggested = provider.suggestedName, !suggested.isEmpty, !Self.isGenericPlaceholderName(suggested) {
                         effectiveBase = (suggested as NSString).deletingPathExtension
                     } else {
-                        effectiveBase = (baseName as NSString).deletingPathExtension
+                        effectiveBase = "SharedDocument_\(UUID().uuidString.prefix(6))"
                     }
 
                     let properFilename = "\(effectiveBase).\(targetExt)"
@@ -633,7 +668,7 @@ struct ShareExtensionView: View {
     @MainActor
     static func discoverOriginalFilename(from provider: NSItemProvider) async -> String? {
         if let suggested = provider.suggestedName, !suggested.isEmpty,
-           !suggested.hasPrefix("SharedDocument_"), !suggested.hasPrefix("temp_"), !suggested.hasPrefix("tmp_") {
+           !isGenericPlaceholderName(suggested) {
             return suggested
         }
         return nil
@@ -648,10 +683,10 @@ struct ShareExtensionView: View {
                     return
                 }
 
-                if let url = item as? URL {
+                if let url = item as? URL ?? (item as? NSURL as URL?) {
                     if url.isFileURL {
                         let actualName = url.lastPathComponent
-                        let effectiveName = (!actualName.isEmpty && !actualName.hasPrefix("SharedDocument_") && !actualName.hasPrefix("temp_")) ? actualName : filename
+                        let effectiveName = (!actualName.isEmpty && !isGenericPlaceholderName(actualName)) ? actualName : filename
                         let res = copyToSharedContainer(url, destFilename: effectiveName)
                         continuation.resume(returning: res)
                     } else if url.scheme == "http" || url.scheme == "https" {
@@ -671,7 +706,7 @@ struct ShareExtensionView: View {
                     let u = nsURL as URL
                     if u.isFileURL {
                         let actualName = u.lastPathComponent
-                        let effectiveName = (!actualName.isEmpty && !actualName.hasPrefix("SharedDocument_") && !actualName.hasPrefix("temp_")) ? actualName : filename
+                        let effectiveName = (!actualName.isEmpty && !isGenericPlaceholderName(actualName)) ? actualName : filename
                         let res = copyToSharedContainer(u, destFilename: effectiveName)
                         continuation.resume(returning: res)
                     } else {
@@ -685,7 +720,7 @@ struct ShareExtensionView: View {
                     continuation.resume(returning: res)
                 } else if let str = item as? String, let parsedURL = URL(string: str), parsedURL.isFileURL {
                     let actualName = parsedURL.lastPathComponent
-                    let effectiveName = (!actualName.isEmpty && !actualName.hasPrefix("SharedDocument_") && !actualName.hasPrefix("temp_")) ? actualName : filename
+                    let effectiveName = (!actualName.isEmpty && !isGenericPlaceholderName(actualName)) ? actualName : filename
                     let res = copyToSharedContainer(parsedURL, destFilename: effectiveName)
                     continuation.resume(returning: res)
                 } else {

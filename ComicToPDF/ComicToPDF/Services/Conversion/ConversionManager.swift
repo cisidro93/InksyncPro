@@ -120,13 +120,6 @@ class ConversionManager: ObservableObject {
             }
         }
         
-        NotificationCenter.default.addObserver(forName: .libraryUpdated, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self, self.isLibraryLoaded else { return }
-                self.scanLibrary(addedByMode: .pro)
-            }
-        }
-        
         NotificationCenter.default.addObserver(forName: .libraryNeedsSave, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.saveLibrary()

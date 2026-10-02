@@ -721,9 +721,10 @@ final class SharedImportCoordinator: ObservableObject {
                     default:        canonicalExt = ext
                     }
 
-                    // If extension is missing or unrecognized, detect from magic bytes
-                    if !supportedExtensions.contains(canonicalExt) || canonicalExt.isEmpty || canonicalExt == "tmp" {
-                        if let detected = Self.detectExtensionFromMagicBytes(fileURL) {
+                    // Enforce magic byte detection: if extension is missing, unrecognized, or mislabeled as .pdf
+                    if let detected = Self.detectExtensionFromMagicBytes(fileURL) {
+                        if !supportedExtensions.contains(canonicalExt) || canonicalExt.isEmpty || canonicalExt == "tmp" ||
+                           (canonicalExt == "pdf" && (detected == "cbz" || detected == "cbr" || detected == "epub")) {
                             canonicalExt = detected
                         }
                     }
@@ -739,7 +740,8 @@ final class SharedImportCoordinator: ObservableObject {
                         continue
                     }
 
-                    let base = (fileURL.deletingPathExtension().lastPathComponent)
+                    let rawBase = fileURL.deletingPathExtension().lastPathComponent
+                    let base = Self.isGenericPlaceholderName(rawBase) ? "SharedDocument_\(UUID().uuidString.prefix(6))" : rawBase
                     let destFilename = "\(base).\(canonicalExt)"
                     let dest = inboxDir.appendingPathComponent(destFilename)
 
@@ -963,7 +965,20 @@ final class SharedImportCoordinator: ObservableObject {
         return foundPending
     }
 
-    // MARK: - Magic Byte Helper
+    // MARK: - Generic Name & Magic Byte Helpers
+
+    nonisolated static func isGenericPlaceholderName(_ name: String) -> Bool {
+        let lower = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let genericNames: Set<String> = [
+            "file url", "file-url", "file_url", "fileurl",
+            "item", "document", "public.file-url", "url",
+            "attachment", "untitled", "share", "shared", "shared document"
+        ]
+        if genericNames.contains(lower) { return true }
+        if lower.hasPrefix("file url.") || lower.hasPrefix("file-url.") || lower.hasPrefix("file_url.") { return true }
+        if lower.hasPrefix("shareddocument_") || lower.hasPrefix("temp_") || lower.hasPrefix("tmp_") { return true }
+        return false
+    }
 
     nonisolated static func detectExtensionFromBytes(_ data: Data) -> String? {
         guard data.count >= 4 else { return nil }

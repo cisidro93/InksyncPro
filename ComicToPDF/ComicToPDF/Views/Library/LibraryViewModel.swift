@@ -164,14 +164,16 @@ class LibraryViewModel: ObservableObject {
         // O(1) lookup dict — replaces the O(N×M) collections.first(where:) scan inside the hot loop below.
         let collectionByID: [UUID: PDFCollection] = Dictionary(uniqueKeysWithValues: collections.map { ($0.id, $0) })
 
-        // ── LARGE DRIVE CARDS ───────────────────────────────────────────────
-        // Drives above the file-count threshold surface as a single DriveFolder
-        // card rather than flooding the grid. They always appear at position 0
-        // so they are visible regardless of sort order.
+        // ── LINKED DRIVE CARDS ──────────────────────────────────────────────
+        // In .onDrive filter mode, ALL linked drives surface as interactive DriveFolder
+        // cards so the user can immediately browse any linked drive on-demand.
+        // In other filter modes, drives above the file-count threshold surface as cards.
         var driveFolderItems: [LibraryListItem] = []
         if folderID == nil && currentSearchText.isEmpty {
-            for drive in linkedDrives where drive.fileCount > LinkedLibraryScanner.largeDriveThreshold {
-                driveFolderItems.append(.driveFolder(drive))
+            for drive in linkedDrives {
+                if filter == .onDrive || drive.fileCount > LinkedLibraryScanner.largeDriveThreshold {
+                    driveFolderItems.append(.driveFolder(drive))
+                }
             }
         }
 

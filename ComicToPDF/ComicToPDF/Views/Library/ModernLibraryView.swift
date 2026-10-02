@@ -48,6 +48,7 @@ struct ModernLibraryView: View {
     @State private var highlightedItemID: String? = nil
     @FocusState private var isLibraryFocused: Bool
     @ObservedObject private var linkedScanner = LinkedLibraryScanner.shared
+    @State private var presentedDriveForBrowsing: AppSettingsManager.LinkedDriveEntry? = nil
 
 
     /// Derived header collapse state.
@@ -596,6 +597,11 @@ struct ModernLibraryView: View {
             .sheet(item: $router.activeSheet) { item in
                 destinationSheet(for: item)
                     .forceProMotion()
+            }
+            .sheet(item: $presentedDriveForBrowsing) { drive in
+                NavigationStack {
+                    LinkedDriveBrowserView(driveEntry: drive)
+                }
             }
             .onChange(of: router.activeFullScreen) { _, newVal in
                 handleFullScreenChanged(newVal)
@@ -1849,6 +1855,19 @@ struct ModernLibraryView: View {
                     Logger.shared.log("handleLinkDrive: Successfully linked \(linkedCount) direct files", category: "Drive", type: .info)
                 }
 
+                // If user selected a single file to open, immediately launch the reader!
+                if fileResults.count == 1 {
+                    let pickedURL = fileResults[0].url
+                    let target = manager.convertedPDFs.first(where: {
+                        $0.url.fastCanonicalPath == pickedURL.fastCanonicalPath ||
+                        $0.url.path == pickedURL.path ||
+                        $0.name == pickedURL.deletingPathExtension().lastPathComponent
+                    })
+                    if let target {
+                        self.selectedPDF = target
+                    }
+                }
+
                 if !folderResults.isEmpty || !fileResults.isEmpty {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         viewModel.filterState = .onDrive
@@ -1903,16 +1922,25 @@ struct ModernLibraryView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(settingsManager.linkedDrives, id: \.id) { drive in
-                        HStack(spacing: 4) {
-                            Text(drive.displayName)
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("(\(drive.fileCount))")
-                                .font(.system(size: 10, weight: .regular))
-                                .foregroundColor(Theme.textSecondary)
+                        Button {
+                            presentedDriveForBrowsing = drive
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "folder.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(Color(hex: "#8b5cf6"))
+                                Text(drive.displayName)
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text("(\(drive.fileCount))")
+                                    .font(.system(size: 10, weight: .regular))
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                            .foregroundColor(Theme.text)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.primary.opacity(0.08), in: Capsule())
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Color.primary.opacity(0.06), in: Capsule())
+                        .buttonStyle(.plain)
                     }
                 }
             }

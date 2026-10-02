@@ -513,7 +513,9 @@ actor LibraryScanner {
                     if item.pageCount > 0 {
                         modified[idx].pageCount = item.pageCount
                     } else {
-                        Logger.shared.log("LibraryScanner: Backfill page count failed for \(modified[idx].name) — leaving at 0 for retry", category: "Library", type: .warning)
+                        // Mark unreadable or corrupted files as -1 so they are not endlessly re-queried on every scan
+                        modified[idx].pageCount = -1
+                        Logger.shared.log("LibraryScanner: Backfill page count failed for \(modified[idx].name) — marked as unreadable to prevent retry loops", category: "Library", type: .warning)
                     }
                     if let coverData = item.coverData {
                         // Clear ThumbnailDaemon cache
