@@ -72,12 +72,14 @@ actor ThumbnailDaemon {
 
         // 1. Filter for PDFs missing disk thumbnails without decompressing existing images into RAM
         var missingPDFs: [ConvertedPDF] = []
+        let existingThumbnails = Set(try? FileManager.default.contentsOfDirectory(atPath: cacheDirectory.path) ?? [])
         for pdf in pdfs {
-            let cachedURL = cacheDirectory.appendingPathComponent("\(pdf.id.uuidString).webp")
-            if FileManager.default.fileExists(atPath: cachedURL.path) {
+            let filename = "\(pdf.id.uuidString).webp"
+            if existingThumbnails.contains(filename) {
                 // Disk thumbnail already exists — do NOT load or decompress into RAM during scan
                 continue
             } else if let coverData = pdf.coverImageData {
+                let cachedURL = cacheDirectory.appendingPathComponent(filename)
                 // Deduplication: cover already extracted during file registration — persist to disk atomically
                 try? coverData.write(to: cachedURL, options: .atomic)
             } else {

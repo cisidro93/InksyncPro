@@ -151,7 +151,7 @@ class SandboxCleanupManager: ObservableObject {
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
-        let activePDFs = await LibraryDatabaseService.shared.load()
+        let activePDFs = await MainActor.run { LibraryService.shared.items }
         let activeRelativePaths = Set(activePDFs.map { pdf -> String in
             let path = pdf.url.path
             if let range = path.range(of: "/Documents/") {

@@ -5,7 +5,7 @@ import Combine
 class LibraryViewModel: ObservableObject {
     @Published var cachedLibraryItems: [LibraryListItem] = []
     private var cachedLibraryItemIDs: [String] = []
-    private var cachedLibraryToken: String = ""
+    private var cachedLibraryToken: Int = 0
     @Published var searchText: String = ""
 
     // Search Debouncing
@@ -93,7 +93,13 @@ class LibraryViewModel: ObservableObject {
 
             guard !Task.isCancelled else { return }
             let newIDs = finalItems.map(\.id)
-            let cacheToken = "\(shelf.rawValue)_\(filter.rawValue)_\(folderID?.uuidString ?? "root")_\(sortOption.rawValue)_\(newIDs.joined(separator: ","))"
+            var tokenHasher = Hasher()
+            tokenHasher.combine(shelf.rawValue)
+            tokenHasher.combine(filter.rawValue)
+            tokenHasher.combine(folderID)
+            tokenHasher.combine(sortOption.rawValue)
+            tokenHasher.combine(newIDs)
+            let cacheToken = tokenHasher.finalize()
 
             await MainActor.run { [weak self] in
                 guard let self = self else { return }
@@ -150,11 +156,12 @@ class LibraryViewModel: ObservableObject {
         var singles: [ConvertedPDF] = []
         var firstAppearanceIndex: [String: Int] = [:]
         
-        // Build a map of series title aliases based on virtual omnibuses
+        // Build a map of series title aliases based on virtual omnibuses (O(1) dictionary lookup)
+        let pdfByID = Dictionary(pdfs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var seriesAliases: [String: String] = [:]
         for omnibus in virtualOmnibuses {
             for fileId in omnibus.fileIDs {
-                if let matchedPDF = pdfs.first(where: { $0.id == fileId }),
+                if let matchedPDF = pdfByID[fileId],
                    let fileSeries = matchedPDF.metadata.series, !fileSeries.isEmpty {
                     seriesAliases[fileSeries.lowercased()] = omnibus.name
                 }
@@ -424,6 +431,11 @@ class LibraryViewModel: ObservableObject {
             if let cover = mutableGroup.issues.first {
                 mutableGroup.coverIssueID = cover.id
             }
+
+            // Precompute metrics on the background thread so sorting is pure O(1)
+            mutableGroup.latestModified = mutableGroup.issues.map(\.lastModified).max() ?? Date.distantPast
+            mutableGroup.totalSize = mutableGroup.issues.reduce(Int64(0)) { $0 + $1.fileSize }
+            mutableGroup.hasFavorite = mutableGroup.issues.contains { $0.isFavorite }
 
             // Precompute read and new issue counts on the background thread using our snapshot
             mutableGroup.readCount = mutableGroup.issues.filter {

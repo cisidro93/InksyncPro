@@ -38,6 +38,7 @@ class MetadataMatchService: ObservableObject {
     }
     
     private var lastRebuiltSignature: Int?
+    private var rebuildTask: Task<Void, Never>?
     
     private init() {}
     
@@ -70,28 +71,43 @@ class MetadataMatchService: ObservableObject {
             existingByName[cluster.name] = cluster
         }
         
-        var groups: [String: [ConvertedPDF]] = [:]
-        for pdf in pdfs {
-            let key = pdf.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines)
-                ?? pdf.url.deletingLastPathComponent().lastPathComponent
-            if !key.isEmpty {
-                groups[key, default: []].append(pdf)
+        rebuildTask?.cancel()
+        let pdfsSnapshot = pdfs
+        rebuildTask = Task.detached(priority: .utility) { [weak self] in
+            guard !Task.isCancelled else { return }
+            
+            var groups: [String: [ConvertedPDF]] = [:]
+            for pdf in pdfsSnapshot {
+                let key = pdf.metadata.series?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    ?? pdf.url.deletingLastPathComponent().lastPathComponent
+                if !key.isEmpty {
+                    groups[key, default: []].append(pdf)
+                }
+            }
+            
+            guard !Task.isCancelled else { return }
+            
+            let sorted = groups.map { name, issues in
+                let existing = existingByName[name]
+                let clusterID = existing?.id ?? UUID()
+                let status: SeriesCluster.Status
+                if let existingStatus = existing?.status, case .searching = existingStatus {
+                    status = .searching
+                } else if issues.contains(where: { $0.metadata.universalSeriesID != nil }) {
+                    status = .matched(seriesName: name)
+                } else {
+                    status = .idle
+                }
+                return SeriesCluster(id: clusterID, name: name, pdfs: issues, status: status)
+            }.sorted(by: { $0.name < $1.name })
+            
+            guard !Task.isCancelled else { return }
+            
+            await MainActor.run { [weak self] in
+                guard let self = self, !Task.isCancelled else { return }
+                self.activeClusters = sorted
             }
         }
-        
-        self.activeClusters = groups.map { name, issues in
-            let existing = existingByName[name]
-            let clusterID = existing?.id ?? UUID()
-            let status: SeriesCluster.Status
-            if let existingStatus = existing?.status, case .searching = existingStatus {
-                status = .searching
-            } else if issues.contains(where: { $0.metadata.universalSeriesID != nil }) {
-                status = .matched(seriesName: name)
-            } else {
-                status = .idle
-            }
-            return SeriesCluster(id: clusterID, name: name, pdfs: issues, status: status)
-        }.sorted(by: { $0.name < $1.name })
     }
     
     private func updateClusterStatus(clusterID: UUID, status: SeriesCluster.Status) {

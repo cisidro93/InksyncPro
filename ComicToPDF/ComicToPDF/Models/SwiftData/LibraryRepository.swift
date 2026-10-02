@@ -418,6 +418,16 @@ actor LibraryModelActor {
         return MigrationService.performSmartGroupingInternal(context: modelContext)
     }
 
+    /// Fast single-item progress update path for page turns.
+    func updateReadingProgress(for pdfID: UUID, lastReadPage: Int) throws {
+        var descriptor = FetchDescriptor<SDConvertedPDF>(predicate: #Predicate { $0.id == pdfID })
+        descriptor.fetchLimit = 1
+        if let doc = try modelContext.fetch(descriptor).first {
+            doc.metadata.lastReadPage = lastReadPage
+            try modelContext.save()
+        }
+    }
+
     // MARK: - Decoupled EPUB Metadata Backfill
 
     struct EPUBMetadataCandidate: Sendable {
@@ -572,5 +582,10 @@ final class LibraryRepository: Sendable {
     /// Runs smart grouping on the thread-isolated background actor context.
     func performSmartGrouping() async throws -> Int {
         try await actor.performSmartGrouping()
+    }
+
+    /// Updates only the reading progress for a single file on the background actor.
+    func updateReadingProgress(for pdfID: UUID, lastReadPage: Int) async throws {
+        try await actor.updateReadingProgress(for: pdfID, lastReadPage: lastReadPage)
     }
 }

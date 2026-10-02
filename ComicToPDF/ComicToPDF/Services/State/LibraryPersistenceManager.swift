@@ -37,14 +37,27 @@ class LibraryPersistenceManager {
         }
     }
 
-    /// Progress updates write back to SwiftData context.
+    /// Progress updates write back to SwiftData context and GRDB SQLite without full library resync.
+    @MainActor
+    func saveProgressOnly(updates: [UUID: Int]) {
+        guard !updates.isEmpty else { return }
+        Task.detached(priority: .background) {
+            for (id, page) in updates {
+                try? await LibraryRepository.shared.updateReadingProgress(for: id, lastReadPage: page)
+                if let progress = ReaderProgressTracker.shared.progress(for: id) {
+                    await LibraryDatabaseService.shared.saveProgress(progress, for: id.uuidString)
+                }
+            }
+        }
+    }
+
+    /// Progress updates write back to SwiftData context and GRDB SQLite.
     @MainActor
     func saveProgressOnly(manager: ConversionManager) {
-        let syncPDFs = manager.convertedPDFs
-        let syncCols = manager.collections
-        Task.detached(priority: .background) {
-            try? await LibraryRepository.shared.sync(pdfs: syncPDFs, collections: syncCols)
-            await LibraryDatabaseService.shared.save(syncPDFs)
+        let updates = manager.pendingProgressUpdates
+        manager.clearPendingProgressUpdates()
+        if !updates.isEmpty {
+            saveProgressOnly(updates: updates)
         }
     }
     

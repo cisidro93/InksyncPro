@@ -235,8 +235,24 @@ class ConversionManager: ObservableObject {
         }
     }
 
+    /// O(1) indexed lookup for converted PDFs by ID
+    func pdf(for id: UUID) -> ConvertedPDF? {
+        LibraryService.shared.item(for: id)
+    }
+
+    private(set) var pendingProgressUpdates: [UUID: Int] = [:]
+
+    func trackProgressUpdate(for pdfID: UUID, lastReadPage: Int) {
+        pendingProgressUpdates[pdfID] = lastReadPage
+        saveProgressOnly()
+    }
+
+    func clearPendingProgressUpdates() {
+        pendingProgressUpdates.removeAll()
+    }
+
     /// Lightweight save for progress-only updates (page turns, reading position).
-    /// Skips the SwiftData full migration — SQLite only.
+    /// Batches writes and persists only mutated records without full library resync.
     func saveProgressOnly() {
         saveTask?.cancel()
         saveTask = Task { @MainActor [weak self] in

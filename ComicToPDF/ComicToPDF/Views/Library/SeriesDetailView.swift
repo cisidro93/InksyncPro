@@ -186,6 +186,7 @@ struct SeriesDetailView: View {
     @State private var cachedSeriesTags: [String] = []
     @State private var cachedSeriesSummary: String? = nil
     @State private var cachedSeriesVirtualOmnibuses: [VirtualOmnibus] = []
+    @State private var cachedOmnibusSourceIDs: Set<UUID> = []
     
     var seriesWriter: String? { cachedSeriesWriter }
     var seriesArtist: String? { cachedSeriesArtist }
@@ -270,12 +271,17 @@ struct SeriesDetailView: View {
         let allTags = currentIssues.flatMap { $0.metadata.tags }.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         self.cachedSeriesTags = Array(Set(allTags)).sorted()
         
-        // Cache virtual omnibuses for this series using O(1) dictionary lookup
+        // Cache virtual omnibuses and omnibus source IDs for this series using O(1) dictionary lookup
         let allOmnibuses = conversionManager.virtualOmnibuses
         var pdfMap: [UUID: ConvertedPDF] = [:]
+        var allSourceIDs = Set<UUID>()
         for pdf in conversionManager.convertedPDFs {
             pdfMap[pdf.id] = pdf
+            if let ids = pdf.metadata.sourceFileIDs {
+                allSourceIDs.formUnion(ids)
+            }
         }
+        self.cachedOmnibusSourceIDs = allSourceIDs
         
         self.cachedSeriesVirtualOmnibuses = allOmnibuses.filter { omnibus in
             // 1. Explicit connection context (parentSeriesID) matches series.id
@@ -1731,7 +1737,7 @@ struct SeriesDetailView: View {
                         HStack {
                             LibraryPDFRowWithCover(pdf: pdf, isSelected: false)
                             
-                            if conversionManager.convertedPDFs.contains(where: { $0.metadata.sourceFileIDs?.contains(pdf.id) == true }) {
+                            if cachedOmnibusSourceIDs.contains(pdf.id) {
                                 Image(systemName: "link")
                                     .font(.footnote)
                                     .foregroundColor(Theme.orange)
@@ -1794,7 +1800,7 @@ struct SeriesDetailView: View {
                         HStack {
                             LibraryPDFRowWithCover(pdf: pdf, isSelected: selectedPDF?.id == pdf.id)
                             
-                            if conversionManager.convertedPDFs.contains(where: { $0.metadata.sourceFileIDs?.contains(pdf.id) == true }) {
+                            if cachedOmnibusSourceIDs.contains(pdf.id) {
                                 Image(systemName: "link")
                                     .font(.footnote)
                                     .foregroundColor(Theme.orange)

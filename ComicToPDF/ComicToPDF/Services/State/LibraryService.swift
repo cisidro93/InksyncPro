@@ -7,10 +7,19 @@ import SwiftUI
 final class LibraryService: ObservableObject {
     static let shared = LibraryService()
     
-    @Published var items: [ConvertedPDF] = []
+    @Published var items: [ConvertedPDF] = [] {
+        didSet {
+            itemLookupByID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        }
+    }
     @Published var collections: [PDFCollection] = []
     @Published var virtualOmnibuses: [VirtualOmnibus] = []
     @Published var hasBootstrapped: Bool = false
+    private(set) var itemLookupByID: [UUID: ConvertedPDF] = [:]
+
+    func item(for id: UUID) -> ConvertedPDF? {
+        itemLookupByID[id]
+    }
     
     private init() {}
     
@@ -98,11 +107,7 @@ final class LibraryService: ObservableObject {
     
     /// Syncs only progress (page position) updates to the database.
     func saveProgressOnly() {
-        let pdfsToSync = items
-        let colsToSync = collections
-        Task.detached(priority: .background) {
-            try? await LibraryRepository.shared.sync(pdfs: pdfsToSync, collections: colsToSync)
-        }
+        // Safe no-op: Page progress is persisted per-document through LibraryPersistenceManager.saveProgressOnly(updates:)
     }
     
     /// Runs background smart grouping on SwiftData, then reloads the items to update the UI.

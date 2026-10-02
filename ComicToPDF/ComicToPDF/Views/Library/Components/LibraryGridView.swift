@@ -106,13 +106,17 @@ struct LibraryGridView: View {
     }
 
     private var computedInProgress: [ConvertedPDF] {
-        items.compactMap {
-            if case .single(let pdf) = $0 {
+        var result: [ConvertedPDF] = []
+        for item in items {
+            if case .single(let pdf) = item {
                 let prog = Double(pdf.metadata.lastReadPage ?? 0) / Double(max(pdf.pageCount, 1))
-                return (prog > 0.01 && prog < 0.98) ? pdf : nil
+                if prog > 0.01 && prog < 0.98 {
+                    result.append(pdf)
+                    if result.count == 10 { break }
+                }
             }
-            return nil
         }
+        return result
     }
 
     @ViewBuilder
@@ -182,8 +186,9 @@ struct LibraryGridView: View {
                                 .frame(height: 0)
 
                                 // ── Continue Reading shelf ─────────────────────
-                                if !computedInProgress.isEmpty {
-                                    ContinueReadingShelf(inProgress: Array(computedInProgress.prefix(10))) { pdf in
+                                let inProgress = computedInProgress
+                                if !inProgress.isEmpty {
+                                    ContinueReadingShelf(inProgress: inProgress) { pdf in
                                         if tapAction == .read {
                                             onAction(.read, pdf)
                                         } else {

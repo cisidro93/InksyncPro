@@ -290,7 +290,7 @@ class ReaderProgressTracker: ObservableObject {
         if let idx = ConversionManager.shared.convertedPDFs.firstIndex(where: { $0.id == updated.pdfID }) {
             ConversionManager.shared.objectWillChange.send()
             ConversionManager.shared.convertedPDFs[idx].metadata.lastReadPage = updated.currentPageIndex
-            ConversionManager.shared.saveProgressOnly()
+            ConversionManager.shared.trackProgressUpdate(for: updated.pdfID, lastReadPage: updated.currentPageIndex)
         }
 
         // Sync live progress, streak, and recent book cover to App Group for Home & Lock Screen Widgets

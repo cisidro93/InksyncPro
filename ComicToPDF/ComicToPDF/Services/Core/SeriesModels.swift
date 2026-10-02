@@ -45,11 +45,14 @@ struct SeriesGroup: Identifiable, Hashable {
     var issues: [ConvertedPDF] // Mutable to support drag-and-drop
     var readCount: Int
     var newCount: Int
+    var latestModified: Date = Date.distantPast
+    var totalSize: Int64 = 0
+    var hasFavorite: Bool = false
     var isEmpty: Bool {
         count == 0 || issues.isEmpty
     }
 
-    init(id: String, title: String, coverIssueID: UUID? = nil, count: Int, issues: [ConvertedPDF], readCount: Int = 0, newCount: Int = 0) {
+    init(id: String, title: String, coverIssueID: UUID? = nil, count: Int, issues: [ConvertedPDF], readCount: Int = 0, newCount: Int = 0, latestModified: Date = Date.distantPast, totalSize: Int64 = 0, hasFavorite: Bool = false) {
         self.id = id
         self.title = title
         self.coverIssueID = coverIssueID
@@ -57,6 +60,9 @@ struct SeriesGroup: Identifiable, Hashable {
         self.issues = issues
         self.readCount = readCount
         self.newCount = newCount
+        self.latestModified = latestModified
+        self.totalSize = totalSize
+        self.hasFavorite = hasFavorite
     }
     
     var lastUpdated: Date {
@@ -97,7 +103,7 @@ extension LibraryListItem {
         case .single(let pdf):
             return pdf.lastModified
         case .series(let group):
-            return group.issues.map(\.lastModified).max() ?? Date.distantPast
+            return group.latestModified != Date.distantPast ? group.latestModified : (group.issues.map(\.lastModified).max() ?? Date.distantPast)
         case .driveFolder:
             return Date.distantPast
         }
@@ -108,7 +114,7 @@ extension LibraryListItem {
         case .single(let pdf):
             return pdf.fileSize
         case .series(let group):
-            return group.issues.map(\.fileSize).reduce(0, +)
+            return group.totalSize > 0 ? group.totalSize : group.issues.reduce(Int64(0)) { $0 + $1.fileSize }
         case .driveFolder:
             return 0
         }
@@ -119,7 +125,7 @@ extension LibraryListItem {
         case .single(let pdf):
             return pdf.isFavorite
         case .series(let group):
-            return group.issues.contains { $0.isFavorite }
+            return group.hasFavorite || group.issues.contains { $0.isFavorite }
         case .driveFolder:
             return false
         }
