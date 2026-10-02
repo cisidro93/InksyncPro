@@ -21,6 +21,7 @@ struct ImportQueueView: View {
     // Import summary
     @State private var importSummaries: [ImportSummary] = []
     @State private var showImportSummary = false
+    @State private var showingAddSourceDialog = false
 
     var body: some View {
         NavigationStack {
@@ -200,7 +201,7 @@ struct ImportQueueView: View {
     // MARK: Shared Buttons
 
     private var addFilesButton: some View {
-        Button(action: addFiles) {
+        Button(action: { showingAddSourceDialog = true }) {
             HStack(spacing: 8) {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 16, weight: .semibold))
@@ -214,6 +215,15 @@ struct ImportQueueView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .disabled(queue.isStagingFiles)
+        .confirmationDialog("Import Comics to Device", isPresented: $showingAddSourceDialog, titleVisibility: .visible) {
+            Button("Add Entire Folder") {
+                addFolder()
+            }
+            Button("Add Specific Comic Files") {
+                addFiles()
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     // MARK: - Natural Duplicate Toast
@@ -273,29 +283,40 @@ struct ImportQueueView: View {
 
     // MARK: Actions
 
+    private func addFolder() {
+        queue.isStagingFiles = true
+        ImportCoordinator.present(type: .folder) { urls in
+            processImportedURLs(urls)
+        }
+    }
+
     private func addFiles() {
         queue.isStagingFiles = true
-        ImportCoordinator.present(type: .unified) { urls in
-            guard !urls.isEmpty else {
+        ImportCoordinator.present(type: .files) { urls in
+            processImportedURLs(urls)
+        }
+    }
+
+    private func processImportedURLs(_ urls: [URL]) {
+        guard !urls.isEmpty else {
+            queue.isStagingFiles = false
+            return
+        }
+        Task.detached(priority: .userInitiated) {
+            let result = await queue.stageWithDuplicateCheck(urls)
+            await MainActor.run {
                 queue.isStagingFiles = false
-                return
-            }
-            Task.detached(priority: .userInitiated) {
-                let result = await queue.stageWithDuplicateCheck(urls)
-                await MainActor.run {
-                    queue.isStagingFiles = false
-                    if result.skippedDuplicates > 0 {
-                        pendingDuplicates = result.duplicateURLs
-                        skippedDuplicateCount = result.skippedDuplicates
+                if result.skippedDuplicates > 0 {
+                    pendingDuplicates = result.duplicateURLs
+                    skippedDuplicateCount = result.skippedDuplicates
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showDuplicateToast = true
+                    }
+                    // Non-intrusive auto-dismiss after 6 seconds
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 6_000_000_000)
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            showDuplicateToast = true
-                        }
-                        // Non-intrusive auto-dismiss after 6 seconds
-                        Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 6_000_000_000)
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                showDuplicateToast = false
-                            }
+                            showDuplicateToast = false
                         }
                     }
                 }

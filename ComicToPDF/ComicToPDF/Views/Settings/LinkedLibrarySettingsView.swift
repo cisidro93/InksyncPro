@@ -281,7 +281,7 @@ struct LinkedLibrarySettingsView: View {
         let manager = conversionManager
         LinkedLibraryScanner.shared.conversionManager = manager
 
-        FolderLinkCoordinator.present { results in
+        FolderLinkCoordinator.presentFolder { results in
             guard !results.isEmpty else {
                 Task { @MainActor in self.isLinkingDrive = false }
                 return
@@ -311,6 +311,7 @@ struct LinkedLibrarySettingsView: View {
                 self.isLinkingDrive = false
 
                 if linked > 0 {
+                    NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
                     if totalFiles == 0 {
                         self.errorMessage = "Folder\(linked > 1 ? "s" : "") linked but no comic files were found inside. Make sure you selected the folder containing your .cbz / .pdf / .epub files."
                     } else {
@@ -346,6 +347,7 @@ struct LinkedLibrarySettingsView: View {
                 let count = await scanner.linkFiles(pickedFiles: results)
                 self.isLinkingDrive = false
                 if count > 0 {
+                    NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
                     self.successMessage = "Linked \(count) comic file\(count == 1 ? "" : "s") directly without copying."
                     Task {
                         try? await Task.sleep(nanoseconds: 6_000_000_000)
@@ -364,7 +366,7 @@ struct LinkedLibrarySettingsView: View {
         let manager = conversionManager
         LinkedLibraryScanner.shared.conversionManager = manager
 
-        FolderLinkCoordinator.present { results in
+        FolderLinkCoordinator.presentFolder { results in
             guard let result = results.first else {
                 Task { @MainActor in self.isLinkingDrive = false }
                 return
@@ -372,6 +374,7 @@ struct LinkedLibrarySettingsView: View {
             Task { @MainActor in
                 do {
                     try await LinkedLibraryScanner.shared.relinkDrive(drive, newFolderURL: result.url, newBookmarkData: result.bookmark)
+                    NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
                     self.successMessage = "Re-linked \"\(result.url.lastPathComponent)\" successfully."
                     Task {
                         try? await Task.sleep(nanoseconds: 5_000_000_000)

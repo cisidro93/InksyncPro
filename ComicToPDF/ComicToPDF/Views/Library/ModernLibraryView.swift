@@ -70,6 +70,7 @@ struct ModernLibraryView: View {
     @State private var isStorageTransferring = false
     @State private var transferProgress: Double = 0.0
     @State private var transferStatus: String = ""
+    @State private var showingLinkDriveDialog = false
     
     // UI Options Enum (kept for picker logic)
     enum SortOption: String, CaseIterable, Identifiable {
@@ -473,7 +474,7 @@ struct ModernLibraryView: View {
                 }
                 Button("Move to External Drive") {
                     let items = conversionManager.convertedPDFs.filter { multiSelection.contains($0.id) }
-                    FolderLinkCoordinator.present { urls in
+                    FolderLinkCoordinator.presentFolder { urls in
                         guard let targetURL = urls.first else { return }
                         Task {
                             await MainActor.run { isStorageTransferring = true; transferProgress = 0 }
@@ -528,6 +529,20 @@ struct ModernLibraryView: View {
                     }
                 }
                 Button("Cancel", role: .cancel) {}
+            }
+            .confirmationDialog("External Storage & Drives", isPresented: $showingLinkDriveDialog, titleVisibility: .visible) {
+                Button("Link Entire Folder / Drive") {
+                    handleLinkFolder()
+                }
+                Button("Link Specific Comic Files") {
+                    handleLinkFiles()
+                }
+                Button("Import to Device Storage (Queue)") {
+                    AppRouter.shared.presentSheet(.importQueue)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Link external media directly without copying to iPad, or import files to internal storage.")
             }
             .overlay(alignment: .bottomTrailing) {
                 if settingsManager.conversionSettings.showEditorDebug {
@@ -1788,10 +1803,14 @@ struct ModernLibraryView: View {
     }
 
     private func handleLinkDrive() {
+        showingLinkDriveDialog = true
+    }
+
+    private func handleLinkFolder() {
         let manager = conversionManager
         LinkedLibraryScanner.shared.conversionManager = manager
 
-        FolderLinkCoordinator.present { results in
+        FolderLinkCoordinator.presentFolder { results in
             guard !results.isEmpty else {
                 Task { @MainActor in
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -1807,26 +1826,7 @@ struct ModernLibraryView: View {
                 let scanner = LinkedLibraryScanner.shared
                 scanner.conversionManager = manager
 
-                var folderResults: [(url: URL, bookmark: Data)] = []
-                var fileResults: [(url: URL, bookmark: Data)] = []
-
-                for result in results {
-                    var isDir: ObjCBool = false
-                    var isStale = false
-                    let resolvedURL = (try? URL(resolvingBookmarkData: result.bookmark, options: .withoutUI, relativeTo: nil, bookmarkDataIsStale: &isStale)) ?? result.url
-                    let accessing = resolvedURL.startAccessingSecurityScopedResource()
-                    let checkURL = accessing ? resolvedURL : result.url
-                    if FileManager.default.fileExists(atPath: checkURL.path, isDirectory: &isDir), isDir.boolValue {
-                        folderResults.append((resolvedURL, result.bookmark))
-                    } else if checkURL.hasDirectoryPath {
-                        folderResults.append((resolvedURL, result.bookmark))
-                    } else {
-                        fileResults.append((resolvedURL, result.bookmark))
-                    }
-                    if accessing { resolvedURL.stopAccessingSecurityScopedResource() }
-                }
-
-                for folder in folderResults {
+                for folder in results {
                     do {
                         _ = try await scanner.linkDrive(
                             folderURL: folder.url,
@@ -1834,17 +1834,33 @@ struct ModernLibraryView: View {
                             displayName: folder.url.lastPathComponent
                         )
                     } catch {
-                        Logger.shared.log("handleLinkDrive error: \(error.localizedDescription)", category: "Drive", type: .error)
+                        Logger.shared.log("handleLinkFolder error: \(error.localizedDescription)", category: "Drive", type: .error)
                         manager.appAlert = AppAlert(title: "Drive Link Failed", message: error.localizedDescription)
                     }
                 }
 
-                if !fileResults.isEmpty {
-                    let linkedCount = await scanner.linkFiles(pickedFiles: fileResults)
-                    Logger.shared.log("handleLinkDrive: Successfully linked \(linkedCount) direct files", category: "Drive", type: .info)
-                }
+                syncAndRebuildLibraryCache()
+                NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
+                HapticEngine.success()
+            }
+        }
+    }
+
+    private func handleLinkFiles() {
+        let manager = conversionManager
+        LinkedLibraryScanner.shared.conversionManager = manager
+
+        FolderLinkCoordinator.presentFiles { results in
+            guard !results.isEmpty else { return }
+
+            Task { @MainActor in
+                let scanner = LinkedLibraryScanner.shared
+                scanner.conversionManager = manager
+                let linkedCount = await scanner.linkFiles(pickedFiles: results)
+                Logger.shared.log("handleLinkFiles: Successfully linked \(linkedCount) direct files", category: "Drive", type: .info)
 
                 syncAndRebuildLibraryCache()
+                NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
                 HapticEngine.success()
             }
         }

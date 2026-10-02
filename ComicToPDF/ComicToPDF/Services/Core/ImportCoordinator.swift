@@ -47,40 +47,26 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             // UTType.content = base type for ALL readable file content (text, CSV, data) but
             // explicitly EXCLUDES directories. Using .item (which includes .folder) causes
             // iPadOS to enter a hybrid browse/select mode that suppresses selection circles.
-            // We validate the actual file extension in the parser, so broad matching is safe.
             supportedTypes = [.content]
         case .folder:
             supportedTypes = [.folder, .directory]
-        case .files:
-            supportedTypes = [
-                .pdf, .zip,
-                UTType(filenameExtension: "epub") ?? .epub,
-                UTType(filenameExtension: "cbz") ?? .zip,
-                UTType(filenameExtension: "cbr") ?? .archive,
-                UTType(filenameExtension: "cbt") ?? .archive,
-                UTType(filenameExtension: "rar") ?? .archive
-            ].compactMap { $0 }
-        default:
-            // Unified Legacy Forward-Port
-            supportedTypes = [
-                .pdf, .zip, .folder, .directory,
-                UTType(filenameExtension: "epub") ?? .epub,
-                UTType(filenameExtension: "cbz") ?? .zip,
-                UTType(filenameExtension: "cbr") ?? .archive,
-                UTType(filenameExtension: "cbt") ?? .archive,
-                UTType(filenameExtension: "rar") ?? .archive
-            ].compactMap { $0 }
+        case .files, .unified:
+            supportedTypes = FolderLinkCoordinator.supportedFileTypes
         }
 
         let picker: UIDocumentPickerViewController
 
-        if type == .json || type == .smartList {
+        if type == .folder {
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: false)
+            picker.allowsMultipleSelection = false
+        } else if type == .json || type == .smartList {
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
             picker.allowsMultipleSelection = false
         } else {
-            // Point of truth from e22462f:
-            // Unified Picker handles BOTH parent folders AND individual comic files simultaneously.
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
+            // For files and unified: asCopy: false prevents remote File Provider XPC timeouts
+            // when accessing large files from external USB drives, and lets our background
+            // parallel staging task copy them reliably.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
             picker.allowsMultipleSelection = true
         }
 
@@ -97,149 +83,133 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
 
     // MARK: - UIDocumentPickerDelegate
 
-    /// Deprecated single-URL delegate (iOS < 11). iOS still calls THIS (not the multi-URL variant)
-    /// when allowsMultipleSelection=false and a folder is selected via the .folder picker.
-    /// The working binary explicitly implements this in FolderPickerV.Coordinator.
+    /// Single-URL callback required by iPadOS when allowsMultipleSelection = false and a folder is picked.
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
         documentPicker(controller, didPickDocumentsAt: [url])
     }
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard !urls.isEmpty else {
+            controller.dismiss(animated: true)
             finish(with: [])
             return
         }
 
-        // Synchronously capture security scope on main thread BEFORE dismissal or async dispatch
-        var securedURLs: [URL] = []
-        for url in urls {
-            if url.startAccessingSecurityScopedResource() {
-                securedURLs.append(url)
-            }
-        }
-
-        // Dismiss the picker immediately — asCopy:false never auto-dismisses.
-        // We do NOT use a completion block so processing is not gated on the animation.
-        controller.dismiss(animated: true)
-        
         let type = self.currentType
-        
-        let stagingTask = Task.detached(priority: .userInitiated) { () -> [URL] in
-            defer {
-                for url in securedURLs {
-                    url.stopAccessingSecurityScopedResource()
+
+        // Dismiss picker immediately first — prevents XPC deadlocks with remote file provider
+        controller.dismiss(animated: true) { [weak self] in
+            guard let self = self else { return }
+
+            let stagingTask = Task.detached(priority: .userInitiated) { () -> [URL] in
+                if type == .json || type == .smartList {
+                    return urls
                 }
-            }
 
-            if type == .json || type == .smartList {
-                return urls
-            }
+                // --- Parallel Staging: Phase 1 enumerate, Phase 2 concurrent copy ---
+                let fm = FileManager.default
+                let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cbt", "zip", "rar"]
 
-            // --- Parallel Staging: Phase 1 enumerate, Phase 2 concurrent copy ---
-            let fm = FileManager.default
-            let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cbt", "zip", "rar"]
+                let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
+                try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
 
-            let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
-            try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+                // ── Phase 1: Collect candidate (source, dest) pairs without copying ──
+                struct CopyJob {
+                    let source: URL
+                    let dest: URL
+                }
+                var jobs: [CopyJob] = []
+                var seenInBatch = Set<String>()
 
-            // ── Phase 1: Collect candidate (source, dest) pairs without copying ──
-            // Enumeration is cheap (metadata only); we yield every 25 items to keep
-            // the Swift runtime scheduler responsive during large folder scans.
-            struct CopyJob {
-                let source: URL
-                let dest: URL
-            }
-            var jobs: [CopyJob] = []
-            var seenInBatch = Set<String>()
+                for url in urls {
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
-            for url in urls {
-                var isDirectory: ObjCBool = false
-                if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
-                    // Recursively spider — metadata-only, no I/O
-                    let keys: [URLResourceKey] = [.isDirectoryKey]
-                    if let enumerator = fm.enumerator(at: url,
-                                                       includingPropertiesForKeys: keys,
-                                                       options: [.skipsHiddenFiles]) {
-                        var enumCount = 0
-                        while let fileURL = enumerator.nextObject() as? URL {
-                            enumCount += 1
-                            if enumCount % 25 == 0 { await Task.yield() }
+                    var isDirectory: ObjCBool = false
+                    if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                        // Recursively spider — metadata-only, no I/O
+                        let keys: [URLResourceKey] = [.isDirectoryKey]
+                        if let enumerator = fm.enumerator(at: url,
+                                                           includingPropertiesForKeys: keys,
+                                                           options: [.skipsHiddenFiles]) {
+                            var enumCount = 0
+                            while let fileURL = enumerator.nextObject() as? URL {
+                                enumCount += 1
+                                if enumCount % 25 == 0 { await Task.yield() }
 
-                            guard let rsrc = try? fileURL.resourceValues(forKeys: Set(keys)),
-                                  rsrc.isDirectory == false else { continue }
-                            guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
-                            guard seenInBatch.insert(fileURL.path).inserted else { continue }
+                                guard let rsrc = try? fileURL.resourceValues(forKeys: Set(keys)),
+                                      rsrc.isDirectory == false else { continue }
+                                guard allowedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
+                                guard seenInBatch.insert(fileURL.path).inserted else { continue }
 
-                            // Preserve native structure for SeriesNameParser Context
-                            let originalParent = fileURL.deletingLastPathComponent().lastPathComponent
+                                // Preserve native structure for SeriesNameParser Context
+                                let originalParent = fileURL.deletingLastPathComponent().lastPathComponent
+                                let destFolder = stagingDir.appendingPathComponent(originalParent)
+                                try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
+                                jobs.append(CopyJob(source: fileURL,
+                                                    dest: destFolder.appendingPathComponent(fileURL.lastPathComponent)))
+                            }
+                        }
+                    } else {
+                        // Standard single-file selection
+                        if allowedExts.contains(url.pathExtension.lowercased()) {
+                            guard seenInBatch.insert(url.path).inserted else { continue }
+                            let originalParent = url.deletingLastPathComponent().lastPathComponent
                             let destFolder = stagingDir.appendingPathComponent(originalParent)
                             try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
-                            jobs.append(CopyJob(source: fileURL,
-                                                dest: destFolder.appendingPathComponent(fileURL.lastPathComponent)))
+                            jobs.append(CopyJob(source: url,
+                                                dest: destFolder.appendingPathComponent(url.lastPathComponent)))
                         }
                     }
-                } else {
-                    // Standard single-file selection
-                    if allowedExts.contains(url.pathExtension.lowercased()) {
-                        guard seenInBatch.insert(url.path).inserted else { continue }
-                        let originalParent = url.deletingLastPathComponent().lastPathComponent
-                        let destFolder = stagingDir.appendingPathComponent(originalParent)
-                        try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
-                        jobs.append(CopyJob(source: url,
-                                            dest: destFolder.appendingPathComponent(url.lastPathComponent)))
+                }
+
+                // ── Phase 2: Concurrent copy — up to 8 in-flight (APFS parallel I/O) ──
+                let maxConcurrent = 8
+                var foundURLs: [URL] = []
+
+                await withTaskGroup(of: URL?.self) { group in
+                    var inFlight = 0
+
+                    for job in jobs {
+                        // Back-pressure: drain one slot before adding when at capacity
+                        if inFlight >= maxConcurrent {
+                            if let result = await group.next() {
+                                if let url = result { foundURLs.append(url) }
+                                inFlight -= 1
+                            }
+                        }
+
+                        let src = job.source
+                        let dst = job.dest
+                        group.addTask {
+                            let accessing = src.startAccessingSecurityScopedResource()
+                            defer { if accessing { src.stopAccessingSecurityScopedResource() } }
+                            do {
+                                if FileManager.default.fileExists(atPath: dst.path) { try FileManager.default.removeItem(at: dst) }
+                                try FileManager.default.copyItem(at: src, to: dst)
+                                return dst
+                            } catch {
+                                Logger.shared.log("ImportCoordinator: Copy failed \(src.lastPathComponent): \(error.localizedDescription)",
+                                                  category: "System", type: .warning)
+                                return nil
+                            }
+                        }
+                        inFlight += 1
+                    }
+
+                    // Drain remaining in-flight tasks
+                    for await result in group {
+                        if let url = result { foundURLs.append(url) }
                     }
                 }
+
+                return foundURLs
             }
 
-            // ── Phase 2: Concurrent copy — up to 8 in-flight (APFS parallel I/O) ──
-            // FileManager.copyItem is thread-safe for independent source/dest pairs.
-            let maxConcurrent = 8
-            var foundURLs: [URL] = []
-
-            await withTaskGroup(of: URL?.self) { group in
-                var inFlight = 0
-
-                for job in jobs {
-                    // Back-pressure: drain one slot before adding when at capacity
-                    if inFlight >= maxConcurrent {
-                        if let result = await group.next() {
-                            if let url = result { foundURLs.append(url) }
-                            inFlight -= 1
-                        }
-                    }
-
-                    let src = job.source
-                    let dst = job.dest
-                    group.addTask {
-                        let accessing = src.startAccessingSecurityScopedResource()
-                        defer { if accessing { src.stopAccessingSecurityScopedResource() } }
-                        do {
-                            // Use FileManager.default inline — avoids capturing the non-Sendable
-                            // local `fm` reference across the task group isolation boundary.
-                            if FileManager.default.fileExists(atPath: dst.path) { try FileManager.default.removeItem(at: dst) }
-                            try FileManager.default.copyItem(at: src, to: dst)
-                            return dst
-                        } catch {
-                            Logger.shared.log("ImportCoordinator: Copy failed \(src.lastPathComponent): \(error.localizedDescription)",
-                                              category: "System", type: .warning)
-                            return nil
-                        }
-                    }
-                    inFlight += 1
-                }
-
-                // Drain remaining in-flight tasks
-                for await result in group {
-                    if let url = result { foundURLs.append(url) }
-                }
+            Task { @MainActor in
+                let foundURLs = await stagingTask.value
+                self.finish(with: foundURLs)
             }
-
-            return foundURLs
-        }
-        
-        Task { @MainActor in
-            let foundURLs = await stagingTask.value
-            self.finish(with: foundURLs)
         }
     }
 
@@ -249,8 +219,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
     }
 
     // MARK: - Helpers
-
-
 
     private func finish(with urls: [URL]) {
         completion?(urls)
@@ -276,7 +244,9 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
         }
         guard var top = root else { return nil }
         
-        while let presented = top.presentedViewController { top = presented }
+        while let presented = top.presentedViewController, !presented.isBeingDismissed {
+            top = presented
+        }
         return top
     }
 }
