@@ -311,6 +311,15 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.ShareImportReceived")), perform: handleShareImport)
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.DirectFileOpenReceived")), perform: handleDirectFileOpen)
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("InksyncPro.DismissAllOverlays"))) { _ in
+            isAppLoading = false
+            isLogoMorphComplete = true
+            showingWhatsNewSheet = false
+            showingSettingsInspector = false
+            showingOnboarding = false
+            showingBatchMergeReorder = false
+            AppRouter.shared.dismissSheet()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToLibraryTab"))) { _ in
             router.selectedTab = 0
         }

@@ -648,7 +648,6 @@ struct ShareExtensionView: View {
                     ud.synchronize()
                 }
             }
-            self.bridgeFilesToPasteboard(filesToProcess)
 
             self.selectedFiles = filesToProcess
             self.isLoading = false
@@ -1019,7 +1018,8 @@ struct ShareExtensionView: View {
 
         var newItems: [[String: Any]] = []
         var totalBytes: Int64 = 0
-        let maxTotalBytes: Int64 = 1_500_000_000 // 1.5GB cap to support large comics & graphic novels
+        let maxSingleFileBytes: Int64 = 15_000_000 // 15MB limit per file to preserve 120MB extension memory budget
+        let maxTotalBytes: Int64 = 30_000_000 // 30MB total cap
 
         for file in files {
             // Find the best existing accessible copy of this file
@@ -1042,6 +1042,16 @@ struct ShareExtensionView: View {
             let accessing = candidateURL.startAccessingSecurityScopedResource()
             defer { if accessing { candidateURL.stopAccessingSecurityScopedResource() } }
 
+            let fileSize = (try? candidateURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
+                ?? (try? FileManager.default.attributesOfItem(atPath: candidateURL.path)[.size] as? Int64)
+                ?? 0
+
+            // If file exceeds 15MB, rely entirely on App Group disk staging to prevent Jetsam memory kills
+            guard fileSize > 0, fileSize <= maxSingleFileBytes, (totalBytes + fileSize) <= maxTotalBytes else {
+                print("[ShareExt] Notice: File '\(file.name)' (\(fileSize) bytes) staged to App Group disk. Skipping RAM pasteboard bridge to preserve 120MB extension limit.")
+                continue
+            }
+
             var fileData = try? Data(contentsOf: candidateURL, options: .mappedIfSafe)
             if fileData == nil || fileData?.isEmpty == true {
                 let coordinator = NSFileCoordinator()
@@ -1054,22 +1064,19 @@ struct ShareExtensionView: View {
             }
 
             if let data = fileData, !data.isEmpty {
-                let fileSize = Int64(data.count)
-                if (totalBytes + fileSize) < maxTotalBytes {
-                    totalBytes += fileSize
-                    var dict: [String: Any] = [
-                        fileTypeKey: data,
-                        fileNameKey: file.name,
-                        UTType.data.identifier: data
-                    ]
-                    let ext = (file.name as NSString).pathExtension.lowercased()
-                    if let specificUTI = UTType(filenameExtension: ext)?.identifier {
-                        dict[specificUTI] = data
-                    }
-                    newItems.append(dict)
-
-                    print("[ShareExt] Staged '\(file.name)' (\(fileSize) bytes) to shared pasteboard bridge")
+                totalBytes += Int64(data.count)
+                var dict: [String: Any] = [
+                    fileTypeKey: data,
+                    fileNameKey: file.name,
+                    UTType.data.identifier: data
+                ]
+                let ext = (file.name as NSString).pathExtension.lowercased()
+                if let specificUTI = UTType(filenameExtension: ext)?.identifier {
+                    dict[specificUTI] = data
                 }
+                newItems.append(dict)
+
+                print("[ShareExt] Staged '\(file.name)' (\(data.count) bytes) to shared pasteboard bridge")
             }
         }
 

@@ -151,6 +151,10 @@ final class SharedImportCoordinator: ObservableObject {
         }
         recentlyHandledURLs[key] = Date()
 
+        // Guarantee any active modal sheet or blocker overlay is dismissed immediately
+        AppRouter.shared.dismissSheet()
+        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.DismissAllOverlays"), object: nil)
+
         Logger.shared.log("SharedImportCoordinator: handleIncomingURL '\(url.absoluteString)' (scheme: \(url.scheme ?? "none"), isFileURL: \(url.isFileURL))", category: "ShareImport", type: .info)
         if url.scheme == "inksyncpro" || url.scheme == "inksync" {
             var targetFile: String? = nil
@@ -174,7 +178,9 @@ final class SharedImportCoordinator: ObservableObject {
                 self.pendingAutoSelectFilenames.insert(name)
             }
             let groupIDs = appGroupIDs
-            Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
+            if Self.areStagingContainersEmpty(groupIDs: groupIDs) {
+                Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
+            }
 
             let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
             let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
@@ -223,7 +229,9 @@ final class SharedImportCoordinator: ObservableObject {
                 self.pendingTargetFilenames.removeAll()
 
                 if !ingestedNames.isEmpty {
-                    Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
+                    if Self.areStagingContainersEmpty(groupIDs: groupIDs) {
+                        Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
+                    }
                     self.drainPassCount = 0
                     Logger.shared.log(
                         "SharedImportCoordinator: Completed import of \(ingestedNames.count) file(s): \(ingestedNames.joined(separator: ", "))",
@@ -268,12 +276,18 @@ final class SharedImportCoordinator: ObservableObject {
                     // 2. Refresh library catalog asynchronously without delaying the reader presentation
                     manager.scanLibrary()
                 } else {
-                    Logger.shared.log(
-                        "SharedImportCoordinator: No files ingested on this pass — clearing flags to prevent infinite drain loop.",
-                        category: "ShareImport", type: .info
-                    )
-                    // If no files were found after all retries, reset share flags to avoid infinite foreground triggers
-                    Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
+                    if Self.areStagingContainersEmpty(groupIDs: groupIDs) {
+                        Logger.shared.log(
+                            "SharedImportCoordinator: No files ingested on this pass and staging is empty — clearing flags.",
+                            category: "ShareImport", type: .info
+                        )
+                        Self.clearPendingShareFlagsFor(groupIDs: groupIDs)
+                    } else {
+                        Logger.shared.log(
+                            "SharedImportCoordinator: Staging files still present — retaining flags for subsequent scan.",
+                            category: "ShareImport", type: .info
+                        )
+                    }
                 }
                 self.ingestionState = .idle
 
@@ -312,27 +326,19 @@ final class SharedImportCoordinator: ObservableObject {
     }
 
     private func performDirectFileImport(url: URL, autoOpen: Bool) async -> URL? {
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        // Guarantee any active sheet or blocker overlay is dismissed immediately
+        AppRouter.shared.dismissSheet()
+        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.DismissAllOverlays"), object: nil)
 
-        // Ensure the file is completely written before copying (e.g. AirDrop / share sheet transfers)
-        guard await isFileSettled(at: url) else {
-            Logger.shared.log(
-                "SharedImportCoordinator: Direct open file is not settled yet or zero-byte: \(url.lastPathComponent)",
-                category: "Import", type: .warning
-            )
-            return nil
-        }
-
+        let filename = url.lastPathComponent
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
         ).first ?? FileManager.default.temporaryDirectory
         let inboxDir = appSupport.appendingPathComponent("InksyncVault/Inbox", isDirectory: true)
         try? FileManager.default.createDirectory(at: inboxDir, withIntermediateDirectories: true)
-        let filename = url.lastPathComponent
         let dest = inboxDir.appendingPathComponent(filename)
 
-        // If file is already at destination and valid, register and autoOpen
+        // Fast-path: If file is already at destination and valid, register and autoOpen immediately
         if dest.path == url.path && FileManager.default.fileExists(atPath: dest.path) {
             registerDirectlyOpenedFile(at: dest)
             let manager = conversionManager ?? ConversionManager.shared
@@ -345,34 +351,67 @@ final class SharedImportCoordinator: ObservableObject {
             return dest
         }
 
-        try? FileManager.default.removeItem(at: dest)
+        // Offload security-scoping, file-coordination, and disk copying to a background task
+        // ZERO MAIN THREAD BLOCKING - Prevents deadlocks with system File Provider / SpringBoard
+        let copySuccess: Bool = await Task.detached(priority: .userInitiated) {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
-        var copySuccess = false
+            let fm = FileManager.default
 
-        // Coordinate read via NSFileCoordinator
-        NSFileCoordinator().coordinate(
-            readingItemAt: url, options: .withoutChanges, error: nil
-        ) { safeURL in
-            let innerAccess = safeURL.startAccessingSecurityScopedResource()
-            defer { if innerAccess { safeURL.stopAccessingSecurityScopedResource() } }
-            do {
-                try FileManager.default.copyItem(at: safeURL, to: dest)
-                copySuccess = true
-            } catch {
-                if let data = try? Data(contentsOf: safeURL, options: .mappedIfSafe) {
-                    copySuccess = (try? data.write(to: dest, options: .atomic)) != nil
+            // If it's a ubiquitous (iCloud) item not yet downloaded, initiate download
+            if let isUbiquitous = (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]))?.isUbiquitousItem, isUbiquitous {
+                let status = (try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]))?.ubiquitousItemDownloadingStatus
+                if status == .notDownloaded {
+                    try? fm.startDownloadingUbiquitousItem(at: url)
                 }
             }
-        }
 
-        // Direct stream fallback
-        if !copySuccess, let data = try? Data(contentsOf: url, options: .mappedIfSafe) {
-            copySuccess = (try? data.write(to: dest, options: .atomic)) != nil
-        }
+            try? fm.removeItem(at: dest)
 
-        guard copySuccess, FileManager.default.fileExists(atPath: dest.path) else {
+            var success = false
+
+            // Coordinate read via NSFileCoordinator on this background thread
+            let coordinator = NSFileCoordinator()
+            var coordError: NSError?
+            coordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { safeURL in
+                let innerAccess = safeURL.startAccessingSecurityScopedResource()
+                defer { if innerAccess { safeURL.stopAccessingSecurityScopedResource() } }
+
+                do {
+                    try fm.copyItem(at: safeURL, to: dest)
+                    success = true
+                } catch {
+                    if let data = try? Data(contentsOf: safeURL, options: .mappedIfSafe) {
+                        success = (try? data.write(to: dest, options: .atomic)) != nil
+                    }
+                }
+            }
+
+            // Fallback if coordination was not required or skipped (e.g. sandbox files)
+            if !success && fm.fileExists(atPath: url.path) {
+                do {
+                    try fm.copyItem(at: url, to: dest)
+                    success = true
+                } catch {
+                    if let data = try? Data(contentsOf: url, options: .mappedIfSafe) {
+                        success = (try? data.write(to: dest, options: .atomic)) != nil
+                    }
+                }
+            }
+
+            // Verify copied file exists and has size > 0
+            if success && fm.fileExists(atPath: dest.path) {
+                let size = (try? dest.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                return size > 0
+            }
+
+            return false
+        }.value
+
+        guard copySuccess else {
             Logger.shared.log(
-                "SharedImportCoordinator: Failed to copy file \(filename) to InksyncVault/Inbox",
+                "SharedImportCoordinator: Failed to copy or verify file \(filename) to InksyncVault/Inbox",
                 category: "Import", type: .error
             )
             return nil
@@ -398,10 +437,13 @@ final class SharedImportCoordinator: ObservableObject {
         NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
         NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.ShowToast"), object: nil, userInfo: ["message": "Added '\(filename)' to Library"])
 
-        // Clean up temporary handoff copies left in system Documents/Inbox to prevent disk bloat
+        // Safely clean up temporary handoff copies left in system Documents/Inbox after a short delay
         if url.path.contains("/Documents/Inbox/") && url.path != dest.path {
-            try? FileManager.default.removeItem(at: url)
-            Logger.shared.log("SharedImportCoordinator: Cleaned up temporary system inbox file at \(url.lastPathComponent)", category: "Import", type: .info)
+            Task.detached(priority: .background) {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? FileManager.default.removeItem(at: url)
+                Logger.shared.log("SharedImportCoordinator: Cleaned up temporary system inbox file at \(url.lastPathComponent)", category: "Import", type: .info)
+            }
         }
 
         return dest
@@ -773,22 +815,32 @@ final class SharedImportCoordinator: ObservableObject {
         let fm = FileManager.default
         let path = url.path
 
-        // Fast-path: Files already in the app's internal sandbox or app support
-        let isInternalSandbox = path.contains("/InksyncVault/") ||
-                                path.contains("/Documents/Inbox/") ||
-                                path.contains("/tmp/") ||
-                                path.contains("/Application Support/")
-        if isInternalSandbox && fm.fileExists(atPath: path) {
+        // Fast-path: Files already in internal sandbox or App Group containers
+        let isInternalOrShared = path.contains("/InksyncVault/") ||
+                                 path.contains("/Documents/Inbox/") ||
+                                 path.contains("/tmp/") ||
+                                 path.contains("/Application Support/") ||
+                                 path.contains("/Shared/AppGroup/") ||
+                                 path.contains("group.com.antigravity")
+
+        if isInternalOrShared && fm.fileExists(atPath: path) {
             let directSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
                 ?? (try? fm.attributesOfItem(atPath: path)[.size] as? Int64)
                 ?? 0
             if directSize > 0 {
-                return true
+                // Quick 50ms stability check to protect against partial AirDrop streams
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                let directSize2 = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
+                    ?? (try? fm.attributesOfItem(atPath: path)[.size] as? Int64)
+                    ?? 0
+                if directSize == directSize2 && directSize2 > 0 {
+                    return true
+                }
             }
         }
 
         var attempts = 0
-        let maxAttempts = 10
+        let maxAttempts = 15
 
         while attempts < maxAttempts {
             attempts += 1
@@ -806,7 +858,7 @@ final class SharedImportCoordinator: ObservableObject {
                 // For small files (<1MB), accept if stable or after 1 retry
                 if size1 < 1_048_576 && attempts > 1 { return true }
 
-                try? await Task.sleep(nanoseconds: 120_000_000)
+                try? await Task.sleep(nanoseconds: 100_000_000)
                 let size2: Int64 = {
                     if let rv = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
                         return Int64(rv)
@@ -823,13 +875,41 @@ final class SharedImportCoordinator: ObservableObject {
             }
 
             if attempts < maxAttempts {
-                try? await Task.sleep(nanoseconds: 180_000_000)
+                try? await Task.sleep(nanoseconds: 150_000_000)
             }
         }
+
+        // Failsafe: If file exists and is readable, accept rather than dropping
+        if fm.isReadableFile(atPath: path) {
+            let fallbackSize = (try? fm.attributesOfItem(atPath: path)[.size] as? Int64) ?? 0
+            if fallbackSize > 0 { return true }
+        }
+
         return false
     }
 
     // MARK: - Private: Clear App Group Flags
+
+    nonisolated static func areStagingContainersEmpty(groupIDs: [String]) -> Bool {
+        let fm = FileManager.default
+        let searchContainers = getAllSearchContainers()
+        for container in searchContainers {
+            let stagingDirs = [
+                container.appendingPathComponent("ShareStaging"),
+                container.appendingPathComponent("Inbox"),
+                container.appendingPathComponent("PendingConversions")
+            ]
+            for dir in stagingDirs {
+                if let contents = try? fm.contentsOfDirectory(atPath: dir.path), !contents.isEmpty {
+                    let validFiles = contents.filter { !$0.hasSuffix(".manifest.json") && !$0.hasPrefix(".") }
+                    if !validFiles.isEmpty {
+                        return false
+                    }
+                }
+            }
+        }
+        return true
+    }
 
     /// Swift 6 fix: `nonisolated` methods cannot access `@MainActor`-isolated stored properties.
     /// The caller captures `appGroupIDs` on the MainActor and passes it as a value-type argument.

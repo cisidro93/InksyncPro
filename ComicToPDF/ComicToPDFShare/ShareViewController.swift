@@ -92,8 +92,11 @@ class ShareViewController: UIViewController {
                 if let imp = ext.method(for: extOpenSel) {
                     let fn = unsafeBitCast(imp, to: ExtOpenMethod.self)
                     didTriggerExtensionOpen = true
-                    fn(ext, extOpenSel, deepLinkURL as NSURL) { [weak self] _ in
+                    fn(ext, extOpenSel, deepLinkURL as NSURL) { [weak self] success in
                         Task { @MainActor in
+                            if success {
+                                try? await Task.sleep(nanoseconds: 250_000_000)
+                            }
                             self?.completeHostAppHandover()
                         }
                     }
@@ -102,10 +105,10 @@ class ShareViewController: UIViewController {
         }
 
         // ── Step 4: Graceful Handover Teardown ──
-        // If extensionContext.open callback was not supported, wait 400ms for SpringBoard app-switch
+        // If extensionContext.open callback was not supported, wait 600ms for SpringBoard app-switch
         if !didTriggerExtensionOpen {
             Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 400_000_000)
+                try? await Task.sleep(nanoseconds: 600_000_000)
                 self?.completeHostAppHandover()
             }
         }
