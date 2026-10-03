@@ -64,7 +64,8 @@ final class LinkedLibraryScanner: ObservableObject {
     weak var conversionManager: ConversionManager?
 
     // Supported comic/book file extensions
-    private let supportedExtensions = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar"]
+    public static let supportedExtensions: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z"]
+    public var supportedExtensions: Set<String> { Self.supportedExtensions }
 
     /// Drives with more files than this threshold are treated as "large drives".
     /// Large drives are registered as a single DriveFolder card in the library

@@ -18,7 +18,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
 
     /// Clean, explicit comic/book UTTypes.
     static var supportedFileTypes: [UTType] {
-        var types: [UTType] = [
+        let types: [UTType] = [
             .pdf,
             .zip,
             UTType(filenameExtension: "epub") ?? .epub,
