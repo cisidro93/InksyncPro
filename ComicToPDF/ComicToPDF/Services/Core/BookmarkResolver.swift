@@ -94,7 +94,7 @@ public struct ResolvedAccess: Sendable {
     // Thread-safe registry of active linked drive volume bookmarks for instant fallback
     // and parent folder security scope recovery.
     private static let driveBookmarksLock = NSLock()
-    private static var _registeredDriveBookmarks: [Data] = []
+    private nonisolated(unsafe) static var _registeredDriveBookmarks: [Data] = []
 
     public static var registeredDriveBookmarks: [Data] {
         get {
