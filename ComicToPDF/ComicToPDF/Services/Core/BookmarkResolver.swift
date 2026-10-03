@@ -111,21 +111,54 @@ public struct ResolvedAccess: Sendable {
             let isDirectory = (exists && isDir.boolValue) || resolved.hasDirectoryPath
 
             if isDirectory {
-                // Folder / Volume link: find target file within folder hierarchy
+                // ── Folder / Volume link: locate the child file relative to the ──
+                // bookmark-resolved root (which has an active security scope).
+                //
+                // IMPORTANT: On iOS, pdf.url retains the ORIGINAL path from when
+                // the file was first linked (e.g. /private/var/mobile/.../ExFAT/Comics/Batman.cbz).
+                // After a drive remount, that path may be at a new inode/mount point.
+                // We MUST NOT call fileExists on pdf.url.path directly — it bypasses
+                // the security scope and can return stale cached metadata.
+                // Always resolve children relative to `resolved` (the scope root).
                 let candidateURL: URL
-                if FileManager.default.fileExists(atPath: pdf.url.path) {
-                    candidateURL = pdf.url
+                // Strategy 1: direct child by filename (most common case)
+                let directChild = resolved.appendingPathComponent(pdf.url.lastPathComponent)
+                if FileManager.default.fileExists(atPath: directChild.path) {
+                    candidateURL = directChild
                 } else {
-                    let directChild = resolved.appendingPathComponent(pdf.url.lastPathComponent)
-                    if FileManager.default.fileExists(atPath: directChild.path) {
-                        candidateURL = directChild
+                    // Strategy 2: reconstruct relative subpath from pdf.url components
+                    // by finding the first path component that matches the resolved root name.
+                    let rootName = resolved.lastPathComponent
+                    let components = pdf.url.pathComponents
+                    if let rootIdx = components.lastIndex(of: rootName), rootIdx + 1 < components.count {
+                        let subpath = components[(rootIdx + 1)...].joined(separator: "/")
+                        let subURL = resolved.appendingPathComponent(subpath)
+                        candidateURL = FileManager.default.fileExists(atPath: subURL.path) ? subURL : directChild
                     } else {
-                        let rootName = resolved.lastPathComponent
-                        let components = pdf.url.pathComponents
-                        if let rootIdx = components.lastIndex(of: rootName), rootIdx + 1 < components.count {
-                            let subpath = components[(rootIdx + 1)...].joined(separator: "/")
-                            let subURL = resolved.appendingPathComponent(subpath)
-                            candidateURL = FileManager.default.fileExists(atPath: subURL.path) ? subURL : directChild
+                        // Strategy 3: deep search by filename within one level (handles
+                        // drives that shuffle subdirectory structure between mounts).
+                        let filename = pdf.url.lastPathComponent
+                        let fm = FileManager.default
+                        if let contents = try? fm.contentsOfDirectory(
+                            at: resolved,
+                            includingPropertiesForKeys: [.isDirectoryKey],
+                            options: [.skipsHiddenFiles]
+                        ) {
+                            // Check immediate subfolders (one level deep) for the file
+                            let found = contents.first { child in
+                                if let rv = try? child.resourceValues(forKeys: [.isDirectoryKey]), rv.isDirectory == true {
+                                    let nested = child.appendingPathComponent(filename)
+                                    return FileManager.default.fileExists(atPath: nested.path)
+                                }
+                                return child.lastPathComponent == filename
+                            }
+                            if let found {
+                                let nestedCandidate = found.appendingPathComponent(filename)
+                                candidateURL = FileManager.default.fileExists(atPath: nestedCandidate.path)
+                                    ? nestedCandidate : found
+                            } else {
+                                candidateURL = directChild
+                            }
                         } else {
                             candidateURL = directChild
                         }
