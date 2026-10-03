@@ -21,7 +21,6 @@ struct ImportQueueView: View {
     // Import summary
     @State private var importSummaries: [ImportSummary] = []
     @State private var showImportSummary = false
-    @State private var showingAddSourceDialog = false
 
     var body: some View {
         NavigationStack {
@@ -201,7 +200,7 @@ struct ImportQueueView: View {
     // MARK: Shared Buttons
 
     private var addFilesButton: some View {
-        Button(action: { showingAddSourceDialog = true }) {
+        Button(action: addFiles) {
             HStack(spacing: 8) {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 16, weight: .semibold))
@@ -215,15 +214,6 @@ struct ImportQueueView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .disabled(queue.isStagingFiles)
-        .confirmationDialog("Import Comics to Device", isPresented: $showingAddSourceDialog, titleVisibility: .visible) {
-            Button("Add Entire Folder") {
-                addFolder()
-            }
-            Button("Add Specific Comic Files") {
-                addFiles()
-            }
-            Button("Cancel", role: .cancel) {}
-        }
     }
 
     // MARK: - Natural Duplicate Toast
@@ -283,16 +273,9 @@ struct ImportQueueView: View {
 
     // MARK: Actions
 
-    private func addFolder() {
-        queue.isStagingFiles = true
-        ImportCoordinator.present(type: .folder) { urls in
-            processImportedURLs(urls)
-        }
-    }
-
     private func addFiles() {
         queue.isStagingFiles = true
-        ImportCoordinator.present(type: .files) { urls in
+        ImportCoordinator.present(type: .unified) { urls in
             processImportedURLs(urls)
         }
     }
