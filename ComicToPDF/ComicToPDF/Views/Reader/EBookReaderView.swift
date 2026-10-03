@@ -1202,8 +1202,14 @@ struct EBookReaderView: View {
         }
 
         // Linked Library: resolve security-scoped URL.
+        // ── iOS Security-Scoped Resource Invariant ─────────────────────────────
+        // On iOS, startAccessingSecurityScopedResource() grants are per-thread.
+        // Task.detached creates a new thread where the parent's grant is NOT
+        // inherited. We must pass bookmark data into the task and re-resolve
+        // there to guarantee the kernel allows file I/O.
+        // ─────────────────────────────────────────────────────────────────────
         var targetURL: URL = fileURL
-        var accessedURL: URL? = nil
+        var linkedBookmarkData: Data? = nil  // Stored for re-entry inside Task.detached
 
         if let pdf = pdf {
             if case .cloud = pdf.sourceMode {
@@ -1217,24 +1223,44 @@ struct EBookReaderView: View {
                     self.isLoading = false
                     return
                 }
-            } else if case .linked = pdf.sourceMode {
+            } else if case .linked(let bookmarkData) = pdf.sourceMode {
+                // Resolve on the current task (MainActor context) to get the scoped URL.
+                // Store bookmark data so Task.detached can re-enter scope on its own thread.
                 if let access = try? BookmarkResolver.shared.resolveAccess(for: pdf) {
                     targetURL = access.fileURL
-                    if let scope = access.securityScopeURL {
-                        accessedURL = scope
-                    }
+                    linkedBookmarkData = bookmarkData
+                    // Stop the access from resolveAccess immediately — we'll re-enter
+                    // scope inside the detached unzip task using the bookmark data.
+                    access.stopAccess()
                 }
             }
         }
 
         let sourceURL = targetURL
 
-        // Parse metadata (streaming OPF, no full unzip)
+        // For linked external drive files, keep the root scope active for the
+        // duration of EBookParser.parse and the mtime query. EBookParser internally
+        // calls startAccessingSecurityScopedResource on sourceURL, which may fail
+        // if sourceURL is not the bookmark root. Re-entering root scope here
+        // ensures the child file read succeeds on all drive types (ExFAT, SMB, etc).
+        var parseAccessRoot: URL? = nil
+        var parseDidAccess = false
+        if let bm = linkedBookmarkData,
+           let root = try? BookmarkResolver.shared.resolve(bm) {
+            parseDidAccess = root.startAccessingSecurityScopedResource()
+            if parseDidAccess { parseAccessRoot = root }
+        }
+
+        // Parse metadata (streaming OPF, no full unzip).
         let parsed = await EBookParser.shared.parse(epub: sourceURL)
 
         // Unzip for content serving (WKWebView needs local file access)
         // Deterministic cache key: bookIdentifier + mtime → same book reopens instantly across launches
         let mtime = (try? sourceURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+
+        // Release scope from parse context before passing to detached task
+        if parseDidAccess { parseAccessRoot?.stopAccessingSecurityScopedResource() }
+
         let mtimeEpoch = Int(mtime.timeIntervalSince1970)
         let cacheKey = "\(bookIdentifier)_\(mtimeEpoch)"
         let dest = FileManager.default.temporaryDirectory.appendingPathComponent("EBook_\(cacheKey)")
@@ -1242,21 +1268,30 @@ struct EBookReaderView: View {
         do {
             if !FileManager.default.fileExists(atPath: dest.path) {
                 let destination = dest
+                let capturedBookmarkData = linkedBookmarkData
                 try await Task.detached(priority: .userInitiated) {
+                    // Re-enter scope on THIS thread if this is a linked external drive file.
+                    // iOS security scope grants are NOT propagated across Task.detached threads.
+                    var scopedRoot: URL? = nil
+                    var didAccessRoot = false
+                    if let bm = capturedBookmarkData,
+                       let root = try? BookmarkResolver.shared.resolve(bm) {
+                        didAccessRoot = root.startAccessingSecurityScopedResource()
+                        if didAccessRoot { scopedRoot = root }
+                    }
+                    defer {
+                        if didAccessRoot { scopedRoot?.stopAccessingSecurityScopedResource() }
+                    }
                     try Self.unzipBook(from: sourceURL, to: destination)
                 }.value
             }
         } catch {
-            accessedURL?.stopAccessingSecurityScopedResource()
             let report = DocumentOpenDiagnostics.logFailure(url: sourceURL, pdf: pdf, error: error, context: "EBookReaderView")
             self.loadDiagnosticReport = report
             self.errorMessage = report.rootCauseDescription
             self.isLoading = false
             return
         }
-
-        // Extraction done, stop security scope
-        accessedURL?.stopAccessingSecurityScopedResource()
 
         self.unzipDir = dest
         if let parsed = parsed, !parsed.spineItems.isEmpty {
