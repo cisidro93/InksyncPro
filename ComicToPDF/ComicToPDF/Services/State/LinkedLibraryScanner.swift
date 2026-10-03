@@ -190,6 +190,10 @@ final class LinkedLibraryScanner: ObservableObject {
                     relativeTo: nil,
                     bookmarkDataIsStale: &isStale
                 )) ?? item.url
+
+                let accessing = fileURL.startAccessingSecurityScopedResource()
+                defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
+
                 var bookmark = item.bookmark
                 if let fresh = try? fileURL.bookmarkData(
                     options: [],
@@ -198,9 +202,6 @@ final class LinkedLibraryScanner: ObservableObject {
                 ) {
                     bookmark = fresh
                 }
-
-                let accessing = fileURL.startAccessingSecurityScopedResource()
-                defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
 
                 if existingPaths.contains(fileURL.path) { continue }
 

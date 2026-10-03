@@ -15,34 +15,39 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
 
     private var didFinishHandling = false
 
-    /// Comprehensive UTTypes matching all supported comic, book, and archive types across
-    /// APFS, HFS+, FAT32, exFAT, and external USB storage volumes.
+    /// Clean, explicit comic/book UTTypes.
+    /// CRITICAL: Contains ONLY concrete file types.
+    /// NEVER include .folder, .directory, public.volume, public.item, or .data here.
     static var supportedFileTypes: [UTType] {
-        var types: [UTType] = [.folder, .directory]
-        if let vol = UTType("public.volume") { types.append(vol) }
-        types.append(contentsOf: [.pdf, .epub, .zip, .archive, .data])
-        if let cbz = UTType(filenameExtension: "cbz") { types.append(cbz) }
-        if let cbr = UTType(filenameExtension: "cbr") { types.append(cbr) }
-        if let cb7 = UTType(filenameExtension: "cb7") { types.append(cb7) }
-        if let cbt = UTType(filenameExtension: "cbt") { types.append(cbt) }
-        if let rar = UTType(filenameExtension: "rar") { types.append(rar) }
+        var types: [UTType] = [
+            .pdf,
+            .zip,
+            UTType(filenameExtension: "epub") ?? .epub,
+            UTType(filenameExtension: "cbz") ?? .zip,
+            UTType(filenameExtension: "cbr") ?? .archive,
+            UTType(filenameExtension: "cb7") ?? .archive,
+            UTType(filenameExtension: "cbt") ?? .archive,
+            UTType(filenameExtension: "rar") ?? .archive,
+            UTType(filenameExtension: "7z") ?? .archive
+        ]
         if let cbzCustom = UTType("com.antigravity.cbz") { types.append(cbzCustom) }
         if let cbrCustom = UTType("com.antigravity.cbr") { types.append(cbrCustom) }
         if let comicZip = UTType("com.macrabbit.comicbookzip") { types.append(comicZip) }
         if let comicRar = UTType("com.macrabbit.comicbookrar") { types.append(comicRar) }
-        return types
+        if let sevenZip = UTType("org.7-zip.7-zip-archive") { types.append(sevenZip) }
+        return types.compactMap { $0 }
     }
 
-    /// Dedicated folder and external volume UTTypes for folder picking.
-    /// Includes public.volume so root of external USB drives is never greyed out on iPadOS.
+    /// Dedicated folder UTTypes for folder picking.
+    /// CRITICAL: Only `.folder` with `asCopy: false` and `allowsMultipleSelection: false`.
+    /// In iOS/iPadOS, adding `public.item` or `public.volume` causes fileproviderd deadlock
+    /// and indefinite spinning of the top-right "Open" button.
     static var supportedFolderTypes: [UTType] {
-        var types: [UTType] = [.folder, .directory]
-        if let vol = UTType("public.volume") { types.append(vol) }
-        if let item = UTType("public.item") { types.append(item) }
-        return types
+        return [.folder]
     }
 
     /// Present the folder picker for external USB drives or directory trees.
+    /// Guarantees immediate "Open" response with zero spinning on iPadOS.
     static func presentFolder(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
         let coordinator = FolderLinkCoordinator()
         coordinator.completion = completion
@@ -58,32 +63,12 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             picker.modalPresentationStyle = .fullScreen
         }
 
-        Logger.shared.log("FolderLinkCoordinator: presenting dedicated folder picker", category: "FolderLink", type: .info)
+        Logger.shared.log("FolderLinkCoordinator: presenting dedicated folder picker (allowsMultipleSelection: false)", category: "FolderLink", type: .info)
         presentSafely(picker)
     }
 
-    /// Unified presentation for external drives: allows picking folders, the drive root, or comic files directly.
-    static func present(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
-        let coordinator = FolderLinkCoordinator()
-        coordinator.completion = completion
-        FolderLinkCoordinator.live = coordinator
-
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedFileTypes, asCopy: false)
-        picker.delegate = coordinator
-        picker.allowsMultipleSelection = true
-        picker.shouldShowFileExtensions = true
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            picker.modalPresentationStyle = .formSheet
-        } else {
-            picker.modalPresentationStyle = .fullScreen
-        }
-
-        Logger.shared.log("FolderLinkCoordinator: presenting unified drive picker", category: "FolderLink", type: .info)
-        presentSafely(picker)
-    }
-
-    /// Present the document picker allowing users to link specific comic/book files directly without copying.
-    /// Supports multi-selection and includes fallback base UTIs for external FAT32/exFAT drives.
+    /// Present the multi-file document picker for linking specific comic/book files directly without copying.
+    /// Supports multi-selection checkmarks and creates persistent bookmarks for each.
     static func presentFiles(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
         let coordinator = FolderLinkCoordinator()
         coordinator.completion = completion
@@ -103,9 +88,35 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         presentSafely(picker)
     }
 
+    /// Present the single-file document picker for instant streaming/reading without copying.
+    /// allowsMultipleSelection = false: single tap selects and opens immediately.
+    static func presentSingleFile(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
+        let coordinator = FolderLinkCoordinator()
+        coordinator.completion = completion
+        FolderLinkCoordinator.live = coordinator
+
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedFileTypes, asCopy: false)
+        picker.delegate = coordinator
+        picker.allowsMultipleSelection = false
+        picker.shouldShowFileExtensions = true
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            picker.modalPresentationStyle = .formSheet
+        } else {
+            picker.modalPresentationStyle = .fullScreen
+        }
+
+        Logger.shared.log("FolderLinkCoordinator: presenting direct single-file picker for instant streaming", category: "FolderLink", type: .info)
+        presentSafely(picker)
+    }
+
+    /// Legacy fallback: defaults to dedicated folder picking.
+    static func present(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
+        presentFolder(completion: completion)
+    }
+
     // MARK: - UIDocumentPickerDelegate
 
-    /// Single-URL callback required by iPadOS when allowsMultipleSelection = false and a folder is picked.
+    /// Single-URL callback required by iPadOS when allowsMultipleSelection = false.
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
         handlePickedURLs([url], from: controller)
     }
@@ -118,14 +129,13 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         guard !didFinishHandling else { return }
         didFinishHandling = true
 
+        // Dismiss picker immediately first.
+        // CRITICAL: DO NOT nest result processing inside the completion handler of controller.dismiss(animated:completion:).
+        // On iPadOS, UIKit silently drops dismiss completions when the remote view service is already transitioning out.
+        controller.dismiss(animated: true)
+
         guard !urls.isEmpty else {
-            if controller.isBeingDismissed || controller.presentingViewController == nil {
-                finish(with: [])
-            } else {
-                controller.dismiss(animated: true) { [weak self] in
-                    self?.finish(with: [])
-                }
-            }
+            finish(with: [])
             return
         }
         Logger.shared.log("FolderLinkCoordinator: user picked \(urls.count) item(s): \(urls.map { $0.lastPathComponent }.joined(separator: ", "))", category: "FolderLink", type: .success)
@@ -170,12 +180,9 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         }
 
         let capturedResults = results
-        if controller.isBeingDismissed || controller.presentingViewController == nil {
-            self.finish(with: capturedResults)
-        } else {
-            controller.dismiss(animated: true) { [weak self] in
-                self?.finish(with: capturedResults)
-            }
+        // Dispatch completion asynchronously on MainActor, guaranteeing execution
+        Task { @MainActor [weak self] in
+            self?.finish(with: capturedResults)
         }
     }
 
@@ -183,12 +190,9 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         guard !didFinishHandling else { return }
         didFinishHandling = true
         Logger.shared.log("FolderLinkCoordinator: user cancelled picker", category: "FolderLink", type: .info)
-        if controller.isBeingDismissed || controller.presentingViewController == nil {
-            finish(with: [])
-        } else {
-            controller.dismiss(animated: true) { [weak self] in
-                self?.finish(with: [])
-            }
+        controller.dismiss(animated: true)
+        Task { @MainActor [weak self] in
+            self?.finish(with: [])
         }
     }
 
@@ -207,41 +211,29 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
-        if let presented = rootVC.presentedViewController {
-            if presented.isBeingDismissed {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    if let safeTop = topViewController() {
-                        safeTop.present(picker, animated: true)
-                    } else {
-                        live?.finish(with: [])
-                    }
+        if rootVC.isBeingDismissed {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                if let safeTop = topViewController() {
+                    safeTop.present(picker, animated: true)
+                } else {
+                    live?.finish(with: [])
                 }
-                return
-            } else {
-                guard presented.view.window != nil else {
-                    presented.dismiss(animated: false) {
-                        DispatchQueue.main.async {
-                            if let safeTop = topViewController() {
-                                safeTop.present(picker, animated: true)
-                            } else {
-                                rootVC.present(picker, animated: true)
-                            }
-                        }
-                    }
-                    return
-                }
-                presented.present(picker, animated: true)
-                return
             }
+            return
         }
+
         rootVC.present(picker, animated: true)
     }
 
     private static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .filter { $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive }
-        guard let windowScene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else { return nil }
+        var windowScene: UIWindowScene? = nil
+        if let active = scenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
+            windowScene = active
+        } else if let first = scenes.first as? UIWindowScene {
+            windowScene = first
+        }
+        guard let windowScene = windowScene else { return nil }
 
         let candidateWindows = windowScene.windows.filter { window in
             let desc = String(describing: type(of: window))
@@ -249,7 +241,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         }
         let keyWindow = candidateWindows.first(where: { $0.isKeyWindow }) ?? candidateWindows.first ?? windowScene.windows.first
         guard var top = keyWindow?.rootViewController else { return nil }
-        
+
         while let presented = top.presentedViewController, !presented.isBeingDismissed {
             top = presented
         }

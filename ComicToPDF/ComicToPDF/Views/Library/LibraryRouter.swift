@@ -25,6 +25,7 @@ enum LibrarySheetDestination: Identifiable {
     case volumeStudio(existingOmnibus: VirtualOmnibus? = nil, initialFileIDs: [UUID] = [], suggestedName: String = "", parentSeriesID: String? = nil, initialMode: VolumeStudioView.VolumeType = .virtual)
     case controlCenter
     case whatsNew
+    case linkedDrives
     case opdsBrowser
     case shortcutsCheatSheet
     
@@ -34,6 +35,7 @@ enum LibrarySheetDestination: Identifiable {
         case .wifi: return "wifi"
         case .merge: return "merge"
         case .cloudBrowser: return "cloudBrowser"
+        case .linkedDrives: return "linkedDrives"
         case .opdsBrowser: return "opdsBrowser"
         case .shortcutsCheatSheet: return "shortcutsCheatSheet"
         case .cloudSync(let p): return "cloudSync_\(p.id)"

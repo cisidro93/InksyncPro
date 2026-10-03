@@ -126,6 +126,17 @@ struct LibraryControlCenterView: View {
                                     transitionToSheet(.opdsBrowser)
                                 }
                             )
+                            
+                            // External Storage
+                            cardButton(
+                                title: "External Storage",
+                                subtitle: settingsManager.linkedDrives.isEmpty ? "USB, SSD & Folders" : "\(settingsManager.linkedDrives.count) drive(s) linked",
+                                icon: "externaldrive.connected.to.line.below.fill",
+                                gradient: Gradient(colors: [Color.inkViolet, Color(hex: "#6d28d9")]),
+                                action: {
+                                    transitionToSheet(.linkedDrives)
+                                }
+                            )
                         }
                         .padding(.horizontal)
                     }
