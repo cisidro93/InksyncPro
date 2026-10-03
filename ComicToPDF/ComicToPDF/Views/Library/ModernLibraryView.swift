@@ -1864,8 +1864,26 @@ struct ModernLibraryView: View {
                         $0.url.path == pickedURL.path ||
                         $0.name == pickedURL.deletingPathExtension().lastPathComponent
                     })
+                    let bookToRead: ConvertedPDF
                     if let target {
-                        self.selectedPDF = target
+                        bookToRead = target
+                    } else {
+                        let stem = pickedURL.deletingPathExtension().lastPathComponent
+                        var fallbackPDF = ConvertedPDF(
+                            name: stem,
+                            url: pickedURL,
+                            pageCount: 0,
+                            fileSize: (try? FileManager.default.attributesOfItem(atPath: pickedURL.path)[.size] as? Int64) ?? 0
+                        )
+                        fallbackPDF.sourceMode = .linked(bookmarkData: fileResults[0].bookmark)
+                        bookToRead = fallbackPDF
+                    }
+                    self.selectedPDF = bookToRead
+                    Task {
+                        try? await Task.sleep(nanoseconds: 150_000_000)
+                        await MainActor.run {
+                            AppRouter.shared.presentFullScreen(.read(bookToRead))
+                        }
                     }
                 }
 

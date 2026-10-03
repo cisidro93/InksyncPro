@@ -40,13 +40,16 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
     }
 
     /// Dedicated folder UTTypes for folder picking.
+    /// CRITICAL: Only `.folder` with `asCopy: false` and `allowsMultipleSelection: false`.
+    /// In iOS/iPadOS, mixing file types with .folder causes fileproviderd deadlock
+    /// and indefinite spinning of the top-right "Open" button.
     static var supportedFolderTypes: [UTType] {
-        return [.folder, .directory]
+        return [.folder]
     }
 
     /// All supported external drive types: folders AND concrete comic/book files.
     static var supportedDriveTypes: [UTType] {
-        var types: [UTType] = [.folder, .directory]
+        var types: [UTType] = [.folder]
         types.append(contentsOf: supportedFileTypes)
         return types
     }
@@ -114,25 +117,42 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         presentSafely(picker)
     }
 
-    /// Unified drive picker allowing selection of either an external folder or comic file(s).
-    /// allowsMultipleSelection = true mirrors ImportCoordinator so files and folders are selectable with checkmarks.
+    /// Unified drive picker: prompts the user to choose between linking an entire folder/drive
+    /// or selecting specific comic files to stream, then routes to the dedicated native picker.
+    /// This completely avoids iOS UIKit's fatal deadlock where mixing folder and file types in a
+    /// single asCopy: false picker causes fileproviderd to spin infinitely on "Open".
     static func present(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
-        let coordinator = FolderLinkCoordinator()
-        coordinator.completion = completion
-        FolderLinkCoordinator.live = coordinator
-
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedDriveTypes, asCopy: false)
-        picker.delegate = coordinator
-        picker.allowsMultipleSelection = true
-        picker.shouldShowFileExtensions = true
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            picker.modalPresentationStyle = .formSheet
-        } else {
-            picker.modalPresentationStyle = .fullScreen
+        guard let rootVC = topViewController() else {
+            completion([])
+            return
         }
 
-        Logger.shared.log("FolderLinkCoordinator: presenting unified drive picker (folder or file, allowsMultipleSelection: true)", category: "FolderLink", type: .info)
-        presentSafely(picker)
+        let alert = UIAlertController(
+            title: "Link External Storage",
+            message: "Choose what you want to link from your drive:",
+            preferredStyle: .actionSheet
+        )
+
+        alert.addAction(UIAlertAction(title: "Link Entire Folder / Drive", style: .default) { _ in
+            presentFolder(completion: completion)
+        })
+
+        alert.addAction(UIAlertAction(title: "Stream / Link Comic Files", style: .default) { _ in
+            presentFiles(completion: completion)
+        })
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            completion([])
+        })
+
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = rootVC.view
+            popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
+            popover.permittedArrowDirections = []
+        }
+
+        Logger.shared.log("FolderLinkCoordinator: presenting external storage option sheet", category: "FolderLink", type: .info)
+        rootVC.present(alert, animated: true)
     }
 
     // MARK: - UIDocumentPickerDelegate
