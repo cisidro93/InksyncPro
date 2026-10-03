@@ -543,6 +543,29 @@ struct ProPDFReflowReaderView: View {
         case .highlight: annKind = (note != nil) ? .note : .highlight
         }
 
+        if var active = activeHighlightToEdit {
+            active.colorHex = colorHex
+            active.kind = annKind
+            active.modifiedAt = Date()
+            if let note = note {
+                active.noteText = note
+            }
+            if let s = symbol {
+                active.marginaliaSymbolRaw = s
+            }
+            AnnotationStore.shared.update(active)
+
+            let js = "if (window.updateInksyncHighlightColor) { window.updateInksyncHighlightColor('\(active.id.uuidString)', '\(colorHex)'); }"
+            webViewRef?.evaluateJavaScript(js)
+
+            HapticEngine.selection()
+            withAnimation(.easeInOut(duration: 0.18)) {
+                selectedTextForHUD = nil
+                activeHighlightToEdit = nil
+            }
+            return
+        }
+
         var annotation = Annotation(
             id: UUID(uuidString: id) ?? UUID(),
             pdfID: pdf.id,
@@ -594,6 +617,13 @@ struct ProPDFReflowReaderView: View {
             AnnotationStore.shared.delete(id: match.id, pdfID: pdf.id)
             let js = "if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(match.id.uuidString)'); }"
             webViewRef?.evaluateJavaScript(js)
+        } else {
+            let safeText = text
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "`", with: "\\`")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: " ")
+            webViewRef?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight(`\(safeText)`); }")
         }
         withAnimation(.easeInOut(duration: 0.18)) {
             selectedTextForHUD = nil
@@ -622,6 +652,7 @@ struct ProPDFReflowReaderView: View {
                     ProPDFTextSelectionHUD(
                         selectedText: selectedText,
                         pageIndex: currentPageIndex,
+                        initialColor: activeHighlightToEdit.flatMap { PDFHighlightColor.from(hex: $0.colorHex ?? "") } ?? prefs.defaultHighlightColor,
                         onHighlight: { color in
                             prefs.defaultHighlightColor = color
                             applyReflowHighlight(text: selectedText, colorHex: color.rawValue, style: .highlight)

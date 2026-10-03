@@ -298,10 +298,7 @@ struct EBookReaderView: View {
         .onChange(of: sleepTimer.didFire) { _, fired in
             if fired { if let onExit = onExit { onExit() } else { dismiss() } }
         }
-        // FIX 1+2: Colour picker popover for EPUB highlights
-        .popover(item: $activeHighlightToEdit) { annotation in
-            highlightQuickPopover(for: annotation)
-        }
+        // FIX 1+2: Clean highlight editing via unified floating ProPDFTextSelectionHUD
         .sheet(item: $annotationForFullEdit) { annotation in
             AnnotationEditSheet(annotation: annotation)
                 .presentationDetents([.medium, .large])
@@ -1469,6 +1466,7 @@ struct EBookReaderView: View {
                     ProPDFTextSelectionHUD(
                         selectedText: selectedText,
                         pageIndex: currentIndex,
+                        initialColor: activeHighlightToEdit.flatMap { PDFHighlightColor.from(hex: $0.colorHex ?? "") } ?? EBookPreferences.shared.defaultHighlightColor,
                         onHighlight: { color in
                             EBookPreferences.shared.defaultHighlightColor = color
                             applyHighlight(text: selectedText, colorHex: color.rawValue, symbol: nil, style: .highlight)
@@ -1939,6 +1937,26 @@ struct EBookReaderView: View {
             }
         }
 
+        if let active = activeHighlightToEdit {
+            updateHighlightColor(active, colorHex: colorHex)
+            if let note = note {
+                active.noteText = note
+                active.modifiedAt = Date()
+                try? modelContext.save()
+            }
+            if let symbol = symbol {
+                active.marginaliaSymbolRaw = symbol
+                active.modifiedAt = Date()
+                try? modelContext.save()
+            }
+            showToastMessage("Highlight Updated")
+            withAnimation(.easeInOut(duration: 0.18)) {
+                activeHighlightToEdit = nil
+                selectedTextForHUD = nil
+            }
+            return
+        }
+
         let annKind: Annotation.AnnotationKind
         let toastTitle: String
         if note != nil {
@@ -2020,6 +2038,10 @@ struct EBookReaderView: View {
             let idStr = match.id.uuidString
             activeWV?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight('\(idStr)'); }")
             AnnotationStore.shared.delete(id: match.id, pdfID: p.id)
+            let matchID = match.id
+            if let sdMatch = try? modelContext.fetch(FetchDescriptor<SDAnnotation>(predicate: #Predicate { $0.id == matchID })).first {
+                modelContext.delete(sdMatch)
+            }
         }
         if matches.isEmpty {
             activeWV?.evaluateJavaScript("if (window.removeInksyncHighlight) { window.removeInksyncHighlight(`\(safeText)`); }")

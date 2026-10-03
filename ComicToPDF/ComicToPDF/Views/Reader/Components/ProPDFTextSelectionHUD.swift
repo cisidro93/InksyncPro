@@ -106,6 +106,7 @@ struct ProPDFTextSelectionHUD: View {
     init(
         selectedText: String,
         pageIndex: Int,
+        initialColor: PDFHighlightColor? = nil,
         onHighlight: @escaping (PDFHighlightColor) -> Void,
         onMarkup: ((PDFHighlightColor, AnnotationMarkupStyle) -> Void)? = nil,
         onUnhighlight: (() -> Void)? = nil,
@@ -122,6 +123,7 @@ struct ProPDFTextSelectionHUD: View {
     ) {
         self.selectedText = selectedText
         self.pageIndex = pageIndex
+        self._activeColor = State(initialValue: initialColor ?? EBookPreferences.shared.defaultHighlightColor)
         self.onHighlight = onHighlight
         self.onMarkup = onMarkup
         self.onUnhighlight = onUnhighlight
@@ -141,7 +143,7 @@ struct ProPDFTextSelectionHUD: View {
     @State private var noteText = ""
     @State private var showingMorePopover = false
     @State private var selectedMarkupStyle: AnnotationMarkupStyle = .highlight
-    @State private var activeColor: PDFHighlightColor = EBookPreferences.shared.defaultHighlightColor
+    @State private var activeColor: PDFHighlightColor
 
     private let marginaliaSymbols = [
         (symbol: "💡", label: "Thesis / Core Claim", shortLabel: "Thesis"),

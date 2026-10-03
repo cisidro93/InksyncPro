@@ -293,6 +293,8 @@ struct UnifiedReaderView: View {
                     let maxW = max(280, min(newWidth * 0.70, newWidth - 280))
                     if notebookWidth > maxW {
                         notebookWidth = maxW
+                    } else if notebookWidth < 280 {
+                        notebookWidth = min(380, maxW)
                     }
                 }
                 .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showNotebookPanel)
@@ -448,7 +450,15 @@ struct UnifiedReaderView: View {
                     
                     notebookWidth = proposed
                 }
-                .onEnded { _ in
+                .onEnded { value in
+                    let dismissDelta = (placement == .right) ? value.translation.width : -value.translation.width
+                    let dismissVelocity = (placement == .right) ? value.predictedEndTranslation.width : -value.predictedEndTranslation.width
+                    if (dismissDelta > 80 || dismissVelocity > 140) && notebookWidth <= 320 {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            showNotebookPanel = false
+                        }
+                        HapticEngine.medium()
+                    }
                     dragInitialWidth = nil
                     isDraggingDivider = false
                 }
@@ -637,7 +647,7 @@ private struct UnifiedReaderKeyboardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .readerKeyboardShortcuts(
-                isEditingText: showNotebookPanel && UIResponder.isTextInputActive,
+                isEditingText: UIResponder.isTextInputActive,
                 onNextPage: {
                     NotificationCenter.default.post(name: NSNotification.Name("ReaderAdvancePageForward"), object: nil)
                 },

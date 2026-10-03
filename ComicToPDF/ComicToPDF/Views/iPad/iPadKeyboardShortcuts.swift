@@ -48,8 +48,20 @@ struct iPadKeyboardShortcuts: ViewModifier {
                         .keyboardShortcut("2", modifiers: .command)
                     Button("") { selectedTab = 2 }
                         .keyboardShortcut("3", modifiers: .command)
+                    Button("") { selectedTab = 3 }
+                        .keyboardShortcut("4", modifiers: .command)
                     Button("") { showImport = true }
                         .keyboardShortcut("o", modifiers: .command) // ⌘O = Open file
+                    Button("") { showingSettingsInspector = true }
+                        .keyboardShortcut(",", modifiers: .command) // ⌘, = Settings Inspector
+                    Button("") {
+                        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.focusSearch"), object: nil)
+                    }
+                    .keyboardShortcut("f", modifiers: .command) // ⌘F = Focus Search
+                    Button("") {
+                        NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.newNote"), object: nil)
+                    }
+                    .keyboardShortcut("n", modifiers: [.command]) // ⌘N = New Note / Notebook
                     Button("") {
                         handleGlobalDismissal()
                     }

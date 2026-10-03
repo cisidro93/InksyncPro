@@ -1500,22 +1500,22 @@ extension EBookPageCurlReader {
                     return
                 }
                 if res.contains("\"highlight\"") || res == "highlight" {
-                    if self.parent.isPencilMode {
-                        if let data = res.data(using: .utf8),
-                           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
-                            let id = obj["id"] ?? ""
-                            let text = obj["text"] ?? ""
-                            let target = !id.isEmpty ? id : text
-                            if !target.isEmpty {
-                                self.parent.onHighlightTapped?(target)
-                                HapticEngine.selection()
-                                return
-                            }
+                    if let data = res.data(using: .utf8),
+                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+                        let id = obj["id"] ?? ""
+                        let text = obj["text"] ?? ""
+                        let target = !id.isEmpty ? id : text
+                        if !target.isEmpty {
+                            self.parent.onHighlightTapped?(target)
+                            HapticEngine.selection()
+                            return
                         }
+                    } else {
+                        self.parent.onHighlightTapped?("")
+                        HapticEngine.selection()
                         return
                     }
-                    // In Pure Reading Mode (!isPencilMode): highlights never hijack navigation!
-                    // Fall through to performTapZoneAction!
+                    return
                 } else if res == "link" || res == "footnote" {
                     // Touched a link or interactive element; allow native action to proceed
                     return
@@ -2774,7 +2774,6 @@ extension EBookPageCurlReader {
             // Passive selection observer for SwiftUI context HUD
 
             document.addEventListener('click', function(e) {
-                if (!window.__inksync_is_pencil_mode) return;
                 var mark = e.target.closest ? e.target.closest('mark.inksync-highlight') : null;
                 if (mark) {
                     var id = mark.getAttribute('data-id') || '';

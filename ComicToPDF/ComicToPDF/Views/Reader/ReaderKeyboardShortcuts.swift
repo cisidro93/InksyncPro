@@ -250,20 +250,23 @@ extension UIResponder {
             return cached.result
         }
 
-        guard let keyWindow = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .flatMap({ $0.windows })
-            .first(where: { $0.isKeyWindow }) else {
-            cachedTextInputActive = (false, Date())
-            return false
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        for scene in scenes {
+            for window in scene.windows {
+                if let responder = window.findActiveFirstResponder() {
+                    let isText = responder is UITextView ||
+                                 responder is UITextField ||
+                                 responder is UISearchBar ||
+                                 responder.conforms(to: UITextInput.self)
+                    if isText {
+                        cachedTextInputActive = (true, Date())
+                        return true
+                    }
+                }
+            }
         }
-        guard let responder = keyWindow.findActiveFirstResponder() else {
-            cachedTextInputActive = (false, Date())
-            return false
-        }
-        let result = responder is UITextView || responder is UITextField || responder is UISearchBar
-        cachedTextInputActive = (result, Date())
-        return result
+        cachedTextInputActive = (false, Date())
+        return false
     }
 }
 
