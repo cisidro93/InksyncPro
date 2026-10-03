@@ -1873,7 +1873,8 @@ struct ModernLibraryView: View {
                             name: stem,
                             url: pickedURL,
                             pageCount: 0,
-                            fileSize: (try? FileManager.default.attributesOfItem(atPath: pickedURL.path)[.size] as? Int64) ?? 0
+                            fileSize: (try? FileManager.default.attributesOfItem(atPath: pickedURL.path)[.size] as? Int64) ?? 0,
+                            metadata: PDFMetadata(title: stem)
                         )
                         fallbackPDF.sourceMode = .linked(bookmarkData: fileResults[0].bookmark)
                         bookToRead = fallbackPDF
