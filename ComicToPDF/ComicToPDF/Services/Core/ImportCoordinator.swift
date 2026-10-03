@@ -50,24 +50,53 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             supportedTypes = [.content]
         case .folder:
             supportedTypes = [.folder, .directory]
-        case .files, .unified:
-            supportedTypes = FolderLinkCoordinator.supportedFileTypes
+        case .files:
+            supportedTypes = [
+                .pdf, .zip,
+                UTType(filenameExtension: "epub") ?? .epub,
+                UTType(filenameExtension: "cbz") ?? .zip,
+                UTType(filenameExtension: "cbr") ?? .archive,
+                UTType(filenameExtension: "cb7") ?? .archive,
+                UTType(filenameExtension: "cbt") ?? .archive,
+                UTType(filenameExtension: "rar") ?? .archive,
+                UTType(filenameExtension: "7z") ?? .archive
+            ].compactMap { $0 }
+        default:
+            // Unified Legacy Forward-Port
+            supportedTypes = [
+                .pdf, .zip, .folder, .directory,
+                UTType(filenameExtension: "epub") ?? .epub,
+                UTType(filenameExtension: "cbz") ?? .zip,
+                UTType(filenameExtension: "cbr") ?? .archive,
+                UTType(filenameExtension: "cb7") ?? .archive,
+                UTType(filenameExtension: "cbt") ?? .archive,
+                UTType(filenameExtension: "rar") ?? .archive,
+                UTType(filenameExtension: "7z") ?? .archive
+            ].compactMap { $0 }
         }
 
         let picker: UIDocumentPickerViewController
 
-        if type == .folder {
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .directory], asCopy: false)
+        switch type {
+        case .folder:
+            // Point of truth: asCopy: false and allowsMultipleSelection: false.
+            // In iOS, setting allowsMultipleSelection = false for directories enables the
+            // top-right "Open" button to target the active directory itself, returning immediately
+            // with zero spinning circle or fileproviderd deadlock on both iPad and iPhone.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
             picker.allowsMultipleSelection = false
-        } else if type == .json || type == .smartList {
+        case .files:
+            // Standalone files picker uses asCopy: true and allowsMultipleSelection: true
+            // so individual comic files can be multi-selected with selection checkmarks.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
+            picker.allowsMultipleSelection = true
+        case .unified:
+            // Unified Picker handles BOTH parent folders AND individual comic files simultaneously.
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
+            picker.allowsMultipleSelection = true
+        case .json, .smartList:
             picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
             picker.allowsMultipleSelection = false
-        } else {
-            // For files and unified: asCopy: false prevents remote File Provider XPC timeouts
-            // when accessing large files from external USB drives, and lets our background
-            // parallel staging task copy them reliably.
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: false)
-            picker.allowsMultipleSelection = true
         }
 
         picker.delegate = coordinator
@@ -95,19 +124,34 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             return
         }
 
+        // Synchronously capture security scope on main thread BEFORE dismissal or async dispatch
+        var capturedSecured: [URL] = []
+        for url in urls {
+            if url.startAccessingSecurityScopedResource() {
+                capturedSecured.append(url)
+            }
+        }
+        let securedURLs = capturedSecured
+
         let type = self.currentType
 
         // Dismiss picker immediately first
         controller.dismiss(animated: true)
 
         let stagingTask = Task.detached(priority: .userInitiated) { () -> [URL] in
+            defer {
+                for url in securedURLs {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
             if type == .json || type == .smartList {
                 return urls
             }
 
             // --- Parallel Staging: Phase 1 enumerate, Phase 2 concurrent copy ---
             let fm = FileManager.default
-            let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cbt", "zip", "rar"]
+            let allowedExts: Set<String> = ["pdf", "epub", "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z"]
 
             let stagingDir = fm.temporaryDirectory.appendingPathComponent("InksyncStaging_\(UUID().uuidString)")
             try? fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
@@ -121,9 +165,6 @@ final class ImportCoordinator: NSObject, UIDocumentPickerDelegate {
             var seenInBatch = Set<String>()
 
             for url in urls {
-                let accessing = url.startAccessingSecurityScopedResource()
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-
                 var isDirectory: ObjCBool = false
                 if fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
                     // Recursively spider — metadata-only, no I/O
