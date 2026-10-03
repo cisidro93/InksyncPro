@@ -117,6 +117,7 @@ class AppSettingsManager: ObservableObject {
         self.sendHistory = config.history
         self.watchedFolders = config.watchedFolders ?? []
         self.linkedDrives = config.linkedDrives ?? []
+        BookmarkResolver.registeredDriveBookmarks = self.linkedDrives.map(\.volumeBookmarkData)
         
         // Start drive monitoring if linked drives exist
         DriveMonitor.shared.startMonitoring(drives: self.linkedDrives)
@@ -165,12 +166,14 @@ class AppSettingsManager: ObservableObject {
     // MARK: - Linked Drive Mutators
     func addLinkedDrive(_ entry: LinkedDriveEntry) {
         linkedDrives.append(entry)
+        BookmarkResolver.registerDriveBookmark(entry.volumeBookmarkData)
         DriveMonitor.shared.startMonitoring(drives: linkedDrives)
         save()
     }
     
     func removeLinkedDrive(_ entry: LinkedDriveEntry) {
         linkedDrives.removeAll { $0.id == entry.id }
+        BookmarkResolver.registeredDriveBookmarks = linkedDrives.map(\.volumeBookmarkData)
         DriveMonitor.shared.startMonitoring(drives: linkedDrives)
         save()
     }
@@ -178,6 +181,7 @@ class AppSettingsManager: ObservableObject {
     func updateLinkedDrive(_ entry: LinkedDriveEntry) {
         if let idx = linkedDrives.firstIndex(where: { $0.id == entry.id }) {
             linkedDrives[idx] = entry
+            BookmarkResolver.registerDriveBookmark(entry.volumeBookmarkData)
             save()
         }
     }

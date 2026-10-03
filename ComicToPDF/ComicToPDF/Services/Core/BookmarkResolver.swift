@@ -90,89 +90,149 @@ public struct ResolvedAccess: Sendable {
     }
 }
 
+    // MARK: - Registered Drive Bookmarks Cache
+    // Thread-safe registry of active linked drive volume bookmarks for instant fallback
+    // and parent folder security scope recovery.
+    private static let driveBookmarksLock = NSLock()
+    private static var _registeredDriveBookmarks: [Data] = []
+
+    public static var registeredDriveBookmarks: [Data] {
+        get {
+            driveBookmarksLock.lock()
+            defer { driveBookmarksLock.unlock() }
+            return _registeredDriveBookmarks
+        }
+        set {
+            driveBookmarksLock.lock()
+            _registeredDriveBookmarks = newValue
+            driveBookmarksLock.unlock()
+        }
+    }
+
+    public static func registerDriveBookmark(_ data: Data) {
+        driveBookmarksLock.lock()
+        if !_registeredDriveBookmarks.contains(data) {
+            _registeredDriveBookmarks.append(data)
+        }
+        driveBookmarksLock.unlock()
+    }
+
+    /// Reconstructs or locates a child file relative to a live, security-scoped root folder.
+    private nonisolated static func findChild(named filename: String, in root: URL, originalURL: URL) -> URL? {
+        let fm = FileManager.default
+        // Strategy 1: direct child by filename (most common case)
+        let directChild = root.appendingPathComponent(filename)
+        if fm.fileExists(atPath: directChild.path) {
+            return directChild
+        }
+
+        // Strategy 2: reconstruct relative subpath from originalURL components
+        // by finding the first path component that matches the root name.
+        let rootName = root.lastPathComponent
+        let components = originalURL.pathComponents
+        if let rootIdx = components.lastIndex(of: rootName), rootIdx + 1 < components.count {
+            let subpath = components[(rootIdx + 1)...].joined(separator: "/")
+            let subURL = root.appendingPathComponent(subpath)
+            if fm.fileExists(atPath: subURL.path) {
+                return subURL
+            }
+        }
+
+        // Strategy 3: shallow search within immediate subfolders (one level deep)
+        if let contents = try? fm.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for child in contents {
+                if let rv = try? child.resourceValues(forKeys: [.isDirectoryKey]), rv.isDirectory == true {
+                    let nested = child.appendingPathComponent(filename)
+                    if fm.fileExists(atPath: nested.path) {
+                        return nested
+                    }
+                }
+                if child.lastPathComponent == filename && fm.fileExists(atPath: child.path) {
+                    return child
+                }
+            }
+        }
+
+        return nil
+    }
+
     /// Resolves guaranteed filesystem access for a ConvertedPDF, whether local sandbox,
     /// a directly linked file, or a child file inside a linked folder/drive.
     /// Returns a ResolvedAccess holding the true file URL and the security scope root to cleanup.
     nonisolated func resolveAccess(for pdf: ConvertedPDF) throws -> ResolvedAccess {
         if case .linked(let bookmarkData) = pdf.sourceMode {
-            let resolved = try resolve(bookmarkData)
-            let didAccess = resolved.startAccessingSecurityScopedResource()
-            let scopeURL = didAccess ? resolved : nil
+            if let resolved = try? resolve(bookmarkData) {
+                let didAccess = resolved.startAccessingSecurityScopedResource()
+                var isDir: ObjCBool = false
+                let exists = FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDir)
+                let isDirectory = (exists && isDir.boolValue) || resolved.hasDirectoryPath
 
-            var isDir: ObjCBool = false
-            let exists = FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDir)
-            if !exists {
-                if didAccess { resolved.stopAccessingSecurityScopedResource() }
-                Task { @MainActor in
-                    NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.driveDisconnected"), object: pdf)
-                }
-                throw BookmarkError.driveDisconnected
-            }
-            let isDirectory = (exists && isDir.boolValue) || resolved.hasDirectoryPath
-
-            if isDirectory {
-                // ── Folder / Volume link: locate the child file relative to the ──
-                // bookmark-resolved root (which has an active security scope).
-                //
-                // IMPORTANT: On iOS, pdf.url retains the ORIGINAL path from when
-                // the file was first linked (e.g. /private/var/mobile/.../ExFAT/Comics/Batman.cbz).
-                // After a drive remount, that path may be at a new inode/mount point.
-                // We MUST NOT call fileExists on pdf.url.path directly — it bypasses
-                // the security scope and can return stale cached metadata.
-                // Always resolve children relative to `resolved` (the scope root).
-                let candidateURL: URL
-                // Strategy 1: direct child by filename (most common case)
-                let directChild = resolved.appendingPathComponent(pdf.url.lastPathComponent)
-                if FileManager.default.fileExists(atPath: directChild.path) {
-                    candidateURL = directChild
-                } else {
-                    // Strategy 2: reconstruct relative subpath from pdf.url components
-                    // by finding the first path component that matches the resolved root name.
-                    let rootName = resolved.lastPathComponent
-                    let components = pdf.url.pathComponents
-                    if let rootIdx = components.lastIndex(of: rootName), rootIdx + 1 < components.count {
-                        let subpath = components[(rootIdx + 1)...].joined(separator: "/")
-                        let subURL = resolved.appendingPathComponent(subpath)
-                        candidateURL = FileManager.default.fileExists(atPath: subURL.path) ? subURL : directChild
+                if isDirectory && didAccess && exists {
+                    if let candidate = Self.findChild(named: pdf.url.lastPathComponent, in: resolved, originalURL: pdf.url) {
+                        return ResolvedAccess(fileURL: candidate, securityScopeURL: resolved)
                     } else {
-                        // Strategy 3: deep search by filename within one level (handles
-                        // drives that shuffle subdirectory structure between mounts).
-                        let filename = pdf.url.lastPathComponent
-                        let fm = FileManager.default
-                        if let contents = try? fm.contentsOfDirectory(
-                            at: resolved,
-                            includingPropertiesForKeys: [.isDirectoryKey],
-                            options: [.skipsHiddenFiles]
-                        ) {
-                            // Check immediate subfolders (one level deep) for the file
-                            let found = contents.first { child in
-                                if let rv = try? child.resourceValues(forKeys: [.isDirectoryKey]), rv.isDirectory == true {
-                                    let nested = child.appendingPathComponent(filename)
-                                    return FileManager.default.fileExists(atPath: nested.path)
-                                }
-                                return child.lastPathComponent == filename
-                            }
-                            if let found {
-                                let nestedCandidate = found.appendingPathComponent(filename)
-                                candidateURL = FileManager.default.fileExists(atPath: nestedCandidate.path)
-                                    ? nestedCandidate : found
-                            } else {
-                                candidateURL = directChild
-                            }
-                        } else {
-                            candidateURL = directChild
-                        }
+                        let directChild = resolved.appendingPathComponent(pdf.url.lastPathComponent)
+                        return ResolvedAccess(fileURL: directChild, securityScopeURL: resolved)
+                    }
+                } else if !isDirectory && didAccess && exists {
+                    // Direct single file link that acquired security scope successfully
+                    return ResolvedAccess(fileURL: resolved, securityScopeURL: resolved)
+                } else {
+                    if didAccess { resolved.stopAccessingSecurityScopedResource() }
+                }
+            }
+
+            // ── Fallback Recovery: Search registered linked drive volume roots ──
+            // Apple Security-Scoped Directory Architecture:
+            // On iOS/iPadOS, child files inside a picked directory do not have independent
+            // security scope; security scope is granted to the folder picked in UIDocumentPicker.
+            // If the per-file bookmark failed to acquire scope or the mount point shifted,
+            // we resolve access through the active registered drive volume bookmarks.
+            for volumeBM in Self.registeredDriveBookmarks {
+                guard let rootURL = try? resolve(volumeBM) else { continue }
+                guard rootURL.startAccessingSecurityScopedResource() else { continue }
+
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: rootURL.path, isDirectory: &isDir), isDir.boolValue {
+                    if let candidate = Self.findChild(named: pdf.url.lastPathComponent, in: rootURL, originalURL: pdf.url) {
+                        Logger.shared.log("BookmarkResolver: Successfully recovered access via parent volume bookmark '\(rootURL.lastPathComponent)' for '\(pdf.name)'", category: "BookmarkResolver", type: .info)
+                        return ResolvedAccess(fileURL: candidate, securityScopeURL: rootURL)
                     }
                 }
-                return ResolvedAccess(fileURL: candidateURL, securityScopeURL: scopeURL)
-            } else {
-                // Direct single file link
-                return ResolvedAccess(fileURL: resolved, securityScopeURL: scopeURL)
+                rootURL.stopAccessingSecurityScopedResource()
             }
+
+            Task { @MainActor in
+                NotificationCenter.default.post(name: NSNotification.Name("InksyncPro.driveDisconnected"), object: pdf)
+            }
+            throw BookmarkError.driveDisconnected
         }
 
         // Local sandbox document
         let localURL = LibraryFileRecord.resolveSandboxURL(pdf.url.absoluteString)
+        if FileManager.default.fileExists(atPath: localURL.path) {
+            return ResolvedAccess(fileURL: localURL, securityScopeURL: nil)
+        }
+
+        // Fail-safe: Check if an unlinked or migrated item exists on any registered external drive
+        for volumeBM in Self.registeredDriveBookmarks {
+            guard let rootURL = try? resolve(volumeBM) else { continue }
+            guard rootURL.startAccessingSecurityScopedResource() else { continue }
+
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: rootURL.path, isDirectory: &isDir), isDir.boolValue {
+                if let candidate = Self.findChild(named: pdf.url.lastPathComponent, in: rootURL, originalURL: pdf.url) {
+                    Logger.shared.log("BookmarkResolver: Recovered non-linked file '\(pdf.name)' on registered drive '\(rootURL.lastPathComponent)'", category: "BookmarkResolver", type: .info)
+                    return ResolvedAccess(fileURL: candidate, securityScopeURL: rootURL)
+                }
+            }
+            rootURL.stopAccessingSecurityScopedResource()
+        }
+
         return ResolvedAccess(fileURL: localURL, securityScopeURL: nil)
     }
 

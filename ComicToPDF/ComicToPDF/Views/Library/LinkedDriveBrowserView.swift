@@ -353,41 +353,17 @@ struct LinkedDriveBrowserView: View {
         //     where the file's inode may change between unmount cycles.
         // ─────────────────────────────────────────────────────────────────────
         let volumeBookmarkData = driveEntry.volumeBookmarkData
-        if let rootURL = try? BookmarkResolver.shared.resolve(volumeBookmarkData) {
-            let accessing = rootURL.startAccessingSecurityScopedResource()
-            defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
-
-            // Attempt a fresh per-file bookmark while scope is active.
-            // If per-file bookmark creation fails (read-only drive, FAT32, etc.),
-            // fall back to the volume bookmark — resolveAccess() will find the
-            // child by relative path inside the folder.
-            let perFileBM = try? url.bookmarkData(
-                options: [],
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-            tempPDF.sourceMode = .linked(bookmarkData: perFileBM ?? volumeBookmarkData)
-        } else {
-            // Bookmark resolution failed entirely — fall back to volume bookmark
-            // so the reader can at least attempt access.
-            tempPDF.sourceMode = .linked(bookmarkData: volumeBookmarkData)
-        }
+        // Apple Security-Scoped Directory Architecture:
+        // Assigning the parent folder's volumeBookmarkData ensures that BookmarkResolver
+        // activates security scope on the root folder, allowing in-place streaming
+        // of any child file across relaunches without POSIX 257 permission lockouts.
+        tempPDF.sourceMode = .linked(bookmarkData: volumeBookmarkData)
         selectedPDF = tempPDF
     }
 
     private func addToLibrary(_ item: BrowseItem) {
         guard case .file(let url) = item.kind else { return }
         let volumeBookmarkData = driveEntry.volumeBookmarkData
-
-        var perFileBM: Data? = nil
-        if let rootURL = try? BookmarkResolver.shared.resolve(volumeBookmarkData) {
-            let accessing = rootURL.startAccessingSecurityScopedResource()
-            defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
-            perFileBM = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-        }
-
-        // Use per-file bookmark if created; volume bookmark as reliable fallback
-        let bm = perFileBM ?? volumeBookmarkData
 
         let stem = url.deletingPathExtension().lastPathComponent
         let fileSize = item.fileSize
@@ -401,7 +377,7 @@ struct LinkedDriveBrowserView: View {
             fileSize: fileSize,
             metadata: metadata
         )
-        pdf.sourceMode = .linked(bookmarkData: bm)
+        pdf.sourceMode = .linked(bookmarkData: volumeBookmarkData)
 
         guard !conversionManager.convertedPDFs.contains(where: {
             $0.url.lastPathComponent == url.lastPathComponent && $0.isLinked
@@ -416,13 +392,6 @@ struct LinkedDriveBrowserView: View {
         let stem = url.deletingPathExtension().lastPathComponent
         let volumeBookmarkData = driveEntry.volumeBookmarkData
 
-        var perFileBM: Data? = nil
-        if let rootURL = try? BookmarkResolver.shared.resolve(volumeBookmarkData) {
-            let accessing = rootURL.startAccessingSecurityScopedResource()
-            defer { if accessing { rootURL.stopAccessingSecurityScopedResource() } }
-            perFileBM = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-        }
-
         let ext = url.pathExtension.lowercased()
         let type: ContentType = (ext == "epub") ? .book : .comic
         var pdf = ConvertedPDF(
@@ -433,7 +402,7 @@ struct LinkedDriveBrowserView: View {
             metadata: PDFMetadata(title: stem),
             contentType: type
         )
-        pdf.sourceMode = .linked(bookmarkData: perFileBM ?? volumeBookmarkData)
+        pdf.sourceMode = .linked(bookmarkData: volumeBookmarkData)
 
         Task {
             do {

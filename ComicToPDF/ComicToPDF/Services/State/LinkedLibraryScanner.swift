@@ -117,8 +117,8 @@ final class LinkedLibraryScanner: ObservableObject {
                 enumCount += 1
                 if enumCount % 25 == 0 {
                     await Task.yield()
-                    // Cap folder spidering at 10 seconds or largeDriveThreshold files so external drives never hang
-                    if Date().timeIntervalSince(startTime) > 10.0 || collected.count >= LinkedLibraryScanner.largeDriveThreshold {
+                    // Cap folder spidering at 60 seconds or largeDriveThreshold files so external drives never hang
+                    if Date().timeIntervalSince(startTime) > 60.0 || collected.count >= LinkedLibraryScanner.largeDriveThreshold {
                         break
                     }
                 }
@@ -584,13 +584,23 @@ final class LinkedLibraryScanner: ObservableObject {
         progress(0.95, "Linking drive files...")
         guard let manager = conversionManager else { return }
 
+        let folderBookmark = try? targetFolderURL.bookmarkData(
+            options: [],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        if let folderBookmark {
+            BookmarkResolver.registerDriveBookmark(folderBookmark)
+        }
+
         for pair in copiedPairs {
-            // ✅ iOS CORRECT: options: [] for per-file bookmark creation
-            guard let bookmark = try? pair.driveURL.bookmarkData(
+            let perFileBookmark = try? pair.driveURL.bookmarkData(
                 options: [],
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
-            ) else {
+            )
+            let chosenBookmark = folderBookmark ?? perFileBookmark
+            guard let bookmark = chosenBookmark else {
                 Logger.shared.log("LinkedLibraryScanner: Could not bookmark \(pair.driveURL.lastPathComponent) — keeping local copy", category: "Drive", type: .warning)
                 try? FileManager.default.removeItem(at: pair.driveURL)
                 continue
@@ -716,14 +726,6 @@ final class LinkedLibraryScanner: ObservableObject {
                         metadata.issueNumber = parsedTokens.issueNumber
                     }
 
-                    // Create per-file bookmark while access to root directory is active,
-                    // falling back to volume bookmark.
-                    let perFileBookmark = try? fileURL.bookmarkData(
-                        options: [],
-                        includingResourceValuesForKeys: nil,
-                        relativeTo: nil
-                    )
-
                     var pdf = ConvertedPDF(
                         name: stem,
                         url: fileURL,
@@ -731,8 +733,11 @@ final class LinkedLibraryScanner: ObservableObject {
                         fileSize: fileSize,
                         metadata: metadata
                     )
-                    // The volume bookmark grants access to all files in the linked directory
-                    pdf.sourceMode = .linked(bookmarkData: perFileBookmark ?? driveBookmark)
+                    // Apple Security-Scoped Directory Standard:
+                    // On iOS/iPadOS, security scope is granted to the folder root selected in UIDocumentPicker.
+                    // Child files inside that folder inherit access while the parent folder's security scope
+                    // is active. The volume bookmark provides persistent access across app launches.
+                    pdf.sourceMode = .linked(bookmarkData: driveBookmark)
                     tempPDFs.append(pdf)
                 }
                 return tempPDFs

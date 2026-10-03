@@ -1883,7 +1883,9 @@ struct ModernLibraryView: View {
                     Task {
                         try? await Task.sleep(nanoseconds: 150_000_000)
                         await MainActor.run {
-                            AppRouter.shared.presentFullScreen(.read(bookToRead))
+                            if AppRouter.shared.activeFullScreen == nil {
+                                AppRouter.shared.presentFullScreen(.read(bookToRead))
+                            }
                         }
                     }
                 }

@@ -137,7 +137,11 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             presentFolder(completion: completion)
         })
 
-        alert.addAction(UIAlertAction(title: "Stream / Link Comic Files", style: .default) { _ in
+        alert.addAction(UIAlertAction(title: "Stream Single File (Instant 1-Tap Read)", style: .default) { _ in
+            presentSingleFile(completion: completion)
+        })
+
+        alert.addAction(UIAlertAction(title: "Select Multiple Comic Files", style: .default) { _ in
             presentFiles(completion: completion)
         })
 
