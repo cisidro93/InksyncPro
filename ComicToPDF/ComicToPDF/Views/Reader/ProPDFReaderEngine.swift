@@ -4552,7 +4552,7 @@ struct ProPDFViewRepresentable: UIViewRepresentable {
             let autoHighlighterActive = isPad && prefs.applePencilAutoDraw && prefs.applePencilDefaultTool == "highlighter"
 
             let isPenDrawingTool = mode == .write || mode == .eraser
-            let isDrawingMode = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive
+            let isDrawingMode = (parent.isPencilMode && isPenDrawingTool) || inkingState.isColoringModeActive || autoPenActive
             let isCanvasMarkupActive = isDrawingMode
             canvasProvider.isMarkupActive = isCanvasMarkupActive
             if #available(iOS 16.0, *) {

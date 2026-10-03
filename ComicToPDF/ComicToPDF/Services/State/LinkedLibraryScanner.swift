@@ -250,12 +250,12 @@ final class LinkedLibraryScanner: ObservableObject {
 
         // Sync with authoritative LibraryService
         var existingIDs = Set(LibraryService.shared.items.map(\.id))
-        var existingPaths = Set(LibraryService.shared.items.map { $0.url.fastCanonicalPath })
+        var authoritativePaths = Set(LibraryService.shared.items.map { $0.url.fastCanonicalPath })
         for pdf in newPDFs {
             let p = pdf.url.fastCanonicalPath
-            if !existingIDs.contains(pdf.id) && !existingPaths.contains(p) {
+            if !existingIDs.contains(pdf.id) && !authoritativePaths.contains(p) {
                 existingIDs.insert(pdf.id)
-                existingPaths.insert(p)
+                authoritativePaths.insert(p)
                 LibraryService.shared.items.append(pdf)
             }
         }

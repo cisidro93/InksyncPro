@@ -41,11 +41,15 @@ class LibraryPersistenceManager {
     @MainActor
     func saveProgressOnly(updates: [UUID: Int]) {
         guard !updates.isEmpty else { return }
+        var progressList: [(id: UUID, page: Int, progress: ReadingProgress?)] = []
+        for (id, page) in updates {
+            progressList.append((id: id, page: page, progress: ReaderProgressTracker.shared.progress(for: id)))
+        }
         Task.detached(priority: .background) {
-            for (id, page) in updates {
-                try? await LibraryRepository.shared.updateReadingProgress(for: id, lastReadPage: page)
-                if let progress = ReaderProgressTracker.shared.progress(for: id) {
-                    await LibraryDatabaseService.shared.saveProgress(progress, for: id.uuidString)
+            for item in progressList {
+                try? await LibraryRepository.shared.updateReadingProgress(for: item.id, lastReadPage: item.page)
+                if let progress = item.progress {
+                    await LibraryDatabaseService.shared.saveProgress(progress, for: item.id.uuidString)
                 }
             }
         }

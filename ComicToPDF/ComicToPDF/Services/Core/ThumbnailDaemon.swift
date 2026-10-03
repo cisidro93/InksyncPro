@@ -72,7 +72,8 @@ actor ThumbnailDaemon {
 
         // 1. Filter for PDFs missing disk thumbnails without decompressing existing images into RAM
         var missingPDFs: [ConvertedPDF] = []
-        let existingThumbnails = Set(try? FileManager.default.contentsOfDirectory(atPath: cacheDirectory.path) ?? [])
+        let cachedFiles = (try? FileManager.default.contentsOfDirectory(atPath: cacheDirectory.path)) ?? []
+        let existingThumbnails = Set(cachedFiles)
         for pdf in pdfs {
             let filename = "\(pdf.id.uuidString).webp"
             if existingThumbnails.contains(filename) {

@@ -87,10 +87,15 @@ enum DocumentSubtype: String, Codable {
 }
 
 // ✅ Linked Library: Defines whether a file lives on-device or on a linked external drive
-enum SourceMode: Sendable {
+enum SourceMode: Equatable, Sendable {
     case local
     case linked(bookmarkData: Data)
     case cloud(provider: String, remoteID: String)
+    
+    var isLocal: Bool {
+        if case .local = self { return true }
+        return false
+    }
     
     var isLinked: Bool {
         if case .linked = self { return true }

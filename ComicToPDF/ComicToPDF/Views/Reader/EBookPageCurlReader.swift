@@ -1572,9 +1572,9 @@ extension EBookPageCurlReader {
                 
                 // Debounce underlying UIPageViewController sync & GPU snapshotting so rapid key navigation is 100% fluid and responsive
                 turnSyncDebounceTask?.cancel()
-                turnSyncDebounceTask = Task { @MainActor [weak self, weak pvc] in
+                turnSyncDebounceTask = Task { @MainActor [weak self] in
                     try? await Task.sleep(nanoseconds: 280_000_000)
-                    guard !Task.isCancelled, let self = self, let pvc = pvc else { return }
+                    guard !Task.isCancelled, let self = self else { return }
                     let vcs = self.spreadViewControllers(for: nextIndex)
                     self.safeSetViewControllers(vcs, direction: .forward, animated: false)
                     self.precacheAdjacentSnapshots()
@@ -1613,9 +1613,9 @@ extension EBookPageCurlReader {
                 
                 // Debounce underlying UIPageViewController sync & GPU snapshotting so rapid key navigation is 100% fluid and responsive
                 turnSyncDebounceTask?.cancel()
-                turnSyncDebounceTask = Task { @MainActor [weak self, weak pvc] in
+                turnSyncDebounceTask = Task { @MainActor [weak self] in
                     try? await Task.sleep(nanoseconds: 280_000_000)
-                    guard !Task.isCancelled, let self = self, let pvc = pvc else { return }
+                    guard !Task.isCancelled, let self = self else { return }
                     let vcs = self.spreadViewControllers(for: prevIndex)
                     self.safeSetViewControllers(vcs, direction: .reverse, animated: false)
                     self.precacheAdjacentSnapshots()

@@ -358,7 +358,7 @@ actor LibraryModelActor {
         let existingPDFs = try modelContext.fetch(FetchDescriptor<SDConvertedPDF>())
         let pdfDict = Dictionary(grouping: existingPDFs, by: { $0.id }).compactMapValues { $0.first }
         
-        let defaultLocalData = try? JSONEncoder().encode(DocumentSourceMode.local)
+        let defaultLocalData = try? JSONEncoder().encode(SourceMode.local)
         for pdf in pdfs {
             if let existing = pdfDict[pdf.id] {
                 if existing.name != pdf.name { existing.name = pdf.name }
