@@ -58,6 +58,25 @@ enum PDFHighlightColor: String, CaseIterable, Identifiable {
         case .purple: return "Soft Purple"
         }
     }
+
+    static func from(hex: String?) -> PDFHighlightColor? {
+        guard let hex = hex?.trimmingCharacters(in: .whitespacesAndNewlines), !hex.isEmpty else { return nil }
+        let cleanHex = hex.uppercased()
+        if let exact = PDFHighlightColor(rawValue: cleanHex) {
+            return exact
+        }
+        let withHash = cleanHex.hasPrefix("#") ? cleanHex : "#\(cleanHex)"
+        if let match = PDFHighlightColor(rawValue: withHash) {
+            return match
+        }
+        if cleanHex.contains("FFD6") || cleanHex.contains("FFFF00") || cleanHex.contains("YELLOW") { return .yellow }
+        if cleanHex.contains("FF91") || cleanHex.contains("ORANGE") { return .orange }
+        if cleanHex.contains("E676") || cleanHex.contains("GREEN") || cleanHex.contains("00FF00") { return .green }
+        if cleanHex.contains("B6F6") || cleanHex.contains("BLUE") || cleanHex.contains("0000FF") { return .blue }
+        if cleanHex.contains("4081") || cleanHex.contains("PINK") || cleanHex.contains("RED") { return .pink }
+        if cleanHex.contains("88FF") || cleanHex.contains("PURPLE") { return .purple }
+        return nil
+    }
 }
 
 /// Markup style for text annotations (Highlight, Underline, Strikethrough)
