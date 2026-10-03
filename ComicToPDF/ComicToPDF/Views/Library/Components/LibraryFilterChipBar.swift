@@ -32,8 +32,14 @@ struct LibraryFilterChipBar: View {
                         onManageCloud: onManageCloud
                     ) {
                         HapticEngine.selection()
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
-                            selectedFilter = filter
+                        if filter == .onDrive && (counts[.onDrive] == 0 || selectedFilter == .onDrive) {
+                            // User selected the On Drive pill with 0 items or tapped while active:
+                            // Directly activate the native file selector with zero intermediate screens!
+                            onLinkDrive?()
+                        } else {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                                selectedFilter = filter
+                            }
                         }
                     }
                 }

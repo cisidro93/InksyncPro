@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
 
     private static var live: FolderLinkCoordinator?
+    private var picker: UIDocumentPickerViewController?
     /// Called with every picked URL and bookmark. Passes an empty array on cancel.
     private var completion: (@MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void)?
 
@@ -16,8 +17,6 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
     private var didFinishHandling = false
 
     /// Clean, explicit comic/book UTTypes.
-    /// CRITICAL: Contains ONLY concrete file types.
-    /// NEVER include .folder, .directory, public.volume, public.item, or .data here.
     static var supportedFileTypes: [UTType] {
         var types: [UTType] = [
             .pdf,
@@ -30,26 +29,19 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             UTType(filenameExtension: "rar") ?? .archive,
             UTType(filenameExtension: "7z") ?? .archive
         ]
-        if let cbzCustom = UTType("com.antigravity.cbz") { types.append(cbzCustom) }
-        if let cbrCustom = UTType("com.antigravity.cbr") { types.append(cbrCustom) }
-        if let comicZip = UTType("com.macrabbit.comicbookzip") { types.append(comicZip) }
-        if let comicRar = UTType("com.macrabbit.comicbookrar") { types.append(comicRar) }
-        if let sevenZip = UTType("org.7-zip.7-zip-archive") { types.append(sevenZip) }
-        if let archive = UTType.archive as UTType? { types.append(archive) }
         return types.compactMap { $0 }
     }
 
-    /// Dedicated folder UTTypes for folder picking.
-    /// CRITICAL: Only `.folder` with `asCopy: false` and `allowsMultipleSelection: false`.
-    /// In iOS/iPadOS, mixing file types with .folder causes fileproviderd deadlock
-    /// and indefinite spinning of the top-right "Open" button.
+    /// Dedicated folder and directory UTTypes for folder picking.
+    /// CRITICAL: Including both `.folder` and `.directory` ensures external USB drives,
+    /// SD cards, and SMB/Cloud shares match immediately with zero spinning on iPadOS.
     static var supportedFolderTypes: [UTType] {
-        return [.folder]
+        return [.folder, .directory]
     }
 
-    /// All supported external drive types: folders AND concrete comic/book files.
+    /// All supported external drive types: folders, directories, AND concrete comic/book files.
     static var supportedDriveTypes: [UTType] {
-        var types: [UTType] = [.folder]
+        var types: [UTType] = [.folder, .directory]
         types.append(contentsOf: supportedFileTypes)
         return types
     }
@@ -65,6 +57,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         picker.delegate = coordinator
         picker.allowsMultipleSelection = false
         picker.shouldShowFileExtensions = true
+        coordinator.picker = picker
         if UIDevice.current.userInterfaceIdiom == .pad {
             picker.modalPresentationStyle = .formSheet
         } else {
@@ -86,6 +79,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         picker.delegate = coordinator
         picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
+        coordinator.picker = picker
         if UIDevice.current.userInterfaceIdiom == .pad {
             picker.modalPresentationStyle = .formSheet
         } else {
@@ -107,6 +101,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         picker.delegate = coordinator
         picker.allowsMultipleSelection = false
         picker.shouldShowFileExtensions = true
+        coordinator.picker = picker
         if UIDevice.current.userInterfaceIdiom == .pad {
             picker.modalPresentationStyle = .formSheet
         } else {
@@ -117,46 +112,28 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         presentSafely(picker)
     }
 
-    /// Unified drive picker: prompts the user to choose between linking an entire folder/drive
-    /// or selecting specific comic files to stream, then routes to the dedicated native picker.
-    /// This completely avoids iOS UIKit's fatal deadlock where mixing folder and file types in a
-    /// single asCopy: false picker causes fileproviderd to spin infinitely on "Open".
+    /// Direct unified drive picker: immediately activates the native iOS document picker
+    /// to link external USB drives, folders, or comic files with in-place streaming.
+    /// Completely eliminates intermediate sheets, popups, and glassmorphic modal blocks.
     static func present(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
-        guard let rootVC = topViewController() else {
-            completion([])
-            return
+        let coordinator = FolderLinkCoordinator()
+        coordinator.completion = completion
+        FolderLinkCoordinator.live = coordinator
+
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedDriveTypes, asCopy: false)
+        picker.delegate = coordinator
+        picker.allowsMultipleSelection = true
+        picker.shouldShowFileExtensions = true
+        coordinator.picker = picker
+
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            picker.modalPresentationStyle = .formSheet
+        } else {
+            picker.modalPresentationStyle = .fullScreen
         }
 
-        let alert = UIAlertController(
-            title: "Link External Storage",
-            message: "Choose what you want to link from your drive:",
-            preferredStyle: .actionSheet
-        )
-
-        alert.addAction(UIAlertAction(title: "Link Entire Folder / Drive", style: .default) { _ in
-            presentFolder(completion: completion)
-        })
-
-        alert.addAction(UIAlertAction(title: "Stream Single File (Instant 1-Tap Read)", style: .default) { _ in
-            presentSingleFile(completion: completion)
-        })
-
-        alert.addAction(UIAlertAction(title: "Select Multiple Comic Files", style: .default) { _ in
-            presentFiles(completion: completion)
-        })
-
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
-            completion([])
-        })
-
-        if let popover = alert.popoverPresentationController {
-            popover.sourceView = rootVC.view
-            popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
-            popover.permittedArrowDirections = []
-        }
-
-        Logger.shared.log("FolderLinkCoordinator: presenting external storage option sheet", category: "FolderLink", type: .info)
-        rootVC.present(alert, animated: true)
+        Logger.shared.log("FolderLinkCoordinator: presenting direct unified drive picker (asCopy: false, allowsMultipleSelection: true)", category: "FolderLink", type: .info)
+        presentSafely(picker)
     }
 
     // MARK: - UIDocumentPickerDelegate
@@ -175,25 +152,18 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         didFinishHandling = true
 
         guard !urls.isEmpty else {
-            controller.dismiss(animated: true)
-            finish(with: [])
+            controller.dismiss(animated: true) { [weak self] in
+                self?.finish(with: [])
+            }
             return
         }
         Logger.shared.log("FolderLinkCoordinator: user picked \(urls.count) item(s): \(urls.map { $0.lastPathComponent }.joined(separator: ", "))", category: "FolderLink", type: .success)
 
-        // Capture security-scoped bookmarks SYNCHRONOUSLY while the system picker is presented and active!
-        // CRITICAL: DO NOT call controller.dismiss before bookmark creation. Dismissing first invalidates the
-        // out-of-process sandbox extension on iPadOS, causing bookmarkData to fail with error 257.
-        var results: [(url: URL, bookmark: Data)] = []
-        results.reserveCapacity(urls.count)
+        var securedItems: [(url: URL, bookmark: Data)] = []
+        securedItems.reserveCapacity(urls.count)
 
         for url in urls {
             let accessing = url.startAccessingSecurityScopedResource()
-            defer {
-                if accessing {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
 
             var bookmarkData: Data? = nil
             do {
@@ -215,19 +185,21 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             }
 
             if let bookmarkData {
-                results.append((url, bookmarkData))
+                BookmarkResolver.registerDriveBookmark(bookmarkData)
+                securedItems.append((url: url, bookmark: bookmarkData))
             } else {
                 Logger.shared.log("FolderLinkCoordinator: Failed to create bookmark for \(url.lastPathComponent)", category: "FolderLink", type: .error)
             }
+
+            if accessing {
+                url.stopAccessingSecurityScopedResource()
+            }
         }
 
-        // Dismiss picker AFTER all security tokens and bookmarks have been captured!
-        controller.dismiss(animated: true)
-
-        let capturedResults = results
-        // Dispatch completion asynchronously on MainActor, guaranteeing execution
-        Task { @MainActor [weak self] in
-            self?.finish(with: capturedResults)
+        // Dismiss picker cleanly and ONLY dispatch completion AFTER UIKit modal dismissal is fully finished!
+        controller.dismiss(animated: true) { [weak self] in
+            let captured = securedItems
+            self?.finish(with: captured)
         }
     }
 
@@ -235,8 +207,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         guard !didFinishHandling else { return }
         didFinishHandling = true
         Logger.shared.log("FolderLinkCoordinator: user cancelled picker", category: "FolderLink", type: .info)
-        controller.dismiss(animated: true)
-        Task { @MainActor [weak self] in
+        controller.dismiss(animated: true) { [weak self] in
             self?.finish(with: [])
         }
     }
@@ -246,6 +217,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
     private func finish(with results: [(url: URL, bookmark: Data)]) {
         completion?(results)
         completion = nil
+        picker = nil
         FolderLinkCoordinator.live = nil
     }
 

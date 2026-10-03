@@ -195,39 +195,11 @@ struct DriveEmptyState: View {
         VStack(spacing: 0) {
             Spacer()
 
-            // Illustrated icon with ambient purple glow
-            ZStack {
-                Circle()
-                    .fill(Color(hex: "#8b5cf6").opacity(0.18))
-                    .frame(width: 144, height: 144)
-                    .blur(radius: 20)
-
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 96, height: 96)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.4), Color.white.opacity(0.08)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    )
-                    .shadow(color: Color(hex: "#8b5cf6").opacity(0.25), radius: 20, y: 8)
-
-                Image(systemName: "externaldrive.fill.badge.plus")
-                    .font(.system(size: 40, weight: .medium))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color(hex: "#a78bfa"), Color(hex: "#7c3aed")],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
-            .padding(.bottom, 28)
+            // Clean native icon
+            Image(systemName: "externaldrive")
+                .font(.system(size: 48, weight: .regular))
+                .foregroundColor(Color(hex: "#8b5cf6"))
+                .padding(.bottom, 20)
 
             Text("No External Drive Linked")
                 .font(.system(size: 24, weight: .bold, design: .rounded))
@@ -275,7 +247,7 @@ struct DriveEmptyState: View {
                 .foregroundColor(Theme.textSecondary)
                 .frame(maxWidth: 260)
                 .padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)

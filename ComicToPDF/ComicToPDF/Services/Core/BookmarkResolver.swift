@@ -52,13 +52,24 @@ actor BookmarkResolver {
     /// on the returned URL to activate the document-picker security grant.
     nonisolated func resolve(_ bookmarkData: Data) throws -> URL {
         var isStale = false
+        var resolvedURL: URL? = nil
         do {
-            let url = try URL(
+            resolvedURL = try URL(
                 resolvingBookmarkData: bookmarkData,
                 options: .withoutUI,
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             )
+        } catch {
+            resolvedURL = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+        }
+
+        if let url = resolvedURL {
             if isStale {
                 Logger.shared.log("BookmarkResolver: bookmark is STALE for \(url.lastPathComponent) — posting notification", category: "BookmarkResolver", type: .warning)
                 Task { @MainActor in
@@ -66,14 +77,14 @@ actor BookmarkResolver {
                 }
             }
             return url
-        } catch {
-            if let fallbackURL = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSURL.self, from: bookmarkData) as? URL {
-                Logger.shared.log("BookmarkResolver: Resolved fallback unarchived URL: \(fallbackURL.lastPathComponent)", category: "BookmarkResolver", type: .info)
-                return fallbackURL
-            }
-            Logger.shared.log("BookmarkResolver: resolve FAILED: \(error.localizedDescription)", category: "BookmarkResolver", type: .error)
-            throw BookmarkError.resolutionFailed(underlying: error)
         }
+
+        if let fallbackURL = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSURL.self, from: bookmarkData) as? URL {
+            Logger.shared.log("BookmarkResolver: Resolved fallback unarchived URL: \(fallbackURL.lastPathComponent)", category: "BookmarkResolver", type: .info)
+            return fallbackURL
+        }
+        Logger.shared.log("BookmarkResolver: resolve FAILED for bookmark data (\(bookmarkData.count) bytes)", category: "BookmarkResolver", type: .error)
+        throw BookmarkError.resolutionFailed(underlying: NSError(domain: "InksyncBookmark", code: -1, userInfo: [NSLocalizedDescriptionKey: "Resolution failed"]))
     }
 
 public struct ResolvedAccess: Sendable {

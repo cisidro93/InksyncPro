@@ -1823,18 +1823,24 @@ struct ModernLibraryView: View {
                 var fileResults: [(url: URL, bookmark: Data)] = []
 
                 for item in results {
-                    let accessing = item.url.startAccessingSecurityScopedResource()
-                    defer { if accessing { item.url.stopAccessingSecurityScopedResource() } }
+                    let ext = item.url.pathExtension.lowercased()
+                    let isKnownComicFile = LinkedLibraryScanner.supportedExtensions.contains(ext)
 
-                    var isDir: ObjCBool = false
-                    let fileExistsDir = FileManager.default.fileExists(atPath: item.url.path, isDirectory: &isDir) && isDir.boolValue
-                    let resourceValues = try? item.url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
-                    let isDirectory = fileExistsDir || (resourceValues?.isDirectory == true) || item.url.hasDirectoryPath || item.url.pathExtension.isEmpty
-
-                    if isDirectory {
-                        folderResults.append(item)
-                    } else {
+                    if isKnownComicFile {
                         fileResults.append(item)
+                    } else {
+                        var isDir: ObjCBool = false
+                        let accessing = item.url.startAccessingSecurityScopedResource()
+                        let fileExistsDir = FileManager.default.fileExists(atPath: item.url.path, isDirectory: &isDir) && isDir.boolValue
+                        let resourceValues = try? item.url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+                        if accessing { item.url.stopAccessingSecurityScopedResource() }
+
+                        let isDirectory = fileExistsDir || (resourceValues?.isDirectory == true) || item.url.hasDirectoryPath || ext.isEmpty
+                        if isDirectory {
+                            folderResults.append(item)
+                        } else {
+                            fileResults.append(item)
+                        }
                     }
                 }
 
@@ -1859,6 +1865,7 @@ struct ModernLibraryView: View {
                 // If user selected a single file to open, immediately launch the reader!
                 if fileResults.count == 1 {
                     let pickedURL = fileResults[0].url
+                    let pickedBookmark = fileResults[0].bookmark
                     let target = manager.convertedPDFs.first(where: {
                         $0.url.fastCanonicalPath == pickedURL.fastCanonicalPath ||
                         $0.url.path == pickedURL.path ||
@@ -1876,18 +1883,12 @@ struct ModernLibraryView: View {
                             fileSize: (try? FileManager.default.attributesOfItem(atPath: pickedURL.path)[.size] as? Int64) ?? 0,
                             metadata: PDFMetadata(title: stem)
                         )
-                        fallbackPDF.sourceMode = .linked(bookmarkData: fileResults[0].bookmark)
+                        fallbackPDF.sourceMode = .linked(bookmarkData: pickedBookmark)
                         bookToRead = fallbackPDF
                     }
                     self.selectedPDF = bookToRead
-                    Task {
-                        try? await Task.sleep(nanoseconds: 150_000_000)
-                        await MainActor.run {
-                            if AppRouter.shared.activeFullScreen == nil {
-                                AppRouter.shared.presentFullScreen(.read(bookToRead))
-                            }
-                        }
-                    }
+                    // Present reader full screen directly (UIDocumentPickerViewController dismissal is already complete)
+                    AppRouter.shared.presentFullScreen(.read(bookToRead))
                 }
 
                 if !folderResults.isEmpty || !fileResults.isEmpty {
