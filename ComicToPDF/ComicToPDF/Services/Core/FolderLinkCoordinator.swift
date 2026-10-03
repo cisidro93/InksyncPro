@@ -35,21 +35,18 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         if let comicZip = UTType("com.macrabbit.comicbookzip") { types.append(comicZip) }
         if let comicRar = UTType("com.macrabbit.comicbookrar") { types.append(comicRar) }
         if let sevenZip = UTType("org.7-zip.7-zip-archive") { types.append(sevenZip) }
+        if let archive = UTType.archive as UTType? { types.append(archive) }
         return types.compactMap { $0 }
     }
 
     /// Dedicated folder UTTypes for folder picking.
-    /// CRITICAL: Only `.folder` with `asCopy: false` and `allowsMultipleSelection: false`.
-    /// In iOS/iPadOS, adding `public.item` or `public.volume` causes fileproviderd deadlock
-    /// and indefinite spinning of the top-right "Open" button.
     static var supportedFolderTypes: [UTType] {
-        return [.folder]
+        return [.folder, .directory]
     }
 
     /// All supported external drive types: folders AND concrete comic/book files.
-    /// Clean, explicit UTTypes: NO public.item, NO public.volume, NO .data.
     static var supportedDriveTypes: [UTType] {
-        var types: [UTType] = [.folder]
+        var types: [UTType] = [.folder, .directory]
         types.append(contentsOf: supportedFileTypes)
         return types
     }
@@ -118,7 +115,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
     }
 
     /// Unified drive picker allowing selection of either an external folder or comic file(s).
-    /// allowsMultipleSelection = false guarantees immediate "Open" response on iPadOS without spinning.
+    /// allowsMultipleSelection = true mirrors ImportCoordinator so files and folders are selectable with checkmarks.
     static func present(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
         let coordinator = FolderLinkCoordinator()
         coordinator.completion = completion
@@ -126,7 +123,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
 
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedDriveTypes, asCopy: false)
         picker.delegate = coordinator
-        picker.allowsMultipleSelection = false
+        picker.allowsMultipleSelection = true
         picker.shouldShowFileExtensions = true
         if UIDevice.current.userInterfaceIdiom == .pad {
             picker.modalPresentationStyle = .formSheet
@@ -134,7 +131,7 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
             picker.modalPresentationStyle = .fullScreen
         }
 
-        Logger.shared.log("FolderLinkCoordinator: presenting unified drive picker (folder or file, allowsMultipleSelection: false)", category: "FolderLink", type: .info)
+        Logger.shared.log("FolderLinkCoordinator: presenting unified drive picker (folder or file, allowsMultipleSelection: true)", category: "FolderLink", type: .info)
         presentSafely(picker)
     }
 
@@ -153,19 +150,16 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         guard !didFinishHandling else { return }
         didFinishHandling = true
 
-        // Dismiss picker immediately first.
-        // CRITICAL: DO NOT nest result processing inside the completion handler of controller.dismiss(animated:completion:).
-        // On iPadOS, UIKit silently drops dismiss completions when the remote view service is already transitioning out.
-        controller.dismiss(animated: true)
-
         guard !urls.isEmpty else {
+            controller.dismiss(animated: true)
             finish(with: [])
             return
         }
         Logger.shared.log("FolderLinkCoordinator: user picked \(urls.count) item(s): \(urls.map { $0.lastPathComponent }.joined(separator: ", "))", category: "FolderLink", type: .success)
 
-        // Capture security-scoped bookmarks SYNCHRONOUSLY while the system picker's temporary
-        // sandbox extension is 100% active and before dismissal can invalidate the kernel token.
+        // Capture security-scoped bookmarks SYNCHRONOUSLY while the system picker is presented and active!
+        // CRITICAL: DO NOT call controller.dismiss before bookmark creation. Dismissing first invalidates the
+        // out-of-process sandbox extension on iPadOS, causing bookmarkData to fail with error 257.
         var results: [(url: URL, bookmark: Data)] = []
         results.reserveCapacity(urls.count)
 
@@ -202,6 +196,9 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
                 Logger.shared.log("FolderLinkCoordinator: Failed to create bookmark for \(url.lastPathComponent)", category: "FolderLink", type: .error)
             }
         }
+
+        // Dismiss picker AFTER all security tokens and bookmarks have been captured!
+        controller.dismiss(animated: true)
 
         let capturedResults = results
         // Dispatch completion asynchronously on MainActor, guaranteeing execution
