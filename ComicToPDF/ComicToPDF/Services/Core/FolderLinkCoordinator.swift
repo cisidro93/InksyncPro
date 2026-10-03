@@ -46,6 +46,14 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         return [.folder]
     }
 
+    /// All supported external drive types: folders AND concrete comic/book files.
+    /// Clean, explicit UTTypes: NO public.item, NO public.volume, NO .data.
+    static var supportedDriveTypes: [UTType] {
+        var types: [UTType] = [.folder]
+        types.append(contentsOf: supportedFileTypes)
+        return types
+    }
+
     /// Present the folder picker for external USB drives or directory trees.
     /// Guarantees immediate "Open" response with zero spinning on iPadOS.
     static func presentFolder(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
@@ -109,9 +117,25 @@ final class FolderLinkCoordinator: NSObject, UIDocumentPickerDelegate {
         presentSafely(picker)
     }
 
-    /// Legacy fallback: defaults to dedicated folder picking.
+    /// Unified drive picker allowing selection of either an external folder or comic file(s).
+    /// allowsMultipleSelection = false guarantees immediate "Open" response on iPadOS without spinning.
     static func present(completion: @escaping @MainActor @Sendable ([(url: URL, bookmark: Data)]) -> Void) {
-        presentFolder(completion: completion)
+        let coordinator = FolderLinkCoordinator()
+        coordinator.completion = completion
+        FolderLinkCoordinator.live = coordinator
+
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedDriveTypes, asCopy: false)
+        picker.delegate = coordinator
+        picker.allowsMultipleSelection = false
+        picker.shouldShowFileExtensions = true
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            picker.modalPresentationStyle = .formSheet
+        } else {
+            picker.modalPresentationStyle = .fullScreen
+        }
+
+        Logger.shared.log("FolderLinkCoordinator: presenting unified drive picker (folder or file, allowsMultipleSelection: false)", category: "FolderLink", type: .info)
+        presentSafely(picker)
     }
 
     // MARK: - UIDocumentPickerDelegate

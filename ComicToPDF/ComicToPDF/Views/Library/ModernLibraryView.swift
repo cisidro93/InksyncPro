@@ -45,7 +45,6 @@ struct ModernLibraryView: View {
     @State private var isSearchActive: Bool = false
     @State private var showingMoreActionsDialog: Bool = false
     @State private var showingBatchDeleteConfirmation: Bool = false
-    @State private var showingLinkOptionsDialog: Bool = false
     @State private var highlightedItemID: String? = nil
     @FocusState private var isLibraryFocused: Bool
     @ObservedObject private var linkedScanner = LinkedLibraryScanner.shared
@@ -677,29 +676,6 @@ struct ModernLibraryView: View {
                     }
                 }
             }
-            .confirmationDialog(
-                "External Storage & Streaming",
-                isPresented: $showingLinkOptionsDialog,
-                titleVisibility: .visible
-            ) {
-                Button("Link External Drive or Folder") {
-                    handleLinkFolder()
-                }
-                Button("Link Comic Files (In-Place)") {
-                    handleLinkFiles()
-                }
-                Button("Stream Single Comic") {
-                    handleStreamSingleFile()
-                }
-                if !settingsManager.linkedDrives.isEmpty {
-                    Button("Manage Linked Drives...") {
-                        AppRouter.shared.presentSheet(.linkedDrives)
-                    }
-                }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("Read comics directly from external USB/SSD drives, SD cards, or cloud folders without copying them to local storage.")
-            }
             .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                 loadFiles(from: providers)
                 return true
@@ -924,18 +900,6 @@ struct ModernLibraryView: View {
         case .whatsNew:
             WhatsNewInBuildSheet {
                 AppRouter.shared.dismissSheet()
-            }
-        case .linkedDrives:
-            NavigationStack {
-                LinkedLibrarySettingsView()
-                    .environmentObject(conversionManager)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") {
-                                AppRouter.shared.dismissSheet()
-                            }
-                        }
-                    }
             }
         case .opdsBrowser:
             NavigationStack {
@@ -1203,7 +1167,7 @@ struct ModernLibraryView: View {
                 selectedFilter: $viewModel.filterState,
                 counts: libraryFilterCounts,
                 onLinkDrive: handleLinkDrive,
-                onManageDrives: { AppRouter.shared.presentSheet(.linkedDrives) },
+                onManageDrives: { AppRouter.shared.presentSheet(.controlCenter) },
                 onBrowseCloud: handleBrowseCloud,
                 onManageCloud: { AppRouter.shared.presentSheet(.controlCenter) }
             )
@@ -1836,54 +1800,10 @@ struct ModernLibraryView: View {
     }
 
     private func handleLinkDrive() {
-        showingLinkOptionsDialog = true
-    }
-
-    private func handleLinkFolder() {
         let manager = conversionManager
         LinkedLibraryScanner.shared.conversionManager = manager
 
-        FolderLinkCoordinator.presentFolder { results in
-            guard let folder = results.first else {
-                Task { @MainActor in
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        if settingsManager.linkedDrives.isEmpty {
-                            viewModel.filterState = .all
-                        }
-                    }
-                }
-                return
-            }
-
-            Task { @MainActor in
-                let scanner = LinkedLibraryScanner.shared
-                scanner.conversionManager = manager
-
-                do {
-                    _ = try await scanner.linkDrive(
-                        folderURL: folder.url,
-                        bookmarkData: folder.bookmark,
-                        displayName: folder.url.lastPathComponent
-                    )
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        viewModel.filterState = .onDrive
-                    }
-                    syncAndRebuildLibraryCache()
-                    NotificationCenter.default.post(name: .libraryNeedsRescan, object: nil)
-                    HapticEngine.success()
-                } catch {
-                    Logger.shared.log("handleLinkFolder error: \(error.localizedDescription)", category: "Drive", type: .error)
-                    manager.appAlert = AppAlert(title: "Drive Link Failed", message: error.localizedDescription)
-                }
-            }
-        }
-    }
-
-    private func handleLinkFiles() {
-        let manager = conversionManager
-        LinkedLibraryScanner.shared.conversionManager = manager
-
-        FolderLinkCoordinator.presentFiles { results in
+        FolderLinkCoordinator.present { results in
             guard !results.isEmpty else {
                 Task { @MainActor in
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -1899,11 +1819,46 @@ struct ModernLibraryView: View {
                 let scanner = LinkedLibraryScanner.shared
                 scanner.conversionManager = manager
 
-                let linkedCount = await scanner.linkFiles(pickedFiles: results)
-                Logger.shared.log("handleLinkFiles: Successfully linked \(linkedCount) direct files", category: "Drive", type: .info)
+                var folderResults: [(url: URL, bookmark: Data)] = []
+                var fileResults: [(url: URL, bookmark: Data)] = []
 
-                if results.count == 1, let pickedItem = results.first {
-                    let pickedURL = pickedItem.url
+                for item in results {
+                    let accessing = item.url.startAccessingSecurityScopedResource()
+                    defer { if accessing { item.url.stopAccessingSecurityScopedResource() } }
+
+                    var isDir: ObjCBool = false
+                    let fileExistsDir = FileManager.default.fileExists(atPath: item.url.path, isDirectory: &isDir) && isDir.boolValue
+                    let resourceValues = try? item.url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+                    let isDirectory = fileExistsDir || (resourceValues?.isDirectory == true) || item.url.hasDirectoryPath || item.url.pathExtension.isEmpty
+
+                    if isDirectory {
+                        folderResults.append(item)
+                    } else {
+                        fileResults.append(item)
+                    }
+                }
+
+                for folder in folderResults {
+                    do {
+                        _ = try await scanner.linkDrive(
+                            folderURL: folder.url,
+                            bookmarkData: folder.bookmark,
+                            displayName: folder.url.lastPathComponent
+                        )
+                    } catch {
+                        Logger.shared.log("handleLinkDrive error: \(error.localizedDescription)", category: "Drive", type: .error)
+                        manager.appAlert = AppAlert(title: "Drive Link Failed", message: error.localizedDescription)
+                    }
+                }
+
+                if !fileResults.isEmpty {
+                    let linkedCount = await scanner.linkFiles(pickedFiles: fileResults)
+                    Logger.shared.log("handleLinkDrive: Successfully linked \(linkedCount) direct files", category: "Drive", type: .info)
+                }
+
+                // If user selected a single file to open, immediately launch the reader!
+                if fileResults.count == 1 {
+                    let pickedURL = fileResults[0].url
                     let target = manager.convertedPDFs.first(where: {
                         $0.url.fastCanonicalPath == pickedURL.fastCanonicalPath ||
                         $0.url.path == pickedURL.path ||
@@ -1914,8 +1869,10 @@ struct ModernLibraryView: View {
                     }
                 }
 
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    viewModel.filterState = .onDrive
+                if !folderResults.isEmpty || !fileResults.isEmpty {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        viewModel.filterState = .onDrive
+                    }
                 }
 
                 syncAndRebuildLibraryCache()
@@ -1925,55 +1882,12 @@ struct ModernLibraryView: View {
         }
     }
 
-    private func handleStreamSingleFile() {
-        let manager = conversionManager
-        LinkedLibraryScanner.shared.conversionManager = manager
+    private func handleLinkFolder() {
+        handleLinkDrive()
+    }
 
-        FolderLinkCoordinator.presentSingleFile { results in
-            guard let item = results.first else { return }
-
-            Task { @MainActor in
-                let scanner = LinkedLibraryScanner.shared
-                scanner.conversionManager = manager
-
-                // Link the file so it creates a persistent security-scoped bookmark
-                _ = await scanner.linkFiles(pickedFiles: [item])
-
-                syncAndRebuildLibraryCache()
-
-                // Locate the linked PDF or synthesize a streamable ConvertedPDF
-                let pickedURL = item.url
-                var target = manager.convertedPDFs.first(where: {
-                    $0.url.fastCanonicalPath == pickedURL.fastCanonicalPath ||
-                    $0.url.path == pickedURL.path ||
-                    $0.name == pickedURL.deletingPathExtension().lastPathComponent
-                })
-
-                if target == nil {
-                    let stem = pickedURL.deletingPathExtension().lastPathComponent
-                    let parsedTokens = DeterministicFilenameParser.parse(filename: pickedURL.lastPathComponent)
-                    var pdf = ConvertedPDF(
-                        name: stem,
-                        url: pickedURL,
-                        pageCount: 0,
-                        fileSize: (try? FileManager.default.attributesOfItem(atPath: pickedURL.path)[.size] as? Int64) ?? 0,
-                        metadata: PDFMetadata(title: parsedTokens.title ?? stem)
-                    )
-                    pdf.sourceMode = .linked(bookmarkData: item.bookmark)
-                    manager.convertedPDFs.append(pdf)
-                    LibraryService.shared.items.append(pdf)
-                    target = pdf
-                }
-
-                if let target {
-                    HapticEngine.success()
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        viewModel.filterState = .onDrive
-                    }
-                    self.selectedPDF = target
-                }
-            }
-        }
+    private func handleLinkFiles() {
+        handleLinkDrive()
     }
 
     private func handleBrowseCloud() {
@@ -2050,7 +1964,7 @@ struct ModernLibraryView: View {
             }
 
             Button {
-                AppRouter.shared.presentSheet(.linkedDrives)
+                AppRouter.shared.presentSheet(.controlCenter)
             } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 13, weight: .semibold))
